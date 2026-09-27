@@ -1,9 +1,10 @@
 import { fetchApiServer } from "@/lib/api-server";
 import { IdCardClient } from "./id-card-client";
 
-export default async function IdCardPage({ params }: { params: { id: string } }) {
+export default async function IdCardPage({ params }: { params: Promise<{ id: string }> }) {
   try {
-    const student = await fetchApiServer<any>(`/students/${params.id}`);
+    const resolvedParams = await params;
+    const student = await fetchApiServer<any>(`/students/${resolvedParams.id}`);
     
     const user = student.user || {};
     const enrollment = student.enrollments?.[0];
