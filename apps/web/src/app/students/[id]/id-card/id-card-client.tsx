@@ -90,8 +90,8 @@ export function IdCardClient({ student }: IdCardProps) {
               <Image
                 src={logoImage}
                 alt="Logo"
-                width={280}
-                height={80}
+                width={300}
+                height={100}
                 className="object-contain w-full h-full drop-shadow-sm"
                 priority
               />
