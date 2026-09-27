@@ -84,19 +84,19 @@ export function IdCardClient({ student }: IdCardProps) {
             <div className="absolute inset-0 opacity-[0.04] mt-[190px]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
           </div>
 
-          {/* Header - Properly proportioned for 320px card */}
+          {/* Header */}
           <div className="px-4 pt-4 pb-4 flex flex-col items-center relative z-10 w-full">
-            <div className="relative mb-2 flex justify-center items-center w-[240px] h-16 bg-white/95 p-2 rounded-lg shadow-sm border border-white/40 backdrop-blur-sm">
+            <div className="relative mb-2 flex justify-center items-center w-[140px] h-10 bg-white/95 rounded-xl shadow-sm border border-white/40 backdrop-blur-sm">
               <Image 
                 src={logoImage} 
                 alt="Logo" 
-                width={240}
-                height={80}
-                className="object-contain w-full h-full" 
+                width={300}
+                height={100}
+                className="object-contain absolute min-w-[260px] h-auto drop-shadow-md" 
                 priority
               />
             </div>
-            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-1 drop-shadow-md">
+            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-2 drop-shadow-md">
               Student Identification
             </h2>
           </div>
@@ -191,15 +191,15 @@ export function IdCardClient({ student }: IdCardProps) {
 
           <div className="flex flex-col h-full p-6 relative z-10">
             
-            {/* Header - Properly proportioned for 320px card */}
-            <div className="mb-6 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
-              <div className="relative flex justify-center items-center w-[220px] h-14">
+            {/* Header */}
+            <div className="mb-8 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full mt-2">
+              <div className="relative flex justify-center items-center w-[120px] h-8 bg-white/90 rounded-lg shadow-sm border border-brand-blue/10">
                 <Image 
                   src={logoImage} 
                   alt="Logo" 
-                  width={220}
-                  height={70}
-                  className="object-contain opacity-90 grayscale w-full h-full" 
+                  width={300}
+                  height={100}
+                  className="object-contain absolute min-w-[220px] h-auto opacity-90 grayscale drop-shadow-sm" 
                 />
               </div>
             </div>
