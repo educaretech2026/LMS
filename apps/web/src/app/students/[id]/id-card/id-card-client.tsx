@@ -86,17 +86,17 @@ export function IdCardClient({ student }: IdCardProps) {
 
           {/* Header */}
           <div className="px-4 pt-5 pb-4 flex flex-col items-center relative z-10 w-full">
-            <div className="relative mb-1 flex justify-center items-center w-[280px]">
+            <div className="relative mb-1 flex justify-center items-center w-[240px] h-12 bg-white/95 p-2 rounded-lg shadow-sm border border-white/40 backdrop-blur-sm">
               <Image 
                 src={logoImage} 
                 alt="Logo" 
                 width={300}
                 height={100}
-                className="object-contain drop-shadow-md w-full h-auto" 
+                className="object-contain w-full h-full" 
                 priority
               />
             </div>
-            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-1 drop-shadow-md">
+            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-2 drop-shadow-md">
               Student Identification
             </h2>
           </div>
@@ -193,13 +193,13 @@ export function IdCardClient({ student }: IdCardProps) {
             
             {/* Header */}
             <div className="mb-5 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
-              <div className="relative flex justify-center items-center w-[240px]">
+              <div className="relative flex justify-center items-center w-[220px] h-10">
                 <Image 
                   src={logoImage} 
                   alt="Logo" 
                   width={300}
                   height={100}
-                  className="object-contain opacity-90 grayscale w-full h-auto" 
+                  className="object-contain opacity-90 grayscale w-full h-full" 
                 />
               </div>
             </div>
