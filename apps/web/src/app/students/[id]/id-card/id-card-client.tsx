@@ -85,14 +85,14 @@ export function IdCardClient({ student }: IdCardProps) {
           </div>
 
           {/* Header */}
-          <div className="px-4 pt-5 pb-4 flex flex-col items-center relative z-10">
-            <div className="h-10 relative w-[140px] mb-1 bg-white p-1.5 rounded-lg shadow-md border border-white/20 flex justify-center items-center">
+          <div className="px-4 pt-5 pb-4 flex flex-col items-center relative z-10 w-full">
+            <div className="relative mb-1 flex justify-center items-center w-[280px]">
               <Image 
                 src={logoImage} 
                 alt="Logo" 
-                width={400}
-                height={120}
-                className="object-contain max-h-full max-w-full" 
+                width={300}
+                height={100}
+                className="object-contain drop-shadow-md w-full h-auto" 
                 priority
               />
             </div>
@@ -193,13 +193,13 @@ export function IdCardClient({ student }: IdCardProps) {
             
             {/* Header */}
             <div className="mb-5 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
-              <div className="h-8 relative w-[120px] flex justify-center items-center">
+              <div className="relative flex justify-center items-center w-[240px]">
                 <Image 
                   src={logoImage} 
                   alt="Logo" 
-                  width={400}
-                  height={120}
-                  className="object-contain opacity-90 grayscale max-h-full max-w-full" 
+                  width={300}
+                  height={100}
+                  className="object-contain opacity-90 grayscale w-full h-auto" 
                 />
               </div>
             </div>
