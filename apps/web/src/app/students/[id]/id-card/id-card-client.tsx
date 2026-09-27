@@ -85,18 +85,18 @@ export function IdCardClient({ student }: IdCardProps) {
           </div>
 
           {/* Header */}
-          <div className="px-4 pt-5 pb-3 flex flex-col items-center relative z-10 w-full">
-            <div className="relative mb-2 flex justify-center items-center w-[220px] h-14 bg-white/95 rounded-xl shadow-sm border border-white/40 backdrop-blur-sm p-2">
+          <div className="px-4 pt-10 pb-2 flex flex-col items-center relative z-10 w-full">
+            <div className="relative mb-1 flex justify-center items-center w-[260px] h-16 bg-white/95 rounded-xl shadow-sm border border-white/40 backdrop-blur-sm p-2">
               <Image
                 src={logoImage}
                 alt="Logo"
-                width={200}
-                height={60}
+                width={240}
+                height={70}
                 className="object-contain w-full h-full drop-shadow-sm"
                 priority
               />
             </div>
-            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-1 drop-shadow-md">
+            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-2 drop-shadow-md">
               Student Identification
             </h2>
           </div>
@@ -189,10 +189,10 @@ export function IdCardClient({ student }: IdCardProps) {
             <div className="absolute bottom-0 right-0 w-full h-[100px] bg-brand-blue/10" style={{ clipPath: 'polygon(30% 100%, 100% 20%, 100% 100%)' }}></div>
           </div>
 
-          <div className="flex flex-col h-full p-6 relative z-10">
+          <div className="flex flex-col h-full p-4 relative z-10">
 
             {/* Header */}
-            <div className="mb-4 flex justify-center border-b border-brand-blue/10 pb-3 relative w-full mt-1">
+            <div className="mb-2 flex justify-center border-b border-brand-blue/10 pb-2 relative w-full mt-1">
               <div className="relative flex justify-center items-center w-[160px] h-10 bg-white/90 rounded-lg shadow-sm border border-brand-blue/10 p-1.5">
                 <Image
                   src={logoImage}
@@ -204,8 +204,8 @@ export function IdCardClient({ student }: IdCardProps) {
               </div>
             </div>
 
-            <div className="flex-1 mt-1">
-              <h3 className="text-[9px] font-bold text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <div className="flex-1">
+              <h3 className="text-[9px] font-bold text-slate-900 uppercase tracking-widest mb-1.5 flex items-center gap-2">
                 Terms & Conditions
                 <div className="flex-1 flex h-px bg-slate-200">
                   <div className="w-1/3 h-full bg-brand-blue/40"></div>
@@ -223,7 +223,7 @@ export function IdCardClient({ student }: IdCardProps) {
               </ul>
             </div>
 
-            <div className="mt-2 pt-3 border-t border-brand-blue/10 space-y-1.5 relative">
+            <div className="mt-1 pt-2 border-t border-brand-blue/10 space-y-1.5 relative">
               {student.centre && (
                 <div className="flex items-start gap-2">
                   <div className="mt-0.5">
@@ -256,7 +256,7 @@ export function IdCardClient({ student }: IdCardProps) {
               )}
             </div>
 
-            <div className="mt-3 flex justify-between items-end bg-white/90 backdrop-blur-sm p-2.5 rounded border-l-2 border-brand-blue shadow-[0_2px_8px_rgba(0,0,0,0.04)] relative">
+            <div className="mt-2 flex justify-between items-end bg-white/90 backdrop-blur-sm p-2 rounded border-l-2 border-brand-blue shadow-[0_2px_8px_rgba(0,0,0,0.04)] relative">
               <div className="relative z-10">
                 <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider mb-1">Valid Until</p>
                 <p className="text-[10px] text-slate-900 font-bold">
@@ -272,7 +272,7 @@ export function IdCardClient({ student }: IdCardProps) {
               </div>
             </div>
 
-            <div className="mt-3 flex flex-col items-center">
+            <div className="mt-1 flex flex-col items-center">
               <Barcode value={student.admissionNo} />
               <p className="text-[8px] font-mono mt-1.5 text-slate-500 tracking-[0.2em]">
                 {student.admissionNo || "-"}
