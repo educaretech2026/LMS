@@ -17,6 +17,7 @@ interface IdCardProps {
     phone: string;
     photo: string | null;
     course: string;
+    address?: string;
   };
 }
 
