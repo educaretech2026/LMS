@@ -666,6 +666,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <ChevronDown className="h-4 w-4 text-text-muted" />
+                    </div>
                   </div>
                 </div>
                 <div>
