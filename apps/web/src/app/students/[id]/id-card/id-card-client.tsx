@@ -192,7 +192,7 @@ export function IdCardClient({ student }: IdCardProps) {
           <div className="flex flex-col h-full p-6 relative z-10">
 
             {/* Header */}
-            <div className="mb-8 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full mt-2">
+            <div className="mb-4 flex justify-center border-b border-brand-blue/10 pb-3 relative w-full mt-1">
               <div className="relative flex justify-center items-center w-[160px] h-10 bg-white/90 rounded-lg shadow-sm border border-brand-blue/10 p-1.5">
                 <Image
                   src={logoImage}
@@ -204,14 +204,14 @@ export function IdCardClient({ student }: IdCardProps) {
               </div>
             </div>
 
-            <div className="flex-1">
-              <h3 className="text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <div className="flex-1 mt-1">
+              <h3 className="text-[9px] font-bold text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-2">
                 Terms & Conditions
                 <div className="flex-1 flex h-px bg-slate-200">
                   <div className="w-1/3 h-full bg-brand-blue/40"></div>
                 </div>
               </h3>
-              <ul className="text-[9px] text-slate-600 space-y-2 text-justify leading-relaxed pl-3 list-none relative">
+              <ul className="text-[8.5px] text-slate-600 space-y-1.5 text-justify leading-relaxed pl-3 list-none relative">
                 {/* Custom modern bullets */}
                 <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-brand-blue/10 rounded-full"></div>
 
@@ -223,7 +223,7 @@ export function IdCardClient({ student }: IdCardProps) {
               </ul>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-brand-blue/10 space-y-2 relative">
+            <div className="mt-2 pt-3 border-t border-brand-blue/10 space-y-1.5 relative">
               {student.centre && (
                 <div className="flex items-start gap-2">
                   <div className="mt-0.5">
@@ -256,7 +256,7 @@ export function IdCardClient({ student }: IdCardProps) {
               )}
             </div>
 
-            <div className="mt-6 flex justify-between items-end bg-white/90 backdrop-blur-sm p-3 rounded border-l-2 border-brand-blue shadow-[0_2px_8px_rgba(0,0,0,0.04)] relative">
+            <div className="mt-3 flex justify-between items-end bg-white/90 backdrop-blur-sm p-2.5 rounded border-l-2 border-brand-blue shadow-[0_2px_8px_rgba(0,0,0,0.04)] relative">
               <div className="relative z-10">
                 <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider mb-1">Valid Until</p>
                 <p className="text-[10px] text-slate-900 font-bold">
@@ -272,7 +272,7 @@ export function IdCardClient({ student }: IdCardProps) {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-col items-center">
+            <div className="mt-3 flex flex-col items-center">
               <Barcode value={student.admissionNo} />
               <p className="text-[8px] font-mono mt-1.5 text-slate-500 tracking-[0.2em]">
                 {student.admissionNo || "-"}
