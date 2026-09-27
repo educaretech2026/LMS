@@ -24,13 +24,13 @@ interface IdCardProps {
 // Simple Barcode generator using inline blocks
 function Barcode({ value }: { value: string }) {
   if (!value) return null;
-  
+
   // Deterministic bar widths based on char codes
   const bars = Array.from({ length: 42 }, (_, i) => {
     const code = value.charCodeAt(i % value.length) || 50;
     return ((code + i * 11) % 4) + 1; // 1, 2, 3, or 4
   });
-  
+
   return (
     <div className="flex flex-col items-center w-full">
       <div className="flex items-end h-10 justify-center w-full">
@@ -49,10 +49,10 @@ function Barcode({ value }: { value: string }) {
 export function IdCardClient({ student }: IdCardProps) {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center py-12 gap-8 font-sans print:bg-transparent print:p-0 print:gap-8 print:min-h-0">
-      
+
       {/* Controls */}
       <div className="print:hidden">
-        <button 
+        <button
           onClick={() => window.print()}
           className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 rounded-lg font-medium shadow-sm transition-colors"
         >
@@ -61,60 +61,60 @@ export function IdCardClient({ student }: IdCardProps) {
       </div>
 
       <div className="flex flex-col gap-8 print:flex-row print:flex-wrap print:gap-8">
-        
+
         {/* ==================== FRONT OF CARD ==================== */}
         <div className="relative bg-white w-[320px] h-[508px] rounded-xl overflow-hidden shadow-2xl shadow-brand-blue/10 print:shadow-none print:border-slate-300 flex flex-col isolate border border-slate-200/50">
-          
+
           {/* Creative Background Elements (Front) - Modern Geometric Split with Textures */}
           <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden bg-[#fafcff]">
             {/* SVG Noise Texture for tactile feel */}
             <div className="absolute inset-0 opacity-[0.35] mix-blend-multiply" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
-            
+
             {/* Top geometric angle */}
             <div className="absolute top-0 left-0 w-full h-[180px] bg-gradient-to-br from-[#014d8a] to-brand-blue" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 65%, 0 100%)' }}></div>
             {/* Secondary angle overlapping */}
             <div className="absolute top-0 left-0 w-full h-[190px] bg-brand-blue/30" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 75%, 0 100%)', zIndex: -1 }}></div>
-            
+
             {/* Wireframe globe / concentric circles pattern in the bottom right */}
             <div className="absolute -bottom-20 -right-20 w-64 h-64 rounded-full border-[1px] border-brand-blue/10"></div>
             <div className="absolute -bottom-10 -right-10 w-48 h-48 rounded-full border-[1px] border-brand-blue/15"></div>
             <div className="absolute bottom-0 right-0 w-32 h-32 rounded-full border-[1px] border-brand-blue/20"></div>
-            
+
             {/* Subtle tech grid over the white area - diagonal hatching */}
             <div className="absolute inset-0 opacity-[0.04] mt-[190px]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
           </div>
 
           {/* Header */}
-          <div className="px-4 pt-4 pb-4 flex flex-col items-center relative z-10 w-full">
-            <div className="relative mb-2 flex justify-center items-center w-[140px] h-10 bg-white/95 rounded-xl shadow-sm border border-white/40 backdrop-blur-sm">
-              <Image 
-                src={logoImage} 
-                alt="Logo" 
-                width={300}
-                height={100}
-                className="object-contain absolute min-w-[260px] h-auto drop-shadow-md" 
+          <div className="px-4 pt-5 pb-3 flex flex-col items-center relative z-10 w-full">
+            <div className="relative mb-2 flex justify-center items-center w-[220px] h-14 bg-white/95 rounded-xl shadow-sm border border-white/40 backdrop-blur-sm p-2">
+              <Image
+                src={logoImage}
+                alt="Logo"
+                width={200}
+                height={60}
+                className="object-contain w-full h-full drop-shadow-sm"
                 priority
               />
             </div>
-            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-2 drop-shadow-md">
+            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-1 drop-shadow-md">
               Student Identification
             </h2>
           </div>
 
           <div className="flex flex-col items-center px-6 pt-3 pb-4 flex-1 relative z-10">
-            
+
             {/* Photo Section */}
             <div className="relative mb-5 group mt-2">
               {/* Modern photo frame with offset borders */}
               <div className="absolute -inset-1.5 bg-gradient-to-b from-brand-blue/10 to-transparent rounded-lg transform rotate-3 transition-transform group-hover:rotate-6"></div>
               <div className="absolute -inset-1.5 bg-gradient-to-t from-sky-400/20 to-transparent rounded-lg transform -rotate-2 transition-transform group-hover:-rotate-4"></div>
-              
+
               <div className="w-[110px] h-[135px] rounded-md border-2 border-white overflow-hidden bg-slate-50 relative flex justify-center items-center shadow-[0_8px_16px_rgba(0,0,0,0.1)] z-10">
                 {student.photo ? (
-                  <img 
-                    src={student.photo} 
-                    alt={student.name || "Student"} 
-                    className="w-full h-full object-cover" 
+                  <img
+                    src={student.photo}
+                    alt={student.name || "Student"}
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   <User className="w-12 h-12 text-slate-300" />
@@ -145,61 +145,61 @@ export function IdCardClient({ student }: IdCardProps) {
               <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-brand-blue/40 rounded-br"></div>
 
               <div className="grid grid-cols-[1fr_2fr] gap-x-2 gap-y-2 text-[10px]">
-                
+
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Adm No</div>
                 <div className="font-bold text-slate-900 pl-1">{student.admissionNo || "-"}</div>
-                
+
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Class</div>
                 <div className="font-bold text-slate-900 pl-1">
                   {student.classLevel || "-"} {student.division ? `(${student.division})` : ''}
                 </div>
-                
+
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Board</div>
                 <div className="font-bold text-slate-900 pl-1">{student.board || "-"}</div>
-                
+
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Blood</div>
                 <div className="font-bold text-red-600 pl-1">{student.bloodGroup || "-"}</div>
-                
+
               </div>
             </div>
-            
+
           </div>
-          
+
           {/* Bottom Thick Tech Bar */}
           <div className="h-2 w-full flex relative z-10 mt-auto">
-             <div className="h-full w-1/3 bg-[#014d8a]"></div>
-             <div className="h-full w-1/3 bg-brand-blue"></div>
-             <div className="h-full w-1/3 bg-sky-400"></div>
+            <div className="h-full w-1/3 bg-[#014d8a]"></div>
+            <div className="h-full w-1/3 bg-brand-blue"></div>
+            <div className="h-full w-1/3 bg-sky-400"></div>
           </div>
         </div>
 
         {/* ==================== BACK OF CARD ==================== */}
         <div className="relative bg-white w-[320px] h-[508px] rounded-xl overflow-hidden shadow-2xl shadow-brand-blue/10 print:shadow-none print:border-slate-300 flex flex-col isolate border border-slate-200/50">
-          
+
           {/* Creative Background Elements (Back) */}
           <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden bg-[#fafcff]">
-             {/* SVG Noise Texture for tactile feel */}
-             <div className="absolute inset-0 opacity-[0.35] mix-blend-multiply" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
-             
-             {/* Diagonal hatching on back */}
-             <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
-             
-             {/* Abstract bottom geometric shape */}
-             <div className="absolute bottom-0 right-0 w-full h-[150px] bg-brand-blue/5" style={{ clipPath: 'polygon(0 100%, 100% 0, 100% 100%)' }}></div>
-             <div className="absolute bottom-0 right-0 w-full h-[100px] bg-brand-blue/10" style={{ clipPath: 'polygon(30% 100%, 100% 20%, 100% 100%)' }}></div>
+            {/* SVG Noise Texture for tactile feel */}
+            <div className="absolute inset-0 opacity-[0.35] mix-blend-multiply" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
+
+            {/* Diagonal hatching on back */}
+            <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
+
+            {/* Abstract bottom geometric shape */}
+            <div className="absolute bottom-0 right-0 w-full h-[150px] bg-brand-blue/5" style={{ clipPath: 'polygon(0 100%, 100% 0, 100% 100%)' }}></div>
+            <div className="absolute bottom-0 right-0 w-full h-[100px] bg-brand-blue/10" style={{ clipPath: 'polygon(30% 100%, 100% 20%, 100% 100%)' }}></div>
           </div>
 
           <div className="flex flex-col h-full p-6 relative z-10">
-            
+
             {/* Header */}
             <div className="mb-8 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full mt-2">
-              <div className="relative flex justify-center items-center w-[120px] h-8 bg-white/90 rounded-lg shadow-sm border border-brand-blue/10">
-                <Image 
-                  src={logoImage} 
-                  alt="Logo" 
-                  width={300}
-                  height={100}
-                  className="object-contain absolute min-w-[220px] h-auto opacity-90 grayscale drop-shadow-sm" 
+              <div className="relative flex justify-center items-center w-[160px] h-10 bg-white/90 rounded-lg shadow-sm border border-brand-blue/10 p-1.5">
+                <Image
+                  src={logoImage}
+                  alt="Logo"
+                  width={150}
+                  height={40}
+                  className="object-contain w-full h-full opacity-90 grayscale drop-shadow-sm"
                 />
               </div>
             </div>
@@ -208,13 +208,13 @@ export function IdCardClient({ student }: IdCardProps) {
               <h3 className="text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
                 Terms & Conditions
                 <div className="flex-1 flex h-px bg-slate-200">
-                   <div className="w-1/3 h-full bg-brand-blue/40"></div>
+                  <div className="w-1/3 h-full bg-brand-blue/40"></div>
                 </div>
               </h3>
               <ul className="text-[9px] text-slate-600 space-y-2 text-justify leading-relaxed pl-3 list-none relative">
                 {/* Custom modern bullets */}
                 <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-brand-blue/10 rounded-full"></div>
-                
+
                 <li className="relative"><span className="absolute -left-3 top-1.5 w-1 h-1 bg-brand-blue rounded-full"></span>This card is the property of the issuing institution and is non-transferable.</li>
                 <li className="relative"><span className="absolute -left-3 top-1.5 w-1 h-1 bg-brand-blue/70 rounded-full"></span>The cardholder must present this card upon request by any authorized personnel.</li>
                 <li className="relative"><span className="absolute -left-3 top-1.5 w-1 h-1 bg-brand-blue/50 rounded-full"></span>Loss or damage of this card must be reported immediately to the administration.</li>
@@ -263,7 +263,7 @@ export function IdCardClient({ student }: IdCardProps) {
                   {student.validUntil || "-"}
                 </p>
               </div>
-              
+
               <div className="text-center relative z-10">
                 <div className="w-20 border-b-2 border-slate-800 mb-1.5 inline-block"></div>
                 <p className="text-[7px] font-bold text-slate-500 uppercase tracking-widest">
@@ -271,14 +271,14 @@ export function IdCardClient({ student }: IdCardProps) {
                 </p>
               </div>
             </div>
-            
+
             <div className="mt-4 flex flex-col items-center">
               <Barcode value={student.admissionNo} />
               <p className="text-[8px] font-mono mt-1.5 text-slate-500 tracking-[0.2em]">
                 {student.admissionNo || "-"}
               </p>
             </div>
-            
+
           </div>
         </div>
       </div>
