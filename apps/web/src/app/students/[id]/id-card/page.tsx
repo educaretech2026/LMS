@@ -23,12 +23,16 @@ export default async function IdCardPage({ params }: { params: { id: string } })
     };
 
     return <IdCardClient student={mappedStudent} />;
-  } catch (e) {
+  } catch (e: any) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="bg-white p-8 rounded-xl shadow-sm text-center">
           <h1 className="text-xl font-bold text-red-600 mb-2">Error Loading ID Card</h1>
-          <p className="text-slate-500">Could not find student data or an error occurred.</p>
+          <p className="text-slate-500 mb-4">Could not find student data or an error occurred.</p>
+          <div className="bg-red-50 text-red-600 text-sm p-4 rounded-lg text-left overflow-auto max-w-md mx-auto">
+            <span className="font-bold block mb-1">Debug Info:</span>
+            {e?.message || String(e)}
+          </div>
         </div>
       </div>
     );
