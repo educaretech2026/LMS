@@ -84,14 +84,14 @@ export function IdCardClient({ student }: IdCardProps) {
             <div className="absolute inset-0 opacity-[0.04] mt-[190px]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
           </div>
 
-          {/* Header */}
-          <div className="px-2 pt-4 pb-2 flex flex-col items-center relative z-10 w-full">
-            <div className="relative mb-1 flex justify-center items-center w-[300px] h-14 bg-white/95 p-2 rounded-lg shadow-sm border border-white/40 backdrop-blur-sm">
+          {/* Header - Properly proportioned for 320px card */}
+          <div className="px-6 pt-6 pb-4 flex flex-col items-center relative z-10 w-full">
+            <div className="relative mb-2 flex justify-center items-center w-[180px] h-12 bg-white/95 p-2 rounded-lg shadow-sm border border-white/40 backdrop-blur-sm">
               <Image 
                 src={logoImage} 
                 alt="Logo" 
-                width={300}
-                height={100}
+                width={180}
+                height={60}
                 className="object-contain w-full h-full" 
                 priority
               />
@@ -191,14 +191,14 @@ export function IdCardClient({ student }: IdCardProps) {
 
           <div className="flex flex-col h-full p-6 relative z-10">
             
-            {/* Header */}
-            <div className="mb-5 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
-              <div className="relative flex justify-center items-center w-[280px] h-12">
+            {/* Header - Properly proportioned for 320px card */}
+            <div className="mb-6 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
+              <div className="relative flex justify-center items-center w-[160px] h-10">
                 <Image 
                   src={logoImage} 
                   alt="Logo" 
-                  width={300}
-                  height={100}
+                  width={160}
+                  height={50}
                   className="object-contain opacity-90 grayscale w-full h-full" 
                 />
               </div>
