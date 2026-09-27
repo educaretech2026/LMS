@@ -84,15 +84,15 @@ export function IdCardClient({ student }: IdCardProps) {
             <div className="absolute inset-0 opacity-[0.04] mt-[190px]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
           </div>
 
-          {/* Header - Fixed logo to width 400 internally without breaking container */}
+          {/* Header */}
           <div className="px-4 pt-5 pb-4 flex flex-col items-center relative z-10">
-            <div className="relative mb-1 bg-white p-2 rounded-lg shadow-md border border-white/20 flex justify-center w-full max-w-[280px]">
+            <div className="h-10 relative w-[140px] mb-1 bg-white p-1.5 rounded-lg shadow-md border border-white/20 flex justify-center items-center">
               <Image 
                 src={logoImage} 
                 alt="Logo" 
                 width={400}
                 height={120}
-                className="object-contain w-full h-auto" 
+                className="object-contain max-h-full max-w-full" 
                 priority
               />
             </div>
@@ -191,15 +191,15 @@ export function IdCardClient({ student }: IdCardProps) {
 
           <div className="flex flex-col h-full p-6 relative z-10">
             
-            {/* Header - Fixed logo size internally */}
+            {/* Header */}
             <div className="mb-5 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
-              <div className="relative flex justify-center w-full max-w-[240px]">
+              <div className="h-8 relative w-[120px] flex justify-center items-center">
                 <Image 
                   src={logoImage} 
                   alt="Logo" 
                   width={400}
                   height={120}
-                  className="object-contain opacity-90 grayscale w-full h-auto" 
+                  className="object-contain opacity-90 grayscale max-h-full max-w-full" 
                 />
               </div>
             </div>
