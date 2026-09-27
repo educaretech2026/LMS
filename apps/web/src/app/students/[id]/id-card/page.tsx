@@ -9,19 +9,25 @@ export default async function IdCardPage({ params }: { params: Promise<{ id: str
     const user = student.user || {};
     const enrollment = student.enrollments?.[0];
     const batch = enrollment?.batch;
+    const academicYear = batch?.academicYear;
+
+    const validUntil = academicYear?.endDate 
+      ? new Date(academicYear.endDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+      : undefined;
 
     const mappedStudent = {
       admissionNo: student.admissionNo || '',
-      name: `${user.firstName || 'Unknown'} ${user.lastName || ''}`.trim(),
-      board: batch?.board?.name || 'N/A',
-      classLevel: batch?.standard?.name || 'N/A',
-      division: batch?.name || 'N/A',
-      centre: batch?.centre?.name || 'N/A',
-      bloodGroup: student.bloodGroup || "O+ve",
-      phone: student.parentPhone || '',
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown',
+      board: batch?.board?.name || '',
+      classLevel: batch?.standard?.name || '',
+      division: batch?.name || '',
+      centre: batch?.centre?.name || '',
+      bloodGroup: student.bloodGroup || "",
+      phone: student.parentPhone || student.phone || '',
       photo: user.avatar || null,
       course: "Student",
-      address: student.address || ''
+      address: student.address || '',
+      validUntil
     };
 
     return <IdCardClient student={mappedStudent} />;
