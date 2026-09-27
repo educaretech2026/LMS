@@ -1,6 +1,8 @@
 "use client";
 
 import { User, Printer, Download, MapPin, Phone } from "lucide-react";
+import Image from "next/image";
+import logoImage from "@/logos/logo1.png";
 import { useEffect } from "react";
 
 interface IdCardProps {
@@ -48,8 +50,10 @@ export function IdCardClient({ student }: IdCardProps) {
         <div className="relative z-10 flex flex-col items-center pt-6 px-6 h-full">
           
           {/* Institute Logo / Name */}
-          <div className="text-center mb-5">
-            <h1 className="text-xl font-black text-white tracking-widest uppercase">EDUCARE</h1>
+          <div className="text-center mb-5 flex flex-col items-center">
+            <div className="bg-white p-1 rounded-lg shadow-sm mb-1">
+              <Image src={logoImage} alt="Educare Logo" width={100} height={30} className="object-contain" />
+            </div>
             <p className="text-[9px] text-blue-100 font-semibold tracking-[0.2em] uppercase">Institute of Excellence</p>
           </div>
 
@@ -141,9 +145,13 @@ export function IdCardClient({ student }: IdCardProps) {
             <div className="flex items-start gap-2 mb-2">
               <MapPin className="w-3 h-3 text-brand-blue shrink-0 mt-0.5" />
               <p className="text-[9px] text-slate-600 font-medium">
-                {student.centre === 'Mannanam' 
-                  ? "Educare Institute, 2nd Floor Gurukrupa Complex, Mannanam Jn." 
-                  : "Educare Institute, 2nd Floor Castle Charis Complex, Kalathipady Jn."}
+                {student.address ? (
+                  <span className="whitespace-pre-wrap">{student.address}</span>
+                ) : (
+                  student.centre === 'Mannanam' 
+                    ? "Educare Institute, 2nd Floor Gurukrupa Complex, Mannanam Jn." 
+                    : "Educare Institute, 2nd Floor Castle Charis Complex, Kalathipady Jn."
+                )}
               </p>
             </div>
             <div className="flex items-center gap-2">

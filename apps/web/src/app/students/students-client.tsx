@@ -24,6 +24,8 @@ interface Student {
   track?: "TUITION" | "ENTRANCE" | "BOTH";
   password?: string;
   subjectIds?: string[];
+  bloodGroup?: string;
+  address?: string;
 }
 
 export function StudentsClient({ initialStudents }: { initialStudents: Student[] }) {
@@ -369,6 +371,8 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   const [parentName, setParentName] = useState(student?.parentName || "");
   const [parentEmail, setParentEmail] = useState(student?.parentEmail || "");
   const [parentPhone, setParentPhone] = useState(student?.parentPhone || "");
+  const [bloodGroup, setBloodGroup] = useState(student?.bloodGroup || "");
+  const [address, setAddress] = useState(student?.address || "");
   const [password, setPassword] = useState("");
 
   // Interactive state for hierarchy
@@ -662,6 +666,24 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <ChevronDown className="h-4 w-4 text-text-muted" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Blood Group</label>
+                  <div className="relative">
+                    <select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
+                      <option value="">--Select--</option>
+                      <option value="A+ve">A+ve</option>
+                      <option value="A-ve">A-ve</option>
+                      <option value="B+ve">B+ve</option>
+                      <option value="B-ve">B-ve</option>
+                      <option value="AB+ve">AB+ve</option>
+                      <option value="AB-ve">AB-ve</option>
+                      <option value="O+ve">O+ve</option>
+                      <option value="O-ve">O-ve</option>
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                      <ChevronDown className="h-4 w-4 text-text-muted" />
                     </div>
                   </div>
                 </div>
@@ -675,7 +697,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Residential Address</label>
-                  <textarea rows={3} placeholder="Full address..." className="w-full rounded-lg border border-border-soft bg-surface-2 p-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none" />
+                  <textarea rows={3} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Full address..." className="w-full rounded-lg border border-border-soft bg-surface-2 p-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Selected Subjects (Optional)</label>
@@ -821,6 +843,8 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     track: targetTrack,
                     password: password || undefined,
                     subjectIds: selectedSubjects,
+                    bloodGroup: bloodGroup || undefined,
+                    address: address || undefined,
                   };
                   onSave(newStudentData);
                 } else {

@@ -17,10 +17,11 @@ export default async function IdCardPage({ params }: { params: Promise<{ id: str
       classLevel: batch?.standard?.name || 'N/A',
       division: batch?.name || 'N/A',
       centre: batch?.centre?.name || 'N/A',
-      bloodGroup: "O+ve", // Static for now, can be added to db later
+      bloodGroup: student.bloodGroup || "O+ve",
       phone: student.parentPhone || '',
       photo: user.avatar || null,
-      course: "Student" // default course or mapped from subject
+      course: "Student",
+      address: student.address || ''
     };
 
     return <IdCardClient student={mappedStudent} />;

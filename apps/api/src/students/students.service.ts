@@ -71,6 +71,8 @@ export class StudentsService {
             parentName: data.parentName,
             parentEmail: data.parentEmail,
             parentPhone: data.parentPhone,
+            bloodGroup: data.bloodGroup,
+            address: data.address,
           }
         });
 
@@ -218,6 +220,8 @@ export class StudentsService {
           parentName: data.parentName || undefined,
           parentEmail: data.parentEmail || undefined,
           parentPhone: data.parentPhone || undefined,
+          bloodGroup: data.bloodGroup || undefined,
+          address: data.address || undefined,
         }
       });
 
