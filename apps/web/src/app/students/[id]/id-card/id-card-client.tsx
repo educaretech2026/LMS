@@ -65,42 +65,46 @@ export function IdCardClient({ student }: IdCardProps) {
         {/* ==================== FRONT OF CARD ==================== */}
         <div className="relative bg-white w-[320px] h-[508px] rounded-xl overflow-hidden shadow-2xl shadow-brand-blue/10 print:shadow-none print:border-slate-300 flex flex-col isolate border border-slate-200/50">
           
-          {/* Creative Background Elements (Front) - Modern Geometric Split */}
+          {/* Creative Background Elements (Front) - Modern Geometric Split with Textures */}
           <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden bg-[#fafcff]">
+            {/* SVG Noise Texture for tactile feel */}
+            <div className="absolute inset-0 opacity-[0.35] mix-blend-multiply" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
+            
             {/* Top geometric angle */}
             <div className="absolute top-0 left-0 w-full h-[180px] bg-gradient-to-br from-[#014d8a] to-brand-blue" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 65%, 0 100%)' }}></div>
             {/* Secondary angle overlapping */}
             <div className="absolute top-0 left-0 w-full h-[190px] bg-brand-blue/30" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 75%, 0 100%)', zIndex: -1 }}></div>
             
             {/* Wireframe globe / concentric circles pattern in the bottom right */}
-            <div className="absolute -bottom-20 -right-20 w-64 h-64 rounded-full border-[1px] border-brand-blue/5"></div>
-            <div className="absolute -bottom-10 -right-10 w-48 h-48 rounded-full border-[1px] border-brand-blue/10"></div>
-            <div className="absolute bottom-0 right-0 w-32 h-32 rounded-full border-[1px] border-brand-blue/15"></div>
+            <div className="absolute -bottom-20 -right-20 w-64 h-64 rounded-full border-[1px] border-brand-blue/10"></div>
+            <div className="absolute -bottom-10 -right-10 w-48 h-48 rounded-full border-[1px] border-brand-blue/15"></div>
+            <div className="absolute bottom-0 right-0 w-32 h-32 rounded-full border-[1px] border-brand-blue/20"></div>
             
-            {/* Subtle tech grid over the white area */}
-            <div className="absolute inset-0 opacity-[0.03] mt-[190px]" style={{ backgroundImage: 'linear-gradient(to right, #0162b1 1px, transparent 1px), linear-gradient(to bottom, #0162b1 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+            {/* Subtle tech grid over the white area - diagonal hatching */}
+            <div className="absolute inset-0 opacity-[0.04] mt-[190px]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
           </div>
 
-          {/* Header */}
+          {/* Header - Fixed logo to width 400 internally without breaking container */}
           <div className="px-4 pt-5 pb-4 flex flex-col items-center relative z-10">
-            <div className="h-10 relative w-[140px] mb-1 bg-white p-1.5 rounded-lg shadow-md border border-white/20">
+            <div className="relative mb-1 bg-white p-2 rounded-lg shadow-md border border-white/20 flex justify-center w-full max-w-[280px]">
               <Image 
                 src={logoImage} 
                 alt="Logo" 
-                fill 
-                className="object-contain" 
+                width={400}
+                height={120}
+                className="object-contain w-full h-auto" 
                 priority
               />
             </div>
-            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-2 drop-shadow-md">
+            <h2 className="text-[9px] font-bold text-white/95 tracking-[0.25em] uppercase mt-1 drop-shadow-md">
               Student Identification
             </h2>
           </div>
 
-          <div className="flex flex-col items-center px-6 pt-6 pb-4 flex-1 relative z-10">
+          <div className="flex flex-col items-center px-6 pt-3 pb-4 flex-1 relative z-10">
             
             {/* Photo Section */}
-            <div className="relative mb-5 group">
+            <div className="relative mb-5 group mt-2">
               {/* Modern photo frame with offset borders */}
               <div className="absolute -inset-1.5 bg-gradient-to-b from-brand-blue/10 to-transparent rounded-lg transform rotate-3 transition-transform group-hover:rotate-6"></div>
               <div className="absolute -inset-1.5 bg-gradient-to-t from-sky-400/20 to-transparent rounded-lg transform -rotate-2 transition-transform group-hover:-rotate-4"></div>
@@ -162,7 +166,7 @@ export function IdCardClient({ student }: IdCardProps) {
           </div>
           
           {/* Bottom Thick Tech Bar */}
-          <div className="h-2 w-full flex relative z-10">
+          <div className="h-2 w-full flex relative z-10 mt-auto">
              <div className="h-full w-1/3 bg-[#014d8a]"></div>
              <div className="h-full w-1/3 bg-brand-blue"></div>
              <div className="h-full w-1/3 bg-sky-400"></div>
@@ -174,8 +178,11 @@ export function IdCardClient({ student }: IdCardProps) {
           
           {/* Creative Background Elements (Back) */}
           <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden bg-[#fafcff]">
-             {/* Tech grid on back */}
-             <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(to right, #0162b1 1px, transparent 1px), linear-gradient(to bottom, #0162b1 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+             {/* SVG Noise Texture for tactile feel */}
+             <div className="absolute inset-0 opacity-[0.35] mix-blend-multiply" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
+             
+             {/* Diagonal hatching on back */}
+             <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #0162b1 0, #0162b1 1px, transparent 0, transparent 50%)', backgroundSize: '8px 8px' }}></div>
              
              {/* Abstract bottom geometric shape */}
              <div className="absolute bottom-0 right-0 w-full h-[150px] bg-brand-blue/5" style={{ clipPath: 'polygon(0 100%, 100% 0, 100% 100%)' }}></div>
@@ -184,13 +191,15 @@ export function IdCardClient({ student }: IdCardProps) {
 
           <div className="flex flex-col h-full p-6 relative z-10">
             
-            <div className="mb-5 flex justify-center border-b border-brand-blue/10 pb-4 relative">
-              <div className="h-8 relative w-[120px]">
+            {/* Header - Fixed logo size internally */}
+            <div className="mb-5 flex justify-center border-b border-brand-blue/10 pb-4 relative w-full">
+              <div className="relative flex justify-center w-full max-w-[240px]">
                 <Image 
                   src={logoImage} 
                   alt="Logo" 
-                  fill 
-                  className="object-contain opacity-80" 
+                  width={400}
+                  height={120}
+                  className="object-contain opacity-90 grayscale w-full h-auto" 
                 />
               </div>
             </div>
@@ -247,7 +256,7 @@ export function IdCardClient({ student }: IdCardProps) {
               )}
             </div>
 
-            <div className="mt-6 flex justify-between items-end bg-white p-3 rounded border-l-2 border-brand-blue shadow-[0_2px_8px_rgba(0,0,0,0.04)] relative">
+            <div className="mt-6 flex justify-between items-end bg-white/90 backdrop-blur-sm p-3 rounded border-l-2 border-brand-blue shadow-[0_2px_8px_rgba(0,0,0,0.04)] relative">
               <div className="relative z-10">
                 <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider mb-1">Valid Until</p>
                 <p className="text-[10px] text-slate-900 font-bold">
