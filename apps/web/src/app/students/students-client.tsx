@@ -655,8 +655,14 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                   <input type="text" placeholder="e.g. Kumar" value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Date of Birth</label>
-                  <input type="date" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Date of Birth <span className="text-red-500">*</span></label>
+                  <input
+                    type="date"
+                    required
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Gender</label>
@@ -670,16 +676,6 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                       <ChevronDown className="h-4 w-4 text-text-muted" />
                     </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Date of Birth <span className="text-red-500">*</span></label>
-                  <input
-                    type="date"
-                    required
-                    value={dateOfBirth}
-                    onChange={(e) => setDateOfBirth(e.target.value)}
-                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Blood Group</label>
