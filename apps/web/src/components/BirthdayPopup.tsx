@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Gift, X } from "lucide-react";
-import { fetchApi } from "@/lib/api-client"; // Assuming fetchApi exists
+import { fetchApi } from "@/lib/api";
 
 export function BirthdayPopup() {
   const [birthdays, setBirthdays] = useState<any[]>([]);
