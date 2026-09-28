@@ -72,6 +72,7 @@ export class StudentsService {
             parentEmail: data.parentEmail,
             parentPhone: data.parentPhone,
             bloodGroup: data.bloodGroup,
+            dateOfBirth: new Date(data.dateOfBirth),
             address: data.address,
           }
         });
@@ -264,5 +265,21 @@ export class StudentsService {
     });
     return { success: true };
   }
-
+  async getTodayBirthdays() {
+    const today = new Date();
+    const month = today.getMonth() + 1;
+    const day = today.getDate();
+    
+    // Using raw query for PostgreSQL date extraction
+    return this.prisma.$queryRaw`
+      SELECT u."firstName", u."lastName", p."admissionNo", s."name" as "classLevel"
+      FROM "student_profiles" p
+      JOIN "User" u ON u.id = p."userId"
+      JOIN "Enrollment" e ON e."studentProfileId" = p.id
+      JOIN "batches" b ON b.id = e."batchId"
+      JOIN "standards" s ON s.id = b."standardId"
+      WHERE EXTRACT(MONTH FROM p."dateOfBirth") = ${month}
+      AND EXTRACT(DAY FROM p."dateOfBirth") = ${day}
+    `;
+  }
 }

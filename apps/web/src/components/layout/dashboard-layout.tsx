@@ -14,6 +14,8 @@ import {
   CreditCard,
 } from "lucide-react";
 
+import { BirthdayPopup } from "@/components/BirthdayPopup";
+
 export function DashboardLayout({ children, title, role: propRole }: { children: React.ReactNode; title?: string; role?: string }) {
   const { role: authRole } = useAuth();
   const activeRole = propRole || authRole;
@@ -32,6 +34,7 @@ export function DashboardLayout({ children, title, role: propRole }: { children:
           {children}
         </main>
       </div>
+      <BirthdayPopup />
     </div>
   );
 }

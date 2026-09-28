@@ -10,6 +10,11 @@ export class StudentsController {
     return this.studentsService.createStudent(data);
   }
 
+  @Get('birthdays/today')
+  getTodayBirthdays() {
+    return this.studentsService.getTodayBirthdays();
+  }
+
   @Get()
   getStudents() {
     return this.studentsService.getStudents();

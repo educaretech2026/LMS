@@ -372,6 +372,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   const [parentEmail, setParentEmail] = useState(student?.parentEmail || "");
   const [parentPhone, setParentPhone] = useState(student?.parentPhone || "");
   const [bloodGroup, setBloodGroup] = useState(student?.bloodGroup || "");
+  const [dateOfBirth, setDateOfBirth] = useState(student?.dateOfBirth ? new Date(student.dateOfBirth).toISOString().split('T')[0] : "");
   const [address, setAddress] = useState(student?.address || "");
   const [password, setPassword] = useState("");
 
@@ -670,6 +671,16 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                   </div>
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Date of Birth <span className="text-red-500">*</span></label>
+                  <input
+                    type="date"
+                    required
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Blood Group</label>
                   <div className="relative">
                     <select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
@@ -845,6 +856,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     password: password || undefined,
                     subjectIds: selectedSubjects,
                     bloodGroup: bloodGroup || undefined,
+                    dateOfBirth: dateOfBirth || undefined,
                     address: address || undefined,
                   };
                   onSave(newStudentData);

@@ -7,7 +7,8 @@ export default function proxy(request: NextRequest) {
   // Public routes that don't require authentication
   const isPublicRoute = 
     request.nextUrl.pathname === '/login' || 
-    request.nextUrl.pathname === '/signup';
+    request.nextUrl.pathname === '/signup' ||
+    request.nextUrl.pathname.startsWith('/public');
 
   if (!token && !isPublicRoute) {
     // Redirect unauthenticated users to the login page
