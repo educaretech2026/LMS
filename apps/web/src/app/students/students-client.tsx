@@ -25,6 +25,7 @@ interface Student {
   password?: string;
   subjectIds?: string[];
   bloodGroup?: string;
+  dateOfBirth?: string;
   address?: string;
 }
 
