@@ -72,7 +72,7 @@ export class StudentsService {
             parentEmail: data.parentEmail,
             parentPhone: data.parentPhone,
             bloodGroup: data.bloodGroup,
-            dateOfBirth: new Date(data.dateOfBirth),
+            dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
             address: data.address,
           }
         });
