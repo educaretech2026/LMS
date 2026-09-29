@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { BookOpen, Plus, Search, Filter, ChevronRight, ChevronDown, FileText, Video, Link as LinkIcon, Download, X, Play, ExternalLink, Loader2, GraduationCap, LayoutList } from "lucide-react";
+import { BookOpen, Plus, Search, Filter, ChevronRight, ChevronDown, FileText, Video, Link as LinkIcon, Download, X, Play, ExternalLink, Loader2, GraduationCap, LayoutList, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { FileUploader } from "@/components/upload/file-uploader";
 import { fetchApi } from "@/lib/api";
@@ -60,6 +60,17 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
     fetchApi('/setup/subjects').then((data: any) => setSubjectsList(data)).catch(console.error);
     fetchApi('/study-materials').then((data: any) => setMaterials(data)).catch(console.error);
   }, [isStudent]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this material?")) return;
+    try {
+      await fetchApi(`/study-materials/${id}`, { method: 'DELETE' });
+      setMaterials(prev => prev.filter(m => m.id !== id));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete material.");
+    }
+  };
 
 
 
@@ -271,14 +282,25 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
                               <p className="text-xs font-medium text-text-primary" suppressHydrationWarning>{new Date(m.createdAt).toLocaleDateString()}</p>
                             </td>
                             <td className="px-6 py-4 text-right">
-                              <button
-                                onClick={() => {
-                                  if (!m.url) return;
-                                  window.open(m.url, '_blank');
-                                }}
-                                className="inline-flex items-center gap-1.5 text-brand-blue hover:text-brand-blue-dark text-xs font-bold transition-colors">
-                                {m.type === "VIDEO" ? <><Play className="h-3.5 w-3.5" /> Play</> : m.type === "LINK" ? <><ExternalLink className="h-3.5 w-3.5" /> Open</> : <><Download className="h-3.5 w-3.5" /> Download</>}
-                              </button>
+                              <div className="flex items-center justify-end gap-3">
+                                <button
+                                  onClick={() => {
+                                    if (!m.url) return;
+                                    window.open(m.url, '_blank');
+                                  }}
+                                  className="inline-flex items-center gap-1.5 text-brand-blue hover:text-brand-blue-dark text-xs font-bold transition-colors">
+                                  {m.type === "VIDEO" ? <><Play className="h-3.5 w-3.5" /> Play</> : m.type === "LINK" ? <><ExternalLink className="h-3.5 w-3.5" /> Open</> : <><Download className="h-3.5 w-3.5" /> Download</>}
+                                </button>
+                                {!isStudent && (
+                                  <button
+                                    onClick={() => handleDelete(m.id)}
+                                    className="p-1.5 text-text-muted hover:text-brand-red hover:bg-brand-red/10 rounded-lg transition-colors"
+                                    title="Delete material"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))
