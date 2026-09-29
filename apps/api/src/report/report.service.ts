@@ -165,17 +165,22 @@ export class ReportService {
     const incomeTx = await this.prisma.transaction.findMany({
       where: { type: TransactionType.INCOME }
     });
-    const totalIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
+    const transactionIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
 
     const expenseTx = await this.prisma.transaction.findMany({
       where: { type: TransactionType.EXPENSE }
     });
     const totalExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
 
-    // Dummy values for now for fees and refund
+    // Calculate Fees
+    const feeRecords = await this.prisma.feeRecord.findMany();
+    const paidFees = feeRecords.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
+    const totalFeeDue = feeRecords.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
+    const feeOverdue = feeRecords.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
+    
+    const totalIncome = transactionIncome + paidFees;
+
     const totalRefund = 0;
-    const totalFeeDue = 0;
-    const feeOverdue = 0;
     const upcomingFeeDue = 0;
     const pendingFees = 0;
 
