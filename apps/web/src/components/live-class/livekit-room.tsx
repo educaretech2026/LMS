@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   LiveKitRoom,
   VideoConference,
@@ -15,9 +15,10 @@ import {
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import { fetchApi } from "@/lib/api";
-import { Loader2, WifiOff } from "lucide-react";
-import { Tldraw } from 'tldraw'
-import 'tldraw/tldraw.css'
+import { Loader2, WifiOff, FileDown, Upload, MicOff, StopCircle, Video, Play, Maximize, FileText, MonitorUp } from "lucide-react";
+import { Tldraw } from 'tldraw';
+import 'tldraw/tldraw.css';
+import { RoomEvent } from "livekit-client";
 
 interface LiveKitRoomProps {
   roomId: string;
@@ -77,6 +78,45 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
     );
   }
 
+  const [sharedFiles, setSharedFiles] = useState<{name: string, url: string}[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      recorder.ondataavailable = e => chunksRef.current.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `class-recording-${new Date().toISOString().split('T')[0]}.webm`;
+        a.click();
+        chunksRef.current = [];
+        setIsRecording(false);
+      };
+      // If user stops sharing screen natively
+      stream.getVideoTracks()[0].onended = () => {
+        recorder.stop();
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+    } catch (e) {
+      console.error("Recording failed to start", e);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+    }
+  };
+
   return (
     <LiveKitRoom
       token={tokenData.token}
@@ -85,31 +125,156 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       video={role !== "STUDENT"}
       audio={role !== "STUDENT"}
       onDisconnected={onLeave}
-      className="h-full w-full relative flex"
+      className="h-full w-full relative flex flex-col sm:flex-row"
       style={{ "--lk-bg": "#0f0f1a" } as React.CSSProperties}
     >
-      <div className={`flex-1 transition-all ${showWhiteboard ? 'w-1/3 border-r border-white/10' : 'w-full'}`}>
+      <ClassroomLogic setSharedFiles={setSharedFiles} />
+      
+      <div className={`flex-1 transition-all flex flex-col ${showWhiteboard ? 'w-full sm:w-1/3 border-r border-white/10' : 'w-full'}`}>
         <VideoConference />
         <RoomAudioRenderer />
+        
+        {/* Shared Files Banner */}
+        {sharedFiles.length > 0 && (
+          <div className="absolute top-4 left-4 z-50 flex flex-col gap-2 max-w-xs">
+            {sharedFiles.map((file, i) => (
+              <div key={i} className="bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl flex items-center justify-between gap-4 shadow-xl">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <FileText className="h-4 w-4 text-brand-blue shrink-0" />
+                  <p className="text-white text-xs truncate font-medium">{file.name}</p>
+                </div>
+                <a href={file.url} download target="_blank" rel="noreferrer" className="shrink-0 h-7 w-7 rounded-full bg-brand-blue flex items-center justify-center hover:bg-brand-blue-dark transition-colors">
+                  <FileDown className="h-3.5 w-3.5 text-white" />
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       
       {showWhiteboard && (
-        <div className="w-2/3 h-full bg-white relative">
+        <div className="w-full sm:w-2/3 h-[50vh] sm:h-full bg-white relative">
           <Tldraw persistenceKey={`educare-whiteboard-${roomId}`} />
         </div>
       )}
 
       {/* Custom Control overlay for Teacher */}
       {role !== 'STUDENT' && (
-        <div className="absolute top-4 right-4 z-50">
-          <button 
-            onClick={() => setShowWhiteboard(!showWhiteboard)}
-            className={`px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition-colors ${showWhiteboard ? 'bg-brand-red text-white hover:bg-brand-red/90' : 'bg-brand-blue text-white hover:bg-brand-blue/90'}`}
-          >
-            {showWhiteboard ? 'Close Whiteboard' : 'Open Whiteboard'}
-          </button>
-        </div>
+        <TeacherControls 
+          showWhiteboard={showWhiteboard} 
+          setShowWhiteboard={setShowWhiteboard} 
+          isRecording={isRecording}
+          startRecording={startRecording}
+          stopRecording={stopRecording}
+        />
       )}
     </LiveKitRoom>
+  );
+}
+
+// Logic component that uses Room context
+function ClassroomLogic({ setSharedFiles }: { setSharedFiles: React.Dispatch<React.SetStateAction<any[]>> }) {
+  const room = useRoomContext();
+  
+  useEffect(() => {
+    if (!room) return;
+    
+    const handleData = (payload: Uint8Array, participant?: any) => {
+      try {
+        const data = JSON.parse(new TextDecoder().decode(payload));
+        if (data.type === "MUTE_ALL") {
+          room.localParticipant.setMicrophoneEnabled(false);
+        } else if (data.type === "MUTE_STUDENT" && data.targetId === room.localParticipant.identity) {
+          room.localParticipant.setMicrophoneEnabled(false);
+        } else if (data.type === "FILE_SHARED") {
+          setSharedFiles(prev => [...prev, { name: data.name, url: data.url }]);
+        }
+      } catch (e) {
+        console.error("Failed to parse data message", e);
+      }
+    };
+    
+    room.on(RoomEvent.DataReceived, handleData);
+    return () => {
+      room.off(RoomEvent.DataReceived, handleData);
+    };
+  }, [room, setSharedFiles]);
+
+  return null;
+}
+
+function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, startRecording, stopRecording }: any) {
+  const room = useRoomContext();
+  const [uploading, setUploading] = useState(false);
+  
+  const muteAll = () => {
+    if (!room) return;
+    const payload = JSON.stringify({ type: "MUTE_ALL" });
+    room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !room) return;
+    
+    setUploading(true);
+    try {
+      // 1. Get presigned url
+      const res = await fetch(`/api/study-materials/upload-url?type=FILE&filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const { uploadUrl, finalUrl } = await res.json();
+      
+      // 2. Upload to R2
+      await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type }
+      });
+      
+      // 3. Broadcast to room
+      const payload = JSON.stringify({ type: "FILE_SHARED", name: file.name, url: finalUrl });
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+      
+    } catch (err) {
+      console.error("File upload failed", err);
+      alert("Failed to share file.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="absolute top-4 right-4 z-[60] flex flex-col gap-2">
+      <button 
+        onClick={() => setShowWhiteboard(!showWhiteboard)}
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${showWhiteboard ? 'bg-brand-red text-white hover:bg-brand-red/90' : 'bg-white text-gray-800 hover:bg-gray-50'}`}
+      >
+        <MonitorUp className="h-4 w-4" />
+        {showWhiteboard ? 'Close Board' : 'Whiteboard'}
+      </button>
+
+      <button 
+        onClick={muteAll}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg bg-gray-800 text-white hover:bg-gray-700 transition-all border border-gray-700"
+      >
+        <MicOff className="h-4 w-4 text-brand-red" />
+        Mute All
+      </button>
+
+      <button 
+        onClick={isRecording ? stopRecording : startRecording}
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${isRecording ? 'bg-white text-brand-red hover:bg-red-50' : 'bg-brand-red text-white hover:bg-brand-red/90'}`}
+      >
+        {isRecording ? <StopCircle className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+        {isRecording ? 'Stop Recording' : 'Record Class'}
+      </button>
+
+      <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg bg-brand-blue text-white hover:bg-brand-blue/90 transition-all cursor-pointer">
+        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+        {uploading ? 'Uploading...' : 'Share File'}
+        <input type="file" className="hidden" onChange={handleFileUpload} />
+      </label>
+    </div>
   );
 }
