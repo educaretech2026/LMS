@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   BookOpen, ChevronDown, ChevronRight, Video, FileText, Link as LinkIcon,
   Download, Play, ExternalLink, BookMarked, Brain, ClipboardList, Loader2,
-  GraduationCap, AlertCircle, X, Star, Zap, BarChart2
+  GraduationCap, AlertCircle, X, Star, Zap, BarChart2, Trash2
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
+import { useAuth } from "@/components/providers/auth-provider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -98,10 +99,25 @@ function ContentDrawer({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { role } = useAuth();
+  
+  const [localMaterials, setLocalMaterials] = useState(materials);
+  
   const isExamType = contentType.key === "MCQ_EXAM" || contentType.key === "MOCK_TEST";
   const items = isExamType
     ? exams.filter(e => e.type === contentType.key)
-    : materials.filter(m => m.type === contentType.key);
+    : localMaterials.filter(m => m.type === contentType.key);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this material?")) return;
+    try {
+      await fetchApi(`/study-materials/${id}`, { method: 'DELETE' });
+      setLocalMaterials(prev => prev.filter(m => m.id !== id));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete material.");
+    }
+  };
 
   const handleOpen = (item: TopicMaterial | TopicExam) => {
     if (isExamType) {
@@ -175,15 +191,26 @@ function ContentDrawer({
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleOpen(item)}
-                    className={`ml-3 shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${contentType.color} hover:opacity-80`}
-                  >
-                    {isExam ? <><Zap className="h-3 w-3" /> Start</> :
-                     mat.type === "VIDEO" ? <><Play className="h-3 w-3" /> Play</> :
-                     mat.type === "LINK" ? <><ExternalLink className="h-3 w-3" /> Open</> :
-                     <><Download className="h-3 w-3" /> Download</>}
-                  </button>
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => handleOpen(item)}
+                      className={`ml-3 shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${contentType.color} hover:opacity-80`}
+                    >
+                      {isExam ? <><Zap className="h-3 w-3" /> Start</> :
+                       mat.type === "VIDEO" ? <><Play className="h-3 w-3" /> Play</> :
+                       mat.type === "LINK" ? <><ExternalLink className="h-3 w-3" /> Open</> :
+                       <><Download className="h-3 w-3" /> Download</>}
+                    </button>
+                    {!isExam && role !== 'STUDENT' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
+                        className="ml-2 shrink-0 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete material"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })
