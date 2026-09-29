@@ -15,7 +15,23 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-export function AdminDashboard({ user }: { user: any }) {
+export function AdminDashboard({ user, statsData }: { user: any, statsData?: any }) {
+  const ds = statsData || {};
+
+  const stats = [
+    { title: "Total Students",     value: String(ds.totalStudents || 0),        icon: Users,        accent: "blue" as const },
+    { title: "Today Inquiry",      value: String(ds.todayInquiry || 0),         icon: FileText,     accent: "blue" as const },
+    { title: "Today Absent",       value: String(ds.todayAbsent || 0),          icon: UserX,        accent: "red" as const },
+    { title: "Today Income",       value: `₹${ds.todayIncome || 0}`,            icon: TrendingUp,   accent: "green" as const },
+    { title: "Today Expense",      value: `₹${ds.todayExpense || 0}`,           icon: TrendingDown, accent: "red" as const },
+    { title: "Today Refund",       value: `₹${ds.todayRefund || 0}`,            icon: RefreshCcw,   accent: "orange" as const },
+    { title: "Today Fee Due",      value: `₹${ds.todayFeeDue || 0}`,            icon: AlertCircle,  accent: "orange" as const },
+    { title: "Fee Overdue",        value: `₹${ds.feeOverdue || 0}`,             icon: AlertCircle,  accent: "red" as const },
+    { title: "Upcoming Fee Due",   value: `₹${ds.upcomingFeeDue || 0}`,         icon: Clock,        accent: "blue" as const },
+    { title: "Pending Fees",       value: `₹${ds.pendingFees || 0}`,            icon: FileText,     accent: "red" as const },
+    { title: "eStudy Materials",   value: String(ds.eStudyMaterials || 0),      icon: BookOpen,     accent: "blue" as const },
+    { title: "SMS Balance",        value: String(ds.smsBalance || 0),           icon: MessageSquare,accent: "green" as const },
+  ];
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
       {/* ── Banner ── */}
@@ -57,7 +73,7 @@ export function AdminDashboard({ user }: { user: any }) {
         <InfoPill
           icon={<MessageSquare className="h-3.5 w-3.5" />}
           label="SMS Balance"
-          value="1,000"
+          value={String(ds.smsBalance || 1000)}
           color="green"
         />
       </div>
@@ -82,21 +98,6 @@ export function AdminDashboard({ user }: { user: any }) {
   );
 }
 
-/* ── Data ── */
-const stats = [
-  { title: "Total Students",     value: "0",        icon: Users,        accent: "blue"   },
-  { title: "Today Inquiry",      value: "0",        icon: FileText,     accent: "blue"   },
-  { title: "Today Absent",       value: "0",        icon: UserX,        accent: "red"    },
-  { title: "Today Income",       value: "₹0",       icon: TrendingUp,   accent: "green"  },
-  { title: "Today Expense",      value: "₹0",       icon: TrendingDown, accent: "red"    },
-  { title: "Today Refund",       value: "₹0",       icon: RefreshCcw,   accent: "orange" },
-  { title: "Today Fee Due",      value: "₹0",       icon: AlertCircle,  accent: "orange" },
-  { title: "Fee Overdue",        value: "₹0",       icon: AlertCircle,  accent: "red"    },
-  { title: "Upcoming Fee Due",   value: "₹0",       icon: Clock,        accent: "blue"   },
-  { title: "Pending Fees",       value: "₹0",       icon: FileText,     accent: "red"    },
-  { title: "eStudy Materials",   value: "0",        icon: BookOpen,     accent: "blue"   },
-  { title: "SMS Balance",        value: "0",        icon: MessageSquare,accent: "green"  },
-];
 
 type Accent = "blue" | "red" | "green" | "orange";
 
