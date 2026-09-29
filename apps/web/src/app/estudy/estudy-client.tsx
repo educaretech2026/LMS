@@ -52,7 +52,6 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
   const [filterTrack, setFilterTrack] = useState("All Tracks");
   const [sortBy, setSortBy] = useState("Date Added (Newest First)");
   const [showModal, setShowModal] = useState(false);
-  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (isStudent) return; // Students don't need the flat list data
@@ -326,11 +325,12 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
 
 function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<"PDF" | "VIDEO" | "DOCUMENT" | "LINK">("PDF");
+  const [type, setType] = useState<"PDF" | "VIDEO" | "DOCUMENT" | "LINK" | "YOUTUBE_VIDEO">("PDF");
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
 
   // Hierarchy State
   const [boards, setBoards] = useState<any[]>([]);
