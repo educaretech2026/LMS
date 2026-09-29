@@ -404,8 +404,8 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
       }
     }
 
-    const finalType = overrideType || (type === "YOUTUBE_VIDEO" ? "VIDEO" : (type === "VIDEO" ? "VIDEO" : type));
-    const finalUrl = (type === "VIDEO" && !overrideType) ? videoId : url;
+    const finalType = overrideType || (type === "YOUTUBE_VIDEO" ? "VIDEO" : type);
+    const finalUrl = url;
     try {
       await fetchApi('/study-materials', {
         method: 'POST',

@@ -44,7 +44,21 @@ export class StudyMaterialService {
       }
       
       if (syllabusId === "dummy-syllabus-id" || !syllabusId) {
-        let syllabus = await this.prisma.syllabus.findFirst();
+        let syllabus = null;
+        if (data.boardId && data.standardId && data.subjectId) {
+          syllabus = await this.prisma.syllabus.findFirst({
+            where: {
+              boardId: data.boardId,
+              standardId: data.standardId,
+              subjectId: data.subjectId,
+            }
+          });
+        }
+        
+        if (!syllabus) {
+          syllabus = await this.prisma.syllabus.findFirst();
+        }
+        
         if (!syllabus) {
            // create a dummy board, standard, subject, and syllabus if none exist
            const board = await this.prisma.board.findFirst() || await this.prisma.board.create({ data: { name: 'Dummy Board' } });
