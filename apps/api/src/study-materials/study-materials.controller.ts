@@ -33,7 +33,16 @@ export class StudyMaterialController {
 
 
   @Delete(':id')
-  delete(@Param('id') id: string) {
+  async delete(@Param('id') id: string) {
+    const material = await this.studyMaterialService.getById(id);
+    if (material) {
+      if (material.url && !material.url.includes('youtube.com')) {
+        await this.storageService.deleteFile(material.url);
+      }
+      if (material.thumbnailUrl) {
+        await this.storageService.deleteFile(material.thumbnailUrl);
+      }
+    }
     return this.studyMaterialService.delete(id);
   }
 

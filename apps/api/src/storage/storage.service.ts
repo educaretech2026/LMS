@@ -1,5 +1,5 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
@@ -87,6 +87,35 @@ export class StorageService {
     } catch (error: any) {
       console.error('Error generating pre-signed GET URL:', error);
       throw new HttpException('Failed to generate download URL', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Deletes a file from R2.
+   * @param objectKey The key of the object in R2
+   */
+  async deleteFile(objectKey: string) {
+    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+      return; // Skip if storage not configured
+    }
+
+    try {
+      // If it's a full URL, extract the object key
+      let key = objectKey;
+      if (key && key.startsWith('http')) {
+        const parts = key.split('/');
+        key = parts.slice(3).join('/');
+      }
+
+      const command = new DeleteObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      await this.s3Client.send(command);
+    } catch (error: any) {
+      console.error('Error deleting file from R2:', error);
+      // We don't throw an error here to prevent blocking database deletion
     }
   }
 }
