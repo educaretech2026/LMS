@@ -376,15 +376,17 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
     }
   }, [selectedChapter]);
 
-  const handleUploadSuccess = async (url: string, videoId?: string) => {
+  const handleUploadSuccess = async (url: string, videoId?: string, overrideType?: string) => {
     setSaving(true);
+    const finalType = overrideType || (type === "YOUTUBE_VIDEO" ? "VIDEO" : (type === "VIDEO" ? "VIDEO" : type));
+    const finalUrl = (type === "VIDEO" && !overrideType) ? videoId : url;
     try {
       await fetchApi('/study-materials', {
         method: 'POST',
         body: JSON.stringify({
           title,
-          type: type === "VIDEO" ? "VIDEO" : type,
-          url: type === "VIDEO" ? videoId : url,
+          type: finalType,
+          url: finalUrl,
           boardId: selectedBoard || undefined,
           standardId: selectedStandard || undefined,
           subjectId: subject || undefined,
@@ -440,7 +442,8 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                     {[
                       { value: "PDF", label: "PDF Document" },
                       { value: "VIDEO", label: "Upload Video" },
-                      { value: "LINK", label: "YouTube Link" }
+                      { value: "YOUTUBE_VIDEO", label: "YouTube Class" },
+                      { value: "LINK", label: "Other Link" }
                     ].map(t => (
                       <label key={t.value} className={`flex items-center justify-center gap-2 rounded-lg border py-3 px-2 cursor-pointer transition-colors ${type === t.value ? 'border-brand-blue bg-brand-blue/5' : 'border-border-soft bg-surface-2'}`}>
                         <input type="radio" name="materialType" checked={type === t.value} onChange={() => setType(t.value as any)} className="hidden" />
@@ -540,18 +543,25 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                   <button onClick={() => setStep(1)} className="text-[10px] text-brand-blue font-bold hover:underline">Edit details</button>
                 </div>
                 
-                {type === 'LINK' ? (
+                {type === 'LINK' || type === 'YOUTUBE_VIDEO' ? (
                   <div className="space-y-4">
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5">YouTube URL *</label>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">{type === 'YOUTUBE_VIDEO' ? 'YouTube URL *' : 'Resource URL *'}</label>
                     <input
                       type="url"
-                      placeholder="https://youtube.com/watch?v=..."
+                      placeholder="https://..."
                       className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                     />
                     <button
-                      onClick={() => handleUploadSuccess(url)}
+                      onClick={() => {
+                        // Map YOUTUBE_VIDEO to VIDEO for the backend
+                        if (type === 'YOUTUBE_VIDEO') {
+                          handleUploadSuccess(url, undefined, "VIDEO");
+                        } else {
+                          handleUploadSuccess(url, undefined, "LINK");
+                        }
+                      }}
                       className="w-full py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg transition-colors"
                       disabled={saving || !url}
                     >

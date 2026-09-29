@@ -165,14 +165,14 @@ function ContentDrawer({
               const isExam = isExamType;
               const exam = item as TopicExam;
               const mat = item as TopicMaterial;
-              const ytId = !isExam && mat.type === 'LINK' && mat.url ? getYouTubeId(mat.url) : null;
+              const ytId = !isExam && (mat.type === 'LINK' || mat.type === 'VIDEO') && mat.url ? getYouTubeId(mat.url) : null;
               
               return (
                 <div key={item.id} className="px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     {ytId ? (
                       <div className="h-9 w-16 shrink-0 rounded overflow-hidden relative bg-black flex items-center justify-center">
-                        <img src={`https://img.youtube.com/vi/${ytId}/default.jpg`} className="object-cover w-full h-full opacity-80" alt="Thumbnail" />
+                        <img src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} className="object-cover w-full h-full opacity-80" alt="Thumbnail" />
                         <Play className="h-4 w-4 text-white absolute" />
                       </div>
                     ) : (
