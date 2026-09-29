@@ -27,6 +27,12 @@ export class StudyMaterialService {
     }
   }
 
+  async getById(id: string) {
+    return this.prisma.studyMaterial.findUnique({
+      where: { id },
+    });
+  }
+
   async create(data: any) {
     try {
       let { academicYearId, syllabusId } = data;
