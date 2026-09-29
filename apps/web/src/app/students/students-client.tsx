@@ -28,6 +28,7 @@ interface Student {
   dateOfBirth?: string;
   status?: string;
   address?: string;
+  createdAt?: string;
 }
 
 export function StudentsClient({ initialStudents }: { initialStudents: Student[] }) {
@@ -229,6 +230,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Year & Board</th>
                     <th className="px-6 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Class & Div</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Centre</th>
+                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Reg Date</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-right"></th>
                   </tr>
@@ -282,6 +284,9 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                           </span>
                         </td>
                         <td className="px-4 py-4 text-xs font-medium text-text-secondary">{s.centre}</td>
+                        <td className="px-4 py-4 text-xs font-medium text-text-secondary">
+                          {s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-GB') : 'N/A'}
+                        </td>
                         <td className="px-4 py-4">
                           <button
                             onClick={async () => {

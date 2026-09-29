@@ -26,6 +26,7 @@ interface Staff {
     subject: string;
   }[];
   password?: string;
+  createdAt?: string;
 }
 
 export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] }) {
@@ -192,6 +193,7 @@ export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] })
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Role</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Assignments</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Centre</th>
+                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Reg Date</th>
                     <th className="px-6 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-right"></th>
                   </tr>
@@ -244,6 +246,9 @@ export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] })
                           </div>
                         </td>
                         <td className="px-4 py-4 text-xs font-medium text-text-secondary">{s.centre}</td>
+                        <td className="px-4 py-4 text-xs font-medium text-text-secondary">
+                          {s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-GB') : 'N/A'}
+                        </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${
                             s.status === "Active" ? "bg-success/10 border-success/20 text-success" : "bg-surface-2 border-border-soft text-text-muted"

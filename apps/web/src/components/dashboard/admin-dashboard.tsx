@@ -20,12 +20,12 @@ export function AdminDashboard({ user, statsData }: { user: any, statsData?: any
 
   const stats = [
     { title: "Total Students",     value: String(ds.totalStudents || 0),        icon: Users,        accent: "blue" as const },
-    { title: "Today Inquiry",      value: String(ds.todayInquiry || 0),         icon: FileText,     accent: "blue" as const },
-    { title: "Today Absent",       value: String(ds.todayAbsent || 0),          icon: UserX,        accent: "red" as const },
-    { title: "Today Income",       value: `₹${ds.todayIncome || 0}`,            icon: TrendingUp,   accent: "green" as const },
-    { title: "Today Expense",      value: `₹${ds.todayExpense || 0}`,           icon: TrendingDown, accent: "red" as const },
-    { title: "Today Refund",       value: `₹${ds.todayRefund || 0}`,            icon: RefreshCcw,   accent: "orange" as const },
-    { title: "Today Fee Due",      value: `₹${ds.todayFeeDue || 0}`,            icon: AlertCircle,  accent: "orange" as const },
+    { title: "Total Inquiry",      value: String(ds.totalInquiry || 0),         icon: FileText,     accent: "blue" as const },
+    { title: "Total Absent",       value: String(ds.totalAbsent || 0),          icon: UserX,        accent: "red" as const },
+    { title: "Total Income",       value: `₹${ds.totalIncome || 0}`,            icon: TrendingUp,   accent: "green" as const },
+    { title: "Total Expense",      value: `₹${ds.totalExpense || 0}`,           icon: TrendingDown, accent: "red" as const },
+    { title: "Total Refund",       value: `₹${ds.totalRefund || 0}`,            icon: RefreshCcw,   accent: "orange" as const },
+    { title: "Total Fee Due",      value: `₹${ds.totalFeeDue || 0}`,            icon: AlertCircle,  accent: "orange" as const },
     { title: "Fee Overdue",        value: `₹${ds.feeOverdue || 0}`,             icon: AlertCircle,  accent: "red" as const },
     { title: "Upcoming Fee Due",   value: `₹${ds.upcomingFeeDue || 0}`,         icon: Clock,        accent: "blue" as const },
     { title: "Pending Fees",       value: `₹${ds.pendingFees || 0}`,            icon: FileText,     accent: "red" as const },

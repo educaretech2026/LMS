@@ -15,6 +15,7 @@ export default async function StaffPage() {
       phone: profile?.phone || 'N/A', // teacher profile might have phone
       role: user.role?.name === 'CENTRE_ADMIN' ? 'Admin' : 'Teacher',
       centre: centre,
+      createdAt: user.createdAt || new Date().toISOString(),
       status: (user.status === 'ACTIVE' ? 'Active' : 'Inactive') as "Active" | "Inactive",
     };
   });

@@ -30,6 +30,7 @@ export default async function StudentsPage() {
       dateOfBirth: profile.dateOfBirth || '',
       bloodGroup: profile.bloodGroup || '',
       address: profile.address || '',
+      createdAt: profile.createdAt || new Date().toISOString(),
     };
   });
 
