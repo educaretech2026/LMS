@@ -276,7 +276,7 @@ export class StudentsService {
       SELECT u."firstName", u."lastName", p."admissionNo", s."name" as "classLevel"
       FROM "student_profiles" p
       JOIN "User" u ON u.id = p."userId"
-      JOIN "Enrollment" e ON e."studentProfileId" = p.id
+      JOIN "enrollments" e ON e."studentProfileId" = p.id
       JOIN "batches" b ON b.id = e."batchId"
       JOIN "standards" s ON s.id = b."standardId"
       WHERE EXTRACT(MONTH FROM p."dateOfBirth") = ${month}
