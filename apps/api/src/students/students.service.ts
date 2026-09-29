@@ -266,6 +266,20 @@ export class StudentsService {
     });
     return { success: true };
   }
+
+  async toggleStatus(id: string, status: 'ACTIVE' | 'INACTIVE') {
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { id },
+      select: { userId: true }
+    });
+    if (!profile) throw new NotFoundException('Student not found');
+    
+    await this.prisma.user.update({
+      where: { id: profile.userId },
+      data: { status }
+    });
+    return { success: true, status };
+  }
   async getTodayBirthdays() {
     const today = new Date();
     const month = today.getMonth() + 1;

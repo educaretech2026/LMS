@@ -17,6 +17,7 @@ export default async function StudentsPage() {
       name: `${user.firstName || 'Unknown'} ${user.lastName || ''}`.trim(),
       email: user.email || '',
       phone: profile.parentPhone || '',
+      status: user.status || 'ACTIVE',
       parentName: profile.parentName || '',
       parentEmail: profile.parentEmail || '',
       parentPhone: profile.parentPhone || '',

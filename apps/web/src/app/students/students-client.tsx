@@ -26,6 +26,7 @@ interface Student {
   subjectIds?: string[];
   bloodGroup?: string;
   dateOfBirth?: string;
+  status?: string;
   address?: string;
 }
 
@@ -228,6 +229,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Year & Board</th>
                     <th className="px-6 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Class & Div</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Centre</th>
+                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-right"></th>
                   </tr>
                 </thead>
@@ -280,6 +282,25 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                           </span>
                         </td>
                         <td className="px-4 py-4 text-xs font-medium text-text-secondary">{s.centre}</td>
+                        <td className="px-4 py-4">
+                          <button
+                            onClick={async () => {
+                              const newStatus = s.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+                              await fetchApi(`/students/${s.id}/status`, {
+                                method: 'PUT',
+                                body: JSON.stringify({ status: newStatus })
+                              });
+                              setStudents(students.map(st => st.id === s.id ? { ...st, status: newStatus } : st));
+                            }}
+                            className={`px-2 py-1 rounded-full text-[10px] font-bold ${
+                              s.status === 'ACTIVE' 
+                                ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                                : 'bg-red-100 text-red-700 hover:bg-red-200'
+                            }`}
+                          >
+                            {s.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                          </button>
+                        </td>
                         <td className="px-6 py-4 text-right">
                                                     <div className="flex items-center justify-end gap-3">
                             <Link

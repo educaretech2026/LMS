@@ -20,8 +20,12 @@ export class AuthService {
       },
     });
 
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Your account is temporarily suspended. Please clear pending fee dues.');
     }
 
     const isPasswordValid = await argon2.verify(user.password, loginDto.password);

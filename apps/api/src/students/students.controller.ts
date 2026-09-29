@@ -35,6 +35,11 @@ export class StudentsController {
     return this.studentsService.updateStudent(id, data);
   }
 
+  @Put(':id/status')
+  toggleStatus(@Param('id') id: string, @Body('status') status: 'ACTIVE' | 'INACTIVE') {
+    return this.studentsService.toggleStatus(id, status);
+  }
+
   @Delete(':id')
   deleteStudent(@Param('id') id: string) {
     return this.studentsService.deleteStudent(id);
