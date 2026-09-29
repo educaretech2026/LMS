@@ -222,6 +222,7 @@ export class StudentsService {
           parentEmail: data.parentEmail || undefined,
           parentPhone: data.parentPhone || undefined,
           bloodGroup: data.bloodGroup || undefined,
+          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
           address: data.address || undefined,
         }
       });

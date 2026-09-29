@@ -26,6 +26,9 @@ export default async function StudentsPage() {
       centre: batch?.centre?.name || 'N/A',
       division: batch?.name || 'N/A',
       subjectIds: enrollment?.subjects?.map((s: any) => s.id) || [],
+      dateOfBirth: profile.dateOfBirth || '',
+      bloodGroup: profile.bloodGroup || '',
+      address: profile.address || '',
     };
   });
 
