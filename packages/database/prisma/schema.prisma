@@ -433,6 +433,8 @@ model ExamResult {
   exam           Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
   student        StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
+  studentAnswers StudentAnswer[]
+
   @@unique([examId, studentId])
   @@map("exam_results")
 }
@@ -476,12 +478,18 @@ enum MaterialType {
   DOCUMENT
 }
 
+enum QuestionType {
+  MCQ
+  DESCRIPTIVE
+}
+
 model McqQuestion {
   id            String   @id @default(uuid())
+  type          QuestionType @default(MCQ)
   questionText  String
   imageUrl      String?
-  options       Json
-  correctOption String
+  options       Json?
+  correctOption String?
   explanation   String?
   marks         Float    @default(4)
   negativeMarks Float    @default(1)
@@ -491,7 +499,31 @@ model McqQuestion {
   examId String
   exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
 
+  studentAnswers StudentAnswer[]
+
   @@map("mcq_questions")
+}
+
+model StudentAnswer {
+  id            String   @id @default(uuid())
+  examResultId  String
+  questionId    String
+  
+  selectedOption String? // For MCQs
+  answerText     String? // For Descriptive text
+  answerFileUrl  String? // For Descriptive file uploads
+
+  marksAwarded  Float?   // Given by auto-grader or teacher
+  isCorrect     Boolean?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  examResult  ExamResult  @relation(fields: [examResultId], references: [id], onDelete: Cascade)
+  question    McqQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([examResultId, questionId])
+  @@map("student_answers")
 }
 
 // -----------------------------------------------------------------------------

@@ -72,6 +72,72 @@ export class ExamsService {
     return { success: true };
   }
 
+  async submitExamAttempt(examId: string, studentId: string, answers: Record<string, string>, score: any) {
+    // 1. Check if an existing ExamResult is there for this student
+    const existing = await this.prisma.examResult.findFirst({
+      where: { examId, studentId }
+    });
+
+    let examResultId = existing?.id;
+    if (!existing) {
+      const res = await this.prisma.examResult.create({
+        data: {
+          examId,
+          studentId,
+          marksObtained: score.earned || 0,
+          maxMarks: score.total || 0,
+        }
+      });
+      examResultId = res.id;
+    } else {
+      await this.prisma.examResult.update({
+        where: { id: examResultId },
+        data: {
+          marksObtained: score.earned || 0,
+          maxMarks: score.total || 0,
+        }
+      });
+    }
+
+    // 2. Fetch the questions to determine type
+    const questions = await this.prisma.mcqQuestion.findMany({
+      where: { examId }
+    });
+
+    const qMap = new Map(questions.map(q => [q.id, q]));
+
+    // 3. Upsert answers
+    for (const [qId, ans] of Object.entries(answers)) {
+      if (!ans) continue;
+      const q = qMap.get(qId);
+      if (!q) continue;
+
+      const isDescriptive = q.type === 'DESCRIPTIVE';
+      
+      const updateData = {
+        selectedOption: isDescriptive ? null : ans,
+        answerFileUrl: isDescriptive ? ans : null,
+      };
+
+      await this.prisma.studentAnswer.upsert({
+        where: {
+          examResultId_questionId: {
+            examResultId: examResultId as string,
+            questionId: qId,
+          }
+        },
+        create: {
+          examResultId: examResultId as string,
+          questionId: qId,
+          ...updateData
+        },
+        update: updateData,
+      });
+    }
+
+    return { success: true, examResultId };
+  }
+
   async getExamsByTopic(topicId: string): Promise<any> {
     return this.prisma.exam.findMany({
       where: {

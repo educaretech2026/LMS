@@ -36,7 +36,8 @@ export default function CreateExamPage() {
     explanation: "",
     marks: 4,
     negativeMarks: 1,
-    isUploadingImage: false 
+    isUploadingImage: false,
+    type: "MCQ"
   }]);
 
   const [saving, setSaving] = useState(false);
@@ -54,7 +55,8 @@ export default function CreateExamPage() {
     explanation: "", 
     marks: 4,
     negativeMarks: 1,
-    isUploadingImage: false 
+    isUploadingImage: false,
+    type: "MCQ"
   }]);
   const removeQuestion = (i: number) => setQuestions((p) => p.filter((_, idx) => idx !== i));
   const updateQ = (i: number, field: string, val: unknown) => {
@@ -134,10 +136,11 @@ export default function CreateExamPage() {
           method: 'POST',
           body: JSON.stringify({
             questionText: q.text,
+            type: q.type,
             imageUrl: q.imageUrl || undefined,
             explanation: q.explanation || undefined,
-            options: q.options.map(o => ({ text: o.text, imageUrl: o.imageUrl || undefined })),
-            correctOption: q.options[q.correct].text,
+            options: q.type === 'MCQ' ? q.options.map(o => ({ text: o.text, imageUrl: o.imageUrl || undefined })) : undefined,
+            correctOption: q.type === 'MCQ' ? q.options[q.correct].text : undefined,
             marks: Number(q.marks),
             negativeMarks: Number(q.negativeMarks),
             examId: exam.id
@@ -286,7 +289,17 @@ export default function CreateExamPage() {
               {questions.map((q, qi) => (
                 <div key={qi} className="bg-white rounded-xl border border-border-soft shadow-sm p-6 space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-text-muted">Question {qi + 1}</span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs font-bold text-text-muted">Question {qi + 1}</span>
+                      <select 
+                        value={q.type} 
+                        onChange={(e) => updateQ(qi, "type", e.target.value)}
+                        className="h-8 rounded-lg border border-border-soft bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-blue/25"
+                      >
+                        <option value="MCQ">Multiple Choice</option>
+                        <option value="DESCRIPTIVE">Descriptive</option>
+                      </select>
+                    </div>
                     <div className="flex items-center gap-2">
                       <button 
                         onClick={() => updateQ(qi, "isUploadingImage", !q.isUploadingImage)}
@@ -336,7 +349,8 @@ export default function CreateExamPage() {
                     className="w-full rounded-lg border border-border-soft bg-surface-2 px-3 py-2 text-sm placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand-blue/25 resize-none"
                   />
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {q.type === 'MCQ' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {q.options.map((opt, oi) => (
                       <div
                         key={oi}
@@ -392,6 +406,7 @@ export default function CreateExamPage() {
                       </div>
                     ))}
                   </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                     <div className="md:col-span-2">

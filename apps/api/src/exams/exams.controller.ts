@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { ExamsService } from './exams.service';
 import { StorageService } from '../storage/storage.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -43,6 +43,12 @@ export class ExamsController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   saveExamResults(@Param('examId') examId: string, @Body() data: { results: any[] }) {
     return this.examsService.saveExamResults(examId, data.results);
+  }
+
+  @Post(':examId/submit')
+  @Roles('STUDENT')
+  submitExamAttempt(@Param('examId') examId: string, @Body() data: { answers: Record<string, string>, score: any }, @Req() req: any) {
+    return this.examsService.submitExamAttempt(examId, req.user.id, data.answers, data.score);
   }
 
   @Get('mcq')

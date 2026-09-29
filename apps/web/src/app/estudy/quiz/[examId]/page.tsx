@@ -7,6 +7,7 @@ import {
   ArrowLeft, Brain, CheckCircle2, XCircle, Clock, ChevronRight,
   ChevronLeft, Loader2, Trophy, RotateCcw, AlertCircle, BookOpen,
 } from "lucide-react";
+import { FileUploader } from "@/components/upload/file-uploader";
 
 interface Option {
   key: string;
@@ -15,6 +16,7 @@ interface Option {
 
 interface Question {
   id: string;
+  type?: "MCQ" | "DESCRIPTIVE";
   questionText: string;
   imageUrl?: string;
   options: Option[] | Record<string, string>;
@@ -80,18 +82,37 @@ export default function QuizPage() {
     return () => clearInterval(id);
   }, [phase, timeLeft]);
 
-  const finishQuiz = useCallback(() => {
+  const finishQuiz = useCallback(async () => {
     let earned = 0, correct = 0, wrong = 0, skipped = 0, total = 0;
     questions.forEach(q => {
       total += q.marks;
       const a = answers[q.id];
       if (!a) { skipped++; return; }
+      if (q.type === 'DESCRIPTIVE') return; // Descriptive questions are graded later
+      
       if (a === q.correctOption) { earned += q.marks; correct++; }
       else { earned -= q.negativeMarks; wrong++; }
     });
-    setScore({ earned: Math.max(0, earned), total, correct, wrong, skipped });
-    setPhase("results");
-  }, [questions, answers]);
+    
+    const finalScore = { earned: Math.max(0, earned), total, correct, wrong, skipped };
+    setScore(finalScore);
+    
+    setPhase("loading");
+    try {
+      await fetchApi(`/exams/${examId}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({
+          answers,
+          score: finalScore
+        })
+      });
+      setPhase("results");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to submit exam results.");
+      setPhase("results"); // Show results anyway
+    }
+  }, [questions, answers, examId]);
 
   const selectAnswer = (qId: string, key: string) => {
     setAnswers(prev => ({ ...prev, [qId]: key }));
@@ -249,32 +270,51 @@ export default function QuizPage() {
             <p className="text-base font-semibold text-gray-800 leading-relaxed">{q.questionText}</p>
           </div>
 
-          {/* Options */}
-          <div className="space-y-3">
-            {opts.map(opt => {
-              const isSelected = selected === opt.key;
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => selectAnswer(q.id, opt.key)}
-                  className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${
-                    isSelected
-                      ? "border-brand-blue bg-brand-blue/5 shadow-sm"
-                      : "border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm"
-                  }`}
-                >
-                  <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-sm font-black transition-colors ${
-                    isSelected ? "bg-brand-blue text-white" : "bg-gray-100 text-gray-500"
-                  }`}>
-                    {opt.key.toUpperCase()}
-                  </div>
-                  <span className={`text-sm font-medium ${isSelected ? "text-brand-blue" : "text-gray-700"}`}>
-                    {opt.text}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {/* Answer Area */}
+          {q.type === 'DESCRIPTIVE' ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+              <p className="text-sm font-bold text-gray-700">Upload your answer (Image or PDF)</p>
+              {selected ? (
+                <div className="flex flex-col gap-2">
+                  <a href={selected} target="_blank" rel="noreferrer" className="text-brand-blue underline text-sm break-all">View Uploaded File</a>
+                  <button onClick={() => selectAnswer(q.id, "")} className="text-red-500 text-xs font-bold w-fit hover:underline">Remove File</button>
+                </div>
+              ) : (
+                <FileUploader 
+                  type="FILE"
+                  onUploadSuccess={(url) => selectAnswer(q.id, url)}
+                  onUploadError={(err) => alert(err)}
+                  onCancel={() => {}}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {opts.map(opt => {
+                const isSelected = selected === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => selectAnswer(q.id, opt.key)}
+                    className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${
+                      isSelected
+                        ? "border-brand-blue bg-brand-blue/5 shadow-sm"
+                        : "border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm"
+                    }`}
+                  >
+                    <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-sm font-black transition-colors ${
+                      isSelected ? "bg-brand-blue text-white" : "bg-gray-100 text-gray-500"
+                    }`}>
+                      {opt.key.toUpperCase()}
+                    </div>
+                    <span className={`text-sm font-medium ${isSelected ? "text-brand-blue" : "text-gray-700"}`}>
+                      {opt.text}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Nav buttons */}
           <div className="flex items-center gap-3 mt-2">
