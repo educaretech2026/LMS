@@ -54,6 +54,7 @@ export class StudyMaterialService {
           title: data.title,
           type: data.type,
           url: data.url,
+          thumbnailUrl: data.thumbnailUrl,
           academicYearId,
           syllabusId,
           chapterId: data.chapterId,

@@ -52,6 +52,7 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
   const [filterTrack, setFilterTrack] = useState("All Tracks");
   const [sortBy, setSortBy] = useState("Date Added (Newest First)");
   const [showModal, setShowModal] = useState(false);
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (isStudent) return; // Students don't need the flat list data
@@ -378,6 +379,31 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
 
   const handleUploadSuccess = async (url: string, videoId?: string, overrideType?: string) => {
     setSaving(true);
+    let finalThumbnailUrl: string | undefined;
+
+    if (thumbnailFile) {
+      try {
+        const { uploadUrl, finalUrl } = await fetchApi<any>(
+          `/study-materials/upload-url?type=FILE&filename=${encodeURIComponent(thumbnailFile.name)}&contentType=${encodeURIComponent(thumbnailFile.type)}`
+        );
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl, true);
+        xhr.setRequestHeader("Content-Type", thumbnailFile.type);
+        await new Promise((resolve, reject) => {
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+            else reject(new Error("Failed to upload thumbnail"));
+          };
+          xhr.onerror = () => reject(new Error("Network error"));
+          xhr.send(thumbnailFile);
+        });
+        finalThumbnailUrl = finalUrl;
+      } catch (err) {
+        console.error("Thumbnail upload failed", err);
+        // Continue anyway or handle error
+      }
+    }
+
     const finalType = overrideType || (type === "YOUTUBE_VIDEO" ? "VIDEO" : (type === "VIDEO" ? "VIDEO" : type));
     const finalUrl = (type === "VIDEO" && !overrideType) ? videoId : url;
     try {
@@ -387,6 +413,7 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
           title,
           type: finalType,
           url: finalUrl,
+          thumbnailUrl: finalThumbnailUrl,
           boardId: selectedBoard || undefined,
           standardId: selectedStandard || undefined,
           subjectId: subject || undefined,
@@ -543,6 +570,19 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                   <button onClick={() => setStep(1)} className="text-[10px] text-brand-blue font-bold hover:underline">Edit details</button>
                 </div>
                 
+                {(type === 'VIDEO' || type === 'YOUTUBE_VIDEO') && (
+                  <div className="space-y-2 mb-4 p-4 border border-border-soft rounded-xl bg-surface-2">
+                    <label className="block text-xs font-bold text-text-secondary">Custom Thumbnail (Optional)</label>
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={(e) => setThumbnailFile(e.target.files?.[0] || null)}
+                      className="text-xs text-text-primary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-blue/10 file:text-brand-blue hover:file:bg-brand-blue/20"
+                    />
+                    {thumbnailFile && <p className="text-[10px] text-success mt-1">Selected: {thumbnailFile.name}</p>}
+                  </div>
+                )}
+
                 {type === 'LINK' || type === 'YOUTUBE_VIDEO' ? (
                   <div className="space-y-4">
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">{type === 'YOUTUBE_VIDEO' ? 'YouTube URL *' : 'Resource URL *'}</label>

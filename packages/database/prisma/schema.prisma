@@ -450,6 +450,7 @@ model StudyMaterial {
   title          String
   type           MaterialType // e.g., PDF, VIDEO, LINK
   url            String?
+  thumbnailUrl   String?
   academicYearId String
   syllabusId     String
   chapterId      String?
