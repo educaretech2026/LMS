@@ -57,52 +57,26 @@ export function FileUploader({ type, onUploadSuccess, onUploadError, onCancel }:
 
       setProgress(40);
 
-      // 2. Upload file directly to Cloudflare R2 / S3 / Stream (via FormData for Stream, PUT for S3)
-      if (type === "VIDEO") {
-        // Cloudflare Stream direct upload requires FormData
-        const formData = new FormData();
-        formData.append("file", file);
-        
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", uploadUrl, true);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setProgress(40 + (e.loaded / e.total) * 60);
-          }
+      // 2. Upload file directly to Cloudflare R2 / S3 via PUT (both for VIDEO and FILE)
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", uploadUrl, true);
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setProgress(40 + (e.loaded / e.total) * 60);
+        }
+      };
+
+      await new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+          else reject(new Error("Failed to upload file"));
         };
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.send(file);
+      });
 
-        await new Promise((resolve, reject) => {
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
-            else reject(new Error("Failed to upload video"));
-          };
-          xhr.onerror = () => reject(new Error("Network error"));
-          xhr.send(formData);
-        });
-
-        onUploadSuccess(finalUrl, videoId);
-      } else {
-        // Regular file upload to S3/R2 presigned URL uses PUT
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl, true);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setProgress(40 + (e.loaded / e.total) * 60);
-          }
-        };
-
-        await new Promise((resolve, reject) => {
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
-            else reject(new Error("Failed to upload file"));
-          };
-          xhr.onerror = () => reject(new Error("Network error"));
-          xhr.send(file);
-        });
-
-        onUploadSuccess(finalUrl);
-      }
+      onUploadSuccess(finalUrl, videoId);
     } catch (error: any) {
       console.error(error);
       onUploadError(error.message || "An error occurred during upload");

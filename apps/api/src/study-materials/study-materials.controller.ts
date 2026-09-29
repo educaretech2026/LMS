@@ -43,17 +43,7 @@ export class StudyMaterialController {
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
   ) {
-    if (type === 'VIDEO') {
-      // Return Cloudflare Stream URL
-      const result = await this.cloudflareService.getDirectUploadUrl();
-      return { 
-        uploadUrl: result.uploadURL, 
-        videoId: result.uid,
-        finalUrl: `https://customer-${process.env.CLOUDFLARE_ACCOUNT_ID}.cloudflarestream.com/${result.uid}/iframe` 
-      };
-    } else {
-      // Return R2/S3 presigned URL for files
-      return this.storageService.getPresignedUploadUrl(filename, contentType);
-    }
+    // Both VIDEO and FILE now use R2/S3 presigned URLs
+    return this.storageService.getPresignedUploadUrl(filename, contentType);
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
@@ -59,11 +59,34 @@ export class StorageService {
     try {
       const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
       const finalUrl = `${this.publicUrl}/${objectKey}`;
-      
       return { uploadUrl, finalUrl, objectKey };
     } catch (error: any) {
       console.error('Error generating pre-signed URL:', error);
       throw new HttpException('Failed to generate upload URL', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Generates a pre-signed GET URL for secure video streaming/downloading.
+   * @param objectKey The key of the object in R2
+   * @param expiresIn Seconds until the link expires
+   */
+  async getPresignedDownloadUrl(objectKey: string, expiresIn: number = 7200) {
+    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+      throw new HttpException('Storage is not configured on the server.', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: objectKey,
+    });
+
+    try {
+      const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+      return { downloadUrl };
+    } catch (error: any) {
+      console.error('Error generating pre-signed GET URL:', error);
+      throw new HttpException('Failed to generate download URL', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
