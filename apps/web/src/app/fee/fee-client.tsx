@@ -322,6 +322,26 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
                               <Download className="h-3.5 w-3.5" /> Receipt
                             </button>
                           )}
+                          {role !== 'STUDENT' && f.status !== "PAID" && (
+                            <button 
+                              onClick={async () => {
+                                await fetchApi(`/fee/${f.id}/status`, { method: 'POST', body: JSON.stringify({ status: 'PAID' }) });
+                                setFeeRecords(feeRecords.map(r => r.id === f.id ? { ...r, status: 'PAID' } : r));
+                              }}
+                              className="inline-flex items-center gap-1 text-success hover:text-green-700 text-xs font-bold transition-colors">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Mark Paid
+                            </button>
+                          )}
+                          {role !== 'STUDENT' && f.status === "PAID" && (
+                            <button 
+                              onClick={async () => {
+                                await fetchApi(`/fee/${f.id}/status`, { method: 'POST', body: JSON.stringify({ status: 'PENDING' }) });
+                                setFeeRecords(feeRecords.map(r => r.id === f.id ? { ...r, status: 'PENDING' } : r));
+                              }}
+                              className="inline-flex items-center gap-1 text-warning hover:text-yellow-700 text-xs font-bold transition-colors">
+                              <X className="h-3.5 w-3.5" /> Mark Unpaid
+                            </button>
+                          )}
                           {role !== 'STUDENT' && (
                             <button 
                               onClick={() => setDeleteRecordId(f.id)}

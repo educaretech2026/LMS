@@ -39,6 +39,24 @@ export class FeeService {
     });
   }
 
+  async updateStatus(id: string, status: any) {
+    const feeRecord = await this.prisma.feeRecord.update({
+      where: { id },
+      data: { status },
+      include: { student: true }
+    });
+
+    if (feeRecord && feeRecord.student && feeRecord.student.userId) {
+      const userStatus = status === 'PAID' ? 'ACTIVE' : 'INACTIVE';
+      await this.prisma.user.update({
+        where: { id: feeRecord.student.userId },
+        data: { status: userStatus }
+      });
+    }
+
+    return feeRecord;
+  }
+
   async sendReminder(studentId: string, payload: any) {
     const student = await this.prisma.studentProfile.findUnique({
       where: { id: studentId },
