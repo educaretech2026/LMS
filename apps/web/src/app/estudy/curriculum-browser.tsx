@@ -83,6 +83,11 @@ function ImportanceBadge({ value }: { value?: string }) {
 
 // ─── Content Drawer ───────────────────────────────────────────────────────────
 
+function getYouTubeId(url: string) {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
+  return match ? match[1] : null;
+}
+
 function ContentDrawer({
   topic, contentType, materials, exams, onClose,
 }: {
@@ -144,12 +149,21 @@ function ContentDrawer({
               const isExam = isExamType;
               const exam = item as TopicExam;
               const mat = item as TopicMaterial;
+              const ytId = !isExam && mat.type === 'LINK' && mat.url ? getYouTubeId(mat.url) : null;
+              
               return (
                 <div key={item.id} className="px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${contentType.color}`}>
-                      <Icon className="h-4 w-4" />
-                    </div>
+                    {ytId ? (
+                      <div className="h-9 w-16 shrink-0 rounded overflow-hidden relative bg-black flex items-center justify-center">
+                        <img src={`https://img.youtube.com/vi/${ytId}/default.jpg`} className="object-cover w-full h-full opacity-80" alt="Thumbnail" />
+                        <Play className="h-4 w-4 text-white absolute" />
+                      </div>
+                    ) : (
+                      <div className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${contentType.color}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">{item.title}</p>
                       {isExam ? (

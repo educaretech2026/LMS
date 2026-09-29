@@ -303,7 +303,8 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
 
 function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<"PDF" | "VIDEO" | "DOCUMENT">("PDF");
+  const [type, setType] = useState<"PDF" | "VIDEO" | "DOCUMENT" | "LINK">("PDF");
+  const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
@@ -416,7 +417,8 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                   <div className="grid grid-cols-2 gap-3">
                     {[
                       { value: "PDF", label: "PDF Document" },
-                      { value: "VIDEO", label: "Video Lesson" }
+                      { value: "VIDEO", label: "Upload Video" },
+                      { value: "LINK", label: "YouTube Link" }
                     ].map(t => (
                       <label key={t.value} className={`flex items-center justify-center gap-2 rounded-lg border py-3 px-2 cursor-pointer transition-colors ${type === t.value ? 'border-brand-blue bg-brand-blue/5' : 'border-border-soft bg-surface-2'}`}>
                         <input type="radio" name="materialType" checked={type === t.value} onChange={() => setType(t.value as any)} className="hidden" />
@@ -516,18 +518,38 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                   <button onClick={() => setStep(1)} className="text-[10px] text-brand-blue font-bold hover:underline">Edit details</button>
                 </div>
                 
-                {saving ? (
-                  <div className="py-12 flex flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-6 w-6 animate-spin text-brand-blue" />
-                    <p className="text-xs font-bold text-text-secondary">Saving to database...</p>
+                {type === 'LINK' ? (
+                  <div className="space-y-4">
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">YouTube URL *</label>
+                    <input
+                      type="url"
+                      placeholder="https://youtube.com/watch?v=..."
+                      className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                    />
+                    <button
+                      onClick={() => handleUploadSuccess(url)}
+                      className="w-full py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg transition-colors"
+                      disabled={saving || !url}
+                    >
+                      {saving ? "Saving..." : "Submit Link"}
+                    </button>
                   </div>
                 ) : (
-                  <FileUploader
-                    type={type === "VIDEO" ? "VIDEO" : "FILE"}
-                    onUploadSuccess={handleUploadSuccess}
-                    onUploadError={setError}
-                    onCancel={onClose}
-                  />
+                  saving ? (
+                    <div className="py-12 flex flex-col items-center justify-center gap-3">
+                      <Loader2 className="h-6 w-6 animate-spin text-brand-blue" />
+                      <p className="text-xs font-bold text-text-secondary">Saving to database...</p>
+                    </div>
+                  ) : (
+                    <FileUploader
+                      type={type === "VIDEO" ? "VIDEO" : "FILE"}
+                      onUploadSuccess={handleUploadSuccess}
+                      onUploadError={setError}
+                      onCancel={onClose}
+                    />
+                  )
                 )}
               </div>
             )}
