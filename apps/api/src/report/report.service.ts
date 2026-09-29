@@ -152,9 +152,7 @@ export class ReportService {
     today.setHours(0, 0, 0, 0);
 
     const totalStudents = await this.prisma.studentProfile.count();
-    const todayInquiry = await this.prisma.enquiry.count({
-      where: { createdAt: { gte: today } }
-    });
+    const totalInquiry = await this.prisma.enquiry.count();
     
     // For simplicity, absent is total absent records today
     const todayAbsent = await this.prisma.attendanceRecord.count({
@@ -165,18 +163,18 @@ export class ReportService {
     });
 
     const incomeTx = await this.prisma.transaction.findMany({
-      where: { date: { gte: today }, type: TransactionType.INCOME }
+      where: { type: TransactionType.INCOME }
     });
-    const todayIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
+    const totalIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
 
     const expenseTx = await this.prisma.transaction.findMany({
-      where: { date: { gte: today }, type: TransactionType.EXPENSE }
+      where: { type: TransactionType.EXPENSE }
     });
-    const todayExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
+    const totalExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
 
     // Dummy values for now for fees and refund
-    const todayRefund = 0;
-    const todayFeeDue = 0;
+    const totalRefund = 0;
+    const totalFeeDue = 0;
     const feeOverdue = 0;
     const upcomingFeeDue = 0;
     const pendingFees = 0;
@@ -186,12 +184,12 @@ export class ReportService {
 
     return {
       totalStudents,
-      todayInquiry,
+      totalInquiry,
       todayAbsent,
-      todayIncome,
-      todayExpense,
-      todayRefund,
-      todayFeeDue,
+      totalIncome,
+      totalExpense,
+      totalRefund,
+      totalFeeDue,
       feeOverdue,
       upcomingFeeDue,
       pendingFees,

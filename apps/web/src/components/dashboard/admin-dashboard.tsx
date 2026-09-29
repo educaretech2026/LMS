@@ -21,7 +21,7 @@ export function AdminDashboard({ user, statsData }: { user: any, statsData?: any
   const stats = [
     { title: "Total Students",     value: String(ds.totalStudents || 0),        icon: Users,        accent: "blue" as const },
     { title: "Total Inquiry",      value: String(ds.totalInquiry || 0),         icon: FileText,     accent: "blue" as const },
-    { title: "Total Absent",       value: String(ds.totalAbsent || 0),          icon: UserX,        accent: "red" as const },
+    { title: "Today Absent",       value: String(ds.todayAbsent || 0),          icon: UserX,        accent: "red" as const },
     { title: "Total Income",       value: `₹${ds.totalIncome || 0}`,            icon: TrendingUp,   accent: "green" as const },
     { title: "Total Expense",      value: `₹${ds.totalExpense || 0}`,           icon: TrendingDown, accent: "red" as const },
     { title: "Total Refund",       value: `₹${ds.totalRefund || 0}`,            icon: RefreshCcw,   accent: "orange" as const },
