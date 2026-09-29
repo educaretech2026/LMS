@@ -38,4 +38,10 @@ export class ReportController {
   getSingleStudentPerformance(@Param('studentId') studentId: string) {
     return this.reportService.getSingleStudentPerformance(studentId);
   }
+
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Get('dashboard')
+  getDashboardStats() {
+    return this.reportService.getDashboardStats();
+  }
 }

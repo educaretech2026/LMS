@@ -146,4 +146,57 @@ export class ReportService {
       examResults
     };
   }
+
+  async getDashboardStats() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const totalStudents = await this.prisma.studentProfile.count();
+    const todayInquiry = await this.prisma.enquiry.count({
+      where: { createdAt: { gte: today } }
+    });
+    
+    // For simplicity, absent is total absent records today
+    const todayAbsent = await this.prisma.attendanceRecord.count({
+      where: {
+        attendance: { date: { gte: today } },
+        status: AttendanceStatus.ABSENT
+      }
+    });
+
+    const incomeTx = await this.prisma.transaction.findMany({
+      where: { date: { gte: today }, type: TransactionType.INCOME }
+    });
+    const todayIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
+
+    const expenseTx = await this.prisma.transaction.findMany({
+      where: { date: { gte: today }, type: TransactionType.EXPENSE }
+    });
+    const todayExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
+
+    // Dummy values for now for fees and refund
+    const todayRefund = 0;
+    const todayFeeDue = 0;
+    const feeOverdue = 0;
+    const upcomingFeeDue = 0;
+    const pendingFees = 0;
+
+    const eStudyMaterials = await this.prisma.studyMaterial.count();
+    const smsBalance = 1000; // Mock balance
+
+    return {
+      totalStudents,
+      todayInquiry,
+      todayAbsent,
+      todayIncome,
+      todayExpense,
+      todayRefund,
+      todayFeeDue,
+      feeOverdue,
+      upcomingFeeDue,
+      pendingFees,
+      eStudyMaterials,
+      smsBalance
+    };
+  }
 }

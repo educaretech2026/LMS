@@ -10,7 +10,9 @@ export class StudyMaterialService {
       return await this.prisma.studyMaterial.findMany({
         include: {
           academicYear: true,
-          syllabus: true,
+          syllabus: {
+            include: { board: true, standard: true, subject: true }
+          },
           chapter: true,
           topic: true,
           uploader: {
