@@ -22,12 +22,51 @@ import {
   Folder,
   Book,
   FileBox,
-  Layers
+  Layers,
+  AlertTriangle
 } from "lucide-react";
+
+const DeleteWarningModal = ({ isOpen, onClose, message }: { isOpen: boolean, onClose: () => void, message: string }) => {
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0 animate-in fade-in duration-200">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-rose-400 to-orange-400" />
+        
+        <div className="flex items-start gap-5 mt-2">
+          <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-red-50 border border-red-100 shadow-inner">
+            <AlertTriangle className="w-6 h-6 text-red-500" />
+          </div>
+          
+          <div className="flex-1 pt-1">
+            <h3 className="text-lg font-bold text-slate-900 tracking-tight">Cannot Delete Item</h3>
+            <div className="mt-3 text-sm leading-relaxed text-slate-600 font-medium">
+              {message}
+            </div>
+            
+            <div className="mt-7 flex justify-end">
+              <button 
+                onClick={onClose}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-all shadow-md hover:shadow-lg focus:ring-4 focus:ring-slate-900/20 w-full sm:w-auto active:scale-95"
+              >
+                Understood, I'll remove them first
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function SetupPage() {
   const { role } = useAuth();
+  const { role } = useAuth();
   const [activeTab, setActiveTab] = useState("Centre Setup");
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
 
   if (role === 'TEACHER' || role === 'STUDENT') {
     return (
@@ -96,10 +135,10 @@ export default function SetupPage() {
           </div>
           <div className="flex-1 overflow-y-auto p-6 lg:p-8">
             <div className="max-w-4xl mx-auto md:mx-0">
-              {activeTab === "Centre Setup" && <CentreSetupTab />}
+              {activeTab === "Centre Setup" && <CentreSetupTab onError={setDeleteWarning} />}
               {activeTab === "Roles & Permissions" && <RolesPermissionsTab />}
-              {activeTab === "Academic Structure" && <AcademicStructureTab />}
-              {activeTab === "Curriculum Builder" && <CurriculumBuilderTab />}
+              {activeTab === "Academic Structure" && <AcademicStructureTab onError={setDeleteWarning} />}
+              {activeTab === "Curriculum Builder" && <CurriculumBuilderTab onError={setDeleteWarning} />}
               {activeTab === "Fee Structure" && <FeeStructureTab />}
               {activeTab === "SMS Templates" && <SmsTemplatesTab />}
               {activeTab === "Exam Configuration" && <ExamConfigTab />}
@@ -107,11 +146,17 @@ export default function SetupPage() {
           </div>
         </div>
       </div>
+
+      <DeleteWarningModal 
+        isOpen={!!deleteWarning} 
+        onClose={() => setDeleteWarning(null)} 
+        message={deleteWarning || ""} 
+      />
     </DashboardLayout>
   );
 }
 
-function CentreSetupTab() {
+function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [centres, setCentres] = useState<any[]>([]);
@@ -155,9 +200,9 @@ function CentreSetupTab() {
     try {
       await fetchApi(`/setup/centres/${id}`, { method: 'DELETE' });
       setCentres(centres.filter(c => c.id !== id));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Failed to delete centre. It might be in use.");
+      onError(e.message || "Failed to delete centre. It might be in use.");
     }
   };
 
@@ -321,7 +366,7 @@ function RolesPermissionsTab() {
   );
 }
 
-function AcademicStructureTab() {
+function AcademicStructureTab({ onError }: { onError: (msg: string) => void }) {
   const [activeTab, setActiveTab] = useState("Years");
   const [years, setYears] = useState<any[]>([]);
   const [boards, setBoards] = useState<any[]>([]);
@@ -404,7 +449,7 @@ function AcademicStructureTab() {
       setStandards(standards.filter(s => s.boardId !== id));
       setSyllabi(syllabi.filter(s => s.boardId !== id));
     } catch (e: any) {
-      alert(e.message || "Failed to delete board.");
+      onError(e.message || "Failed to delete board.");
     }
   };
 
@@ -415,7 +460,7 @@ function AcademicStructureTab() {
       setStandards(standards.filter(s => s.id !== id));
       setSyllabi(syllabi.filter(s => s.standardId !== id));
     } catch (e: any) {
-      alert(e.message || "Failed to delete class.");
+      onError(e.message || "Failed to delete class.");
     }
   };
 
@@ -425,7 +470,7 @@ function AcademicStructureTab() {
       await fetchApi(`/setup/syllabi/${id}`, { method: 'DELETE' });
       setSyllabi(syllabi.filter(s => s.id !== id));
     } catch (e: any) {
-      alert(e.message || "Failed to remove subject.");
+      onError(e.message || "Failed to remove subject.");
     }
   };
 
@@ -768,7 +813,7 @@ function ExamConfigTab() {
   );
 }
 
-function CurriculumBuilderTab() {
+function CurriculumBuilderTab({ onError }: { onError: (msg: string) => void }) {
   const [boards, setBoards] = useState<any[]>([]);
   const [standards, setStandards] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -863,7 +908,7 @@ function CurriculumBuilderTab() {
         } : c));
       }
     } catch (e: any) {
-      alert(e.message || `Failed to delete ${type.slice(0,-1)}.`);
+      onError(e.message || `Failed to delete ${type.slice(0,-1)}.`);
     }
   };
 
