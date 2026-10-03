@@ -118,7 +118,7 @@ export function Sidebar({
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6">
           <NavSection
             label="Main"
-            items={role === 'STUDENT' ? mainNav.filter(item => ['Dashboard', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(item.label)) : role === 'TEACHER' ? mainNav.filter(item => ['Dashboard', 'Student', 'Attendance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(item.label)) : mainNav}
+            items={role === 'STUDENT' ? mainNav.filter(item => ['Dashboard', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(item.label)) : role === 'TEACHER' ? mainNav.filter(item => ['Dashboard', 'Student', 'Attendance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(item.label)) : mainNav}
             activePath={path}
           />
           {role !== 'STUDENT' && role !== 'TEACHER' && (

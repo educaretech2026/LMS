@@ -6,8 +6,13 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 export class FeeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(user?: any) {
+    const whereClause = user?.role === 'STUDENT' 
+      ? { student: { userId: user.id } } 
+      : {};
+
     return this.prisma.feeRecord.findMany({
+      where: whereClause,
       include: {
         student: {
           include: {
