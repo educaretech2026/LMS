@@ -77,9 +77,47 @@ export class SetupService {
       include: {
         board: true,
         standard: true,
-        centre: true
+        centre: true,
+        track: true
       }
     });
+  }
+
+  async createBatch(data: { name: string; academicYearId: string; boardId: string; standardId: string; centreId: string; trackId?: string }) {
+    return this.prisma.batch.create({ data });
+  }
+
+  async deleteBatch(id: string) {
+    const batch = await this.prisma.batch.findUnique({ where: { id }, include: { _count: { select: { enrollments: true, assignments: true, exams: true } } } });
+    if (!batch) return;
+    
+    const { enrollments, assignments, exams } = batch._count;
+    if (enrollments > 0 || assignments > 0 || exams > 0) {
+      throw new ConflictException(`Cannot delete: Found ${enrollments} enrollments, ${assignments} assignments, and ${exams} exams attached to this batch.`);
+    }
+
+    return this.prisma.batch.delete({ where: { id } });
+  }
+
+  // Target Tracks
+  async getTracks() {
+    return this.prisma.targetTrack.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  async createTrack(data: { name: string }) {
+    return this.prisma.targetTrack.create({ data });
+  }
+
+  async deleteTrack(id: string) {
+    const track = await this.prisma.targetTrack.findUnique({ where: { id }, include: { _count: { select: { batches: true, enrollments: true, exams: true } } } });
+    if (!track) return;
+
+    const { batches, enrollments, exams } = track._count;
+    if (batches > 0 || enrollments > 0 || exams > 0) {
+      throw new ConflictException(`Cannot delete: Track is in use by ${batches} batches, ${enrollments} enrollments, and ${exams} exams.`);
+    }
+    
+    return this.prisma.targetTrack.delete({ where: { id } });
   }
 
   // Subjects

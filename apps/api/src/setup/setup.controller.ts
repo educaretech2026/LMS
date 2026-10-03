@@ -68,6 +68,32 @@ export class SetupController {
     return this.setupService.getBatches(boardId, standardId);
   }
 
+  @Post('batches')
+  createBatch(@Body() data: any) {
+    return this.setupService.createBatch(data);
+  }
+
+  @Delete('batches/:id')
+  deleteBatch(@Param('id') id: string) {
+    return this.setupService.deleteBatch(id);
+  }
+
+  @Get('tracks')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  getTracks() {
+    return this.setupService.getTracks();
+  }
+
+  @Post('tracks')
+  createTrack(@Body() data: { name: string }) {
+    return this.setupService.createTrack(data);
+  }
+
+  @Delete('tracks/:id')
+  deleteTrack(@Param('id') id: string) {
+    return this.setupService.deleteTrack(id);
+  }
+
   @Get('subjects')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
   getSubjects() {

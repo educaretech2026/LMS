@@ -277,7 +277,8 @@ model Batch {
   boardId        String
   standardId     String
   centreId       String
-  track          TrackType @default(BOTH)
+  trackId        String?
+  track          TargetTrack? @relation(fields: [trackId], references: [id])
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -331,7 +332,8 @@ model Enrollment {
   id               String    @id @default(uuid())
   studentProfileId String
   batchId          String
-  track            TrackType @default(BOTH)
+  trackId          String?
+  track            TargetTrack? @relation(fields: [trackId], references: [id])
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -396,7 +398,8 @@ model Exam {
   standardId String?
   centreId   String?
 
-  targetTrack TrackType @default(BOTH)
+  targetTrackId String?
+  targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -458,7 +461,8 @@ model StudyMaterial {
   subtopicId     String?
   uploaderId     String?
 
-  targetTrack TrackType @default(BOTH)
+  targetTrackId String?
+  targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -573,7 +577,8 @@ model FeeRecord {
 
   student StudentProfile @relation(fields: [studentId], references: [id])
 
-  targetTrack TrackType @default(BOTH)
+  targetTrackId String?
+  targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -604,7 +609,8 @@ model Assignment {
   topicId     String?
   subtopicId  String?
   uploaderId  String
-  targetTrack TrackType @default(BOTH)
+  targetTrackId String?
+  targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -646,11 +652,6 @@ enum SubmissionStatus {
   RETURNED
 }
 
-enum TrackType {
-  TUITION
-  ENTRANCE
-  BOTH
-}
 
 // -----------------------------------------------------------------------------
 // PROGRESS TRACKING
@@ -941,4 +942,20 @@ enum AttendanceStatus {
   ABSENT
   LATE
   EXCUSED
+}
+
+model TargetTrack {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  batches       Batch[]
+  enrollments   Enrollment[]
+  exams         Exam[]
+  studyMaterials StudyMaterial[]
+  feeRecords    FeeRecord[]
+  assignments   Assignment[]
+
+  @@map("target_tracks")
 }

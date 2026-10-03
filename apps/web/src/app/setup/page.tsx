@@ -23,7 +23,9 @@ import {
   Book,
   FileBox,
   Layers,
-  AlertTriangle
+  AlertTriangle,
+  Target,
+  Users
 } from "lucide-react";
 
 const DeleteWarningModal = ({ isOpen, onClose, message }: { isOpen: boolean, onClose: () => void, message: string }) => {
@@ -83,6 +85,8 @@ export default function SetupPage() {
     { id: "Centre Setup", icon: Building2 },
     { id: "Roles & Permissions", icon: ShieldCheck },
     { id: "Academic Structure", icon: GraduationCap },
+    { id: "Divisions (Batches)", icon: Users },
+    { id: "Target Tracks", icon: Target },
     { id: "Curriculum Builder", icon: BookOpen },
     { id: "Fee Structure", icon: CreditCard },
     { id: "SMS Templates", icon: MessageSquare },
@@ -137,6 +141,8 @@ export default function SetupPage() {
               {activeTab === "Centre Setup" && <CentreSetupTab onError={setDeleteWarning} />}
               {activeTab === "Roles & Permissions" && <RolesPermissionsTab />}
               {activeTab === "Academic Structure" && <AcademicStructureTab onError={setDeleteWarning} />}
+              {activeTab === "Divisions (Batches)" && <BatchesTab onError={setDeleteWarning} />}
+              {activeTab === "Target Tracks" && <TargetTracksTab onError={setDeleteWarning} />}
               {activeTab === "Curriculum Builder" && <CurriculumBuilderTab onError={setDeleteWarning} />}
               {activeTab === "Fee Structure" && <FeeStructureTab />}
               {activeTab === "SMS Templates" && <SmsTemplatesTab />}
@@ -1096,6 +1102,200 @@ function CurriculumBuilderTab({ onError }: { onError: (msg: string) => void }) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function TargetTracksTab({ onError }: { onError: (msg: string) => void }) {
+  const [tracks, setTracks] = useState<any[]>([]);
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    fetchApi<any[]>('/setup/tracks').then(setTracks).catch(console.error);
+  }, []);
+
+  const addTrack = async () => {
+    if (!name) return;
+    try {
+      const res = await fetchApi<any>('/setup/tracks', { method: 'POST', body: JSON.stringify({ name }) });
+      setTracks([...tracks, res]);
+      setName("");
+    } catch (e: any) {
+      onError(e.message || "Failed to add target track.");
+    }
+  };
+
+  const deleteTrack = async (id: string) => {
+    if (!confirm("Are you sure? This might break existing data if the track is in use.")) return;
+    try {
+      await fetchApi(`/setup/tracks/${id}`, { method: 'DELETE' });
+      setTracks(tracks.filter(t => t.id !== id));
+    } catch (e: any) {
+      onError(e.message || "Failed to delete track.");
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden flex flex-col">
+      <div className="p-6 border-b border-border-soft flex items-center justify-between bg-surface-2/30">
+        <div>
+          <h3 className="text-sm font-bold text-text-primary">Target Tracks</h3>
+          <p className="text-[11px] text-text-muted mt-0.5">Manage target tracks (e.g., Tuition, Entrance, Both).</p>
+        </div>
+      </div>
+      
+      <div className="p-4 bg-surface/50 border-b border-border-soft flex gap-2">
+        <input 
+          type="text" 
+          placeholder="New Track Name (e.g. Foundation)" 
+          className="flex-1 px-3 py-2 border border-border-soft rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          value={name}
+          onChange={e => setName(e.target.value)}
+        />
+        <button onClick={addTrack} className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-blue-dark flex items-center gap-2">
+          <Plus className="h-4 w-4" /> Add
+        </button>
+      </div>
+
+      <div className="divide-y divide-border-soft">
+        {tracks.map(t => (
+          <div key={t.id} className="p-4 flex items-center justify-between hover:bg-surface-2/50 transition-colors">
+            <span className="font-semibold text-sm">{t.name}</span>
+            <button onClick={() => deleteTrack(t.id)} className="text-text-muted hover:text-brand-red p-1 rounded-md transition-colors">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BatchesTab({ onError }: { onError: (msg: string) => void }) {
+  const [batches, setBatches] = useState<any[]>([]);
+  const [years, setYears] = useState<any[]>([]);
+  const [boards, setBoards] = useState<any[]>([]);
+  const [standards, setStandards] = useState<any[]>([]);
+  const [centres, setCentres] = useState<any[]>([]);
+  const [tracks, setTracks] = useState<any[]>([]);
+
+  const [form, setForm] = useState({ name: "", academicYearId: "", boardId: "", standardId: "", centreId: "", trackId: "" });
+
+  useEffect(() => {
+    Promise.all([
+      fetchApi<any[]>('/setup/batches'),
+      fetchApi<any[]>('/setup/academic-years'),
+      fetchApi<any[]>('/setup/boards'),
+      fetchApi<any[]>('/setup/standards'),
+      fetchApi<any[]>('/setup/centres'),
+      fetchApi<any[]>('/setup/tracks')
+    ]).then(([batchRes, yearRes, boardRes, stdRes, centreRes, trackRes]) => {
+      setBatches(batchRes);
+      setYears(yearRes);
+      setBoards(boardRes);
+      setStandards(stdRes);
+      setCentres(centreRes);
+      setTracks(trackRes);
+    }).catch(console.error);
+  }, []);
+
+  const addBatch = async () => {
+    if (!form.name || !form.academicYearId || !form.boardId || !form.standardId || !form.centreId) return;
+    try {
+      const res = await fetchApi<any>('/setup/batches', { method: 'POST', body: JSON.stringify(form) });
+      const fullRes = {
+        ...res,
+        board: boards.find(b => b.id === res.boardId),
+        standard: standards.find(s => s.id === res.standardId),
+        centre: centres.find(c => c.id === res.centreId),
+        track: tracks.find(t => t.id === res.trackId),
+      };
+      setBatches([...batches, fullRes]);
+      setForm({ ...form, name: "" });
+    } catch (e: any) {
+      onError(e.message || "Failed to add division.");
+    }
+  };
+
+  const deleteBatch = async (id: string) => {
+    if (!confirm("Are you sure? This will delete the division.")) return;
+    try {
+      await fetchApi(`/setup/batches/${id}`, { method: 'DELETE' });
+      setBatches(batches.filter(b => b.id !== id));
+    } catch (e: any) {
+      onError(e.message || "Failed to delete division.");
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden flex flex-col">
+      <div className="p-6 border-b border-border-soft flex items-center justify-between bg-surface-2/30">
+        <div>
+          <h3 className="text-sm font-bold text-text-primary">Divisions (Batches)</h3>
+          <p className="text-[11px] text-text-muted mt-0.5">Manage class divisions (e.g., A Batch, B Batch).</p>
+        </div>
+      </div>
+
+      <div className="p-4 bg-surface/50 border-b border-border-soft grid grid-cols-2 md:grid-cols-6 gap-2">
+        <select value={form.academicYearId} onChange={e => setForm({...form, academicYearId: e.target.value})} className="px-3 py-2 border rounded-lg text-sm">
+          <option value="">Year</option>
+          {years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
+        </select>
+        <select value={form.centreId} onChange={e => setForm({...form, centreId: e.target.value})} className="px-3 py-2 border rounded-lg text-sm">
+          <option value="">Centre</option>
+          {centres.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={form.boardId} onChange={e => setForm({...form, boardId: e.target.value})} className="px-3 py-2 border rounded-lg text-sm">
+          <option value="">Board</option>
+          {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <select value={form.standardId} onChange={e => setForm({...form, standardId: e.target.value})} className="px-3 py-2 border rounded-lg text-sm">
+          <option value="">Class</option>
+          {standards.filter(s => !form.boardId || s.boardId === form.boardId).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={form.trackId} onChange={e => setForm({...form, trackId: e.target.value})} className="px-3 py-2 border rounded-lg text-sm">
+          <option value="">Track (Opt)</option>
+          {tracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <input 
+          type="text" placeholder="e.g. Division A" value={form.name} onChange={e => setForm({...form, name: e.target.value})}
+          className="px-3 py-2 border rounded-lg text-sm"
+        />
+        <button onClick={addBatch} className="col-span-2 md:col-span-6 bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-blue-dark">
+          Add Division
+        </button>
+      </div>
+
+      <div className="overflow-auto">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-surface-2 text-text-muted text-[11px] uppercase tracking-wider">
+            <tr>
+              <th className="px-6 py-3 font-semibold">Name</th>
+              <th className="px-6 py-3 font-semibold">Class</th>
+              <th className="px-6 py-3 font-semibold">Board</th>
+              <th className="px-6 py-3 font-semibold">Track</th>
+              <th className="px-6 py-3 font-semibold">Centre</th>
+              <th className="px-6 py-3 font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-soft">
+            {batches.map(b => (
+              <tr key={b.id} className="hover:bg-surface-2/50">
+                <td className="px-6 py-4 font-semibold text-text-primary">{b.name}</td>
+                <td className="px-6 py-4 text-text-secondary">{b.standard?.name}</td>
+                <td className="px-6 py-4 text-text-secondary">{b.board?.name}</td>
+                <td className="px-6 py-4 text-text-secondary">{b.track?.name || 'Any'}</td>
+                <td className="px-6 py-4 text-text-secondary">{b.centre?.name}</td>
+                <td className="px-6 py-4">
+                  <button onClick={() => deleteBatch(b.id)} className="text-text-muted hover:text-brand-red p-1 rounded-md transition-colors">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
