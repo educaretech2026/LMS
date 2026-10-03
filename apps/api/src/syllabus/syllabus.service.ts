@@ -210,6 +210,33 @@ export class SyllabusService {
   async recordStudentEvent(userId: string, data: any) {
     const student = await this.prisma.studentProfile.findUnique({ where: { userId } });
     if (!student) throw new NotFoundException('Student profile not found');
+
+    const { batchId, topicId, type } = data;
+    if (!batchId || !topicId) return { success: false, message: "Missing required fields" };
+
+    if (type === 'VIEW_MATERIAL' || type === 'START_EXAM') {
+      await this.prisma.studentTopicProgress.upsert({
+        where: {
+          studentId_topicId_batchId: { studentId: student.id, topicId, batchId }
+        },
+        create: {
+          studentId: student.id,
+          topicId,
+          batchId,
+          status: 'COMPLETED',
+          completionPercentage: 100,
+          lastActivityAt: new Date(),
+          completedAt: new Date()
+        },
+        update: {
+          status: 'COMPLETED',
+          completionPercentage: 100,
+          lastActivityAt: new Date(),
+          completedAt: new Date()
+        }
+      });
+    }
+
     return { success: true, message: "Event recorded" };
   }
 

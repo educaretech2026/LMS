@@ -94,9 +94,9 @@ function ContentDrawer({
   topic, contentType, materials, exams, onClose,
 }: {
   topic: Topic;
-  contentType: typeof CONTENT_TYPES[0];
   materials: TopicMaterial[];
   exams: TopicExam[];
+  studentBatchId?: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -123,10 +123,22 @@ function ContentDrawer({
 
   const handleOpen = (item: TopicMaterial | TopicExam) => {
     if (isExamType) {
+      if (role === 'STUDENT' && studentBatchId) {
+        fetchApi('/syllabus/student-progress/event', {
+          method: 'POST',
+          body: JSON.stringify({ batchId: studentBatchId, topicId: topic.id, type: 'START_EXAM', materialId: item.id })
+        }).catch(console.error);
+      }
       router.push(`/estudy/quiz/${(item as TopicExam).id}`);
     } else {
       const m = item as TopicMaterial;
       if (!m.url) return;
+      if (role === 'STUDENT' && studentBatchId) {
+        fetchApi('/syllabus/student-progress/event', {
+          method: 'POST',
+          body: JSON.stringify({ batchId: studentBatchId, topicId: topic.id, type: 'VIEW_MATERIAL', materialId: item.id })
+        }).catch(console.error);
+      }
       if (m.type === "VIDEO") {
         setPlayingVideo(m);
       } else {
@@ -303,7 +315,7 @@ function VideoPlayerModal({ material, onClose }: { material: TopicMaterial, onCl
 
 // ─── Topic Card ───────────────────────────────────────────────────────────────
 
-function TopicCard({ topic }: { topic: Topic }) {
+function TopicCard({ topic, studentBatchId }: { topic: Topic, studentBatchId?: string }) {
   const [drawer, setDrawer] = useState<typeof CONTENT_TYPES[0] | null>(null);
 
   const materials = topic.materials ?? [];
@@ -362,6 +374,7 @@ function TopicCard({ topic }: { topic: Topic }) {
           contentType={drawer}
           materials={materials}
           exams={exams}
+          studentBatchId={studentBatchId}
           onClose={() => setDrawer(null)}
         />
       )}
@@ -372,10 +385,11 @@ function TopicCard({ topic }: { topic: Topic }) {
 // ─── Chapter Accordion ────────────────────────────────────────────────────────
 
 function ChapterRow({
-  chapter, syllabusId, onToggle,
+  chapter, syllabusId, studentBatchId, onToggle,
 }: {
   chapter: Chapter;
   syllabusId: string;
+  studentBatchId?: string;
   onToggle: (ch: Chapter) => void;
 }) {
   const isOpen = chapter.isExpanded;
@@ -408,7 +422,7 @@ function ChapterRow({
           {topics.length === 0 && !chapter.isLoadingTopics ? (
             <p className="text-xs text-gray-400 text-center py-4">No topics defined for this chapter yet.</p>
           ) : (
-            topics.map(topic => <TopicCard key={topic.id} topic={topic} />)
+            topics.map(topic => <TopicCard key={topic.id} topic={topic} studentBatchId={studentBatchId} />)
           )}
         </div>
       )}
@@ -613,6 +627,7 @@ export function CurriculumBrowser() {
                 key={chapter.id}
                 chapter={chapter}
                 syllabusId={selectedSyllabus.id}
+                studentBatchId={studentBatchId}
                 onToggle={handleToggleChapter}
               />
             ))
