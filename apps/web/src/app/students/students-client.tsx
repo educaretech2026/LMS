@@ -21,7 +21,8 @@ interface Student {
   classLevel: string;
   centre: string;
   division: string;
-  track?: "TUITION" | "ENTRANCE" | "BOTH";
+  trackId?: string;
+  trackName?: string;
   password?: string;
   subjectIds?: string[];
   bloodGroup?: string;
@@ -280,7 +281,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                         <td className="px-6 py-4">
                           <p className="text-xs font-bold text-text-primary">{s.classLevel}</p>
                           <span className="inline-flex rounded-full bg-success/10 border border-success/20 px-2.5 py-1 mt-1 text-[10px] font-bold text-success">
-                            {s.division}
+                            {s.trackName || 'Any'}
                           </span>
                         </td>
                         <td className="px-4 py-4 text-xs font-medium text-text-secondary">{s.centre}</td>
@@ -409,13 +410,15 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   const [classLevel, setClassLevel] = useState(student?.classLevel || "");
   const [centre, setCentre] = useState(student?.centre || "");
   const [division, setDivision] = useState(student?.division || "");
-  const [targetTrack, setTargetTrack] = useState<"TUITION" | "ENTRANCE" | "BOTH" | "">(student?.track || "");
+  const [targetTrack, setTargetTrack] = useState<string>(student?.trackId || "");
 
   const [apiYears, setApiYears] = useState<any[]>([]);
   const [apiBoards, setApiBoards] = useState<any[]>([]);
   const [apiCentres, setApiCentres] = useState<any[]>([]);
   const [apiStandards, setApiStandards] = useState<any[]>([]);
   const [apiSubjects, setApiSubjects] = useState<any[]>([]);
+  const [apiTracks, setApiTracks] = useState<any[]>([]);
+  const [apiBatches, setApiBatches] = useState<any[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(student?.subjectIds || []);
 
   useEffect(() => {
@@ -423,6 +426,8 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
     fetchApi("/setup/boards").then(d => setApiBoards(Array.isArray(d) ? d : [])).catch(console.error);
     fetchApi("/setup/centres").then(d => setApiCentres(Array.isArray(d) ? d : [])).catch(console.error);
     fetchApi("/setup/subjects").then(d => setApiSubjects(Array.isArray(d) ? d : [])).catch(console.error);
+    fetchApi("/setup/tracks").then(d => setApiTracks(Array.isArray(d) ? d : [])).catch(console.error);
+    fetchApi("/setup/batches").then(d => setApiBatches(Array.isArray(d) ? d : [])).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -609,13 +614,9 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 disabled:opacity-50"
                   >
                     <option value="">---Select---</option>
-                    {classLevel && centre && (
-                      <>
-                        <option value="Division A">Division A ({classLevel} - {board})</option>
-                        <option value="Division B">Division B ({classLevel} - {board})</option>
-                        <option value="Morning Batch">Morning Batch ({classLevel} - {board})</option>
-                      </>
-                    )}
+                    {apiBatches.filter(b => b.centre?.name === centre && b.board?.name === board && b.standard?.name === classLevel).map(b => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
@@ -652,9 +653,9 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     required
                   >
                     <option value="" disabled>---Select---</option>
-                    <option value="BOTH">Both (Tuition & Entrance)</option>
-                    <option value="TUITION">Tuition Only</option>
-                    <option value="ENTRANCE">Entrance Only</option>
+                    {apiTracks.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
@@ -875,7 +876,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     classLevel: classLevel || "Class 11",
                     division: division || "Division A",
                     centre: centre || "Educare Kalathipady",
-                    track: targetTrack,
+                    trackId: targetTrack,
                     password: password || undefined,
                     subjectIds: selectedSubjects,
                     bloodGroup: bloodGroup || undefined,
