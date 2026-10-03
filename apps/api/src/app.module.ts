@@ -23,6 +23,8 @@ import { SmsModule } from './sms/sms.module';
 import { FinanceModule } from './finance/finance.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { ReportModule } from './report/report.module';
+import { PublicAuthModule } from './public-auth/public-auth.module';
+import { CoursesModule } from './courses/courses.module';
 
 @Module({
   imports: [
@@ -48,6 +50,8 @@ import { ReportModule } from './report/report.module';
     FinanceModule,
     AttendanceModule,
     ReportModule,
+    PublicAuthModule,
+    CoursesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

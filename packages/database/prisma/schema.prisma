@@ -959,3 +959,220 @@ model TargetTrack {
 
   @@map("target_tracks")
 }
+
+// -----------------------------------------------------------------------------
+// COURSE LMS (PUBLIC & PAYMENTS)
+// -----------------------------------------------------------------------------
+
+model PublicUser {
+  id            String   @id @default(uuid())
+  email         String?  @unique
+  phone         String?  @unique
+  googleId      String?  @unique
+  name          String
+  avatar        String?
+  passwordHash  String?
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  otps          OtpToken[]
+  enrollments   CourseEnrollment[]
+  payments      Payment[]
+  subscriptions UserSubscription[]
+
+  @@map("public_users")
+}
+
+model OtpToken {
+  id          String   @id @default(uuid())
+  userId      String
+  otp         String
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  
+  user        PublicUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("otp_tokens")
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LessonType {
+  VIDEO
+  DOCUMENT
+  QUIZ
+  LIVE
+}
+
+model Course {
+  id               String   @id @default(uuid())
+  title            String
+  slug             String   @unique
+  description      String
+  thumbnail        String?
+  price            Decimal
+  currency         String   @default("INR")
+  isFree           Boolean  @default(false)
+  isPublished      Boolean  @default(false)
+  duration         Int?     // in hours
+  level            CourseLevel
+  createdByAdminId String?
+  archivedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  modules          CourseModule[]
+  enrollments      CourseEnrollment[]
+  payments         Payment[]
+  
+  subscriptionAccess SubscriptionCourseAccess[]
+
+  @@map("courses")
+}
+
+model CourseModule {
+  id        String   @id @default(uuid())
+  courseId  String
+  title     String
+  order     Int
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+
+  @@map("course_modules")
+}
+
+model Lesson {
+  id         String      @id @default(uuid())
+  moduleId   String
+  title      String
+  type       LessonType
+  content    String?     // URL or video ID
+  duration   Int?        // seconds
+  order      Int
+  isFree     Boolean     @default(false)
+  
+  module     CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress   LessonProgress[]
+
+  @@map("lessons")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  userId           String
+  courseId         String?
+  amount           Decimal
+  currency         String
+  status           PaymentStatus
+  gateway          String
+  gatewayOrderId   String?
+  gatewayPaymentId String?
+  gatewaySignature String?
+  refundedAt       DateTime?
+  refundReason     String?
+  refundedById     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user             PublicUser @relation(fields: [userId], references: [id])
+  course           Course?    @relation(fields: [courseId], references: [id])
+  enrollment       CourseEnrollment?
+  subscription     UserSubscription?
+
+  @@map("payments")
+}
+
+model CourseEnrollment {
+  id          String   @id @default(uuid())
+  userId      String
+  courseId    String
+  paymentId   String?  @unique
+  enrolledAt  DateTime @default(now())
+  expiresAt   DateTime?
+  completedAt DateTime?
+
+  user        PublicUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  payment     Payment?   @relation(fields: [paymentId], references: [id])
+  progress    LessonProgress[]
+
+  @@map("course_enrollments")
+}
+
+model LessonProgress {
+  id           String   @id @default(uuid())
+  enrollmentId String
+  lessonId     String
+  completed    Boolean  @default(false)
+  watchedSecs  Int      @default(0)
+  completedAt  DateTime?
+
+  enrollment   CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lesson       Lesson           @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, lessonId])
+  @@map("lesson_progress")
+}
+
+model SubscriptionPlan {
+  id            String   @id @default(uuid())
+  name          String
+  price         Decimal
+  currency      String   @default("INR")
+  intervalDays  Int
+  isActive      Boolean  @default(true)
+  description   String?
+  createdAt     DateTime @default(now())
+
+  subscriptions UserSubscription[]
+  courseAccess  SubscriptionCourseAccess[]
+
+  @@map("subscription_plans")
+}
+
+model SubscriptionCourseAccess {
+  planId   String
+  courseId String
+  
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  course   Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@id([planId, courseId])
+  @@map("subscription_course_access")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model UserSubscription {
+  id         String   @id @default(uuid())
+  userId     String
+  planId     String
+  paymentId  String?  @unique
+  startDate  DateTime
+  endDate    DateTime
+  status     SubscriptionStatus
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       PublicUser       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan       SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  payment    Payment?         @relation(fields: [paymentId], references: [id])
+
+  @@map("user_subscriptions")
+}
