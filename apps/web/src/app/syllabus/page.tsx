@@ -20,10 +20,11 @@ export default async function SyllabusPage() {
     redirect("/syllabus/student");
   }
 
-  const [batches, boards] = await Promise.all([
+  const [batches, boards, tracks] = await Promise.all([
     fetchApiServer<any[]>('/setup/batches').catch(() => []),
-    fetchApiServer<any[]>('/setup/boards').catch(() => [])
+    fetchApiServer<any[]>('/setup/boards').catch(() => []),
+    fetchApiServer<any[]>('/setup/tracks').catch(() => [])
   ]);
   
-  return <SyllabusClient initialBatches={batches} initialBoards={boards} />;
+  return <SyllabusClient initialBatches={batches} initialBoards={boards} initialTracks={tracks} />;
 }

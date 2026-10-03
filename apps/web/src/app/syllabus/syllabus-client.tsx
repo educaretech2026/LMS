@@ -6,14 +6,16 @@ import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 import { BookOpenCheck, ChevronDown, ChevronRight, CheckCircle2, Circle, Loader2 } from "lucide-react";
 
-export function SyllabusClient({ initialBatches, initialBoards = [] }: { initialBatches: any[], initialBoards?: any[] }) {
+export function SyllabusClient({ initialBatches, initialBoards = [], initialTracks = [] }: { initialBatches: any[], initialBoards?: any[], initialTracks?: any[] }) {
   const { role } = useAuth();
   const [batches] = useState<any[]>(Array.isArray(initialBatches) ? initialBatches : []);
   const [boards] = useState<any[]>(Array.isArray(initialBoards) ? initialBoards : []);
+  const [tracks] = useState<any[]>(Array.isArray(initialTracks) ? initialTracks : []);
   
   const [selectedBoard, setSelectedBoard] = useState<string>("");
   const [selectedStandard, setSelectedStandard] = useState<string>("");
   const [standards, setStandards] = useState<any[]>([]);
+  const [selectedTrack, setSelectedTrack] = useState<string>("");
   const [selectedSubject, setSelectedSubject] = useState<string>("");
   
   const [selectedBatch, setSelectedBatch] = useState<string>("");
@@ -167,13 +169,29 @@ export function SyllabusClient({ initialBatches, initialBoards = [] }: { initial
               ))}
             </select>
             <select
+              value={selectedTrack}
+              onChange={e => {
+                setSelectedTrack(e.target.value);
+                setSelectedBatch("");
+              }}
+              className="h-10 rounded-lg border border-border-soft bg-surface-2 px-4 text-sm font-medium text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+            >
+              <option value="">All Tracks...</option>
+              {tracks.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <select
               value={selectedBatch}
               onChange={e => setSelectedBatch(e.target.value)}
               disabled={!selectedStandard}
               className="h-10 rounded-lg border border-border-soft bg-surface-2 px-4 text-sm font-medium text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 disabled:opacity-50"
             >
               <option value="">Select Batch...</option>
-              {batches.filter(b => b.standardId === selectedStandard).map(b => (
+              {batches
+                .filter(b => b.standardId === selectedStandard)
+                .filter(b => !selectedTrack || b.trackId === selectedTrack)
+                .map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
