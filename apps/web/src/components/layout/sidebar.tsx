@@ -124,9 +124,15 @@ export function Sidebar({
           {role !== 'STUDENT' && role !== 'TEACHER' && (
             <NavSection label="Management" items={managementNav} activePath={path} />
           )}
-          {role !== 'STUDENT' && (
-            <NavSection label="System" items={role === 'TEACHER' ? systemNav.filter(item => item.label === 'Help') : systemNav} activePath={path} />
-          )}
+          <NavSection 
+            label="System & Account" 
+            items={
+              role === 'STUDENT' || role === 'TEACHER' 
+                ? systemNav.filter(item => ['My Profile', 'Help'].includes(item.label)) 
+                : systemNav
+            } 
+            activePath={path} 
+          />
         </nav>
 
         {/* Footer */}
