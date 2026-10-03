@@ -289,7 +289,7 @@ export class StudentsService {
     return this.prisma.$queryRaw`
       SELECT u."firstName", u."lastName", p."admissionNo", s."name" as "classLevel"
       FROM "student_profiles" p
-      JOIN "User" u ON u.id = p."userId"
+      JOIN "users" u ON u.id = p."userId"
       JOIN "enrollments" e ON e."studentProfileId" = p.id
       JOIN "batches" b ON b.id = e."batchId"
       JOIN "standards" s ON s.id = b."standardId"
