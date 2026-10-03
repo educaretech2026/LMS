@@ -7,7 +7,7 @@ export class FeeService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(user?: any) {
-    const whereClause = user?.role === 'STUDENT' 
+    const whereClause = user?.role?.name === 'STUDENT' 
       ? { student: { userId: user.id } } 
       : {};
 
