@@ -398,23 +398,35 @@ function AcademicStructureTab() {
 
   const deleteBoard = async (id: string) => {
     if (!confirm("Are you sure? This will delete all classes, subjects, and data associated with this board.")) return;
-    await fetchApi(`/setup/boards/${id}`, { method: 'DELETE' });
-    setBoards(boards.filter(b => b.id !== id));
-    setStandards(standards.filter(s => s.boardId !== id));
-    setSyllabi(syllabi.filter(s => s.boardId !== id));
+    try {
+      await fetchApi(`/setup/boards/${id}`, { method: 'DELETE' });
+      setBoards(boards.filter(b => b.id !== id));
+      setStandards(standards.filter(s => s.boardId !== id));
+      setSyllabi(syllabi.filter(s => s.boardId !== id));
+    } catch (e: any) {
+      alert(e.message || "Failed to delete board.");
+    }
   };
 
   const deleteStandard = async (id: string) => {
     if (!confirm("Are you sure? This will delete all subjects and data associated with this class.")) return;
-    await fetchApi(`/setup/standards/${id}`, { method: 'DELETE' });
-    setStandards(standards.filter(s => s.id !== id));
-    setSyllabi(syllabi.filter(s => s.standardId !== id));
+    try {
+      await fetchApi(`/setup/standards/${id}`, { method: 'DELETE' });
+      setStandards(standards.filter(s => s.id !== id));
+      setSyllabi(syllabi.filter(s => s.standardId !== id));
+    } catch (e: any) {
+      alert(e.message || "Failed to delete class.");
+    }
   };
 
   const deleteSyllabus = async (id: string) => {
     if (!confirm("Are you sure? This will remove the subject from this class.")) return;
-    await fetchApi(`/setup/syllabi/${id}`, { method: 'DELETE' });
-    setSyllabi(syllabi.filter(s => s.id !== id));
+    try {
+      await fetchApi(`/setup/syllabi/${id}`, { method: 'DELETE' });
+      setSyllabi(syllabi.filter(s => s.id !== id));
+    } catch (e: any) {
+      alert(e.message || "Failed to remove subject.");
+    }
   };
 
   return (
@@ -838,16 +850,20 @@ function CurriculumBuilderTab() {
 
   const handleDelete = async (type: 'chapters' | 'topics' | 'subtopics', id: string, parentId?: string, grandParentId?: string) => {
     if (!confirm(`Are you sure you want to delete this ${type.slice(0,-1)}?`)) return;
-    await fetchApi(`/setup/${type}/${id}`, { method: 'DELETE' });
-    
-    if (type === 'chapters') {
-      setChapters(chapters.filter(c => c.id !== id));
-    } else if (type === 'topics' && parentId) {
-      setChapters(chapters.map(c => c.id === parentId ? { ...c, topics: c.topics.filter((t: any) => t.id !== id) } : c));
-    } else if (type === 'subtopics' && parentId && grandParentId) {
-      setChapters(chapters.map(c => c.id === grandParentId ? {
-        ...c, topics: c.topics.map((t: any) => t.id === parentId ? { ...t, subtopics: t.subtopics.filter((s: any) => s.id !== id) } : t)
-      } : c));
+    try {
+      await fetchApi(`/setup/${type}/${id}`, { method: 'DELETE' });
+      
+      if (type === 'chapters') {
+        setChapters(chapters.filter(c => c.id !== id));
+      } else if (type === 'topics' && parentId) {
+        setChapters(chapters.map(c => c.id === parentId ? { ...c, topics: c.topics.filter((t: any) => t.id !== id) } : c));
+      } else if (type === 'subtopics' && parentId && grandParentId) {
+        setChapters(chapters.map(c => c.id === grandParentId ? {
+          ...c, topics: c.topics.map((t: any) => t.id === parentId ? { ...t, subtopics: t.subtopics.filter((s: any) => s.id !== id) } : t)
+        } : c));
+      }
+    } catch (e: any) {
+      alert(e.message || `Failed to delete ${type.slice(0,-1)}.`);
     }
   };
 
