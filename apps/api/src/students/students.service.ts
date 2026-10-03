@@ -81,7 +81,7 @@ export class StudentsService {
           data: {
             studentProfileId: profile.id,
             batchId: batch.id,
-            track: data.track || 'BOTH',
+            trackId: data.trackId || null,
             ...(data.subjectIds && data.subjectIds.length > 0 && {
                subjects: { connect: data.subjectIds.map((id: string) => ({ id })) }
             })
@@ -227,12 +227,12 @@ export class StudentsService {
         }
       });
 
-      if (batch || data.track) {
+      if (batch || data.trackId) {
         const enrollment = await prisma.enrollment.findFirst({ where: { studentProfileId: id } });
         if (enrollment) {
           const updateData: any = {};
           if (batch) updateData.batchId = batch.id;
-          if (data.track) updateData.track = data.track;
+          if (data.trackId) updateData.trackId = data.trackId;
           if (data.subjectIds !== undefined) {
             updateData.subjects = {
               set: data.subjectIds.map((id: string) => ({ id }))

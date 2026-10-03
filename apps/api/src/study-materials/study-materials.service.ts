@@ -80,7 +80,7 @@ export class StudyMaterialService {
           chapterId: data.chapterId,
           topicId: data.topicId,
           uploaderId: data.uploaderId,
-          targetTrack: data.targetTrack || 'BOTH',
+          targetTrackId: data.targetTrackId || null,
         },
       });
     } catch (error) {

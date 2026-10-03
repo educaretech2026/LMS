@@ -38,7 +38,7 @@ export class ExamsService {
       if (exam.boardId) whereClause.boardId = exam.boardId;
       if (exam.standardId) whereClause.standardId = exam.standardId;
       if (exam.centreId) whereClause.centreId = exam.centreId;
-      if (exam.targetTrack && exam.targetTrack !== 'BOTH') whereClause.track = exam.targetTrack;
+      if (exam.targetTrackId) whereClause.trackId = exam.targetTrackId;
     }
 
     const enrollments = await this.prisma.enrollment.findMany({
@@ -155,7 +155,7 @@ export class ExamsService {
   }
 
   async createExam(data: any) {
-    let { title, type, academicYearId, batchId, subjectId, chapterId, topicId, boardId, standardId, centreId, targetTrack } = data;
+    let { title, type, academicYearId, batchId, subjectId, chapterId, topicId, boardId, standardId, centreId, targetTrackId } = data;
     
     // Ensure we have a valid academicYear
     if (academicYearId === "dummy") {
@@ -191,7 +191,7 @@ export class ExamsService {
         boardId: boardId || undefined,
         standardId: standardId || undefined,
         centreId: centreId || undefined,
-        targetTrack: targetTrack || 'BOTH',
+        targetTrackId: targetTrackId || null,
       }
     });
   }

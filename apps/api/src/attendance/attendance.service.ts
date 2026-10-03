@@ -54,9 +54,9 @@ export class AttendanceService {
     });
   }
 
-  async resolveBatchId(centreId: string, boardId: string, standardId: string, track: string) {
+  async resolveBatchId(centreId: string, boardId: string, standardId: string, trackId: string) {
     let batch = await this.prisma.batch.findFirst({
-      where: { centreId, boardId, standardId, track: track as any }
+      where: { centreId, boardId, standardId, trackId }
     });
     if (!batch) {
       // Create a default batch for these dimensions so we can link attendance to it
@@ -66,28 +66,28 @@ export class AttendanceService {
       
       batch = await this.prisma.batch.create({
         data: {
-          name: `Default Batch - ${track}`,
+          name: `Default Batch - ${trackId}`,
           academicYearId: ay.id,
           boardId,
           standardId,
           centreId,
-          track: track as any
+          trackId: trackId
         }
       });
     }
     return batch.id;
   }
 
-  async getBatches(centreId: string, boardId: string, standardId: string, track: string) {
+  async getBatches(centreId: string, boardId: string, standardId: string, trackId: string) {
     return this.prisma.batch.findMany({
-      where: { centreId, boardId, standardId, track: track as any }
+      where: { centreId, boardId, standardId, trackId }
     });
   }
 
-  async getStudentsByFilter(centreId: string, boardId: string, standardId: string, track: string) {
+  async getStudentsByFilter(centreId: string, boardId: string, standardId: string, trackId: string) {
     const enrollments = await this.prisma.enrollment.findMany({
       where: {
-        batch: { centreId, boardId, standardId, track: track as any }
+        batch: { centreId, boardId, standardId, trackId }
       },
       include: {
         studentProfile: {
@@ -103,10 +103,10 @@ export class AttendanceService {
     }));
   }
 
-  async getAttendanceByFilter(centreId: string, boardId: string, standardId: string, track: string, date: string) {
+  async getAttendanceByFilter(centreId: string, boardId: string, standardId: string, trackId: string, date: string) {
     const targetDate = new Date(date);
     const batch = await this.prisma.batch.findFirst({
-      where: { centreId, boardId, standardId, track: track as any }
+      where: { centreId, boardId, standardId, trackId }
     });
     
     if (!batch) return null;
@@ -121,14 +121,14 @@ export class AttendanceService {
   }
 
   async markAttendance(data: any, userId: string) {
-    const { batchId, date, records, centreId, boardId, standardId, track, subjectId } = data;
+    const { batchId, date, records, centreId, boardId, standardId, trackId, subjectId } = data;
     const targetDate = new Date(date);
     
     let resolvedBatchId = batchId;
     if (batchId === 'ALL') {
       resolvedBatchId = null;
-    } else if (!batchId && centreId && boardId && standardId && track) {
-      resolvedBatchId = await this.resolveBatchId(centreId, boardId, standardId, track);
+    } else if (!batchId && centreId && boardId && standardId && trackId) {
+      resolvedBatchId = await this.resolveBatchId(centreId, boardId, standardId, trackId);
     }
 
     let attendance = await this.prisma.attendance.findFirst({

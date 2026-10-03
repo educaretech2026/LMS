@@ -15,9 +15,9 @@ export class AttendanceController {
     @Query('centreId') centreId: string,
     @Query('boardId') boardId: string,
     @Query('standardId') standardId: string,
-    @Query('track') track: string
+    @Query('trackId') trackId: string
   ) {
-    return this.attendanceService.getStudentsByFilter(centreId, boardId, standardId, track);
+    return this.attendanceService.getStudentsByFilter(centreId, boardId, standardId, trackId);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -26,9 +26,9 @@ export class AttendanceController {
     @Query('centreId') centreId: string,
     @Query('boardId') boardId: string,
     @Query('standardId') standardId: string,
-    @Query('track') track: string
+    @Query('trackId') trackId: string
   ) {
-    return this.attendanceService.getBatches(centreId, boardId, standardId, track);
+    return this.attendanceService.getBatches(centreId, boardId, standardId, trackId);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -43,10 +43,10 @@ export class AttendanceController {
     @Query('centreId') centreId: string,
     @Query('boardId') boardId: string,
     @Query('standardId') standardId: string,
-    @Query('track') track: string,
+    @Query('trackId') trackId: string,
     @Query('date') date: string
   ) {
-    return this.attendanceService.getAttendanceByFilter(centreId, boardId, standardId, track, date);
+    return this.attendanceService.getAttendanceByFilter(centreId, boardId, standardId, trackId, date);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')

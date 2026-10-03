@@ -78,7 +78,7 @@ export class AssignmentsService {
           batchId: data.batchId,
           subjectId: data.subjectId,
           uploaderId,
-          targetTrack: data.targetTrack || 'BOTH',
+          targetTrackId: data.targetTrackId || null,
         }
       });
     } catch (error) {
