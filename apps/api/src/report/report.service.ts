@@ -239,11 +239,13 @@ export class ReportService {
       where: { batchId: { in: batchIds } }
     });
 
-    // Today's attendance
-    const todayAttendance = await this.prisma.attendance.findMany({
+    // Today's attendance records
+    const todayAttendance = await this.prisma.attendanceRecord.findMany({
       where: {
-        batchId: { in: batchIds },
-        date: { gte: today, lt: tomorrow }
+        attendance: {
+          batchId: { in: batchIds },
+          date: { gte: today, lt: tomorrow }
+        }
       }
     });
 
