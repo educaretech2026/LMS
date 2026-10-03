@@ -429,20 +429,48 @@ export function CurriculumBrowser() {
 
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loadingChapters, setLoadingChapters] = useState(false);
+  const { role } = useAuth();
+  const isStudent = role === 'STUDENT';
 
-  // Load boards + standards
+  // Load boards + standards OR student's profile
   useEffect(() => {
-    fetchApi("/setup/boards").then((d: any) => setBoards(d)).catch(console.error);
-    fetchApi("/setup/standards").then((d: any) => setStandards(d)).catch(console.error);
-  }, []);
+    if (isStudent) {
+      fetchApi("/users/me").then((user: any) => {
+        const enrollment = user.studentProfile?.enrollments?.[0];
+        if (enrollment) {
+           const boardId = enrollment.batch?.boardId;
+           const standardId = enrollment.batch?.standardId;
+           const subjectIds = enrollment.subjects?.map((s:any)=>s.id) || [];
+           
+           if (boardId && standardId) {
+             setSelectedBoard(boardId);
+             setSelectedStandard(standardId);
+             
+             // Fetch syllabi and filter
+             fetchApi(`/setup/syllabi?boardId=${boardId}&standardId=${standardId}`)
+               .then((data: any) => {
+                 const allSyllabi = Array.isArray(data) ? data : [];
+                 const enrolledSyllabi = allSyllabi.filter(s => subjectIds.includes(s.subjectId));
+                 setSyllabi(enrolledSyllabi);
+               })
+               .catch(console.error);
+           }
+        }
+      }).catch(console.error);
+    } else {
+      fetchApi("/setup/boards").then((d: any) => setBoards(d)).catch(console.error);
+      fetchApi("/setup/standards").then((d: any) => setStandards(d)).catch(console.error);
+    }
+  }, [isStudent]);
 
   // Load syllabi when board+standard selected
   useEffect(() => {
+    if (isStudent) return;
     if (!selectedBoard || !selectedStandard) { setSyllabi([]); setSelectedSyllabus(null); setChapters([]); return; }
     fetchApi(`/setup/syllabi?boardId=${selectedBoard}&standardId=${selectedStandard}`)
       .then((data: any) => setSyllabi(Array.isArray(data) ? data : []))
       .catch(console.error);
-  }, [selectedBoard, selectedStandard]);
+  }, [selectedBoard, selectedStandard, isStudent]);
 
   // Load chapters when syllabus selected
   useEffect(() => {
@@ -508,35 +536,39 @@ export function CurriculumBrowser() {
           <h2 className="text-sm font-bold text-gray-800">Select Your Class & Subject</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Board */}
-          <div>
-            <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Board</label>
-            <select
-              value={selectedBoard}
-              onChange={e => { setSelectedBoard(e.target.value); setSelectedStandard(""); setSelectedSyllabus(null); }}
-              className="w-full h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 focus:bg-white transition-colors"
-            >
-              <option value="">Select Board</option>
-              {boards.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </div>
+          {!isStudent && (
+            <>
+              {/* Board */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Board</label>
+                <select
+                  value={selectedBoard}
+                  onChange={e => { setSelectedBoard(e.target.value); setSelectedStandard(""); setSelectedSyllabus(null); }}
+                  className="w-full h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 focus:bg-white transition-colors"
+                >
+                  <option value="">Select Board</option>
+                  {boards.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
 
-          {/* Class */}
-          <div>
-            <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Class</label>
-            <select
-              value={selectedStandard}
-              onChange={e => { setSelectedStandard(e.target.value); setSelectedSyllabus(null); }}
-              disabled={!selectedBoard}
-              className="w-full h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 focus:bg-white transition-colors disabled:opacity-40"
-            >
-              <option value="">Select Class</option>
-              {standards.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
+              {/* Class */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Class</label>
+                <select
+                  value={selectedStandard}
+                  onChange={e => { setSelectedStandard(e.target.value); setSelectedSyllabus(null); }}
+                  disabled={!selectedBoard}
+                  className="w-full h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 focus:bg-white transition-colors disabled:opacity-40"
+                >
+                  <option value="">Select Class</option>
+                  {standards.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </>
+          )}
 
           {/* Subject */}
-          <div>
+          <div className={isStudent ? "col-span-1 sm:col-span-3" : ""}>
             <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Subject</label>
             <select
               value={selectedSyllabus?.id ?? ""}
