@@ -27,7 +27,7 @@ export default function AttendancePage() {
   const [selectedCentre, setSelectedCentre] = useState<string>("");
   const [selectedBoard, setSelectedBoard] = useState<string>("");
   const [selectedStandard, setSelectedStandard] = useState<string>("");
-  const [selectedTrack, setSelectedTrack] = useState<string>("BOTH");
+  const [selectedTrack, setSelectedTrack] = useState<string>("");
 
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
@@ -57,8 +57,8 @@ export default function AttendancePage() {
   }, [selectedBoard]);
 
   useEffect(() => {
-    if (selectedCentre && selectedBoard && selectedStandard && selectedTrack) {
-      const query = `?centreId=${selectedCentre}&boardId=${selectedBoard}&standardId=${selectedStandard}&trackId=${selectedTrack}`;
+    if (selectedCentre && selectedBoard && selectedStandard) {
+      const query = `?centreId=${selectedCentre}&boardId=${selectedBoard}&standardId=${selectedStandard}${selectedTrack ? `&trackId=${selectedTrack}` : ''}`;
       fetchApi(`/attendance/batches/filter${query}`).then(d => setBatches(Array.isArray(d) ? d : [])).catch(() => {});
     } else {
       setBatches([]);
