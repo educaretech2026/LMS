@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
-import { CourseLevel } from '@prisma/client';
+import { PrismaService } from '../database/prisma.service';
+import { CourseLevel } from '@educare/database';
 
 @Injectable()
 export class CoursesService {
-  constructor(private prisma: DatabaseService) {}
+  constructor(private prisma: PrismaService) {}
 
   // ─── ADMIN ENDPOINTS ────────────────────────────────────────────────────────
   
@@ -98,9 +98,9 @@ export class CoursesService {
     }
 
     // Hide content for non-free lessons in the public view
-    const safeModules = course.modules.map(mod => ({
+    const safeModules = course.modules.map((mod: any) => ({
       ...mod,
-      lessons: mod.lessons.map(lesson => ({
+      lessons: mod.lessons.map((lesson: any) => ({
         ...lesson,
         content: lesson.isFree ? lesson.content : null
       }))

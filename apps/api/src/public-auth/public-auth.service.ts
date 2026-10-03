@@ -1,12 +1,12 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../database/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 
 @Injectable()
 export class PublicAuthService {
   constructor(
-    private readonly prisma: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
