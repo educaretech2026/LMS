@@ -22,6 +22,7 @@ export default function AttendancePage() {
   const [centres, setCentres] = useState<any[]>([]);
   const [boards, setBoards] = useState<any[]>([]);
   const [standards, setStandards] = useState<any[]>([]);
+  const [tracks, setTracks] = useState<any[]>([]);
   
   const [selectedCentre, setSelectedCentre] = useState<string>("");
   const [selectedBoard, setSelectedBoard] = useState<string>("");
@@ -44,6 +45,7 @@ export default function AttendancePage() {
     fetchApi("/setup/centres").then(d => setCentres(Array.isArray(d) ? d : [])).catch(() => {});
     fetchApi("/setup/boards").then(d => setBoards(Array.isArray(d) ? d : [])).catch(() => {});
     fetchApi("/setup/subjects").then(d => setSubjects(Array.isArray(d) ? d : [])).catch(() => {});
+    fetchApi("/setup/tracks").then(d => setTracks(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (selectedCentre && selectedBoard && selectedStandard && selectedTrack) {
-      const query = `?centreId=${selectedCentre}&boardId=${selectedBoard}&standardId=${selectedStandard}&track=${selectedTrack}`;
+      const query = `?centreId=${selectedCentre}&boardId=${selectedBoard}&standardId=${selectedStandard}&trackId=${selectedTrack}`;
       fetchApi(`/attendance/batches/filter${query}`).then(d => setBatches(Array.isArray(d) ? d : [])).catch(() => {});
     } else {
       setBatches([]);
@@ -209,9 +211,8 @@ export default function AttendancePage() {
                 onChange={e => setSelectedTrack(e.target.value)}
                 className="w-full h-10 rounded-lg border border-border-soft bg-surface pl-3 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-600/20"
               >
-                <option value="TUITION">Tuition</option>
-                <option value="ENTRANCE">Entrance</option>
-                <option value="BOTH">Both</option>
+                <option value="">All Tracks</option>
+                {tracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
             <div>
