@@ -282,9 +282,9 @@ model Batch {
   updatedAt      DateTime  @updatedAt
 
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  board        Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  standard     Standard     @relation(fields: [standardId], references: [id], onDelete: Cascade)
-  centre       Centre       @relation(fields: [centreId], references: [id], onDelete: Cascade)
+  board        Board        @relation(fields: [boardId], references: [id])
+  standard     Standard     @relation(fields: [standardId], references: [id])
+  centre       Centre       @relation(fields: [centreId], references: [id])
 
   enrollments          Enrollment[]
   assignments          TeacherAssignment[]
@@ -408,9 +408,9 @@ model Exam {
   topic        Topic?       @relation(fields: [topicId], references: [id])
   subtopic     Subtopic?    @relation(fields: [subtopicId], references: [id])
 
-  board    Board?    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  standard Standard? @relation(fields: [standardId], references: [id], onDelete: Cascade)
-  centre   Centre?   @relation(fields: [centreId], references: [id], onDelete: Cascade)
+  board    Board?    @relation(fields: [boardId], references: [id])
+  standard Standard? @relation(fields: [standardId], references: [id])
+  centre   Centre?   @relation(fields: [centreId], references: [id])
 
   mcqQuestions McqQuestion[]
   results      ExamResult[]
@@ -545,9 +545,9 @@ model LiveClass {
   standardId String?
   centreId   String?
 
-  board    Board?    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  standard Standard? @relation(fields: [standardId], references: [id], onDelete: Cascade)
-  centre   Centre?   @relation(fields: [centreId], references: [id], onDelete: Cascade)
+  board    Board?    @relation(fields: [boardId], references: [id])
+  standard Standard? @relation(fields: [standardId], references: [id])
+  centre   Centre?   @relation(fields: [centreId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
