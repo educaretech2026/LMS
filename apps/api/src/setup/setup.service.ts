@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -16,6 +16,22 @@ export class SetupService {
     return this.prisma.centre.update({ where: { id }, data });
   }
   async deleteCentre(id: string) {
+    const centre = await this.prisma.centre.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { userCentres: true, batches: true, liveClasses: true, exams: true, Transaction: true }
+        }
+      }
+    });
+
+    if (!centre) throw new NotFoundException('Centre not found');
+
+    const { userCentres, batches, liveClasses, exams, Transaction } = centre._count;
+    if (userCentres > 0 || batches > 0 || liveClasses > 0 || exams > 0 || Transaction > 0) {
+      throw new ConflictException(`Cannot delete: Found ${batches} batches, ${liveClasses} live classes, ${exams} exams, ${Transaction} transactions, and ${userCentres} users attached to this centre.`);
+    }
+
     return this.prisma.centre.delete({ where: { id } });
   }
 
@@ -158,23 +174,94 @@ export class SetupService {
 
   // Deletions
   async deleteBoard(id: string) {
+    const board = await this.prisma.board.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { batches: true, syllabi: true, liveClasses: true, exams: true, standards: true } }
+      }
+    });
+    if (!board) throw new NotFoundException('Board not found');
+    
+    const { batches, syllabi, liveClasses, exams, standards } = board._count;
+    if (batches > 0 || syllabi > 0 || liveClasses > 0 || exams > 0 || standards > 0) {
+      throw new ConflictException(`Cannot delete: Found ${standards} classes, ${batches} batches, ${syllabi} syllabi, ${liveClasses} live classes, and ${exams} exams attached to this board.`);
+    }
     return this.prisma.board.delete({ where: { id } });
   }
+
   async deleteStandard(id: string) {
+    const standard = await this.prisma.standard.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { batches: true, syllabi: true, liveClasses: true, exams: true } }
+      }
+    });
+    if (!standard) throw new NotFoundException('Class not found');
+
+    const { batches, syllabi, liveClasses, exams } = standard._count;
+    if (batches > 0 || syllabi > 0 || liveClasses > 0 || exams > 0) {
+      throw new ConflictException(`Cannot delete: Found ${batches} batches, ${syllabi} syllabi, ${liveClasses} live classes, and ${exams} exams attached to this class. Please remove them first.`);
+    }
     return this.prisma.standard.delete({ where: { id } });
   }
+
   async deleteSubject(id: string) {
+    const subject = await this.prisma.subject.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { syllabi: true, teacherAssignments: true, studentAssignments: true, exams: true } }
+      }
+    });
+    if (!subject) throw new NotFoundException('Subject not found');
+
+    const { syllabi, teacherAssignments, studentAssignments, exams } = subject._count;
+    if (syllabi > 0 || teacherAssignments > 0 || studentAssignments > 0 || exams > 0) {
+      throw new ConflictException(`Cannot delete: Found ${syllabi} syllabi, ${teacherAssignments} teacher assignments, ${studentAssignments} student assignments, and ${exams} exams attached to this subject.`);
+    }
     return this.prisma.subject.delete({ where: { id } });
   }
+
   async deleteSyllabus(id: string) {
+    const syllabus = await this.prisma.syllabus.findUnique({
+      where: { id },
+      include: { _count: { select: { chapters: true, materials: true } } }
+    });
+    if (!syllabus) throw new NotFoundException('Syllabus not found');
+
+    if (syllabus._count.chapters > 0 || syllabus._count.materials > 0) {
+      throw new ConflictException(`Cannot delete: Found ${syllabus._count.chapters} chapters and ${syllabus._count.materials} study materials attached to this syllabus.`);
+    }
     return this.prisma.syllabus.delete({ where: { id } });
   }
+
   async deleteChapter(id: string) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id },
+      include: { _count: { select: { topics: true, exams: true, materials: true, assignments: true } } }
+    });
+    if (!chapter) throw new NotFoundException('Chapter not found');
+
+    const { topics, exams, materials, assignments } = chapter._count;
+    if (topics > 0 || exams > 0 || materials > 0 || assignments > 0) {
+      throw new ConflictException(`Cannot delete: Found ${topics} topics, ${materials} study materials, ${assignments} assignments, and ${exams} exams attached to this chapter.`);
+    }
     return this.prisma.chapter.delete({ where: { id } });
   }
+
   async deleteTopic(id: string) {
+    const topic = await this.prisma.topic.findUnique({
+      where: { id },
+      include: { _count: { select: { subtopics: true, exams: true, materials: true, assignments: true } } }
+    });
+    if (!topic) throw new NotFoundException('Topic not found');
+
+    const { subtopics, exams, materials, assignments } = topic._count;
+    if (subtopics > 0 || exams > 0 || materials > 0 || assignments > 0) {
+      throw new ConflictException(`Cannot delete: Found ${subtopics} subtopics, ${materials} study materials, ${assignments} assignments, and ${exams} exams attached to this topic.`);
+    }
     return this.prisma.topic.delete({ where: { id } });
   }
+
   async deleteSubtopic(id: string) {
     return this.prisma.subtopic.delete({ where: { id } });
   }
