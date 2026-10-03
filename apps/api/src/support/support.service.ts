@@ -5,12 +5,13 @@ import { PrismaService } from '../database/prisma.service';
 export class SupportService {
   constructor(private prisma: PrismaService) {}
 
-  async createTicket(userId: string, subject: string, description: string) {
+  async createTicket(userId: string, subject: string, description: string, imageUrl?: string) {
     return this.prisma.supportTicket.create({
       data: {
         userId,
         subject,
         description,
+        imageUrl,
       },
     });
   }

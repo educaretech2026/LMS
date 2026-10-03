@@ -1191,6 +1191,7 @@ model SupportTicket {
   user        User                @relation(fields: [userId], references: [id])
   subject     String
   description String
+  imageUrl    String?
   status      SupportTicketStatus @default(OPEN)
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt

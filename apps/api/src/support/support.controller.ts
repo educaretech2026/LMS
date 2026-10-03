@@ -14,8 +14,8 @@ export class SupportController {
 
   @Post('tickets')
   @ApiOperation({ summary: 'Create a new support ticket' })
-  createTicket(@Req() req: any, @Body() body: { subject: string; description: string }) {
-    return this.supportService.createTicket(req.user.id, body.subject, body.description);
+  createTicket(@Req() req: any, @Body() body: { subject: string; description: string; imageUrl?: string }) {
+    return this.supportService.createTicket(req.user.id, body.subject, body.description, body.imageUrl);
   }
 
   @Get('tickets/me')

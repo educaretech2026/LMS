@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { fetchApi } from "@/lib/api";
-import { BookOpen, ExternalLink, HelpCircle, MessageSquare, Send, CheckCircle2, Ticket } from "lucide-react";
+import { BookOpen, ExternalLink, HelpCircle, MessageSquare, Send, CheckCircle2, Ticket, Image as ImageIcon, X } from "lucide-react";
 
 export function HelpClient({ role }: { role?: string }) {
   const [activeTab, setActiveTab] = useState<"options" | "ticket" | "my-tickets">("options");
@@ -11,6 +11,8 @@ export function HelpClient({ role }: { role?: string }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [tickets, setTickets] = useState<any[]>([]);
+  const [imageUrl, setImageUrl] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     if (activeTab === "my-tickets") {
@@ -34,11 +36,12 @@ export function HelpClient({ role }: { role?: string }) {
     try {
       await fetchApi("/support/tickets", {
         method: "POST",
-        body: JSON.stringify({ subject, description }),
+        body: JSON.stringify({ subject, description, imageUrl }),
       });
       setMessage("Ticket created successfully! We will get back to you soon.");
       setSubject("");
       setDescription("");
+      setImageUrl("");
       setTimeout(() => {
         setMessage("");
         setActiveTab("my-tickets");
@@ -47,6 +50,29 @@ export function HelpClient({ role }: { role?: string }) {
       alert(err.message || "Failed to create ticket");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    try {
+      const { uploadUrl, finalUrl } = (await fetchApi(`/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`)) as any;
+      
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!uploadRes.ok) throw new Error("Failed to upload image");
+      setImageUrl(finalUrl);
+    } catch (err: any) {
+      alert(err.message || "Failed to upload image");
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -152,6 +178,38 @@ export function HelpClient({ role }: { role?: string }) {
                 className="w-full h-32 rounded-lg border border-border-soft bg-surface p-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none"
               />
             </div>
+            
+            {/* Image Upload */}
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Screenshot (Optional)</label>
+              {imageUrl ? (
+                <div className="relative inline-block border border-border-soft rounded-lg overflow-hidden">
+                  <img src={imageUrl} alt="Attached screenshot" className="h-32 object-contain" />
+                  <button 
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 hover:bg-black/70"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <label className={`flex items-center justify-center w-full h-20 rounded-lg border-2 border-dashed border-border-soft bg-surface-2 hover:bg-surface cursor-pointer transition-colors ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div className="flex flex-col items-center gap-1 text-text-muted">
+                    {uploadingImage ? (
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-blue border-r-transparent" />
+                    ) : (
+                      <>
+                        <ImageIcon className="h-5 w-5" />
+                        <span className="text-xs font-semibold">Click to upload image</span>
+                      </>
+                    )}
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
+                </label>
+              )}
+            </div>
+            
             <button 
               type="submit"
               disabled={loading}
@@ -205,6 +263,13 @@ export function HelpClient({ role }: { role?: string }) {
                   </span>
                 </div>
                 <p className="text-xs text-text-secondary leading-relaxed mb-4">{ticket.description}</p>
+                {ticket.imageUrl && (
+                  <div className="mb-4">
+                    <a href={ticket.imageUrl} target="_blank" rel="noreferrer">
+                      <img src={ticket.imageUrl} alt="Screenshot" className="h-24 rounded border border-border-soft object-cover" />
+                    </a>
+                  </div>
+                )}
                 
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-[10px] text-text-muted font-medium">
