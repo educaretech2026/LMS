@@ -25,6 +25,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { ReportModule } from './report/report.module';
 import { PublicAuthModule } from './public-auth/public-auth.module';
 import { CoursesModule } from './courses/courses.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { CoursesModule } from './courses/courses.module';
     ReportModule,
     PublicAuthModule,
     CoursesModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [AppService],
