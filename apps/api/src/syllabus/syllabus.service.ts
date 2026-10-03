@@ -181,8 +181,14 @@ export class SyllabusService {
     const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
     if (!batch) throw new NotFoundException('Batch not found');
 
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { studentProfileId_batchId: { studentProfileId: studentId, batchId } },
+      include: { subjects: true }
+    });
+    const subjectIds = enrollment?.subjects.map(s => s.id) || [];
+
     const syllabi = await this.prisma.syllabus.findMany({
-      where: { boardId: batch.boardId, standardId: batch.standardId },
+      where: { boardId: batch.boardId, standardId: batch.standardId, subjectId: { in: subjectIds } },
       include: {
         subject: true,
         chapters: {
