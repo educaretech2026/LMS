@@ -10,7 +10,7 @@ export class PublicAuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(data: any) {
+  async register(data: any): Promise<any> {
     const { email, phone, name, password } = data;
 
     if (!email && !phone) {
@@ -47,7 +47,7 @@ export class PublicAuthService {
     };
   }
 
-  async login(data: any) {
+  async login(data: any): Promise<any> {
     const { email, phone, password } = data;
 
     if (!email && !phone) {
@@ -86,7 +86,7 @@ export class PublicAuthService {
     };
   }
 
-  async generateOtp(userId: string) {
+  async generateOtp(userId: string): Promise<any> {
     // Generate a random 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     
@@ -108,7 +108,7 @@ export class PublicAuthService {
     return { success: true, message: 'OTP sent successfully' };
   }
 
-  async verifyOtp(userId: string, otp: string) {
+  async verifyOtp(userId: string, otp: string): Promise<any> {
     const otpRecord = await this.prisma.otpToken.findFirst({
       where: {
         userId,

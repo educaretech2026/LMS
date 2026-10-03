@@ -8,7 +8,7 @@ export class CoursesService {
 
   // ─── ADMIN ENDPOINTS ────────────────────────────────────────────────────────
   
-  async createCourse(data: any, adminId: string) {
+  async createCourse(data: any, adminId: string): Promise<any> {
     const slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
     
     return this.prisma.course.create({
@@ -24,7 +24,7 @@ export class CoursesService {
     });
   }
 
-  async getAllCourses(includeUnpublished = false) {
+  async getAllCourses(includeUnpublished = false): Promise<any> {
     return this.prisma.course.findMany({
       where: includeUnpublished ? {} : { isPublished: true },
       include: {
@@ -38,14 +38,14 @@ export class CoursesService {
     });
   }
 
-  async updateCourse(id: string, data: any) {
+  async updateCourse(id: string, data: any): Promise<any> {
     return this.prisma.course.update({
       where: { id },
       data
     });
   }
 
-  async addModule(courseId: string, data: { title: string, order: number }) {
+  async addModule(courseId: string, data: { title: string, order: number }): Promise<any> {
     return this.prisma.courseModule.create({
       data: {
         courseId,
@@ -55,7 +55,7 @@ export class CoursesService {
     });
   }
 
-  async addLesson(moduleId: string, data: any) {
+  async addLesson(moduleId: string, data: any): Promise<any> {
     return this.prisma.lesson.create({
       data: {
         moduleId,
@@ -71,14 +71,14 @@ export class CoursesService {
 
   // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────────
 
-  async getPublicCatalog() {
+  async getPublicCatalog(): Promise<any> {
     return this.prisma.course.findMany({
       where: { isPublished: true, archivedAt: null },
       orderBy: { createdAt: 'desc' }
     });
   }
 
-  async getPublicCourseDetail(slug: string) {
+  async getPublicCourseDetail(slug: string): Promise<any> {
     const course = await this.prisma.course.findUnique({
       where: { slug },
       include: {
