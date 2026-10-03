@@ -91,9 +91,10 @@ function getYouTubeId(url: string) {
 }
 
 function ContentDrawer({
-  topic, contentType, materials, exams, onClose,
+  topic, contentType, materials, exams, studentBatchId, onClose,
 }: {
   topic: Topic;
+  contentType: typeof CONTENT_TYPES[0];
   materials: TopicMaterial[];
   exams: TopicExam[];
   studentBatchId?: string;
@@ -156,7 +157,7 @@ function ContentDrawer({
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className={`px-5 py-4 flex items-center justify-between border-b border-gray-100 ${contentType.color.split(" ").map(c => c.startsWith("bg-") ? c : "").join(" ")}`} style={{ background: "white" }}>
+        <div className={`px-5 py-4 flex items-center justify-between border-b border-gray-100 ${contentType.color.split(" ").map((c: string) => c.startsWith("bg-") ? c : "").join(" ")}`} style={{ background: "white" }}>
           <div className="flex items-center gap-3">
             <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${contentType.color}`}>
               <Icon className="h-4 w-4" />
@@ -445,6 +446,7 @@ export function CurriculumBrowser() {
   const [loadingChapters, setLoadingChapters] = useState(false);
   const { role } = useAuth();
   const isStudent = role === 'STUDENT';
+  const [studentBatchId, setStudentBatchId] = useState<string>("");
 
   // Load boards + standards OR student's profile
   useEffect(() => {
@@ -452,6 +454,7 @@ export function CurriculumBrowser() {
       fetchApi("/users/me").then((user: any) => {
         const enrollment = user.studentProfile?.enrollments?.[0];
         if (enrollment) {
+           setStudentBatchId(enrollment.batchId);
            const boardId = enrollment.batch?.boardId;
            const standardId = enrollment.batch?.standardId;
            const subjectIds = enrollment.subjects?.map((s:any)=>s.id) || [];
