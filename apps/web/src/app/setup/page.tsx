@@ -64,7 +64,6 @@ const DeleteWarningModal = ({ isOpen, onClose, message }: { isOpen: boolean, onC
 
 export default function SetupPage() {
   const { role } = useAuth();
-  const { role } = useAuth();
   const [activeTab, setActiveTab] = useState("Centre Setup");
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
 
