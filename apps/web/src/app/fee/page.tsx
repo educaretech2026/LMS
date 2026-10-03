@@ -1,7 +1,14 @@
 import { fetchApiServer } from "@/lib/api-server";
 import { FeeClient } from "./fee-client";
+import { getUserFromToken } from "@/lib/auth-server";
+import { redirect } from "next/navigation";
 
 export default async function FeePage() {
+  const user = await getUserFromToken();
+  if (user?.role === 'STUDENT') {
+    redirect('/');
+  }
+
   const data = await fetchApiServer<any[]>("/fee").catch(() => []);
   const mapped = data.map((d: any) => ({
     id: d.id,
