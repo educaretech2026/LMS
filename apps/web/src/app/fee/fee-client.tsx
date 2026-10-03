@@ -18,6 +18,7 @@ interface FeeRecord {
   status: "PAID" | "PENDING" | "OVERDUE";
   paymentMode: string;
   studentId?: string;
+  feeHead?: string;
 }
 
 export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[], students: any[] }) {
@@ -46,7 +47,8 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
         amount: d.amount,
         date: new Date(d.createdAt || d.date || Date.now()).toLocaleDateString(),
         status: d.status,
-        paymentMode: d.paymentMode || "-"
+        paymentMode: d.paymentMode || "-",
+        feeHead: d.feeHead || "General"
       }));
       setFees(mapped as FeeRecord[]);
       
@@ -71,17 +73,24 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
   }
 
   const filtered = fees.filter(f => {
-    const studentName = f.studentName || "";
-    const receiptNo = f.receiptNo || "";
-    const course = f.course || "";
-    
-    const matchSearch = studentName.toLowerCase().includes(search.toLowerCase()) || 
-                        receiptNo.toLowerCase().includes(search.toLowerCase()) ||
-                        course.toLowerCase().includes(search.toLowerCase());
-    const matchCourse = filterCourse === "All Classes" || f.course === filterCourse;
-    const matchStatus = filterStatus === "All Status" || f.status === filterStatus;
-    const matchMode = filterMode === "All Modes" || f.paymentMode === filterMode;
-    return matchSearch && matchCourse && matchStatus && matchMode;
+    if (role === 'STUDENT') {
+      const searchLower = search.toLowerCase();
+      return f.amount.toString().includes(searchLower) || 
+             (f.date && f.date.toLowerCase().includes(searchLower)) ||
+             (f.feeHead && f.feeHead.toLowerCase().includes(searchLower));
+    } else {
+      const studentName = f.studentName || "";
+      const receiptNo = f.receiptNo || "";
+      const course = f.course || "";
+      
+      const matchSearch = studentName.toLowerCase().includes(search.toLowerCase()) || 
+                          receiptNo.toLowerCase().includes(search.toLowerCase()) ||
+                          course.toLowerCase().includes(search.toLowerCase());
+      const matchCourse = filterCourse === "All Classes" || f.course === filterCourse;
+      const matchStatus = filterStatus === "All Status" || f.status === filterStatus;
+      const matchMode = filterMode === "All Modes" || f.paymentMode === filterMode;
+      return matchSearch && matchCourse && matchStatus && matchMode;
+    }
   });
 
   const totalCollected = fees.filter(f => f.status === 'PAID').reduce((sum, f) => sum + Number(f.amount), 0);
@@ -193,7 +202,7 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by Student Name, Receipt No, or Course..."
+                  placeholder={role === 'STUDENT' ? "Search by Amount, Date, or Fee Head..." : "Search by Student Name, Receipt No, or Course..."}
                   className="w-full h-10 rounded-l-lg border border-r-0 border-border-soft bg-surface-2 pl-10 pr-4 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                 />
               </div>
@@ -202,28 +211,30 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
               </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              {[
-                { label: "Class/Course", state: filterCourse, set: setFilterCourse, options: ["All Classes", "Class 11", "Class 12 (A)"] },
-                { label: "Status", state: filterStatus, set: setFilterStatus, options: ["All Status", "Paid", "Pending", "Overdue"] },
-                { label: "Payment Mode", state: filterMode, set: setFilterMode, options: ["All Modes", "Online", "-", "Cash", "Bank Transfer"] },
-                { label: "Rows", options: ["10", "20", "50"] },
-              ].map((f) => (
-                <div key={f.label}>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">{f.label}</label>
-                  <div className="relative">
-                    <select
-                      value={f.state}
-                      onChange={(e) => f.set && f.set(e.target.value)}
-                      className="w-full h-9 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                    >
-                      {f.options.map(o => <option key={o}>{o}</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
+            {role !== 'STUDENT' && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {[
+                  { label: "Class/Course", state: filterCourse, set: setFilterCourse, options: ["All Classes", "Class 11", "Class 12 (A)"] },
+                  { label: "Status", state: filterStatus, set: setFilterStatus, options: ["All Status", "Paid", "Pending", "Overdue"] },
+                  { label: "Payment Mode", state: filterMode, set: setFilterMode, options: ["All Modes", "Online", "-", "Cash", "Bank Transfer"] },
+                  { label: "Rows", options: ["10", "20", "50"] },
+                ].map((f) => (
+                  <div key={f.label}>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5">{f.label}</label>
+                    <div className="relative">
+                      <select
+                        value={f.state}
+                        onChange={(e) => f.set && f.set(e.target.value)}
+                        className="w-full h-9 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                      >
+                        {f.options.map(o => <option key={o}>{o}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* List Section */}
@@ -266,7 +277,7 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
                       </th>
                     )}
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Receipt No</th>
-                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Student & Course</th>
+                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">{role === 'STUDENT' ? "Fee Head" : "Student & Course"}</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Amount</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Date & Mode</th>
                     <th className="px-6 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Status</th>
@@ -294,8 +305,14 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
                         </span>
                       </td>
                       <td className="px-4 py-4">
-                        <p className="font-bold text-text-primary">{f.studentName}</p>
-                        <p className="text-[11px] text-text-muted mt-0.5">{f.course}</p>
+                        {role === 'STUDENT' ? (
+                          <p className="font-bold text-text-primary">{f.feeHead}</p>
+                        ) : (
+                          <>
+                            <p className="font-bold text-text-primary">{f.studentName}</p>
+                            <p className="text-[11px] text-text-muted mt-0.5">{f.course}</p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-4">
                         <span className="font-bold text-text-primary">₹{f.amount}</span>

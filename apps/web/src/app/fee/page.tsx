@@ -1,6 +1,8 @@
 import { fetchApiServer } from "@/lib/api-server";
 import { FeeClient } from "./fee-client";
 
+export const dynamic = 'force-dynamic';
+
 export default async function FeePage() {
   const data = await fetchApiServer<any[]>("/fee").catch(() => []);
   const mapped = data.map((d: any) => ({
@@ -12,7 +14,8 @@ export default async function FeePage() {
     amount: d.amount,
     date: new Date(d.date || d.createdAt || Date.now()).toLocaleDateString(),
     status: d.status,
-    paymentMode: d.paymentMode || "-"
+    paymentMode: d.paymentMode || "-",
+    feeHead: d.feeHead || "General"
   }));
 
   const students = await fetchApiServer<any[]>("/students").catch(() => []);
