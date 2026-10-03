@@ -86,12 +86,12 @@ export function IdCardClient({ student }: IdCardProps) {
 
           {/* Header — Logo sits centred in the blue diagonal zone */}
           <div className="px-4 pt-6 pb-0 flex flex-col items-center relative z-10 w-full">
-            <div className="flex justify-center items-center w-[272px] h-[68px] bg-white/95 rounded-xl shadow-md border border-white/30 backdrop-blur-sm p-2">
+            <div className="flex justify-center items-center w-[284px] h-[80px] bg-white/95 rounded-xl shadow-md border border-white/30 backdrop-blur-sm p-2">
               <Image
                 src={logoImage}
                 alt="Logo"
-                width={252}
-                height={60}
+                width={264}
+                height={72}
                 className="object-contain w-full h-full drop-shadow-sm"
                 priority
               />
@@ -179,12 +179,12 @@ export function IdCardClient({ student }: IdCardProps) {
 
             {/* Header logo */}
             <div className="flex justify-center pb-3 border-b border-brand-blue/10">
-              <div className="flex justify-center items-center w-[180px] h-11 bg-white/90 rounded-lg shadow-sm border border-brand-blue/10 p-1.5">
+              <div className="flex justify-center items-center w-[224px] h-[56px] bg-white/90 rounded-lg shadow-sm border border-brand-blue/10 p-1.5">
                 <Image
                   src={logoImage}
                   alt="Logo"
-                  width={160}
-                  height={44}
+                  width={204}
+                  height={52}
                   className="object-contain w-full h-full opacity-90 grayscale"
                 />
               </div>
