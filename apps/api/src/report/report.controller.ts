@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Param, Req, UseGuards } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -43,5 +43,11 @@ export class ReportController {
   @Get('dashboard')
   getDashboardStats() {
     return this.reportService.getDashboardStats();
+  }
+
+  @Roles('TEACHER')
+  @Get('teacher-dashboard')
+  getTeacherDashboard(@Req() req: any) {
+    return this.reportService.getTeacherDashboard(req.user.id);
   }
 }

@@ -202,4 +202,74 @@ export class ReportService {
       smsBalance
     };
   }
+
+  async getTeacherDashboard(userId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Get teacher profile with assignments
+    const teacherProfile = await this.prisma.teacherProfile.findUnique({
+      where: { userId },
+      include: {
+        assignments: {
+          include: {
+            batch: {
+              include: {
+                standard: true,
+                board: true,
+                centre: true,
+                enrollments: true,
+              }
+            },
+            subject: true,
+          }
+        }
+      }
+    });
+
+    if (!teacherProfile) return { batches: [], totalStudents: 0, todayPresent: 0, todayAbsent: 0, subjects: [] };
+
+    const batchIds = [...new Set(teacherProfile.assignments.map(a => a.batchId))];
+    const subjectIds = [...new Set(teacherProfile.assignments.map(a => a.subjectId))];
+
+    // Total students across teacher's batches
+    const totalStudents = await this.prisma.enrollment.count({
+      where: { batchId: { in: batchIds } }
+    });
+
+    // Today's attendance
+    const todayAttendance = await this.prisma.attendance.findMany({
+      where: {
+        batchId: { in: batchIds },
+        date: { gte: today, lt: tomorrow }
+      }
+    });
+
+    const todayPresent = todayAttendance.filter(a => a.status === AttendanceStatus.PRESENT).length;
+    const todayAbsent = todayAttendance.filter(a => a.status === AttendanceStatus.ABSENT).length;
+
+    // Unique batches with student count
+    const batches = batchIds.map(bId => {
+      const assignment = teacherProfile.assignments.find(a => a.batchId === bId);
+      const batch = assignment?.batch;
+      return {
+        id: bId,
+        name: batch?.name,
+        standard: batch?.standard?.name,
+        board: batch?.board?.name,
+        centre: batch?.centre?.name,
+        studentCount: batch?.enrollments?.length || 0,
+      };
+    });
+
+    const subjects = teacherProfile.assignments.map(a => ({
+      id: a.subjectId,
+      name: a.subject.name,
+      batchName: a.batch.name,
+    }));
+
+    return { batches, totalStudents, todayPresent, todayAbsent, subjects };
+  }
 }
