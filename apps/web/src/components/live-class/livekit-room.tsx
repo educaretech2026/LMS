@@ -188,7 +188,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
               }}
             >
               <Tldraw
-                persistenceKey={`educare-wb-${roomId}`}
                 onMount={(editor) => {
                   if (!isTeacher) {
                     editor.updateInstanceState({ isReadonly: true });
