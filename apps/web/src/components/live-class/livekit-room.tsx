@@ -85,17 +85,33 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      recorder.ondataavailable = e => chunksRef.current.push(e.data);
+      
+      // Let browser choose the best supported format
+      const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
+        ? { mimeType: 'video/webm;codecs=vp9,opus' } 
+        : MediaRecorder.isTypeSupported('video/webm')
+        ? { mimeType: 'video/webm' }
+        : MediaRecorder.isTypeSupported('video/mp4')
+        ? { mimeType: 'video/mp4' }
+        : {};
+        
+      const recorder = new MediaRecorder(stream, options);
+      recorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `class-recording-${new Date().toISOString().split('T')[0]}.webm`;
+        const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+        a.download = `class-recording-${new Date().toISOString().split('T')[0]}.${ext}`;
         a.click();
+        URL.revokeObjectURL(url);
         chunksRef.current = [];
         setIsRecording(false);
+        // Ensure tracks are stopped
+        stream.getTracks().forEach(t => t.stop());
       };
       // If user stops sharing screen natively
       stream.getVideoTracks()[0].onended = () => {
@@ -121,13 +137,13 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={role !== "STUDENT"}
-      audio={role !== "STUDENT"}
+      video={role?.toUpperCase() !== "STUDENT"}
+      audio={role?.toUpperCase() !== "STUDENT"}
       onDisconnected={onLeave}
       className="h-full w-full relative flex flex-col sm:flex-row"
       style={{ "--lk-bg": "#0f0f1a" } as React.CSSProperties}
     >
-      <ClassroomLogic setSharedFiles={setSharedFiles} />
+      <ClassroomLogic setSharedFiles={setSharedFiles} setShowWhiteboard={setShowWhiteboard} />
       
       <div className={`flex-1 transition-all flex flex-col ${showWhiteboard ? 'w-full sm:w-1/3 border-r border-white/10' : 'w-full'}`}>
         <VideoConference />
@@ -153,12 +169,12 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       
       {showWhiteboard && (
         <div className="w-full sm:w-2/3 h-[50vh] sm:h-full bg-white relative">
-          <Tldraw persistenceKey={`educare-whiteboard-${roomId}`} />
+          <Tldraw readOnly={role?.toUpperCase() === 'STUDENT'} />
         </div>
       )}
 
       {/* Custom Control overlay for Teacher */}
-      {role !== 'STUDENT' && (
+      {role?.toUpperCase() !== 'STUDENT' && (
         <TeacherControls 
           showWhiteboard={showWhiteboard} 
           setShowWhiteboard={setShowWhiteboard} 
@@ -172,7 +188,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 }
 
 // Logic component that uses Room context
-function ClassroomLogic({ setSharedFiles }: { setSharedFiles: React.Dispatch<React.SetStateAction<any[]>> }) {
+function ClassroomLogic({ setSharedFiles, setShowWhiteboard }: { setSharedFiles: React.Dispatch<React.SetStateAction<any[]>>, setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>> }) {
   const room = useRoomContext();
   
   useEffect(() => {
@@ -187,6 +203,8 @@ function ClassroomLogic({ setSharedFiles }: { setSharedFiles: React.Dispatch<Rea
           room.localParticipant.setMicrophoneEnabled(false);
         } else if (data.type === "FILE_SHARED") {
           setSharedFiles(prev => [...prev, { name: data.name, url: data.url }]);
+        } else if (data.type === "WHITEBOARD_TOGGLE") {
+          setShowWhiteboard(data.state);
         }
       } catch (e) {
         console.error("Failed to parse data message", e);
@@ -197,7 +215,7 @@ function ClassroomLogic({ setSharedFiles }: { setSharedFiles: React.Dispatch<Rea
     return () => {
       room.off(RoomEvent.DataReceived, handleData);
     };
-  }, [room, setSharedFiles]);
+  }, [room, setSharedFiles, setShowWhiteboard]);
 
   return null;
 }
@@ -246,7 +264,14 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
   return (
     <div className="absolute top-4 right-4 z-[60] flex flex-col gap-2">
       <button 
-        onClick={() => setShowWhiteboard(!showWhiteboard)}
+        onClick={() => {
+          const newState = !showWhiteboard;
+          setShowWhiteboard(newState);
+          if (room) {
+            const payload = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: newState });
+            room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+          }
+        }}
         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${showWhiteboard ? 'bg-brand-red text-white hover:bg-brand-red/90' : 'bg-white text-gray-800 hover:bg-gray-50'}`}
       >
         <MonitorUp className="h-4 w-4" />

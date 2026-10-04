@@ -32,7 +32,7 @@ export class LiveClassController {
     @Query('role') role: string,
   ) {
     // Students can subscribe only; admins/staff can publish
-    const canPublish = role !== 'STUDENT';
+    const canPublish = role?.toUpperCase() !== 'STUDENT';
     return this.liveKitService.generateToken(roomId, identity, name, canPublish);
   }
 

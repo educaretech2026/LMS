@@ -85,7 +85,7 @@ export default function LiveClassPage() {
     setShowSchedule(false);
   };
 
-  const displayName = email ? `${email.split("@")[0]}` : (role === "STUDENT" ? "Student" : "Teacher");
+  const displayName = email ? `${email.split("@")[0]}` : (role?.toUpperCase() === "STUDENT" ? "Student" : "Teacher");
 
   /* ── Active Room ── */
   if (activeRoom) {
@@ -107,7 +107,7 @@ export default function LiveClassPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {role !== "STUDENT" && activeRoom.status !== "LIVE" && (
+            {role?.toUpperCase() !== "STUDENT" && activeRoom.status !== "LIVE" && (
               <button
                 onClick={() => handleStatusChange(activeRoom.id, "LIVE")}
                 className="flex items-center gap-1.5 rounded-full bg-brand-red/15 border border-brand-red/30 px-3 py-1 text-[11px] font-semibold text-brand-red hover:bg-brand-red/25 transition-colors"
@@ -122,7 +122,7 @@ export default function LiveClassPage() {
             )}
             <button
               onClick={async () => {
-                if (role !== "STUDENT" && activeRoom.status === "LIVE") {
+                if (role?.toUpperCase() !== "STUDENT" && activeRoom.status === "LIVE") {
                   await handleStatusChange(activeRoom.id, "ENDED");
                 }
                 setActiveRoom(null);
@@ -130,7 +130,7 @@ export default function LiveClassPage() {
               className="flex items-center gap-2 rounded-lg bg-brand-red/15 hover:bg-brand-red/30 border border-brand-red/30 px-3 py-1.5 text-xs font-semibold text-brand-red transition-colors"
             >
               <X className="h-3.5 w-3.5" />
-              {role === "STUDENT" ? "Leave" : "End Class"}
+              {role?.toUpperCase() === "STUDENT" ? "Leave" : "End Class"}
             </button>
           </div>
         </div>
@@ -173,7 +173,7 @@ export default function LiveClassPage() {
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
-            {role !== "STUDENT" && (
+            {role?.toUpperCase() !== "STUDENT" && (
               <button
                 onClick={() => setShowSchedule(true)}
                 className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
@@ -196,7 +196,7 @@ export default function LiveClassPage() {
           )}
 
           {/* Stats row — Admin only */}
-          {role !== "STUDENT" && (
+          {role?.toUpperCase() !== "STUDENT" && (
             <div className="grid grid-cols-3 gap-4">
               {[
                 { label: "Total Classes",   value: String(stats.total), icon: BookOpen, color: "text-brand-blue bg-brand-blue/8" },
@@ -245,7 +245,7 @@ export default function LiveClassPage() {
               <Section title="Upcoming Classes">
                 {scheduledClasses.length === 0 ? (
                   <EmptyState
-                    text={role === "STUDENT" ? "No upcoming classes scheduled." : "No upcoming classes. Schedule one above!"}
+                    text={role?.toUpperCase() === "STUDENT" ? "No upcoming classes scheduled." : "No upcoming classes. Schedule one above!"}
                   />
                 ) : (
                   scheduledClasses.map(cls => (
@@ -324,7 +324,7 @@ function ClassCard({
 }) {
   const isLive = cls.status === "LIVE";
   const isEnded = cls.status === "ENDED";
-  const isStudent = role === "STUDENT";
+  const isStudent = role?.toUpperCase() === "STUDENT";
 
   const scheduledDate = new Date(cls.scheduledAt);
   const dateStr = scheduledDate.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
