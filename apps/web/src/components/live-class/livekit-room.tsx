@@ -141,8 +141,8 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={role?.toUpperCase() !== "STUDENT"}
-      audio={role?.toUpperCase() !== "STUDENT"}
+      video={true}
+      audio={true}
       onDisconnected={onLeave}
       className="h-full w-full relative flex flex-col sm:flex-row"
       style={{ "--lk-bg": "#0f0f1a" } as React.CSSProperties}

@@ -31,8 +31,8 @@ export class LiveClassController {
     @Query('name') name: string,
     @Query('role') role: string,
   ) {
-    // Students can subscribe only; admins/staff can publish
-    const canPublish = role?.toUpperCase() !== 'STUDENT';
+    // Everyone can publish video and audio
+    const canPublish = true;
     return this.liveKitService.generateToken(roomId, identity, name, canPublish);
   }
 
