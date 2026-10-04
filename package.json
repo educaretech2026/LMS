@@ -2,7 +2,7 @@
   "name": "educare-lms",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @educare/database db:generate && pnpm --filter @educare/database db:push --accept-data-loss && turbo run build",
+    "build": "pnpm --filter @educare/database db:generate && turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
