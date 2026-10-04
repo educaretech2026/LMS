@@ -3,7 +3,7 @@
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useState, useEffect } from "react";
 import { Plus, Edit2, Trash2, Bell } from "lucide-react";
-import { api } from "@/lib/api";
+import { fetchApi } from "@/lib/api";
 
 export default function NoticesPage() {
   const [notices, setNotices] = useState<any[]>([]);
@@ -15,8 +15,8 @@ export default function NoticesPage() {
   const fetchNotices = async () => {
     setIsLoading(true);
     try {
-      const res = await api.get("/notices");
-      setNotices(res.data);
+      const res: any = await fetchApi("/notices");
+      setNotices(res);
     } catch (error) {
       alert("Failed to load notices");
     } finally {
@@ -32,10 +32,10 @@ export default function NoticesPage() {
     e.preventDefault();
     try {
       if (editingId) {
-        await api.put(`/notices/${editingId}`, formData);
+        await fetchApi(`/notices/${editingId}`, { method: 'PUT', body: JSON.stringify(formData) });
         alert("Notice updated");
       } else {
-        await api.post("/notices", formData);
+        await fetchApi("/notices", { method: 'POST', body: JSON.stringify(formData) });
         alert("Notice created");
       }
       setIsModalOpen(false);
@@ -48,7 +48,7 @@ export default function NoticesPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure?")) return;
     try {
-      await api.delete(`/notices/${id}`);
+      await fetchApi(`/notices/${id}`, { method: 'DELETE' });
       alert("Notice deleted");
       fetchNotices();
     } catch (error) {
