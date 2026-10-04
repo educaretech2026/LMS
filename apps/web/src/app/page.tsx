@@ -9,8 +9,11 @@ export default async function Home() {
   const user = await getUserFromToken();
   let adminStats = null;
   let teacherStats = null;
+  let liveClasses = [];
 
-  if (user?.role === 'TEACHER') {
+  if (user?.role === 'STUDENT') {
+    liveClasses = await fetchApiServer('/live-class').catch(() => []);
+  } else if (user?.role === 'TEACHER') {
     teacherStats = await fetchApiServer('/report/teacher-dashboard').catch(() => null);
   } else if (user?.role !== 'STUDENT') {
     adminStats = await fetchApiServer('/report/dashboard').catch(() => null);
@@ -19,7 +22,7 @@ export default async function Home() {
   return (
     <DashboardLayout title="Dashboard" role={user?.role}>
       {user?.role === 'STUDENT' ? (
-        <StudentDashboard user={user} />
+        <StudentDashboard user={user} liveClasses={liveClasses} />
       ) : user?.role === 'TEACHER' ? (
         <TeacherDashboard user={user} stats={teacherStats} />
       ) : (

@@ -10,7 +10,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-export function StudentDashboard({ user }: { user: any }) {
+export function StudentDashboard({ user, liveClasses = [] }: { user: any, liveClasses?: any[] }) {
+  // Only show live/scheduled classes for today/future
+  const upcomingClasses = liveClasses.filter((cls: any) => cls.status !== 'ENDED').slice(0, 3);
+  
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
       {/* ── Banner ── */}
@@ -86,26 +89,39 @@ export function StudentDashboard({ user }: { user: any }) {
             </Link>
           </div>
           <div className="space-y-4">
-            <div className="flex items-start gap-4 p-3 rounded-lg border border-border-soft bg-surface-2">
-              <div className="h-10 w-10 shrink-0 rounded-lg bg-brand-blue/10 text-brand-blue flex flex-col items-center justify-center">
-                <span className="text-xs font-bold leading-tight">10</span>
-                <span className="text-[9px] uppercase font-semibold leading-tight">AM</span>
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-text-primary">Mathematics - Algebra</h4>
-                <p className="text-xs text-text-secondary mt-0.5">Mr. Thomas | Class 11</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4 p-3 rounded-lg border border-border-soft bg-surface-2">
-              <div className="h-10 w-10 shrink-0 rounded-lg bg-brand-blue/10 text-brand-blue flex flex-col items-center justify-center">
-                <span className="text-xs font-bold leading-tight">12</span>
-                <span className="text-[9px] uppercase font-semibold leading-tight">PM</span>
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-text-primary">Physics - Thermodynamics</h4>
-                <p className="text-xs text-text-secondary mt-0.5">Mrs. Smith | Class 11</p>
-              </div>
-            </div>
+            {upcomingClasses.length === 0 ? (
+              <p className="text-sm text-text-muted text-center py-6">No upcoming classes scheduled.</p>
+            ) : (
+              upcomingClasses.map((cls: any) => {
+                const date = new Date(cls.scheduledAt);
+                const isLive = cls.status === 'LIVE';
+                return (
+                  <div key={cls.id} className={`flex items-start gap-4 p-3 rounded-lg border ${isLive ? 'border-brand-red/30 bg-brand-red/5' : 'border-border-soft bg-surface-2'}`}>
+                    <div className={`h-10 w-10 shrink-0 rounded-lg flex flex-col items-center justify-center ${isLive ? 'bg-brand-red/10 text-brand-red' : 'bg-brand-blue/10 text-brand-blue'}`}>
+                      {isLive ? (
+                        <div className="flex flex-col items-center">
+                          <span className="h-2 w-2 rounded-full bg-brand-red animate-pulse mb-1" />
+                          <span className="text-[9px] uppercase font-bold">LIVE</span>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-xs font-bold leading-tight">
+                            {date.toLocaleTimeString("en-IN", { hour: "numeric", hour12: false })}
+                          </span>
+                          <span className="text-[9px] uppercase font-semibold leading-tight">
+                            {date.toLocaleTimeString("en-IN", { hour12: true }).split(' ')[1]}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-text-primary">{cls.title}</h4>
+                      <p className="text-xs text-text-secondary mt-0.5">{cls.subject} | {cls.teacherName}</p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -114,24 +130,9 @@ export function StudentDashboard({ user }: { user: any }) {
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-text-primary">Notice Board</h3>
           </div>
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5"><Bell className="h-4 w-4 text-brand-red" /></div>
-              <div>
-                <h4 className="text-sm font-semibold text-text-primary">Term 1 Examination Schedule</h4>
-                <p className="text-xs text-text-muted mt-0.5">The schedule for Term 1 has been published. Please check the exams section.</p>
-                <p className="text-[10px] font-medium text-text-muted mt-1">2 hours ago</p>
-              </div>
-            </div>
-            <div className="h-px w-full bg-border-soft" />
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5"><Award className="h-4 w-4 text-warning" /></div>
-              <div>
-                <h4 className="text-sm font-semibold text-text-primary">Sports Day 2026</h4>
-                <p className="text-xs text-text-muted mt-0.5">Annual sports day will be held on Oct 15. Register your names.</p>
-                <p className="text-[10px] font-medium text-text-muted mt-1">1 day ago</p>
-              </div>
-            </div>
+          <div className="flex flex-col items-center justify-center h-32 text-center space-y-2">
+            <Bell className="h-6 w-6 text-text-muted/50" />
+            <p className="text-sm text-text-muted">No new notices at the moment.</p>
           </div>
         </div>
       </div>
