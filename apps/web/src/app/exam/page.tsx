@@ -22,7 +22,7 @@ export default function ExamOverviewPage() {
               <p className="text-xs text-text-muted mt-0.5">Manage question banks, MCQ exams, mock tests and results</p>
             </div>
           </div>
-          {role !== 'STUDENT' && (
+          {role?.toUpperCase() !== 'STUDENT' && (
             <Link
               href="/exam/mcq/create"
               className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
@@ -32,12 +32,12 @@ export default function ExamOverviewPage() {
           )}
         </div>
 
-        {role !== 'STUDENT' && <ExamTabs />}
+        {role?.toUpperCase() !== 'STUDENT' && <ExamTabs />}
 
         <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
 
           {/* Stats */}
-          {role !== 'STUDENT' && (
+          {role?.toUpperCase() !== 'STUDENT' && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: "Total Questions", value: "0",  icon: Database,    color: "text-brand-blue bg-brand-blue/8" },
@@ -56,57 +56,63 @@ export default function ExamOverviewPage() {
             </div>
           )}
 
-          {/* Quick Access */}
-          <div>
-            <h3 className="text-sm font-semibold text-text-primary mb-3">Quick Access</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <QuickCard
-                href="/exam/questions"
-                icon={Database}
-                title="Question Bank"
-                desc="Add and manage MCQ questions grouped by subject and topic."
-                color="blue"
-              />
-              <QuickCard
-                href="/exam/mcq"
-                icon={Layers}
-                title="MCQ Exams"
-                desc="Create timed MCQ examinations and assign them to student batches."
-                color="red"
-              />
-              <QuickCard
-                href="/exam/mock"
-                icon={CheckCircle2}
-                title="Mock Tests"
-                desc="Set up practice tests with instant feedback and explanations."
-                color="green"
-              />
-            </div>
-          </div>
+          {role?.toUpperCase() !== 'STUDENT' ? (
+            <>
+              {/* Quick Access */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-3">Quick Access</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <QuickCard
+                    href="/exam/questions"
+                    icon={Database}
+                    title="Question Bank"
+                    desc="Add and manage MCQ questions grouped by subject and topic."
+                    color="blue"
+                  />
+                  <QuickCard
+                    href="/exam/mcq"
+                    icon={Layers}
+                    title="MCQ Exams"
+                    desc="Create timed MCQ examinations and assign them to student batches."
+                    color="red"
+                  />
+                  <QuickCard
+                    href="/exam/mock"
+                    icon={CheckCircle2}
+                    title="Mock Tests"
+                    desc="Set up practice tests with instant feedback and explanations."
+                    color="green"
+                  />
+                </div>
+              </div>
 
-          {/* Recent Exams */}
-          <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-border-soft">
-              <h3 className="text-sm font-semibold text-text-primary">Recent Exams</h3>
-              <Link href="/exam/mcq" className="text-xs font-medium text-brand-blue hover:underline">View all</Link>
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-surface-2">
-                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Exam Name</th>
-                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Subject</th>
-                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Questions</th>
-                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Duration</th>
-                  <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={5} className="py-16 text-center text-sm text-text-muted">No exams created yet.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+              {/* Recent Exams */}
+              <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border-soft">
+                  <h3 className="text-sm font-semibold text-text-primary">Recent Exams</h3>
+                  <Link href="/exam/mcq" className="text-xs font-medium text-brand-blue hover:underline">View all</Link>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-surface-2">
+                      <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Exam Name</th>
+                      <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Subject</th>
+                      <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Questions</th>
+                      <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Duration</th>
+                      <th className="text-left px-5 py-3 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colSpan={5} className="py-16 text-center text-sm text-text-muted">No exams created yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <StudentExamsList />
+          )}
 
         </div>
       </div>
@@ -129,5 +135,17 @@ function QuickCard({ href, icon: Icon, title, desc, color }: { href: string; ico
       <p className="text-xs text-text-muted mt-1.5 leading-relaxed">{desc}</p>
       <p className="mt-4 text-xs font-semibold text-brand-blue">Go to {title} →</p>
     </Link>
+  );
+}
+
+function StudentExamsList() {
+  return (
+    <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden p-10 text-center">
+      <Layers className="h-10 w-10 text-text-muted mx-auto mb-3" />
+      <h3 className="text-sm font-semibold text-text-primary">No Upcoming Exams</h3>
+      <p className="text-xs text-text-muted mt-1 max-w-sm mx-auto">
+        Your assigned exams will appear here when they are scheduled by your teachers.
+      </p>
+    </div>
   );
 }
