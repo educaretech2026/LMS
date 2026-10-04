@@ -144,9 +144,40 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       video={true}
       audio={true}
       onDisconnected={onLeave}
-      className="h-full w-full relative flex flex-col sm:flex-row"
-      style={{ "--lk-bg": "#0f0f1a" } as React.CSSProperties}
+      className="h-full w-full relative flex flex-col sm:flex-row pt-16"
+      style={{ 
+        "--lk-bg": "#0f1115",
+        "--lk-control-bar-bg": "rgba(23, 25, 35, 0.95)",
+        "--lk-border-color": "rgba(255, 255, 255, 0.1)",
+        "--lk-button-bg": "rgba(255, 255, 255, 0.1)",
+        "--lk-button-hover-bg": "rgba(255, 255, 255, 0.2)",
+        "--lk-fg": "#ffffff",
+      } as React.CSSProperties}
     >
+      {/* Top Header Bar */}
+      <div className="absolute top-0 left-0 right-0 h-16 bg-[#171923]/95 backdrop-blur-xl border-b border-white/10 z-[60] flex items-center justify-between px-6 shadow-xl">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 bg-brand-blue rounded-lg shadow-lg shadow-brand-blue/30 flex items-center justify-center">
+            <Video className="text-white h-4 w-4" />
+          </div>
+          <div>
+            <span className="text-white font-bold tracking-wide block text-sm">Live Classroom</span>
+            <span className="text-gray-400 text-xs">Educare LMS</span>
+          </div>
+        </div>
+
+        {/* Custom Control overlay for Teacher */}
+        {role?.toUpperCase() !== 'STUDENT' && (
+          <TeacherControls 
+            showWhiteboard={showWhiteboard} 
+            setShowWhiteboard={setShowWhiteboard} 
+            isRecording={isRecording}
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+          />
+        )}
+      </div>
+
       <ClassroomLogic setSharedFiles={setSharedFiles} setShowWhiteboard={setShowWhiteboard} />
       
       <div className={`flex-1 transition-all flex flex-col ${showWhiteboard ? 'w-full sm:w-1/3 border-r border-white/10' : 'w-full'}`}>
@@ -155,7 +186,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         
         {/* Shared Files Banner */}
         {sharedFiles.length > 0 && (
-          <div className="absolute top-4 left-4 z-50 flex flex-col gap-2 max-w-xs">
+          <div className="absolute top-20 left-4 z-50 flex flex-col gap-2 max-w-xs">
             {sharedFiles.map((file, i) => (
               <div key={i} className="bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl flex items-center justify-between gap-4 shadow-xl">
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -179,16 +210,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         }} />
       </div>
 
-      {/* Custom Control overlay for Teacher */}
-      {role?.toUpperCase() !== 'STUDENT' && (
-        <TeacherControls 
-          showWhiteboard={showWhiteboard} 
-          setShowWhiteboard={setShowWhiteboard} 
-          isRecording={isRecording}
-          startRecording={startRecording}
-          stopRecording={stopRecording}
-        />
-      )}
     </LiveKitRoom>
   );
 }
@@ -266,7 +287,7 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
   };
 
   return (
-    <div className="absolute top-4 right-4 z-[60] flex flex-col gap-2">
+    <div className="flex items-center gap-3">
       <button 
         onClick={() => {
           const newState = !showWhiteboard;
@@ -276,7 +297,7 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
             room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
           }
         }}
-        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${showWhiteboard ? 'bg-brand-red text-white hover:bg-brand-red/90' : 'bg-white text-gray-800 hover:bg-gray-50'}`}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${showWhiteboard ? 'bg-brand-red text-white hover:bg-brand-red/90' : 'bg-white text-gray-800 hover:bg-gray-100'}`}
       >
         <MonitorUp className="h-4 w-4" />
         {showWhiteboard ? 'Close Board' : 'Whiteboard'}
@@ -284,7 +305,7 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
 
       <button 
         onClick={muteAll}
-        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg bg-gray-800 text-white hover:bg-gray-700 transition-all border border-gray-700"
+        className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-all border border-white/10"
       >
         <MicOff className="h-4 w-4 text-brand-red" />
         Mute All
@@ -292,13 +313,13 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
 
       <button 
         onClick={isRecording ? stopRecording : startRecording}
-        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${isRecording ? 'bg-white text-brand-red hover:bg-red-50' : 'bg-brand-red text-white hover:bg-brand-red/90'}`}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${isRecording ? 'bg-white text-brand-red hover:bg-red-50' : 'bg-brand-red text-white hover:bg-brand-red/90'}`}
       >
         {isRecording ? <StopCircle className="h-4 w-4" /> : <Video className="h-4 w-4" />}
-        {isRecording ? 'Stop Recording' : 'Record Class'}
+        {isRecording ? 'Stop Recording' : 'Record'}
       </button>
 
-      <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg bg-brand-blue text-white hover:bg-brand-blue/90 transition-all cursor-pointer">
+      <label className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-brand-blue text-white hover:bg-brand-blue-dark transition-all cursor-pointer shadow-sm">
         {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
         {uploading ? 'Uploading...' : 'Share File'}
         <input type="file" className="hidden" onChange={handleFileUpload} />
