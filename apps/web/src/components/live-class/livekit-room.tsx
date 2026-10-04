@@ -169,7 +169,11 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       
       {showWhiteboard && (
         <div className="w-full sm:w-2/3 h-[50vh] sm:h-full bg-white relative">
-          <Tldraw readOnly={role?.toUpperCase() === 'STUDENT'} />
+          <Tldraw onMount={(editor) => {
+            if (role?.toUpperCase() === 'STUDENT') {
+              editor.updateInstanceState({ isReadonly: true });
+            }
+          }} />
         </div>
       )}
 
