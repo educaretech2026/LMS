@@ -84,7 +84,11 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: { displaySurface: "browser" }, 
+        audio: true,
+        preferCurrentTab: true,
+      } as any);
       
       // Let browser choose the best supported format
       const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
