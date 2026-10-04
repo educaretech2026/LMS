@@ -4,8 +4,21 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as cookieParser from 'cookie-parser';
+import { execSync } from 'child_process';
+import { join } from 'path';
 
 async function bootstrap() {
+  // Automatically push the DB schema in production environments on startup
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+    try {
+      const dbDir = join(__dirname, '..', '..', '..', 'packages', 'database');
+      console.log('Pushing database schema from:', dbDir);
+      execSync('npx prisma db push --accept-data-loss', { cwd: dbDir, stdio: 'inherit' });
+    } catch (error) {
+      console.error('Failed to push database schema automatically:', error);
+    }
+  }
+
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
