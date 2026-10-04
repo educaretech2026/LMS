@@ -12,6 +12,7 @@ import {
   useDisconnectButton,
   useLocalParticipant,
 } from "@livekit/components-react";
+import "@livekit/components-styles";
 import { Track } from "livekit-client";
 import { fetchApi } from "@/lib/api";
 import {
