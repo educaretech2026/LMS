@@ -3,8 +3,7 @@
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useState, useEffect } from "react";
 import { Plus, Edit2, Trash2, Bell } from "lucide-react";
-import { api } from "@/lib/api-client";
-import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 export default function NoticesPage() {
   const [notices, setNotices] = useState<any[]>([]);
@@ -19,7 +18,7 @@ export default function NoticesPage() {
       const res = await api.get("/notices");
       setNotices(res.data);
     } catch (error) {
-      toast.error("Failed to load notices");
+      alert("Failed to load notices");
     } finally {
       setIsLoading(false);
     }
@@ -34,15 +33,15 @@ export default function NoticesPage() {
     try {
       if (editingId) {
         await api.put(`/notices/${editingId}`, formData);
-        toast.success("Notice updated");
+        alert("Notice updated");
       } else {
         await api.post("/notices", formData);
-        toast.success("Notice created");
+        alert("Notice created");
       }
       setIsModalOpen(false);
       fetchNotices();
     } catch (error) {
-      toast.error("Operation failed");
+      alert("Operation failed");
     }
   };
 
@@ -50,10 +49,10 @@ export default function NoticesPage() {
     if (!confirm("Are you sure?")) return;
     try {
       await api.delete(`/notices/${id}`);
-      toast.success("Notice deleted");
+      alert("Notice deleted");
       fetchNotices();
     } catch (error) {
-      toast.error("Failed to delete notice");
+      alert("Failed to delete notice");
     }
   };
 
