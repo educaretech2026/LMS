@@ -53,6 +53,10 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   }, [fetchToken]);
 
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [sharedFiles, setSharedFiles] = useState<{name: string, url: string}[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   if (error) {
     return (
@@ -77,11 +81,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       </div>
     );
   }
-
-  const [sharedFiles, setSharedFiles] = useState<{name: string, url: string}[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
 
   const startRecording = async () => {
     try {
