@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, memo } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -187,16 +187,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                 height: '100%',
               }}
             >
-              <Tldraw
-                onMount={(editor) => {
-                  if (!isTeacher) {
-                    editor.updateInstanceState({ isReadonly: true });
-                  }
-                  // Force re-layout after mount to fix zero-dimension bug
-                  // @ts-ignore
-                  setTimeout(() => { try { editor.updateViewportScreenBounds(); } catch(e) {} }, 100);
-                }}
-              />
+              <Whiteboard isTeacher={isTeacher} roomId={roomId} />
             </div>
           )}
         </div>
@@ -462,3 +453,16 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, setWhiteboardEverO
     </div>
   );
 }
+
+/* ── WHITEBOARD (Memoized to prevent crashes on re-render) ── */
+const Whiteboard = memo(function Whiteboard({ isTeacher, roomId }: { isTeacher: boolean, roomId: string }) {
+  const handleMount = useCallback((editor: any) => {
+    if (!isTeacher) {
+      editor.updateInstanceState({ isReadonly: true });
+    }
+    // @ts-ignore
+    setTimeout(() => { try { editor.updateViewportScreenBounds(); } catch(e) {} }, 100);
+  }, [isTeacher]);
+
+  return <Tldraw onMount={handleMount} />;
+});
