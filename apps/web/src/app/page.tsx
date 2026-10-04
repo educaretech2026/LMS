@@ -7,13 +7,13 @@ import { fetchApiServer } from "@/lib/api-server";
 
 export default async function Home() {
   const user = await getUserFromToken();
-  let adminStats = null;
-  let teacherStats = null;
-  let liveClasses = [];
-  let notices = [];
+  let adminStats: any = null;
+  let teacherStats: any = null;
+  let liveClasses: any[] = [];
+  let notices: any[] = [];
 
   if (user?.role === 'STUDENT') {
-    liveClasses = await fetchApiServer('/live-class').catch(() => []);
+    liveClasses = (await fetchApiServer('/live-class').catch(() => [])) as any[];
   } else if (user?.role === 'TEACHER') {
     teacherStats = await fetchApiServer('/report/teacher-dashboard').catch(() => null);
   } else if (user?.role !== 'STUDENT') {
@@ -21,7 +21,7 @@ export default async function Home() {
   }
 
   if (user?.role !== 'ADMIN' && user?.role !== 'SUPER_ADMIN') {
-    notices = await fetchApiServer('/notices?activeOnly=true').catch(() => []);
+    notices = (await fetchApiServer('/notices?activeOnly=true').catch(() => [])) as any[];
   }
 
   return (
