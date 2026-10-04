@@ -17,13 +17,13 @@ export class NoticesController {
 
   @Post()
   @Roles('ADMIN', 'SUPER_ADMIN')
-  create(@Body() data: { title: string; content: string; type?: string; isActive?: boolean }) {
+  create(@Body() data: { title: string; content: string; imageUrl?: string; type?: string; isActive?: boolean }) {
     return this.noticesService.create(data);
   }
 
   @Put(':id')
   @Roles('ADMIN', 'SUPER_ADMIN')
-  update(@Param('id') id: string, @Body() data: { title?: string; content?: string; type?: string; isActive?: boolean }) {
+  update(@Param('id') id: string, @Body() data: { title?: string; content?: string; imageUrl?: string; type?: string; isActive?: boolean }) {
     return this.noticesService.update(id, data);
   }
 

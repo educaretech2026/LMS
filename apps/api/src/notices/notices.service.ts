@@ -13,18 +13,19 @@ export class NoticesService {
     });
   }
 
-  async create(data: { title: string; content: string; type?: string; isActive?: boolean }) {
+  async create(data: { title: string; content: string; imageUrl?: string; type?: string; isActive?: boolean }) {
     return this.prisma.notice.create({
       data: {
         title: data.title,
         content: data.content,
+        imageUrl: data.imageUrl,
         type: data.type || 'GENERAL',
         isActive: data.isActive !== undefined ? data.isActive : true,
       },
     });
   }
 
-  async update(id: string, data: { title?: string; content?: string; type?: string; isActive?: boolean }) {
+  async update(id: string, data: { title?: string; content?: string; imageUrl?: string; type?: string; isActive?: boolean }) {
     const notice = await this.prisma.notice.findUnique({ where: { id } });
     if (!notice) throw new NotFoundException('Notice not found');
     return this.prisma.notice.update({

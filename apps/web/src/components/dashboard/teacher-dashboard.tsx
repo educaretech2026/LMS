@@ -172,6 +172,12 @@ export function TeacherDashboard({ user, stats, notices = [] }: { user: any; sta
                   <div key={notice.id} className="p-4 hover:bg-surface-2 transition-colors">
                     <h4 className="text-sm font-semibold text-text-primary">{notice.title}</h4>
                     <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{notice.content}</p>
+                    {notice.imageUrl && (
+                      <div className="mt-2 relative h-32 w-full max-w-sm rounded-lg overflow-hidden border border-border-soft">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={notice.imageUrl} alt="Notice Image" className="h-full w-full object-cover" />
+                      </div>
+                    )}
                     <p className="text-[10px] font-medium text-text-muted mt-1.5">
                       {new Date(notice.createdAt).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>

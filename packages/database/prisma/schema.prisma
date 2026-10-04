@@ -1202,7 +1202,8 @@ model SupportTicket {
 model Notice {
   id        String   @id @default(uuid())
   title     String
-  content   String
+  content   String   @db.Text
+  imageUrl  String?  @db.Text
   type      String   @default("GENERAL") // GENERAL, EXAM, EVENT
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

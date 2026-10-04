@@ -10,7 +10,7 @@ export default function NoticesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ title: "", content: "", type: "GENERAL", isActive: true });
+  const [formData, setFormData] = useState<{ title: string; content: string; type: string; isActive: boolean; imageUrl?: string }>({ title: "", content: "", type: "GENERAL", isActive: true });
 
   const fetchNotices = async () => {
     setIsLoading(true);
@@ -59,12 +59,27 @@ export default function NoticesPage() {
   const openModal = (notice?: any) => {
     if (notice) {
       setEditingId(notice.id);
-      setFormData({ title: notice.title, content: notice.content, type: notice.type, isActive: notice.isActive });
+      setFormData({ title: notice.title, content: notice.content, type: notice.type, isActive: notice.isActive, imageUrl: notice.imageUrl });
     } else {
       setEditingId(null);
       setFormData({ title: "", content: "", type: "GENERAL", isActive: true });
     }
     setIsModalOpen(true);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image must be less than 5MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, imageUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   return (
@@ -133,6 +148,21 @@ export default function NoticesPage() {
                 <div>
                   <label className="block text-xs font-semibold mb-1.5 text-text-secondary uppercase tracking-wider">Content</label>
                   <textarea required value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full border border-border-soft rounded-lg p-2.5 text-sm outline-none focus:border-brand-blue/50 focus:ring-2 focus:ring-brand-blue/20 transition-all h-28 resize-none" placeholder="Write notice content here..." />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-text-secondary uppercase tracking-wider">Image (Optional)</label>
+                  <div className="flex items-center gap-3">
+                    <input type="file" accept="image/*" onChange={handleImageChange} className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-brand-blue/10 file:text-brand-blue hover:file:bg-brand-blue/20 transition-colors cursor-pointer" />
+                    {formData.imageUrl && (
+                      <button type="button" onClick={() => setFormData({ ...formData, imageUrl: undefined })} className="text-xs text-brand-red font-semibold hover:underline">Remove</button>
+                    )}
+                  </div>
+                  {formData.imageUrl && (
+                    <div className="mt-3 relative h-32 w-full rounded-lg overflow-hidden border border-border-soft">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={formData.imageUrl} alt="Preview" className="h-full w-full object-cover" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 p-3 bg-surface-2 rounded-lg border border-border-soft">
                   <input type="checkbox" id="isActive" checked={formData.isActive} onChange={e => setFormData({...formData, isActive: e.target.checked})} className="accent-brand-blue w-4 h-4 rounded" />
