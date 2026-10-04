@@ -243,10 +243,8 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
     setUploading(true);
     try {
       // 1. Get presigned url
-      const res = await fetch(`/api/study-materials/upload-url?type=FILE&filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      const { uploadUrl, finalUrl } = await res.json();
+      const res: any = await fetchApi(`/study-materials/upload-url?type=FILE&filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+      const { uploadUrl, finalUrl } = res;
       
       // 2. Upload to R2
       await fetch(uploadUrl, {
