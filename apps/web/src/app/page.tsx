@@ -10,6 +10,7 @@ export default async function Home() {
   let adminStats = null;
   let teacherStats = null;
   let liveClasses = [];
+  let notices = [];
 
   if (user?.role === 'STUDENT') {
     liveClasses = await fetchApiServer('/live-class').catch(() => []);
@@ -19,12 +20,16 @@ export default async function Home() {
     adminStats = await fetchApiServer('/report/dashboard').catch(() => null);
   }
 
+  if (user?.role !== 'ADMIN' && user?.role !== 'SUPER_ADMIN') {
+    notices = await fetchApiServer('/notices?activeOnly=true').catch(() => []);
+  }
+
   return (
     <DashboardLayout title="Dashboard" role={user?.role}>
       {user?.role === 'STUDENT' ? (
-        <StudentDashboard user={user} liveClasses={liveClasses} />
+        <StudentDashboard user={user} liveClasses={liveClasses} notices={notices} />
       ) : user?.role === 'TEACHER' ? (
-        <TeacherDashboard user={user} stats={teacherStats} />
+        <TeacherDashboard user={user} stats={teacherStats} notices={notices} />
       ) : (
         <AdminDashboard user={user} statsData={adminStats} />
       )}

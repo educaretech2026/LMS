@@ -11,10 +11,12 @@ import {
   ArrowRight,
   GraduationCap,
   FileText,
+  Bell,
 } from "lucide-react";
 
-export function TeacherDashboard({ user, stats }: { user: any; stats: any }) {
+export function TeacherDashboard({ user, stats, notices = [] }: { user: any; stats: any; notices?: any[] }) {
   const ds = stats || {};
+  const recentNotices = notices.slice(0, 5);
   const batches: any[] = ds.batches || [];
   const subjects: any[] = ds.subjects || [];
 
@@ -156,6 +158,33 @@ export function TeacherDashboard({ user, stats }: { user: any; stats: any }) {
               </div>
             </div>
           )}
+          {/* Notices */}
+          <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-border-soft flex items-center justify-between">
+              <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                <Bell className="h-4 w-4 text-brand-blue" />
+                Notice Board
+              </h3>
+            </div>
+            {recentNotices.length > 0 ? (
+              <div className="divide-y divide-border-soft">
+                {recentNotices.map((notice: any) => (
+                  <div key={notice.id} className="p-4 hover:bg-surface-2 transition-colors">
+                    <h4 className="text-sm font-semibold text-text-primary">{notice.title}</h4>
+                    <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{notice.content}</p>
+                    <p className="text-[10px] font-medium text-text-muted mt-1.5">
+                      {new Date(notice.createdAt).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
+                <Bell className="h-6 w-6 text-text-muted/50" />
+                <p className="text-xs font-medium text-text-muted">No new notices.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

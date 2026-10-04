@@ -71,6 +71,7 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
     { label: "Enquiry",     href: "/enquiry",    icon: Headset,      desc: "Manage leads"          },
     { label: "Expense",     href: "/expense",    icon: Banknote,     desc: "Income & expenses"     },
     { label: "Staff",       href: "/staff",      icon: UserCheck,    desc: "User management"       },
+    { label: "Notices",     href: "/notices",    icon: MessageSquare,desc: "Manage notice board"   },
     { label: "Reports",     href: "/report",     icon: BarChart2,    desc: "Full analytics"        },
     { label: "Setup",       href: "/setup",      icon: Wrench,       desc: "System configuration"  },
   ];

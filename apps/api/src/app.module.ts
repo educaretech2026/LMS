@@ -26,6 +26,7 @@ import { ReportModule } from './report/report.module';
 import { PublicAuthModule } from './public-auth/public-auth.module';
 import { CoursesModule } from './courses/courses.module';
 import { SupportModule } from './support/support.module';
+import { NoticesModule } from './notices/notices.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { SupportModule } from './support/support.module';
     PublicAuthModule,
     CoursesModule,
     SupportModule,
+    NoticesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

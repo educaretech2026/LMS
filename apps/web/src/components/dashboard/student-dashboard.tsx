@@ -10,9 +10,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-export function StudentDashboard({ user, liveClasses = [] }: { user: any, liveClasses?: any[] }) {
+export function StudentDashboard({ user, liveClasses = [], notices = [] }: { user: any, liveClasses?: any[], notices?: any[] }) {
   // Only show live/scheduled classes for today/future
   const upcomingClasses = liveClasses.filter((cls: any) => cls.status !== 'ENDED').slice(0, 3);
+  const recentNotices = notices.slice(0, 5);
   
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
@@ -130,10 +131,29 @@ export function StudentDashboard({ user, liveClasses = [] }: { user: any, liveCl
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-text-primary">Notice Board</h3>
           </div>
-          <div className="flex flex-col items-center justify-center h-32 text-center space-y-2">
-            <Bell className="h-6 w-6 text-text-muted/50" />
-            <p className="text-sm text-text-muted">No new notices at the moment.</p>
-          </div>
+          {recentNotices.length > 0 ? (
+            <div className="space-y-4">
+              {recentNotices.map((notice: any) => (
+                <div key={notice.id} className="flex items-start gap-3 border-b border-border-soft pb-4 last:border-0 last:pb-0">
+                  <div className="mt-0.5">
+                    <Bell className="h-4 w-4 text-brand-blue" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-text-primary">{notice.title}</h4>
+                    <p className="text-xs text-text-muted mt-0.5 whitespace-pre-wrap">{notice.content}</p>
+                    <p className="text-[10px] font-medium text-text-muted mt-1">
+                      {new Date(notice.createdAt).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-32 text-center space-y-2">
+              <Bell className="h-6 w-6 text-text-muted/50" />
+              <p className="text-sm text-text-muted">No new notices at the moment.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

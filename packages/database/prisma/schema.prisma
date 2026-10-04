@@ -1198,3 +1198,15 @@ model SupportTicket {
 
   @@map("support_tickets")
 }
+
+model Notice {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  type      String   @default("GENERAL") // GENERAL, EXAM, EVENT
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notices")
+}
