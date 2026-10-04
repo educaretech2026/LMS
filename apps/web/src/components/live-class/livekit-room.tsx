@@ -54,6 +54,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   useEffect(() => { fetchToken(); }, [fetchToken]);
 
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [whiteboardEverOpened, setWhiteboardEverOpened] = useState(false);
   const [sharedFiles, setSharedFiles] = useState<{ name: string; url: string }[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -135,7 +136,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       className="h-full w-full flex flex-col"
       style={{ background: "#0b0c10" }}
     >
-      <ClassroomLogic setSharedFiles={setSharedFiles} setShowWhiteboard={setShowWhiteboard} />
+      <ClassroomLogic setSharedFiles={setSharedFiles} setShowWhiteboard={setShowWhiteboard} setWhiteboardEverOpened={setWhiteboardEverOpened} />
       <RoomAudioRenderer />
 
       {/* ── TOP HEADER ── */}
@@ -156,6 +157,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
           <TeacherControls
             showWhiteboard={showWhiteboard}
             setShowWhiteboard={setShowWhiteboard}
+            setWhiteboardEverOpened={setWhiteboardEverOpened}
             isRecording={isRecording}
             startRecording={startRecording}
             stopRecording={stopRecording}
@@ -167,28 +169,37 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       <div className="flex-1 flex overflow-hidden">
         {/* Video + Whiteboard pane */}
         <div className="flex-1 relative overflow-hidden">
-          {/* Video Grid — always mounted, visibility toggled by CSS */}
+          {/* Video Grid — always mounted, hidden when whiteboard is showing */}
           <div
-            className="absolute inset-0 transition-opacity duration-300"
-            style={{ opacity: showWhiteboard ? 0 : 1, pointerEvents: showWhiteboard ? "none" : "auto", zIndex: showWhiteboard ? 0 : 1 }}
+            className="absolute inset-0"
+            style={{ display: showWhiteboard ? 'none' : 'block' }}
           >
             <ClassVideoGrid />
           </div>
 
-          {/* Whiteboard — always mounted, visibility toggled by CSS */}
-          <div
-            className="absolute inset-0 bg-white transition-opacity duration-300"
-            style={{ opacity: showWhiteboard ? 1 : 0, pointerEvents: showWhiteboard ? "auto" : "none", zIndex: showWhiteboard ? 1 : 0 }}
-          >
-            <Tldraw
-              persistenceKey={`educare-wb-${roomId}`}
-              onMount={(editor) => {
-                if (!isTeacher) {
-                  editor.updateInstanceState({ isReadonly: true });
-                }
+          {/* Whiteboard — only mounted once opened, then kept alive with visibility */}
+          {whiteboardEverOpened && (
+            <div
+              className="absolute inset-0 bg-white"
+              style={{ 
+                display: showWhiteboard ? 'block' : 'none',
+                width: '100%',
+                height: '100%',
               }}
-            />
-          </div>
+            >
+              <Tldraw
+                persistenceKey={`educare-wb-${roomId}`}
+                onMount={(editor) => {
+                  if (!isTeacher) {
+                    editor.updateInstanceState({ isReadonly: true });
+                  }
+                  // Force re-layout after mount to fix zero-dimension bug
+                  // @ts-ignore
+                  setTimeout(() => { try { editor.updateViewportScreenBounds(); } catch(e) {} }, 100);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* ── SHARED FILES SIDEBAR ── */}
@@ -331,9 +342,11 @@ function CustomControlBar({ onLeave }: { onLeave: () => void }) {
 function ClassroomLogic({
   setSharedFiles,
   setShowWhiteboard,
+  setWhiteboardEverOpened,
 }: {
   setSharedFiles: React.Dispatch<React.SetStateAction<any[]>>;
   setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>>;
+  setWhiteboardEverOpened: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const room = useRoomContext();
 
@@ -349,6 +362,7 @@ function ClassroomLogic({
         } else if (data.type === "FILE_SHARED") {
           setSharedFiles((prev) => [...prev, { name: data.name, url: data.url }]);
         } else if (data.type === "WHITEBOARD_TOGGLE") {
+          if (data.state) setWhiteboardEverOpened(true);
           setShowWhiteboard(data.state);
         }
       } catch (e) {
@@ -357,13 +371,13 @@ function ClassroomLogic({
     };
     room.on(RoomEvent.DataReceived, handleData);
     return () => { room.off(RoomEvent.DataReceived, handleData); };
-  }, [room, setSharedFiles, setShowWhiteboard]);
+  }, [room, setSharedFiles, setShowWhiteboard, setWhiteboardEverOpened]);
 
   return null;
 }
 
 /* ── TEACHER CONTROLS (in header) ── */
-function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, startRecording, stopRecording }: any) {
+function TeacherControls({ showWhiteboard, setShowWhiteboard, setWhiteboardEverOpened, isRecording, startRecording, stopRecording }: any) {
   const room = useRoomContext();
   const [uploading, setUploading] = useState(false);
 
@@ -376,6 +390,7 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
   const toggleWhiteboard = () => {
     const newState = !showWhiteboard;
     setShowWhiteboard(newState);
+    if (newState) setWhiteboardEverOpened(true); // lazy mount on first open
     if (room) {
       const payload = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: newState });
       room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
