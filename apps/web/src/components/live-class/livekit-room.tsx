@@ -7,7 +7,6 @@ import {
   RoomAudioRenderer,
   useRoomContext,
   useTracks,
-  TrackLoop,
   ParticipantTile,
   ControlBar,
   GridLayout,
@@ -15,7 +14,7 @@ import {
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import { fetchApi } from "@/lib/api";
-import { Loader2, WifiOff, FileDown, Upload, MicOff, StopCircle, Video, Play, Maximize, FileText, MonitorUp } from "lucide-react";
+import { Loader2, WifiOff, FileDown, Upload, MicOff, StopCircle, Video, FileText, MonitorUp } from "lucide-react";
 import { Tldraw } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { RoomEvent } from "livekit-client";
@@ -75,7 +74,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
   if (!tokenData) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-white">
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-white bg-[#0b0c10]">
         <Loader2 className="h-7 w-7 animate-spin text-brand-blue" />
         <p className="text-xs text-white/50">Joining classroom...</p>
       </div>
@@ -90,7 +89,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         preferCurrentTab: true,
       } as any);
       
-      // Let browser choose the best supported format
       const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? { mimeType: 'video/webm;codecs=vp9,opus' } 
         : MediaRecorder.isTypeSupported('video/webm')
@@ -114,10 +112,8 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         URL.revokeObjectURL(url);
         chunksRef.current = [];
         setIsRecording(false);
-        // Ensure tracks are stopped
         stream.getTracks().forEach(t => t.stop());
       };
-      // If user stops sharing screen natively
       stream.getVideoTracks()[0].onended = () => {
         recorder.stop();
       };
@@ -144,14 +140,9 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       video={true}
       audio={true}
       onDisconnected={onLeave}
-      className="h-full w-full relative flex flex-col sm:flex-row pt-16"
-      style={{ 
-        "--lk-bg": "#0f1115",
-        "--lk-control-bar-bg": "rgba(23, 25, 35, 0.95)",
-        "--lk-border-color": "rgba(255, 255, 255, 0.1)",
-        "--lk-button-bg": "rgba(255, 255, 255, 0.1)",
-        "--lk-button-hover-bg": "rgba(255, 255, 255, 0.2)",
-        "--lk-fg": "#ffffff",
+      className="h-full w-full relative flex flex-col bg-[#0b0c10]"
+      style={{
+         "--lk-bg": "#0b0c10",
       } as React.CSSProperties}
     >
       {/* Top Header Bar */}
@@ -180,39 +171,81 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
       <ClassroomLogic setSharedFiles={setSharedFiles} setShowWhiteboard={setShowWhiteboard} />
       
-      <div className={`flex-1 transition-all flex flex-col ${showWhiteboard ? 'w-full sm:w-1/3 border-r border-white/10' : 'w-full'}`}>
-        <VideoConference />
-        <RoomAudioRenderer />
-        
-        {/* Shared Files Banner */}
-        {sharedFiles.length > 0 && (
-          <div className="absolute top-20 left-4 z-50 flex flex-col gap-2 max-w-xs">
-            {sharedFiles.map((file, i) => (
-              <div key={i} className="bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl flex items-center justify-between gap-4 shadow-xl">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <FileText className="h-4 w-4 text-brand-blue shrink-0" />
-                  <p className="text-white text-xs truncate font-medium">{file.name}</p>
-                </div>
-                <a href={file.url} download target="_blank" rel="noreferrer" className="shrink-0 h-7 w-7 rounded-full bg-brand-blue flex items-center justify-center hover:bg-brand-blue-dark transition-colors">
-                  <FileDown className="h-3.5 w-3.5 text-white" />
-                </a>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex-1 flex overflow-hidden pt-16">
+         {/* Main Content Area */}
+         <div className="flex-1 relative bg-[#0b0c10]">
+            {/* Videos - we wrap in a div that is always mounted, but styled visually hidden if whiteboard is up */}
+            <div className={`absolute inset-0 transition-opacity duration-300 ${showWhiteboard ? 'opacity-0 pointer-events-none z-0' : 'opacity-100 z-10'}`}>
+               <VideoGrid />
+            </div>
+            
+            {/* Whiteboard */}
+            <div className={`absolute inset-0 bg-white transition-opacity duration-300 ${showWhiteboard ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'}`}>
+               <Tldraw persistenceKey={`educare-whiteboard-${roomId}`} onMount={(editor) => {
+                 if (role?.toUpperCase() === 'STUDENT') {
+                   editor.updateInstanceState({ isReadonly: true });
+                 }
+               }} />
+            </div>
+         </div>
+
+         {/* Right Sidebar - Shared Files */}
+         <div className="w-80 bg-[#11131a] border-l border-white/10 flex flex-col z-20 shadow-2xl shrink-0 hidden sm:flex">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+               <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                 <FileText className="h-4 w-4 text-brand-blue" />
+                 Shared Files
+               </h3>
+               <span className="text-xs bg-brand-blue/20 text-brand-blue px-2 py-0.5 rounded-full font-semibold">{sharedFiles.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+               {sharedFiles.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 opacity-60">
+                   <FileText className="h-10 w-10 mb-2" />
+                   <p className="text-xs">No files shared yet.</p>
+                 </div>
+               ) : sharedFiles.map((file: any, i: number) => (
+                 <div key={i} className="bg-white/5 rounded-xl p-3 flex items-start gap-3 border border-white/10 hover:border-white/20 transition-colors">
+                    <div className="h-10 w-10 bg-brand-blue/10 rounded-lg flex items-center justify-center shrink-0">
+                      <FileText className="h-5 w-5 text-brand-blue" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-semibold truncate" title={file.name}>{file.name}</p>
+                      <a href={file.url} download target="_blank" rel="noreferrer" className="text-[10px] text-brand-blue hover:text-brand-blue-dark hover:underline mt-1.5 flex items-center gap-1">
+                        <FileDown className="h-3 w-3" /> Download
+                      </a>
+                    </div>
+                 </div>
+               ))}
+            </div>
+         </div>
       </div>
       
-      <div className={`w-full sm:w-2/3 h-[50vh] sm:h-full bg-white relative ${showWhiteboard ? 'block' : 'hidden'}`}>
-        <Tldraw onMount={(editor) => {
-          if (role?.toUpperCase() === 'STUDENT') {
-            editor.updateInstanceState({ isReadonly: true });
-          }
-        }} />
+      {/* Bottom Control Bar - using default LiveKit ControlBar without breaking its CSS */}
+      <div className="h-20 bg-[#171923] border-t border-white/10 flex items-center justify-center relative z-50">
+         <ControlBar controls={{ camera: true, microphone: true, screenShare: true, chat: false, leave: true }} />
       </div>
-
+      <RoomAudioRenderer />
     </LiveKitRoom>
   );
 }
+
+// Wrapper for the video grid
+function VideoGrid() {
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false },
+  );
+  return (
+    <GridLayout tracks={tracks} style={{ height: 'calc(100vh - 144px)' }}>
+      <ParticipantTile />
+    </GridLayout>
+  );
+}
+
 
 // Logic component that uses Room context
 function ClassroomLogic({ setSharedFiles, setShowWhiteboard }: { setSharedFiles: React.Dispatch<React.SetStateAction<any[]>>, setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>> }) {
@@ -263,18 +296,15 @@ function TeacherControls({ showWhiteboard, setShowWhiteboard, isRecording, start
     
     setUploading(true);
     try {
-      // 1. Get presigned url
       const res: any = await fetchApi(`/study-materials/upload-url?type=FILE&filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
       const { uploadUrl, finalUrl } = res;
       
-      // 2. Upload to R2
       await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type }
       });
       
-      // 3. Broadcast to room
       const payload = JSON.stringify({ type: "FILE_SHARED", name: file.name, url: finalUrl });
       room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
       
