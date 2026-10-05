@@ -69,18 +69,16 @@ export class SetupService {
   async getBoards() {
     return this.prisma.board.findMany();
   }
-  async createBoard(data: { name: string; code: string; description?: string }) {
+  async createBoard(data: { name: string }) {
     try {
       return await this.prisma.board.create({ 
         data: {
-          name: data.name,
-          code: data.code,
-          description: data.description
+          name: data.name
         } 
       });
     } catch (e: any) {
       if (e.code === 'P2002') {
-        throw new ConflictException('A board with this code already exists.');
+        throw new ConflictException('A board with this name already exists.');
       }
       throw e;
     }
