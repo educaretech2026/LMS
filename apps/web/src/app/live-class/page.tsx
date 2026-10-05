@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { LiveKitClassRoom } from "@/components/live-class/livekit-room";
 import { fetchApi } from "@/lib/api";
 import {
   Video, Plus, Calendar, Clock, Users, Play, X, Wifi, BookOpen,
@@ -87,65 +86,15 @@ export default function LiveClassPage() {
 
   const displayName = email ? `${email.split("@")[0]}` : (role?.toUpperCase() === "STUDENT" ? "Student" : "Teacher");
 
-  /* ── Active Room ── */
-  if (activeRoom) {
-    return (
-      <div className="fixed inset-0 z-50 bg-[#0f0f0f] flex flex-col">
-        <div className="flex h-14 shrink-0 items-center justify-between px-5 border-b border-white/10 bg-[#1a1a2e]">
-          <div className="flex items-center gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded bg-brand-red">
-              <Wifi className="h-3.5 w-3.5 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-white leading-none">{activeRoom.title}</p>
-              <p className="text-[10px] text-white/50 mt-0.5">
-                {activeRoom.subject}
-                {activeRoom.standard && ` · ${activeRoom.standard.name}`}
-                {activeRoom.board && ` · ${activeRoom.board.name}`}
-                {activeRoom.centre && ` · ${activeRoom.centre.name}`}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {role?.toUpperCase() !== "STUDENT" && activeRoom.status !== "LIVE" && (
-              <button
-                onClick={() => handleStatusChange(activeRoom.id, "LIVE")}
-                className="flex items-center gap-1.5 rounded-full bg-brand-red/15 border border-brand-red/30 px-3 py-1 text-[11px] font-semibold text-brand-red hover:bg-brand-red/25 transition-colors"
-              >
-                <Radio className="h-3 w-3" /> Go Live
-              </button>
-            )}
-            {activeRoom.status === "LIVE" && (
-              <span className="flex items-center gap-1.5 rounded-full bg-brand-red/15 border border-brand-red/30 px-3 py-1 text-[11px] font-semibold text-brand-red">
-                <span className="h-1.5 w-1.5 rounded-full bg-brand-red animate-pulse" /> LIVE
-              </span>
-            )}
-            <button
-              onClick={async () => {
-                if (role?.toUpperCase() !== "STUDENT" && activeRoom.status === "LIVE") {
-                  await handleStatusChange(activeRoom.id, "ENDED");
-                }
-                setActiveRoom(null);
-              }}
-              className="flex items-center gap-2 rounded-lg bg-brand-red/15 hover:bg-brand-red/30 border border-brand-red/30 px-3 py-1.5 text-xs font-semibold text-brand-red transition-colors"
-            >
-              <X className="h-3.5 w-3.5" />
-              {role?.toUpperCase() === "STUDENT" ? "Leave" : "End Class"}
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <LiveKitClassRoom
-            roomId={activeRoom.roomId}
-            identity={email || "user"}
-            name={displayName}
-            role={role || "STUDENT"}
-            onLeave={() => setActiveRoom(null)}
-          />
-        </div>
-      </div>
-    );
-  }
+  /* ── Join Class ── */
+  const handleJoin = (cls: ApiLiveClass) => {
+    let url = cls.roomId;
+    if (!url.startsWith('http')) {
+      alert("Invalid Zoom link provided for this class.");
+      return;
+    }
+    window.open(url, "_blank");
+  };
 
   const liveClasses = classes.filter(c => c.status === "LIVE");
   const scheduledClasses = classes.filter(c => c.status === "SCHEDULED");
@@ -162,7 +111,7 @@ export default function LiveClassPage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-text-primary">Live Classes</h2>
-              <p className="text-xs text-text-muted mt-0.5">Powered by Jitsi Meet — no accounts required</p>
+              <p className="text-xs text-text-muted mt-0.5">Powered by Zoom Meetings</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -233,7 +182,7 @@ export default function LiveClassPage() {
                       key={cls.id}
                       cls={cls}
                       role={role}
-                      onJoin={() => setActiveRoom(cls)}
+                      onJoin={() => handleJoin(cls)}
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
                     />
@@ -253,7 +202,7 @@ export default function LiveClassPage() {
                       key={cls.id}
                       cls={cls}
                       role={role}
-                      onJoin={() => setActiveRoom(cls)}
+                      onJoin={() => handleJoin(cls)}
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
                     />
@@ -269,7 +218,7 @@ export default function LiveClassPage() {
                       key={cls.id}
                       cls={cls}
                       role={role}
-                      onJoin={() => setActiveRoom(cls)}
+                      onJoin={() => handleJoin(cls)}
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
                     />
@@ -428,6 +377,7 @@ function ScheduleModal({
 }) {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
+  const [zoomLink, setZoomLink] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [duration, setDuration] = useState("60");
   const [submitting, setSubmitting] = useState(false);
@@ -470,6 +420,7 @@ function ScheduleModal({
           teacherName,
           scheduledAt: dateTime,
           duration: Number(duration) || 60,
+          zoomLink: zoomLink.trim() || undefined,
           boardId: boardId || undefined,
           standardId: standardId || undefined,
           centreId: centreId || undefined,
@@ -511,6 +462,13 @@ function ScheduleModal({
           <Field label="Subject *">
             <input type="text" value={subject} onChange={e => setSubject(e.target.value)}
               placeholder="e.g. Mathematics"
+              className="input-base" />
+          </Field>
+
+          {/* Zoom Link */}
+          <Field label="Zoom Join Link *">
+            <input type="url" value={zoomLink} onChange={e => setZoomLink(e.target.value)}
+              placeholder="https://zoom.us/j/1234567890"
               className="input-base" />
           </Field>
 

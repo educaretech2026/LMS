@@ -25,6 +25,7 @@ export class LiveClassService {
     boardId?: string;
     standardId?: string;
     centreId?: string;
+    zoomLink?: string;
   }) {
     return this.prisma.liveClass.create({
       data: {
@@ -33,6 +34,7 @@ export class LiveClassService {
         teacherName: data.teacherName,
         scheduledAt: new Date(data.scheduledAt),
         duration: Number(data.duration),
+        roomId: data.zoomLink || undefined,
         boardId: data.boardId || null,
         standardId: data.standardId || null,
         centreId: data.centreId || null,
