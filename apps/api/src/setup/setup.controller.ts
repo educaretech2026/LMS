@@ -11,7 +11,7 @@ export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
   @Get('centres')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getCentres() {
     return this.setupService.getCentres();
   }
@@ -27,7 +27,7 @@ export class SetupController {
   }
 
   @Get('academic-years')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getAcademicYears() {
     return this.setupService.getAcademicYears();
   }
@@ -40,7 +40,7 @@ export class SetupController {
   }
 
   @Get('boards')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getBoards() {
     return this.setupService.getBoards();
   }
@@ -51,7 +51,7 @@ export class SetupController {
   }
 
   @Get('standards')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getStandards(@Query('boardId') boardId?: string) {
     return this.setupService.getStandards(boardId);
   }
@@ -63,7 +63,7 @@ export class SetupController {
   }
 
   @Get('batches')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getBatches(@Query('boardId') boardId?: string, @Query('standardId') standardId?: string) {
     return this.setupService.getBatches(boardId, standardId);
   }
@@ -79,7 +79,7 @@ export class SetupController {
   }
 
   @Get('tracks')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getTracks() {
     return this.setupService.getTracks();
   }
@@ -95,7 +95,7 @@ export class SetupController {
   }
 
   @Get('subjects')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getSubjects() {
     return this.setupService.getSubjects();
   }
@@ -106,7 +106,7 @@ export class SetupController {
   }
 
   @Get('syllabi')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getSyllabi(@Query('boardId') boardId?: string, @Query('standardId') standardId?: string) {
     return this.setupService.getSyllabi(boardId, standardId);
   }
@@ -117,7 +117,7 @@ export class SetupController {
   }
 
   @Get('chapters')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getChapters(@Query('syllabusId') syllabusId?: string) {
     return this.setupService.getChapters(syllabusId);
   }
@@ -128,7 +128,7 @@ export class SetupController {
   }
 
   @Get('topics')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getTopics(@Query('chapterId') chapterId?: string) {
     return this.setupService.getTopics(chapterId);
   }
@@ -139,7 +139,7 @@ export class SetupController {
   }
 
   @Get('subtopics')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getSubtopics(@Query('topicId') topicId?: string) {
     return this.setupService.getSubtopics(topicId);
   }
