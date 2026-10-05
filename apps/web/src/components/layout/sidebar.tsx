@@ -118,19 +118,37 @@ export function Sidebar({
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6">
           <NavSection
             label="Main"
-            items={role === 'STUDENT' ? mainNav.filter(item => ['Dashboard', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(item.label)) : role === 'TEACHER' ? mainNav.filter(item => ['Dashboard', 'Student', 'Attendance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(item.label)) : mainNav}
+            items={(() => {
+              const r = role?.toUpperCase() || '';
+              if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') return mainNav.filter(i => ['Dashboard', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
+              if (r === 'TEACHER') return mainNav.filter(i => ['Dashboard', 'Student', 'Attendance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
+              if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return mainNav;
+              if (r === 'RECEPTIONIST') return mainNav.filter(i => ['Dashboard', 'Student', 'Fee'].includes(i.label));
+              return mainNav.filter(i => ['Dashboard'].includes(i.label));
+            })()}
             activePath={path}
           />
-          {role !== 'STUDENT' && role !== 'TEACHER' && (
-            <NavSection label="Management" items={managementNav} activePath={path} />
+          
+          {['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN', 'RECEPTIONIST'].includes(role?.toUpperCase() || '') && (
+            <NavSection 
+              label="Management" 
+              items={(() => {
+                const r = role?.toUpperCase() || '';
+                if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return managementNav;
+                if (r === 'RECEPTIONIST') return managementNav.filter(i => ['Enquiry / Leads', 'SMS'].includes(i.label));
+                return [];
+              })()} 
+              activePath={path} 
+            />
           )}
+
           <NavSection 
             label="System & Account" 
-            items={
-              role === 'STUDENT' || role === 'TEACHER' 
-                ? systemNav.filter(item => ['My Profile', 'Help'].includes(item.label)) 
-                : systemNav
-            } 
+            items={(() => {
+              const r = role?.toUpperCase() || '';
+              if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return systemNav;
+              return systemNav.filter(i => ['My Profile', 'Help'].includes(i.label));
+            })()} 
             activePath={path} 
           />
         </nav>

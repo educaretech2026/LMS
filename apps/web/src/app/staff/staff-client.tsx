@@ -347,7 +347,6 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
     { id: "Basic Information", icon: User },
     { id: "Teaching Assignments", icon: BookOpen },
     { id: "Login Details", icon: Users },
-    { id: "Roles & Permissions", icon: Shield },
     { id: "Documents", icon: FileText },
   ];
 
@@ -564,17 +563,6 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
             </div>
           )}
 
-          {activeTab === "Roles & Permissions" && (
-            <div className="bg-white rounded-xl border border-border-soft p-6">
-              <h3 className="text-sm font-bold text-text-primary mb-4">Permissions (Read-Only Preview)</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center gap-2"><input type="checkbox" checked readOnly className="rounded border-border-soft text-brand-blue" /><span className="text-sm text-text-secondary">Manage Students</span></div>
-                <div className="flex items-center gap-2"><input type="checkbox" checked readOnly className="rounded border-border-soft text-brand-blue" /><span className="text-sm text-text-secondary">Manage Attendance</span></div>
-                <div className="flex items-center gap-2"><input type="checkbox" readOnly className="rounded border-border-soft text-brand-blue" /><span className="text-sm text-text-secondary">Manage Staff</span></div>
-                <div className="flex items-center gap-2"><input type="checkbox" readOnly className="rounded border-border-soft text-brand-blue" /><span className="text-sm text-text-secondary">System Settings</span></div>
-              </div>
-            </div>
-          )}
 
           {activeTab === "Documents" && (
             <div className="bg-white rounded-xl border border-border-soft p-6 text-center">
