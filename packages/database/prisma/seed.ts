@@ -159,17 +159,15 @@ async function main() {
     create: { name: 'ISC' },
   });
 
-  await prisma.standard.upsert({
-    where: { name: 'Class 11' },
-    update: {},
-    create: { name: 'Class 11' },
-  });
+  let class11 = await prisma.standard.findFirst({ where: { name: 'Class 11' } });
+  if (!class11) {
+    class11 = await prisma.standard.create({ data: { name: 'Class 11' } });
+  }
   
-  await prisma.standard.upsert({
-    where: { name: 'Class 12' },
-    update: {},
-    create: { name: 'Class 12' },
-  });
+  let class12 = await prisma.standard.findFirst({ where: { name: 'Class 12' } });
+  if (!class12) {
+    class12 = await prisma.standard.create({ data: { name: 'Class 12' } });
+  }
 
   console.log('Database seeding completed successfully!');
 }
