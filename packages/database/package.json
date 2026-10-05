@@ -1,8 +1,8 @@
 {
   "name": "@educare/database",
   "version": "1.0.0",
-  "main": "./index.ts",
-  "types": "./index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "dependencies": {
     "@prisma/client": "5.19.1",
     "argon2": "^0.45.1"
@@ -13,6 +13,7 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
+    "build": "tsc",
     "db:generate": "prisma generate",
     "db:push": "prisma db push --accept-data-loss",
     "db:studio": "prisma studio",
