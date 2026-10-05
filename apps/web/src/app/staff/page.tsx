@@ -29,7 +29,10 @@ export default async function StaffPage() {
   const config = {
     centres: centres.map(c => c.name),
     boards: boards.map(b => b.name),
-    classes: standards.map(s => s.name),
+    classes: standards.map(s => ({
+      name: s.name,
+      board: boards.find(b => b.id === s.boardId)?.name || ""
+    })),
     academicYears: academicYears.map(y => y.name)
   };
 

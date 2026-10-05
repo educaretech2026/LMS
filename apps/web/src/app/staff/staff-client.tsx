@@ -337,7 +337,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
   const [newAssignment, setNewAssignment] = useState({ 
     academicYear: config.academicYears[0] || "", 
     board: config.boards[0] || "", 
-    classLevel: config.classes[0] || "", 
+    classLevel: config.classes.find((c: any) => c.board === (config.boards[0] || ""))?.name || "", 
     division: "Division A", 
     subject: "" 
   });
@@ -361,7 +361,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
       setNewAssignment({ 
         academicYear: config.academicYears[0] || "", 
         board: config.boards[0] || "", 
-        classLevel: config.classes[0] || "", 
+        classLevel: config.classes.find((c: any) => c.board === (config.boards[0] || ""))?.name || "", 
         division: "Division A", 
         subject: "" 
       });
@@ -486,11 +486,15 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                      <select value={newAssignment.academicYear} onChange={e => setNewAssignment({...newAssignment, academicYear: e.target.value})} className="h-10 rounded-lg text-sm px-3">
                        {config.academicYears.map((y: string) => <option key={y}>{y}</option>)}
                      </select>
-                     <select value={newAssignment.board} onChange={e => setNewAssignment({...newAssignment, board: e.target.value})} className="h-10 rounded-lg text-sm px-3">
+                     <select value={newAssignment.board} onChange={e => {
+                         const board = e.target.value;
+                         const boardClasses = config.classes.filter((c: any) => c.board === board);
+                         setNewAssignment({...newAssignment, board, classLevel: boardClasses[0]?.name || ""});
+                       }} className="h-10 rounded-lg text-sm px-3">
                        {config.boards.map((b: string) => <option key={b}>{b}</option>)}
                      </select>
                      <select value={newAssignment.classLevel} onChange={e => setNewAssignment({...newAssignment, classLevel: e.target.value})} className="h-10 rounded-lg text-sm px-3">
-                       {config.classes.map((c: string) => <option key={c}>{c}</option>)}
+                       {config.classes.filter((c: any) => c.board === newAssignment.board).map((c: any) => <option key={c.name}>{c.name}</option>)}
                      </select>
                      <input type="text" placeholder="Subject" value={newAssignment.subject} onChange={e => setNewAssignment({...newAssignment, subject: e.target.value})} className="h-10 rounded-lg text-sm px-3 border border-border-soft" />
                      <button onClick={handleAddAssignment} className="h-10 bg-brand-blue text-white rounded-lg text-sm font-bold">Add</button>
