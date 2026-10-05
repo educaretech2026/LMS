@@ -9,11 +9,26 @@ export class SetupService {
   async getCentres() {
     return this.prisma.centre.findMany();
   }
-  async createCentre(data: { name: string; code: string; type: string; address?: string }) {
-    return this.prisma.centre.create({ data });
+  async createCentre(data: { name: string; code: string; type?: string; address?: string; contactNo?: string; email?: string }) {
+    return this.prisma.centre.create({ 
+      data: {
+        name: data.name,
+        code: data.code,
+        address: data.address,
+        contactNo: data.contactNo,
+        email: data.email
+      } 
+    });
   }
   async updateCentre(id: string, data: any) {
-    return this.prisma.centre.update({ where: { id }, data });
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.code !== undefined) updateData.code = data.code;
+    if (data.address !== undefined) updateData.address = data.address;
+    if (data.contactNo !== undefined) updateData.contactNo = data.contactNo;
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.status !== undefined) updateData.status = data.status;
+    return this.prisma.centre.update({ where: { id }, data: updateData });
   }
   async deleteCentre(id: string) {
     const centre = await this.prisma.centre.findUnique({
