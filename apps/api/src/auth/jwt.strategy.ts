@@ -20,6 +20,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    if (payload.role === 'PUBLIC_LEARNER') {
+      const publicUser = await this.prisma.publicUser.findUnique({
+        where: { id: payload.sub }
+      });
+      if (!publicUser) throw new UnauthorizedException('User not found');
+      // Mock the role so RolesGuard works properly
+      return { ...publicUser, role: { name: 'PUBLIC_LEARNER' }, status: 'ACTIVE' };
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {

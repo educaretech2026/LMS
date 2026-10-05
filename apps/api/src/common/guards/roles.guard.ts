@@ -18,6 +18,8 @@ export class RolesGuard implements CanActivate {
     if (!user || !user.role) {
       return false;
     }
-    return requiredRoles.includes(user.role.name);
+    const userRoleName = typeof user.role === 'string' ? user.role : user.role.name;
+    const normalizedUserRole = userRoleName.toUpperCase().replace(/\s+/g, '_');
+    return requiredRoles.includes(normalizedUserRole);
   }
 }
