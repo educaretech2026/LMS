@@ -119,7 +119,7 @@ export function Sidebar({
           <NavSection
             label="Main"
             items={(() => {
-              const r = role?.toUpperCase() || '';
+              const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
               if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') return mainNav.filter(i => ['Dashboard', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
               if (r === 'TEACHER') return mainNav.filter(i => ['Dashboard', 'Student', 'Attendance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
               if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return mainNav;
@@ -129,11 +129,11 @@ export function Sidebar({
             activePath={path}
           />
           
-          {['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN', 'RECEPTIONIST'].includes(role?.toUpperCase() || '') && (
+          {['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN', 'RECEPTIONIST'].includes(role?.toUpperCase().replace(/\s+/g, '_') || '') && (
             <NavSection 
               label="Management" 
               items={(() => {
-                const r = role?.toUpperCase() || '';
+                const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
                 if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return managementNav;
                 if (r === 'RECEPTIONIST') return managementNav.filter(i => ['Enquiry / Leads', 'SMS'].includes(i.label));
                 return [];
@@ -145,7 +145,7 @@ export function Sidebar({
           <NavSection 
             label="System & Account" 
             items={(() => {
-              const r = role?.toUpperCase() || '';
+              const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
               if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return systemNav;
               return systemNav.filter(i => ['My Profile', 'Help'].includes(i.label));
             })()} 

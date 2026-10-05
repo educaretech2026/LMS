@@ -42,7 +42,7 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
-  const userRole = user?.role?.toUpperCase() || '';
+  const userRole = user?.role?.toUpperCase().replace(/\s+/g, '_') || '';
   const isSuperAdmin = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(userRole);
   const isReceptionist = userRole === 'RECEPTIONIST';
 
