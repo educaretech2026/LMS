@@ -10,15 +10,22 @@ export class SetupService {
     return this.prisma.centre.findMany();
   }
   async createCentre(data: { name: string; code: string; type?: string; address?: string; contactNo?: string; email?: string }) {
-    return this.prisma.centre.create({ 
-      data: {
-        name: data.name,
-        code: data.code,
-        address: data.address,
-        contactNo: data.contactNo,
-        email: data.email
-      } 
-    });
+    try {
+      return await this.prisma.centre.create({ 
+        data: {
+          name: data.name,
+          code: data.code,
+          address: data.address,
+          contactNo: data.contactNo,
+          email: data.email
+        } 
+      });
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        throw new ConflictException('A centre with this code already exists.');
+      }
+      throw e;
+    }
   }
   async updateCentre(id: string, data: any) {
     const updateData: any = {};
@@ -63,7 +70,20 @@ export class SetupService {
     return this.prisma.board.findMany();
   }
   async createBoard(data: { name: string; code: string; description?: string }) {
-    return this.prisma.board.create({ data });
+    try {
+      return await this.prisma.board.create({ 
+        data: {
+          name: data.name,
+          code: data.code,
+          description: data.description
+        } 
+      });
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        throw new ConflictException('A board with this code already exists.');
+      }
+      throw e;
+    }
   }
 
   // Standards (Classes)
