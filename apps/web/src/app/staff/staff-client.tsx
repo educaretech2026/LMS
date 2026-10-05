@@ -328,7 +328,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
     email: staff?.email || "",
     phone: staff?.phone || "",
     role: staff?.role || "Teacher",
-    centre: staff?.centre || "Educare Kalathipady",
+    centre: staff?.centre || (config.centres[0] || ""),
     status: staff?.status || "Active",
     assignments: staff?.assignments || [],
     password: ""
@@ -616,7 +616,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                     email: formData.email || undefined,
                     phone: formData.phone || undefined,
                     role: formData.role || "Teacher",
-                    centre: formData.centre || "Educare Kalathipady",
+                    centre: formData.centre || (config.centres[0] || ""),
                     status: formData.status as "Active" | "Inactive",
                     assignments: formData.assignments,
                     password: formData.password || undefined
