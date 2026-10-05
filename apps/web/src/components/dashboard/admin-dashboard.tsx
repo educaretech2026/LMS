@@ -42,6 +42,14 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
+  const userRole = user?.role?.toUpperCase() || '';
+  const isSuperAdmin = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(userRole);
+  const isReceptionist = userRole === 'RECEPTIONIST';
+
+  const showFinance = isSuperAdmin;
+  const showFees = isSuperAdmin || isReceptionist;
+  const showStudents = isSuperAdmin || isReceptionist;
+
   // ── Grouped sections ──────────────────────────────────────────────
   const studentSection = [
     { title: "Total Students",   value: String(ds.totalStudents || 0),  icon: Users,        accent: "blue"   as Accent },
@@ -74,7 +82,11 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
     { label: "Notices",     href: "/notices",    icon: MessageSquare,desc: "Manage notice board"   },
     { label: "Reports",     href: "/report",     icon: BarChart2,    desc: "Full analytics"        },
     { label: "Setup",       href: "/setup",      icon: Wrench,       desc: "System configuration"  },
-  ];
+  ].filter(link => {
+    if (isSuperAdmin) return true;
+    if (isReceptionist) return ['Students', 'Fee', 'Enquiry'].includes(link.label);
+    return false;
+  });
 
   return (
     <div className="p-6 lg:p-8 space-y-7 max-w-7xl mx-auto w-full">
@@ -115,86 +127,94 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
       </div>
 
       {/* ── Quick Actions ── */}
-      <div>
-        <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {quickLinks.map(({ label, href, icon: Icon, desc }) => (
-            <Link key={label} href={href}>
-              <div className="group flex flex-col items-center justify-center gap-2 bg-white border border-border-soft rounded-xl p-4 shadow-sm hover:shadow-md hover:border-brand-blue/30 transition-all text-center cursor-pointer">
-                <div className="h-10 w-10 rounded-xl bg-brand-blue/8 flex items-center justify-center group-hover:bg-brand-blue/15 transition-colors">
-                  <Icon className="h-5 w-5 text-brand-blue" />
+      {quickLinks.length > 0 && (
+        <div>
+          <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Quick Actions</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {quickLinks.map(({ label, href, icon: Icon, desc }) => (
+              <Link key={label} href={href}>
+                <div className="group flex flex-col items-center justify-center gap-2 bg-white border border-border-soft rounded-xl p-4 shadow-sm hover:shadow-md hover:border-brand-blue/30 transition-all text-center cursor-pointer">
+                  <div className="h-10 w-10 rounded-xl bg-brand-blue/8 flex items-center justify-center group-hover:bg-brand-blue/15 transition-colors">
+                    <Icon className="h-5 w-5 text-brand-blue" />
+                  </div>
+                  <span className="text-xs font-bold text-text-primary">{label}</span>
                 </div>
-                <span className="text-xs font-bold text-text-primary">{label}</span>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Student & Activity ── */}
-      <div>
-        <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Students & Activity</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {studentSection.map((s) => <StatCard key={s.title} {...s} />)}
+      {showStudents && (
+        <div>
+          <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Students & Activity</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {studentSection.map((s) => <StatCard key={s.title} {...s} />)}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Finance & Fees ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Finance */}
-        <div>
-          <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Finance Overview</h2>
-          <div className="bg-white border border-border-soft rounded-2xl shadow-sm overflow-hidden">
-            {financeSection.map(({ title, value, icon: Icon, accent }, i) => {
-              const cfg = accentConfig[accent];
-              return (
-                <div key={title} className={`flex items-center justify-between px-5 py-4 ${i < financeSection.length - 1 ? "border-b border-border-soft" : ""} hover:bg-surface-2/50 transition-colors`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`h-9 w-9 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0`}>
-                      <Icon className={`h-4 w-4 ${cfg.iconText}`} />
+        {showFinance && (
+          <div>
+            <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Finance Overview</h2>
+            <div className="bg-white border border-border-soft rounded-2xl shadow-sm overflow-hidden">
+              {financeSection.map(({ title, value, icon: Icon, accent }, i) => {
+                const cfg = accentConfig[accent];
+                return (
+                  <div key={title} className={`flex items-center justify-between px-5 py-4 ${i < financeSection.length - 1 ? "border-b border-border-soft" : ""} hover:bg-surface-2/50 transition-colors`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`h-9 w-9 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0`}>
+                        <Icon className={`h-4 w-4 ${cfg.iconText}`} />
+                      </div>
+                      <span className="text-sm font-medium text-text-secondary">{title}</span>
                     </div>
-                    <span className="text-sm font-medium text-text-secondary">{title}</span>
+                    <span className={`text-base font-black ${cfg.valueText}`}>{value}</span>
                   </div>
-                  <span className={`text-base font-black ${cfg.valueText}`}>{value}</span>
-                </div>
-              );
-            })}
-            <div className="px-5 py-3 bg-surface-2/50 border-t border-border-soft flex items-center justify-between">
-              <span className="text-xs text-text-muted font-medium">Net Balance</span>
-              <span className={`text-sm font-black ${(ds.totalIncome || 0) - (ds.totalExpense || 0) >= 0 ? "text-success" : "text-brand-red"}`}>
-                {fmt(Math.abs((ds.totalIncome || 0) - (ds.totalExpense || 0)))}
-                {(ds.totalIncome || 0) - (ds.totalExpense || 0) >= 0 ? " surplus" : " deficit"}
-              </span>
+                );
+              })}
+              <div className="px-5 py-3 bg-surface-2/50 border-t border-border-soft flex items-center justify-between">
+                <span className="text-xs text-text-muted font-medium">Net Balance</span>
+                <span className={`text-sm font-black ${(ds.totalIncome || 0) - (ds.totalExpense || 0) >= 0 ? "text-success" : "text-brand-red"}`}>
+                  {fmt(Math.abs((ds.totalIncome || 0) - (ds.totalExpense || 0)))}
+                  {(ds.totalIncome || 0) - (ds.totalExpense || 0) >= 0 ? " surplus" : " deficit"}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Fee Collection */}
-        <div>
-          <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Fee Collection Status</h2>
-          <div className="bg-white border border-border-soft rounded-2xl shadow-sm overflow-hidden">
-            {feeSection.map(({ title, value, icon: Icon, accent }, i) => {
-              const cfg = accentConfig[accent];
-              return (
-                <div key={title} className={`flex items-center justify-between px-5 py-4 ${i < feeSection.length - 1 ? "border-b border-border-soft" : ""} hover:bg-surface-2/50 transition-colors`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`h-9 w-9 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0`}>
-                      <Icon className={`h-4 w-4 ${cfg.iconText}`} />
+        {showFees && (
+          <div>
+            <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Fee Collection Status</h2>
+            <div className="bg-white border border-border-soft rounded-2xl shadow-sm overflow-hidden">
+              {feeSection.map(({ title, value, icon: Icon, accent }, i) => {
+                const cfg = accentConfig[accent];
+                return (
+                  <div key={title} className={`flex items-center justify-between px-5 py-4 ${i < feeSection.length - 1 ? "border-b border-border-soft" : ""} hover:bg-surface-2/50 transition-colors`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`h-9 w-9 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0`}>
+                        <Icon className={`h-4 w-4 ${cfg.iconText}`} />
+                      </div>
+                      <span className="text-sm font-medium text-text-secondary">{title}</span>
                     </div>
-                    <span className="text-sm font-medium text-text-secondary">{title}</span>
+                    <span className={`text-base font-black ${cfg.valueText}`}>{value}</span>
                   </div>
-                  <span className={`text-base font-black ${cfg.valueText}`}>{value}</span>
-                </div>
-              );
-            })}
-            <div className="px-5 py-3 bg-surface-2/50 border-t border-border-soft">
-              <Link href="/fee" className="flex items-center justify-center gap-2 text-xs font-bold text-brand-blue hover:underline">
-                Manage Fee Records <ArrowRight className="h-3 w-3" />
-              </Link>
+                );
+              })}
+              <div className="px-5 py-3 bg-surface-2/50 border-t border-border-soft">
+                <Link href="/fee" className="flex items-center justify-center gap-2 text-xs font-bold text-brand-blue hover:underline">
+                  Manage Fee Records <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
       </div>
     </div>
