@@ -2,7 +2,7 @@
   "name": "educare-lms",
   "private": true,
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "scripts": {
     "build": "pnpm --filter @educare/database db:generate && turbo run build",
