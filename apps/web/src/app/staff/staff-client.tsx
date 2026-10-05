@@ -29,7 +29,7 @@ interface Staff {
   createdAt?: string;
 }
 
-export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] }) {
+export function StaffClient({ initialStaffList, config }: { initialStaffList: Staff[], config: any }) {
   const { role } = useAuth();
   const [staffList, setStaffList] = useState<Staff[]>(initialStaffList);
   const [search, setSearch] = useState("");
@@ -122,9 +122,9 @@ export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] })
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
               {[
-                { label: "Centre", state: filterCentre, set: setFilterCentre, options: ["All Centres", "Neyyattinkara", "Manacaud"] },
+                { label: "Centre", state: filterCentre, set: setFilterCentre, options: ["All Centres", ...config.centres] },
                 { label: "Role", state: filterRole, set: setFilterRole, options: ["All Roles", "Teacher", "Coordinator", "Admin"] },
-                { label: "Board", state: filterBoard, set: setFilterBoard, options: ["All Boards", "State", "CBSE", "ICSE", "ISC", "None"] },
+                { label: "Board", state: filterBoard, set: setFilterBoard, options: ["All Boards", ...config.boards] },
                 { label: "Status", state: filterStatus, set: setFilterStatus, options: ["All Status", "Active", "Inactive"] },
                 { label: "Rows", options: ["10", "20", "50"] },
               ].map((f) => (
@@ -291,6 +291,7 @@ export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] })
       {showModal && (
         <AddStaffModal 
           staff={editItem} 
+          config={config}
           onClose={() => { setShowModal(false); setEditItem(null); }} 
                     onSave={async (savedStaff) => {
             try {
@@ -319,7 +320,7 @@ export function StaffClient({ initialStaffList }: { initialStaffList: Staff[] })
   );
 }
 
-function AddStaffModal({ staff, onClose, onSave }: { staff: Staff | null, onClose: () => void, onSave: (s: Staff) => void }) {
+function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null, onClose: () => void, onSave: (s: Staff) => void, config: any }) {
   const [activeTab, setActiveTab] = useState("Basic Information");
   const [formData, setFormData] = useState<any>({
     empId: staff?.empId || "",
@@ -333,7 +334,13 @@ function AddStaffModal({ staff, onClose, onSave }: { staff: Staff | null, onClos
     password: ""
   });
 
-  const [newAssignment, setNewAssignment] = useState({ academicYear: "2025-26", board: "CBSE", classLevel: "Class 11", division: "Division A", subject: "" });
+  const [newAssignment, setNewAssignment] = useState({ 
+    academicYear: config.academicYears[0] || "", 
+    board: config.boards[0] || "", 
+    classLevel: config.classes[0] || "", 
+    division: "Division A", 
+    subject: "" 
+  });
   const [showAddAssignment, setShowAddAssignment] = useState(false);
 
   const TABS = [
@@ -351,7 +358,13 @@ function AddStaffModal({ staff, onClose, onSave }: { staff: Staff | null, onClos
         assignments: [...formData.assignments, { id: Math.random().toString(), ...newAssignment }]
       });
       setShowAddAssignment(false);
-      setNewAssignment({ academicYear: "2025-26", board: "CBSE", classLevel: "Class 11", division: "Division A", subject: "" });
+      setNewAssignment({ 
+        academicYear: config.academicYears[0] || "", 
+        board: config.boards[0] || "", 
+        classLevel: config.classes[0] || "", 
+        division: "Division A", 
+        subject: "" 
+      });
     }
   };
 
@@ -424,8 +437,7 @@ function AddStaffModal({ staff, onClose, onSave }: { staff: Staff | null, onClos
                 <div className="relative">
                   <select value={formData.centre} onChange={(e) => setFormData({...formData, centre: e.target.value})} className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-muted focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
                     <option value="">---Select---</option>
-                    <option value="Educare Kalathipady">Educare Kalathipady</option>
-                    <option value="Educare North Wing">Educare North Wing</option>
+                    {config.centres.map((c: string) => <option key={c} value={c}>{c}</option>)}
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
@@ -472,16 +484,13 @@ function AddStaffModal({ staff, onClose, onSave }: { staff: Staff | null, onClos
                 <div className="mb-6 bg-surface-2 p-4 rounded-lg border border-border-soft">
                   <div className="grid grid-cols-5 gap-4">
                      <select value={newAssignment.academicYear} onChange={e => setNewAssignment({...newAssignment, academicYear: e.target.value})} className="h-10 rounded-lg text-sm px-3">
-                       <option>2025-26</option>
-                       <option>2026-27</option>
+                       {config.academicYears.map((y: string) => <option key={y}>{y}</option>)}
                      </select>
                      <select value={newAssignment.board} onChange={e => setNewAssignment({...newAssignment, board: e.target.value})} className="h-10 rounded-lg text-sm px-3">
-                       <option>CBSE</option>
-                       <option>State</option>
+                       {config.boards.map((b: string) => <option key={b}>{b}</option>)}
                      </select>
                      <select value={newAssignment.classLevel} onChange={e => setNewAssignment({...newAssignment, classLevel: e.target.value})} className="h-10 rounded-lg text-sm px-3">
-                       <option>Class 11</option>
-                       <option>Class 12</option>
+                       {config.classes.map((c: string) => <option key={c}>{c}</option>)}
                      </select>
                      <input type="text" placeholder="Subject" value={newAssignment.subject} onChange={e => setNewAssignment({...newAssignment, subject: e.target.value})} className="h-10 rounded-lg text-sm px-3 border border-border-soft" />
                      <button onClick={handleAddAssignment} className="h-10 bg-brand-blue text-white rounded-lg text-sm font-bold">Add</button>
