@@ -5,6 +5,35 @@ import { PrismaService } from '../database/prisma.service';
 export class SetupService {
   constructor(private prisma: PrismaService) {}
 
+  // Roles
+  async getRoles() {
+    return this.prisma.role.findMany({
+      include: {
+        _count: { select: { users: true } }
+      }
+    });
+  }
+  
+  async createRole(data: { name: string }) {
+    return this.prisma.role.create({ data });
+  }
+
+  async deleteRole(id: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: { _count: { select: { users: true } } }
+    });
+    if (!role) throw new NotFoundException('Role not found');
+    if (role._count.users > 0) {
+      throw new ConflictException(`Cannot delete: Found ${role._count.users} users attached to this role.`);
+    }
+    // Protect system roles
+    if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER'].includes(role.name)) {
+       throw new ConflictException('Cannot delete system role.');
+    }
+    return this.prisma.role.delete({ where: { id } });
+  }
+
   // Centres
   async getCentres() {
     return this.prisma.centre.findMany();

@@ -139,7 +139,7 @@ export default function SetupPage() {
           <div className="flex-1 overflow-y-auto p-6 lg:p-8">
             <div className="max-w-4xl mx-auto md:mx-0">
               {activeTab === "Centre Setup" && <CentreSetupTab onError={setDeleteWarning} />}
-              {activeTab === "Roles & Permissions" && <RolesPermissionsTab />}
+              {activeTab === "Roles & Permissions" && <RolesPermissionsTab onError={setDeleteWarning} />}
               {activeTab === "Academic Structure" && <AcademicStructureTab onError={setDeleteWarning} />}
               {activeTab === "Divisions (Batches)" && <BatchesTab onError={setDeleteWarning} />}
               {activeTab === "Target Tracks" && <TargetTracksTab onError={setDeleteWarning} />}
@@ -309,8 +309,12 @@ function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
   );
 }
 
-function RolesPermissionsTab() {
-  const roles = ["Super Admin", "Teacher", "Coordinator", "Receptionist"];
+function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
+  const [roles, setRoles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+
   const modules = [
     "Student Management",
     "Staff Management",
@@ -320,6 +324,43 @@ function RolesPermissionsTab() {
     "System Settings"
   ];
 
+  useEffect(() => {
+    fetchApi<any[]>('/setup/roles')
+      .then(data => {
+        setRoles(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleAddRole = async () => {
+    if (!newRoleName) return;
+    try {
+      const created = await fetchApi<any>('/setup/roles', {
+        method: 'POST',
+        body: JSON.stringify({ name: newRoleName })
+      });
+      setRoles([...roles, created]);
+      setNewRoleName("");
+      setIsAdding(false);
+    } catch (e: any) {
+      onError(e.message || "Failed to create role.");
+    }
+  };
+
+  const handleDeleteRole = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this role?")) return;
+    try {
+      await fetchApi(`/setup/roles/${id}`, { method: 'DELETE' });
+      setRoles(roles.filter(r => r.id !== id));
+    } catch (e: any) {
+      onError(e.message || "Failed to delete role.");
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden flex flex-col">
       <div className="p-6 border-b border-border-soft flex items-center justify-between bg-surface-2/30">
@@ -327,9 +368,23 @@ function RolesPermissionsTab() {
           <h3 className="text-sm font-bold text-text-primary">Roles & Permissions Matrix</h3>
           <p className="text-xs text-text-muted mt-1">Control access to different modules based on staff roles.</p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors">
-          <Plus className="h-3.5 w-3.5" /> New Role
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdding ? (
+            <>
+              <input type="text" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="Role Name" className="h-8 rounded border border-border-soft px-2 text-xs" />
+              <button onClick={handleAddRole} className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors">
+                Save
+              </button>
+              <button onClick={() => setIsAdding(false)} className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setIsAdding(true)} className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors">
+              <Plus className="h-3.5 w-3.5" /> New Role
+            </button>
+          )}
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -337,8 +392,15 @@ function RolesPermissionsTab() {
             <tr className="bg-white border-b border-border-soft">
               <th className="px-6 py-4 text-left text-xs font-bold text-text-secondary">Modules</th>
               {roles.map(role => (
-                <th key={role} className="px-4 py-4 text-center text-xs font-bold text-text-secondary">
-                  {role}
+                <th key={role.id} className="px-4 py-4 text-center text-xs font-bold text-text-secondary">
+                  <div className="flex flex-col items-center gap-1">
+                    {role.name}
+                    {!['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER'].includes(role.name) && (
+                      <button onClick={() => handleDeleteRole(role.id)} className="text-danger hover:text-red-700 p-1 rounded hover:bg-danger/10 transition-colors" title="Delete Role">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </th>
               ))}
             </tr>
@@ -348,15 +410,15 @@ function RolesPermissionsTab() {
               <tr key={module} className="hover:bg-surface-2/30">
                 <td className="px-6 py-4 font-semibold text-text-primary text-xs">{module}</td>
                 {roles.map(role => {
-                  const isChecked = role === "Super Admin" || 
-                    (role === "Teacher" && (module.includes("Student") || module.includes("Academics"))) ||
-                    (role === "Receptionist" && (module.includes("Student") || module.includes("Fee")));
+                  const isChecked = role.name === "SUPER_ADMIN" || 
+                    (role.name === "TEACHER" && (module.includes("Student") || module.includes("Academics"))) ||
+                    (role.name === "RECEPTIONIST" && (module.includes("Student") || module.includes("Fee")));
                   return (
-                    <td key={role} className="px-4 py-4 text-center">
+                    <td key={role.id} className="px-4 py-4 text-center">
                       <input 
                         type="checkbox" 
                         defaultChecked={isChecked}
-                        disabled={role === "Super Admin"}
+                        disabled={role.name === "SUPER_ADMIN"}
                         className="rounded border-border-soft text-brand-blue focus:ring-brand-blue/20 disabled:opacity-50"
                       />
                     </td>

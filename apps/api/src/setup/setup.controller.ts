@@ -10,6 +10,22 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
+  @Get('roles')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
+  getRoles() {
+    return this.setupService.getRoles();
+  }
+
+  @Post('roles')
+  createRole(@Body() data: { name: string }) {
+    return this.setupService.createRole(data);
+  }
+
+  @Delete('roles/:id')
+  deleteRole(@Param('id') id: string) {
+    return this.setupService.deleteRole(id);
+  }
+
   @Get('centres')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getCentres() {

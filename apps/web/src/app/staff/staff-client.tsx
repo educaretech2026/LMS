@@ -123,7 +123,7 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
               {[
                 { label: "Centre", state: filterCentre, set: setFilterCentre, options: ["All Centres", ...config.centres] },
-                { label: "Role", state: filterRole, set: setFilterRole, options: ["All Roles", "Teacher", "Coordinator", "Admin"] },
+                { label: "Role", state: filterRole, set: setFilterRole, options: ["All Roles", ...config.roles] },
                 { label: "Board", state: filterBoard, set: setFilterBoard, options: ["All Boards", ...config.boards] },
                 { label: "Status", state: filterStatus, set: setFilterStatus, options: ["All Status", "Active", "Inactive"] },
                 { label: "Rows", options: ["10", "20", "50"] },
@@ -327,7 +327,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
     name: staff?.name || "",
     email: staff?.email || "",
     phone: staff?.phone || "",
-    role: staff?.role || "Teacher",
+    role: staff?.role || (config.roles[0] || "TEACHER"),
     centre: staff?.centre || (config.centres[0] || ""),
     status: staff?.status || "Active",
     assignments: staff?.assignments || [],
@@ -452,9 +452,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                 </label>
                 <div className="relative">
                   <select value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})} className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
-                    <option value="Teacher">Teacher</option>
-                    <option value="Coordinator">Coordinator</option>
-                    <option value="Admin">Admin</option>
+                    {config.roles.map((r: string) => <option key={r} value={r}>{r}</option>)}
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
@@ -619,7 +617,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                     name: formData.name || undefined,
                     email: formData.email || undefined,
                     phone: formData.phone || undefined,
-                    role: formData.role || "Teacher",
+                    role: formData.role || (config.roles[0] || "TEACHER"),
                     centre: formData.centre || (config.centres[0] || ""),
                     status: formData.status as "Active" | "Inactive",
                     assignments: formData.assignments,

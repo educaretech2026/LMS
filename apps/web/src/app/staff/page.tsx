@@ -2,12 +2,13 @@ import { fetchApiServer } from "@/lib/api-server";
 import { StaffClient } from "./staff-client";
 
 export default async function StaffPage() {
-  const [data, centres, boards, standards, academicYears] = await Promise.all([
+  const [data, centres, boards, standards, academicYears, roles] = await Promise.all([
     fetchApiServer<any[]>('/staff'),
     fetchApiServer<any[]>('/setup/centres'),
     fetchApiServer<any[]>('/setup/boards'),
     fetchApiServer<any[]>('/setup/standards'),
-    fetchApiServer<any[]>('/setup/academic-years')
+    fetchApiServer<any[]>('/setup/academic-years'),
+    fetchApiServer<any[]>('/setup/roles')
   ]);
   
   const mapped = data.map(user => {
@@ -33,7 +34,8 @@ export default async function StaffPage() {
       name: s.name,
       board: boards.find(b => b.id === s.boardId)?.name || ""
     })),
-    academicYears: academicYears.map(y => y.name)
+    academicYears: academicYears.map(y => y.name),
+    roles: roles.map(r => r.name)
   };
 
   return <StaffClient initialStaffList={mapped} config={config} />;
