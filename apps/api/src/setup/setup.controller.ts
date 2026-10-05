@@ -26,6 +26,11 @@ export class SetupController {
     return this.setupService.deleteRole(id);
   }
 
+  @Post('roles/:id/permissions')
+  toggleRolePermission(@Param('id') id: string, @Body() data: { module: string, active: boolean }) {
+    return this.setupService.toggleRolePermission(id, data.module, data.active);
+  }
+
   @Get('centres')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getCentres() {

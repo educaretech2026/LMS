@@ -361,6 +361,30 @@ function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
     }
   };
 
+  const handleTogglePermission = async (roleId: string, moduleName: string, active: boolean) => {
+    try {
+      await fetchApi(`/setup/roles/${roleId}/permissions`, {
+        method: 'POST',
+        body: JSON.stringify({ module: moduleName, active })
+      });
+      // Optimistically update the state
+      setRoles(roles.map(r => {
+        if (r.id === roleId) {
+          let perms = [...(r.permissions || [])];
+          if (active) {
+            perms.push({ permission: { action: moduleName } });
+          } else {
+            perms = perms.filter(p => p.permission.action !== moduleName);
+          }
+          return { ...r, permissions: perms };
+        }
+        return r;
+      }));
+    } catch (e: any) {
+      onError(e.message || "Failed to update permission.");
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden flex flex-col">
       <div className="p-6 border-b border-border-soft flex items-center justify-between bg-surface-2/30">
@@ -410,16 +434,16 @@ function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
               <tr key={module} className="hover:bg-surface-2/30">
                 <td className="px-6 py-4 font-semibold text-text-primary text-xs">{module}</td>
                 {roles.map(role => {
-                  const isChecked = role.name === "SUPER_ADMIN" || 
-                    (role.name === "TEACHER" && (module.includes("Student") || module.includes("Academics"))) ||
-                    (role.name === "RECEPTIONIST" && (module.includes("Student") || module.includes("Fee")));
+                  const hasPermission = role.permissions?.some((p: any) => p.permission.action === module);
+                  const isChecked = role.name === "SUPER_ADMIN" || hasPermission;
                   return (
                     <td key={role.id} className="px-4 py-4 text-center">
                       <input 
                         type="checkbox" 
-                        defaultChecked={isChecked}
+                        checked={isChecked}
+                        onChange={(e) => handleTogglePermission(role.id, module, e.target.checked)}
                         disabled={role.name === "SUPER_ADMIN"}
-                        className="rounded border-border-soft text-brand-blue focus:ring-brand-blue/20 disabled:opacity-50"
+                        className="rounded border-border-soft text-brand-blue focus:ring-brand-blue/20 disabled:opacity-50 cursor-pointer"
                       />
                     </td>
                   )

@@ -9,6 +9,7 @@ export class SetupService {
   async getRoles() {
     return this.prisma.role.findMany({
       include: {
+        permissions: { include: { permission: true } },
         _count: { select: { users: true } }
       }
     });
@@ -32,6 +33,26 @@ export class SetupService {
        throw new ConflictException('Cannot delete system role.');
     }
     return this.prisma.role.delete({ where: { id } });
+  }
+
+  async toggleRolePermission(roleId: string, moduleName: string, active: boolean) {
+    let perm = await this.prisma.permission.findUnique({ where: { action: moduleName } });
+    if (!perm) {
+      perm = await this.prisma.permission.create({ data: { action: moduleName } });
+    }
+
+    if (active) {
+      await this.prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId, permissionId: perm.id } },
+        create: { roleId, permissionId: perm.id },
+        update: {}
+      });
+    } else {
+      await this.prisma.rolePermission.deleteMany({
+        where: { roleId, permissionId: perm.id }
+      });
+    }
+    return { success: true };
   }
 
   // Centres
