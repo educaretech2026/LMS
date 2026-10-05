@@ -8,10 +8,9 @@ export class StaffService {
 
   async createStaff(data: any) {
     try {
-      // 1. Fetch related entities based on provided string names
-      let roleName = data.role === 'Coordinator' || data.role === 'Admin' ? 'CENTRE_ADMIN' : 'TEACHER';
+      const roleName = data.role;
       const role = await this.prisma.role.findUnique({ where: { name: roleName } });
-      if (!role) throw new NotFoundException(`${roleName} role not found. Please run seed script.`);
+      if (!role) throw new NotFoundException(`Role "${roleName}" not found.`);
 
       const centre = await this.prisma.centre.findFirst({ where: { name: data.centre } });
       if (!centre) throw new NotFoundException(`Centre "${data.centre}" not found.`);
@@ -66,7 +65,7 @@ export class StaffService {
       where: {
         role: {
           name: {
-            in: ['TEACHER', 'CENTRE_ADMIN']
+            notIn: ['STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN']
           }
         }
       },
@@ -92,13 +91,9 @@ export class StaffService {
     return this.prisma.$transaction(async (prisma) => {
       let roleId = user.roleId;
       if (data.role) {
-        let roleName = data.role;
-        if (data.role === 'Coordinator' || data.role === 'Admin') roleName = 'CENTRE_ADMIN';
-        else if (data.role === 'Teacher') roleName = 'TEACHER';
-        else if (data.role !== 'SUPER_ADMIN') roleName = 'TEACHER'; // fallback
-
-        const role = await prisma.role.findUnique({ where: { name: roleName } });
+        const role = await prisma.role.findUnique({ where: { name: data.role } });
         if (role) roleId = role.id;
+        else throw new NotFoundException(`Role "${data.role}" not found`);
       }
 
       const updateData: any = {
@@ -131,12 +126,12 @@ export class StaffService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Staff not found');
     
-    // Soft delete
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { status: 'INACTIVE' }
+    return this.prisma.$transaction(async (prisma) => {
+      await prisma.userCentre.deleteMany({ where: { userId } });
+      await prisma.teacherProfile.deleteMany({ where: { userId } });
+      await prisma.user.delete({ where: { id: userId } });
+      return { success: true };
     });
-    return { success: true };
   }
 
 }

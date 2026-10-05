@@ -296,7 +296,7 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
                     onSave={async (savedStaff) => {
             try {
               if (editItem) {
-                const updated = await fetchApi<any>(`/staff/${savedStaff.id}`, {
+                await fetchApi<any>(`/staff/${savedStaff.id}`, {
                   method: 'PUT',
                   body: JSON.stringify(savedStaff)
                 });
@@ -306,7 +306,9 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
                   method: 'POST',
                   body: JSON.stringify(savedStaff)
                 });
-                setStaffList([savedStaff, ...staffList]);
+                // Use the real database ID returned by the API
+                const realId = created.user?.id || created.id || savedStaff.id;
+                setStaffList([{ ...savedStaff, id: realId }, ...staffList]);
               }
               setShowModal(false);
               setEditItem(null);

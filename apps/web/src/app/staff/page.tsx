@@ -20,7 +20,7 @@ export default async function StaffPage() {
       name: `${user.firstName} ${user.lastName}`,
       email: user.email,
       phone: profile?.phone || 'N/A', // teacher profile might have phone
-      role: user.role?.name === 'CENTRE_ADMIN' ? 'Admin' : 'Teacher',
+      role: user.role?.name || 'Unknown',
       centre: centre,
       createdAt: user.createdAt || new Date().toISOString(),
       status: (user.status === 'ACTIVE' ? 'Active' : 'Inactive') as "Active" | "Inactive",
