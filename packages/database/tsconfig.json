@@ -7,5 +7,5 @@
     "strict": true,
     "esModuleInterop": true
   },
-  "include": ["index.ts", "prisma/seed.ts"]
+  "include": ["index.ts"]
 }
