@@ -78,7 +78,7 @@ export default function EnquiryPage() {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => {
-                const url = window.location.origin + "/public/enquiry";
+                const url = window.location.origin + "/admission";
                 navigator.clipboard.writeText(url);
                 alert("Public form link copied to clipboard:\n" + url);
               }}
