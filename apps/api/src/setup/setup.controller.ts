@@ -10,6 +10,18 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
+  @Get('settings')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  async getSettings() {
+    return this.setupService.getSettings();
+  }
+
+  @Put('settings')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  async updateSettings(@Body() data: any) {
+    return this.setupService.updateSettings(data);
+  }
+
   @Get('roles')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getRoles() {

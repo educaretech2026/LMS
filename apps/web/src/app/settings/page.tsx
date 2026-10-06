@@ -5,8 +5,30 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
 import { Settings, ShieldCheck } from "lucide-react";
 
+import { useState, useEffect } from "react";
+import { fetchApi } from "@/lib/api";
+import { Loader2 } from "lucide-react";
+
 export default function SettingsPage() {
   const { role } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [settings, setSettings] = useState({
+    centreName: "",
+    contactEmail: "",
+    contactPhone: "",
+    currentYear: ""
+  });
+
+  useEffect(() => {
+    if (role === 'TEACHER' || role === 'STUDENT') return;
+    fetchApi("/setup/settings")
+      .then(data => {
+        if (data) setSettings(data as any);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [role]);
   
   if (role === 'TEACHER' || role === 'STUDENT') {
     return (
@@ -20,44 +42,75 @@ export default function SettingsPage() {
     );
   }
 
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetchApi("/setup/settings", {
+        method: "PUT",
+        body: JSON.stringify(settings)
+      });
+      alert("Settings saved successfully!");
+    } catch (e) {
+      alert("Failed to save settings");
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSettings(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
   return (
     <DashboardLayout title="Settings">
       <PageShell title="Settings" subtitle="Configure your LMS preferences" icon={Settings} accentColor="blue">
-        <div className="max-w-2xl space-y-4">
-          {[
-            { group: "General", fields: [
-              { label: "Centre Name",   placeholder: "Educare Kalathipady" },
-              { label: "Contact Email", placeholder: "admin@educare.com"   },
-              { label: "Contact Phone", placeholder: "+91 00000 00000"     },
-            ]},
-            { group: "Academic Year", fields: [
-              { label: "Current Year", placeholder: "2026–2027" },
-            ]},
-          ].map(({ group, fields }) => (
-            <div key={group} className="bg-white rounded-xl border border-border-soft shadow-sm">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-brand-blue" />
+          </div>
+        ) : (
+          <div className="max-w-2xl space-y-4">
+            <div className="bg-white rounded-xl border border-border-soft shadow-sm">
               <div className="px-5 py-3 border-b border-border-soft">
-                <h3 className="text-sm font-semibold text-text-primary">{group}</h3>
+                <h3 className="text-sm font-semibold text-text-primary">General</h3>
               </div>
               <div className="p-5 space-y-4">
-                {fields.map((f) => (
-                  <div key={f.label}>
-                    <label className="block text-xs font-semibold text-text-secondary mb-1.5">{f.label}</label>
-                    <input
-                      type="text"
-                      defaultValue={f.placeholder}
-                      className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50"
-                    />
-                  </div>
-                ))}
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">Centre Name</label>
+                  <input name="centreName" value={settings.centreName} onChange={handleChange} placeholder="Educare Kalathipady" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">Contact Email</label>
+                  <input name="contactEmail" value={settings.contactEmail} onChange={handleChange} placeholder="admin@educare.com" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">Contact Phone</label>
+                  <input name="contactPhone" value={settings.contactPhone} onChange={handleChange} placeholder="+91 00000 00000" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
+                </div>
               </div>
             </div>
-          ))}
-          <div className="flex justify-end">
-            <button className="rounded-lg bg-brand-blue px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors">
-              Save Changes
-            </button>
+
+            <div className="bg-white rounded-xl border border-border-soft shadow-sm">
+              <div className="px-5 py-3 border-b border-border-soft">
+                <h3 className="text-sm font-semibold text-text-primary">Academic Year</h3>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">Current Year</label>
+                  <input name="currentYear" value={settings.currentYear} onChange={handleChange} placeholder="2026-2027" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button disabled={saving} onClick={handleSave} className="rounded-lg bg-brand-blue px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors flex items-center gap-2">
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </PageShell>
     </DashboardLayout>
   );

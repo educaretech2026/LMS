@@ -386,4 +386,66 @@ export class SetupService {
   async deleteSubtopic(id: string) {
     return this.prisma.subtopic.delete({ where: { id } });
   }
+  async getSettings() {
+    const centre = await this.prisma.centre.findFirst({
+      orderBy: { createdAt: 'asc' }
+    });
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true }
+    });
+    return {
+      centreName: centre?.name || '',
+      contactEmail: centre?.email || '',
+      contactPhone: centre?.contactNo || '',
+      currentYear: activeYear?.name || ''
+    };
+  }
+
+  async updateSettings(data: any) {
+    return this.prisma.$transaction(async (tx) => {
+      let centre = await tx.centre.findFirst({ orderBy: { createdAt: 'asc' } });
+      if (centre) {
+        await tx.centre.update({
+          where: { id: centre.id },
+          data: {
+            name: data.centreName || centre.name,
+            email: data.contactEmail || centre.email,
+            contactNo: data.contactPhone || centre.contactNo,
+          }
+        });
+      } else {
+        await tx.centre.create({
+          data: {
+            name: data.centreName || 'Educare',
+            code: 'EDC1',
+            email: data.contactEmail || '',
+            contactNo: data.contactPhone || '',
+          }
+        });
+      }
+
+      if (data.currentYear) {
+        let year = await tx.academicYear.findUnique({ where: { name: data.currentYear } });
+        if (!year) {
+          year = await tx.academicYear.create({
+            data: { name: data.currentYear, isActive: true }
+          });
+        }
+        
+        // Deactivate others
+        await tx.academicYear.updateMany({
+          where: { id: { not: year.id } },
+          data: { isActive: false }
+        });
+        
+        // Activate current
+        await tx.academicYear.update({
+          where: { id: year.id },
+          data: { isActive: true }
+        });
+      }
+      
+      return { success: true };
+    });
+  }
 }
