@@ -5,13 +5,13 @@ import { PrismaService } from '../database/prisma.service';
 export class SmsService {
   constructor(private prisma: PrismaService) {}
 
-  // Mock Twilio Client
-  // private twilioClient = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
+  // Twilio Client
+  private twilioClient = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
 
   async sendSms(to: string, message: string, senderId?: string) {
-    // 1. Simulate sending via Twilio
-    // const response = await this.twilioClient.messages.create({ body: message, from: 'EDUCARE', to });
-    const mockSid = `SM${Math.random().toString(36).substring(2, 15).toUpperCase()}`;
+    // 1. Send via Twilio
+    const response = await this.twilioClient.messages.create({ body: message, from: process.env.TWILIO_PHONE_NUMBER || 'EDUCARE', to });
+    const twilioSid = response.sid;
 
     // 2. Save log to database
     return this.prisma.smsLog.create({
@@ -20,7 +20,7 @@ export class SmsService {
         phoneNumber: to,
         message,
         status: 'SENT',
-        providerId: mockSid,
+        providerId: twilioSid,
         sentById: senderId,
       }
     });
