@@ -303,6 +303,46 @@ export default function ReportsPage() {
     );
   };
 
+  const exportToCSV = () => {
+    if (!data && !singleStudentData) return;
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+
+    if (reportType === "FINANCE") {
+      csvContent += "Date,Type,Category,Amount\n";
+      data.transactions.forEach((t: any) => {
+        csvContent += `"${new Date(t.date).toLocaleDateString()}","${t.type}","${t.category}","${t.amount}"\n`;
+      });
+    } else if (reportType === "ENQUIRIES") {
+      csvContent += "Status,Count\n";
+      Object.entries(data.counts).forEach(([status, count]) => {
+        csvContent += `"${status}","${count}"\n`;
+      });
+      csvContent += `"Total","${data.total}"\n`;
+      csvContent += `"Conversion Rate (%)","${data.conversionRate.toFixed(1)}"\n`;
+    } else if (reportType === "PERFORMANCE") {
+      if (singleStudentData) {
+        csvContent += "Exam,Marks,Grade,Remarks\n";
+        (singleStudentData.examResults || []).forEach((r: any) => {
+          csvContent += `"${r.exam?.title}","${r.marksObtained}/${r.maxMarks}","${r.grade || '-'}","${r.remarks || '-'}"\n`;
+        });
+      } else {
+        csvContent += "Student Name,Admission No,Total Days,Present,Attendance %\n";
+        data.forEach((s: any) => {
+          csvContent += `"${s.name}","${s.admissionNo}","${s.attendanceDetails.totalDays}","${s.attendanceDetails.presentDays}","${s.attendanceDetails.percentage}"\n`;
+        });
+      }
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${reportType.toLowerCase()}_report.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <DashboardLayout title="Reports & Analytics">
       <PageShell
@@ -388,8 +428,8 @@ export default function ReportsPage() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Search className="h-4 w-4" /> Generate</>}
             </button>
 
-            {data && (
-               <button className="h-10 px-4 flex items-center justify-center gap-2 rounded-lg bg-surface border border-border-soft text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-2 ml-auto">
+            {(data || singleStudentData) && (
+               <button onClick={exportToCSV} className="h-10 px-4 flex items-center justify-center gap-2 rounded-lg bg-surface border border-border-soft text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-2 ml-auto">
                  <Download className="h-4 w-4" /> Export CSV
                </button>
             )}
