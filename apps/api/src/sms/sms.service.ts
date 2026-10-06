@@ -5,25 +5,57 @@ import { PrismaService } from '../database/prisma.service';
 export class SmsService {
   constructor(private prisma: PrismaService) {}
 
-  // Twilio Client
-  private twilioClient = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
-
   async sendSms(to: string, message: string, senderId?: string) {
-    // 1. Send via Twilio
-    const response = await this.twilioClient.messages.create({ body: message, from: process.env.TWILIO_PHONE_NUMBER || 'EDUCARE', to });
-    const twilioSid = response.sid;
+    const metaToken = process.env.META_WA_ACCESS_TOKEN;
+    const phoneId = process.env.META_WA_PHONE_NUMBER_ID;
 
-    // 2. Save log to database
-    return this.prisma.smsLog.create({
-      data: {
-        recipientName: "Unknown", // Can be resolved via DB lookup if needed
-        phoneNumber: to,
-        message,
-        status: 'SENT',
-        providerId: twilioSid,
-        sentById: senderId,
+    if (!metaToken || !phoneId) {
+      throw new BadRequestException('Meta WhatsApp credentials are not configured.');
+    }
+
+    // Format phone number: remove +, spaces, dashes, etc.
+    const formattedTo = to.replace(/\D/g, '');
+
+    try {
+      // 1. Send via Meta WhatsApp Cloud API
+      const response = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${metaToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: formattedTo,
+          type: 'text',
+          text: { body: message }
+        })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('Meta WhatsApp API Error:', data);
+        throw new Error(data.error?.message || 'Failed to send WhatsApp message');
       }
-    });
+
+      const messageId = data.messages?.[0]?.id || 'UNKNOWN_ID';
+
+      // 2. Save log to database
+      return this.prisma.smsLog.create({
+        data: {
+          recipientName: "Unknown", 
+          phoneNumber: to,
+          message,
+          status: 'SENT',
+          providerId: messageId,
+          sentById: senderId,
+        }
+      });
+    } catch (error: any) {
+      console.error(error);
+      throw new BadRequestException(`Failed to send WhatsApp message: ${error.message}`);
+    }
   }
 
   async sendBulkSms(data: { type: 'CLASS' | 'BOARD' | 'CENTRE' | 'ALL', targetId?: string, message: string }, senderId: string) {
@@ -41,7 +73,7 @@ export class SmsService {
     }
     
     return {
-      message: `Bulk SMS job queued for ${type} ${targetId || ''}`,
+      message: `Bulk WhatsApp job queued for ${type} ${targetId || ''}`,
       queuedCount: logs.length
     };
   }
