@@ -318,7 +318,12 @@ export default function ReportsPage() {
               <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1.5">Select Report Type</label>
               <select 
                 value={reportType}
-                onChange={e => setReportType(e.target.value)}
+                onChange={e => {
+                  setReportType(e.target.value);
+                  setData(null);
+                  setSingleStudentData(null);
+                  setSearchResults([]);
+                }}
                 className="w-full h-10 rounded-lg border border-border-soft bg-surface pl-3 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-600/20"
               >
                 <option value="FINANCE">Finance (Income vs Expense)</option>
