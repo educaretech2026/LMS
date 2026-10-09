@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, AlertCircle } from "lucide-react";
-import api from "@/lib/api"; // Assuming a centralized api client exists
+import { fetchApi } from "@/lib/api";
 
 export default function VideoPlayerPage() {
   const params = useParams();
@@ -22,8 +22,8 @@ export default function VideoPlayerPage() {
     // Fetch the material details
     const fetchMaterial = async () => {
       try {
-        const res = await api.get(`/study-materials/${id}`);
-        setMaterial(res.data);
+        const data = await fetchApi(`/study-materials/${id}`);
+        setMaterial(data);
       } catch (err: any) {
         console.error(err);
         setError("Failed to load video. Please try again.");
@@ -54,9 +54,12 @@ export default function VideoPlayerPage() {
 
   const syncProgress = async (seconds: number) => {
     try {
-      await api.post(`/study-materials/${id}/progress`, {
-        timeWatchedSecs: Math.floor(seconds),
-        isOpened: true,
+      await fetchApi(`/study-materials/${id}/progress`, {
+        method: 'POST',
+        body: JSON.stringify({
+          timeWatchedSecs: Math.floor(seconds),
+          isOpened: true,
+        }),
       });
     } catch (err) {
       console.error("Failed to sync video progress", err);
