@@ -28,10 +28,10 @@ export function TeacherDashboard({ user, stats, notices = [] }: { user: any; sta
   });
 
   const quickLinks = [
-    { label: "Mark Attendance", href: "/attendance", icon: CalendarCheck, color: "blue" },
-    { label: "Syllabus Tracker", href: "/syllabus", icon: BookOpenCheck, color: "blue" },
-    { label: "eStudy Materials", href: "/estudy", icon: BookOpen, color: "blue" },
-    { label: "Exams", href: "/exam", icon: FileText, color: "blue" },
+    { label: "Mark Attendance", href: "/attendance", icon: CalendarCheck, colorClass: "group-hover:text-green-500" },
+    { label: "Syllabus Tracker", href: "/syllabus", icon: BookOpenCheck, colorClass: "group-hover:text-blue-500" },
+    { label: "eStudy Materials", href: "/estudy", icon: BookOpen, colorClass: "group-hover:text-purple-500" },
+    { label: "Exams", href: "/exam", icon: FileText, colorClass: "group-hover:text-rose-500" },
   ];
 
   return (
@@ -125,15 +125,15 @@ export function TeacherDashboard({ user, stats, notices = [] }: { user: any; sta
               <h3 className="text-sm font-bold text-text-primary">Quick Actions</h3>
             </div>
             <div className="divide-y divide-border-soft">
-              {quickLinks.map(({ label, href, icon: Icon }) => (
+              {quickLinks.map(({ label, href, icon: Icon, colorClass }) => (
                 <Link key={label} href={href} className="flex items-center justify-between px-5 py-3.5 hover:bg-surface-2 transition-colors group">
                   <div className="flex items-center gap-3">
                     <div className="h-8 w-8 flex items-center justify-center">
-                      <Icon className="h-5 w-5 text-text-muted group-hover:text-brand-blue transition-colors" />
+                      <Icon className={`h-5 w-5 text-text-muted transition-colors ${colorClass}`} />
                     </div>
-                    <span className="text-sm font-medium text-text-primary group-hover:text-brand-blue transition-colors">{label}</span>
+                    <span className={`text-sm font-medium text-text-primary transition-colors ${colorClass}`}>{label}</span>
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-text-muted group-hover:text-brand-blue group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className={`h-3.5 w-3.5 text-text-muted group-hover:translate-x-0.5 transition-all ${colorClass}`} />
                 </Link>
               ))}
             </div>

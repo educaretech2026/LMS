@@ -111,7 +111,12 @@ export default function LiveClassPage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-text-primary">Live Classes</h2>
-              <p className="text-xs text-text-muted mt-0.5">Powered by Google Meet</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-xs text-text-muted">Powered by Google Meet</p>
+                <span className="text-[9px] bg-brand-blue/10 text-brand-blue border border-brand-blue/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                  🚀 Edu-Meet Rolling Out Soon
+                </span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

@@ -73,15 +73,15 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
   ];
 
   const quickLinks = [
-    { label: "Students",    href: "/students",  icon: Users,        desc: "Manage enrollments"   },
-    { label: "Attendance",  href: "/attendance",icon: CalendarCheck,desc: "Mark daily attendance" },
-    { label: "Fee",         href: "/fee",        icon: CreditCard,   desc: "Collect & track fees"  },
-    { label: "Enquiry",     href: "/enquiry",    icon: Headset,      desc: "Manage leads"          },
-    { label: "Expense",     href: "/expense",    icon: Banknote,     desc: "Income & expenses"     },
-    { label: "Staff",       href: "/staff",      icon: UserCheck,    desc: "User management"       },
-    { label: "Notices",     href: "/notices",    icon: MessageSquare,desc: "Manage notice board"   },
-    { label: "Reports",     href: "/report",     icon: BarChart2,    desc: "Full analytics"        },
-    { label: "Setup",       href: "/setup",      icon: Wrench,       desc: "System configuration"  },
+    { label: "Students",    href: "/students",  icon: Users,        color: "group-hover:text-blue-500", borderHover: "hover:border-blue-500/30",   desc: "Manage enrollments"   },
+    { label: "Attendance",  href: "/attendance",icon: CalendarCheck,color: "group-hover:text-green-500", borderHover: "hover:border-green-500/30",desc: "Mark daily attendance" },
+    { label: "Fee",         href: "/fee",        icon: CreditCard,   color: "group-hover:text-purple-500", borderHover: "hover:border-purple-500/30", desc: "Collect & track fees"  },
+    { label: "Enquiry",     href: "/enquiry",    icon: Headset,      color: "group-hover:text-amber-500", borderHover: "hover:border-amber-500/30",  desc: "Manage leads"          },
+    { label: "Expense",     href: "/expense",    icon: Banknote,     color: "group-hover:text-rose-500", borderHover: "hover:border-rose-500/30",  desc: "Income & expenses"     },
+    { label: "Staff",       href: "/staff",      icon: UserCheck,    color: "group-hover:text-indigo-500", borderHover: "hover:border-indigo-500/30",desc: "User management"       },
+    { label: "Notices",     href: "/notices",    icon: MessageSquare,color: "group-hover:text-cyan-500", borderHover: "hover:border-cyan-500/30",  desc: "Manage notice board"   },
+    { label: "Reports",     href: "/report",     icon: BarChart2,    color: "group-hover:text-teal-500", borderHover: "hover:border-teal-500/30",  desc: "Full analytics"        },
+    { label: "Setup",       href: "/setup",      icon: Wrench,       color: "group-hover:text-slate-600", borderHover: "hover:border-slate-600/30", desc: "System configuration"  },
   ].filter(link => {
     if (isSuperAdmin) return true;
     if (isReceptionist) return ['Students', 'Fee', 'Enquiry'].includes(link.label);
@@ -131,13 +131,13 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
         <div>
           <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3">Quick Actions</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            {quickLinks.map(({ label, href, icon: Icon, desc }) => (
+            {quickLinks.map(({ label, href, icon: Icon, color, borderHover }) => (
               <Link key={label} href={href}>
-                <div className="group flex flex-col items-center justify-center gap-2 bg-white border border-border-soft rounded-xl p-4 shadow-sm hover:shadow-md hover:border-brand-blue/30 transition-all text-center cursor-pointer">
+                <div className={`group flex flex-col items-center justify-center gap-2 bg-white border border-border-soft rounded-xl p-4 shadow-sm hover:shadow-md transition-all text-center cursor-pointer ${borderHover}`}>
                   <div className="h-10 w-10 flex items-center justify-center transition-colors">
-                    <Icon className="h-6 w-6 text-text-muted group-hover:text-brand-blue transition-colors" />
+                    <Icon className={`h-6 w-6 text-text-muted transition-colors ${color}`} />
                   </div>
-                  <span className="text-xs font-bold text-text-primary group-hover:text-brand-blue transition-colors">{label}</span>
+                  <span className={`text-xs font-bold text-text-primary transition-colors ${color}`}>{label}</span>
                 </div>
               </Link>
             ))}
