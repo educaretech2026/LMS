@@ -21,9 +21,15 @@ export class GoogleMeetService {
         return;
       }
 
-      // Handle multiline private key formatting issues from environment variables
-      privateKey = privateKey.replace(/\\n/g, '\n');
-
+      // Clean up the private key (remove quotes and handle literal \n strings)
+      privateKey = privateKey
+        .replace(/^["']|["']$/g, '') // Remove surrounding quotes if copied accidentally
+        .replace(/\\n/g, '\n'); // Convert literal "\n" to actual newlines
+        
+      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+        this.logger.error('GOOGLE_PRIVATE_KEY format is invalid. Missing header.');
+        return;
+      }
       const auth = new google.auth.GoogleAuth({
         credentials: {
           client_email: clientEmail,
