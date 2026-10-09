@@ -423,7 +423,7 @@ function ScheduleModal({
           title: title.trim(),
           subject: subject.trim(),
           teacherName,
-          scheduledAt: dateTime,
+          scheduledAt: new Date(dateTime).toISOString(),
           duration: Number(duration) || 60,
           zoomLink: zoomLink.trim() || undefined,
           boardId: boardId || undefined,
