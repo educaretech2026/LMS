@@ -232,6 +232,28 @@ export default function LiveClassPage() {
               )}
             </>
           )}
+
+          {/* Large Edu-Meet Banner */}
+          <div className="mt-8 rounded-3xl bg-gradient-to-br from-brand-blue-dark via-brand-blue to-brand-blue-light p-8 md:p-12 shadow-xl relative overflow-hidden flex flex-col items-center justify-center text-center">
+            {/* Background Decorations */}
+            <div className="absolute inset-0 opacity-10 pointer-events-none">
+              <div className="absolute -top-10 -right-10 w-64 h-64 rounded-full border-[32px] border-white" />
+              <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full border-[16px] border-white" />
+              <div className="absolute top-1/2 left-1/4 w-96 h-96 rounded-full border-[4px] border-white -translate-y-1/2" />
+            </div>
+
+            <div className="h-16 w-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-inner relative z-10 border border-white/30">
+              <Video className="h-8 w-8 text-white" />
+            </div>
+
+            <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white tracking-tight relative z-10 mb-3">
+              Edu-Meet is Rolling Out Soon! 🚀
+            </h3>
+            <p className="text-white/80 max-w-xl text-sm md:text-base font-medium relative z-10 leading-relaxed">
+              We are upgrading your live classes. Get ready for a seamless, lightning-fast, and integrated meeting experience built directly into your LMS. Stay tuned!
+            </p>
+          </div>
+
         </div>
       </div>
 
