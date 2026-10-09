@@ -46,6 +46,17 @@ export class StudyMaterialController {
     return this.studyMaterialService.delete(id);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/progress')
+  updateProgress(
+    @Param('id') id: string,
+    @Body() progressData: any,
+    @Req() req: any
+  ) {
+    return this.studyMaterialService.updateProgress(id, req.user.id, progressData);
+  }
+
+
   @Get('upload-url')
   async getUploadUrl(
     @Query('type') type: 'VIDEO' | 'FILE',

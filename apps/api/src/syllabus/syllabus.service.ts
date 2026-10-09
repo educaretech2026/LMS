@@ -211,33 +211,92 @@ export class SyllabusService {
     const student = await this.prisma.studentProfile.findUnique({ where: { userId } });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const { batchId, topicId, type } = data;
+    const { batchId, topicId } = data;
     if (!batchId || !topicId) return { success: false, message: "Missing required fields" };
 
-    if (type === 'VIEW_MATERIAL' || type === 'START_EXAM') {
-      await this.prisma.studentTopicProgress.upsert({
-        where: {
-          studentId_topicId_batchId: { studentId: student.id, topicId, batchId }
-        },
-        create: {
-          studentId: student.id,
-          topicId,
-          batchId,
-          status: 'COMPLETED',
-          completionPercentage: 100,
-          lastActivityAt: new Date(),
-          completedAt: new Date()
-        },
-        update: {
-          status: 'COMPLETED',
-          completionPercentage: 100,
-          lastActivityAt: new Date(),
-          completedAt: new Date()
-        }
-      });
+    // 1. Calculate Lecture & Material Progress
+    const materials = await this.prisma.studyMaterial.findMany({ where: { topicId } });
+    const videos = materials.filter(m => m.type === 'VIDEO');
+    const docs = materials.filter(m => m.type !== 'VIDEO');
+
+    const materialProgressRecords = await this.prisma.studyMaterialProgress.findMany({
+      where: { studentProfileId: student.id, studyMaterialId: { in: materials.map(m => m.id) } }
+    });
+
+    let lectureProgress = 0;
+    if (videos.length > 0) {
+      const completedVideos = videos.filter(v => materialProgressRecords.find(p => p.studyMaterialId === v.id && p.isCompleted));
+      lectureProgress = (completedVideos.length / videos.length) * 100;
+    } else {
+      lectureProgress = 100;
     }
 
-    return { success: true, message: "Event recorded" };
+    let matProgress = 0;
+    if (docs.length > 0) {
+      const openedDocs = docs.filter(d => materialProgressRecords.find(p => p.studyMaterialId === d.id && p.isOpened));
+      matProgress = (openedDocs.length / docs.length) * 100;
+    } else {
+      matProgress = 100;
+    }
+
+    // 2. Practice Progress (Assignments)
+    const assignments = await this.prisma.assignment.findMany({ where: { topicId, batchId } });
+    let practiceProgress = 0;
+    if (assignments.length > 0) {
+      const submissions = await this.prisma.assignmentSubmission.findMany({
+        where: { studentId: student.id, assignmentId: { in: assignments.map(a => a.id) } }
+      });
+      practiceProgress = (submissions.length / assignments.length) * 100;
+    } else {
+      practiceProgress = 100;
+    }
+
+    // 3. Test Progress (Exams)
+    const exams = await this.prisma.exam.findMany({ where: { topicId, batchId } });
+    let testProgress = 0;
+    if (exams.length > 0) {
+      const results = await this.prisma.examResult.findMany({
+        where: { studentId: student.id, examId: { in: exams.map(e => e.id) } }
+      });
+      testProgress = (results.length / exams.length) * 100;
+    } else {
+      testProgress = 100;
+    }
+
+    // 4. Aggregate
+    const completionPercentage = (lectureProgress * 0.20) + (matProgress * 0.20) + (practiceProgress * 0.30) + (testProgress * 0.30);
+    const status = completionPercentage >= 100 ? 'COMPLETED' : (completionPercentage > 0 ? 'IN_PROGRESS' : 'NOT_STARTED');
+
+    await this.prisma.studentTopicProgress.upsert({
+      where: {
+        studentId_topicId_batchId: { studentId: student.id, topicId, batchId }
+      },
+      create: {
+        studentId: student.id,
+        topicId,
+        batchId,
+        status,
+        completionPercentage,
+        lectureProgress,
+        materialProgress: matProgress,
+        practiceProgress,
+        testProgress,
+        lastActivityAt: new Date(),
+        completedAt: status === 'COMPLETED' ? new Date() : null
+      },
+      update: {
+        status,
+        completionPercentage,
+        lectureProgress,
+        materialProgress: matProgress,
+        practiceProgress,
+        testProgress,
+        lastActivityAt: new Date(),
+        completedAt: status === 'COMPLETED' ? new Date() : null
+      }
+    });
+
+    return { success: true, message: "Event recorded", completionPercentage };
   }
 
   async getBatchAnalytics(batchId: string) {

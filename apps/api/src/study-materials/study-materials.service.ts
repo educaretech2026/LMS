@@ -115,4 +115,50 @@ export class StudyMaterialService {
       throw new HttpException('Failed to delete study material', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
+  async updateProgress(studyMaterialId: string, userId: string, progressData: any) {
+    const student = await this.prisma.studentProfile.findUnique({
+      where: { userId }
+    });
+    if (!student) {
+      throw new HttpException('Student profile not found', HttpStatus.NOT_FOUND);
+    }
+    
+    const { isOpened, timeWatchedSecs, isCompleted } = progressData;
+    
+    // Get existing progress to keep the max time watched
+    const existing = await this.prisma.studyMaterialProgress.findUnique({
+      where: {
+        studentProfileId_studyMaterialId: {
+          studentProfileId: student.id,
+          studyMaterialId: studyMaterialId
+        }
+      }
+    });
+
+    const newTimeWatched = timeWatchedSecs !== undefined 
+      ? Math.max(timeWatchedSecs, existing?.timeWatchedSecs || 0)
+      : existing?.timeWatchedSecs || 0;
+
+    return this.prisma.studyMaterialProgress.upsert({
+      where: {
+        studentProfileId_studyMaterialId: {
+          studentProfileId: student.id,
+          studyMaterialId: studyMaterialId
+        }
+      },
+      update: {
+        isOpened: isOpened !== undefined ? isOpened : undefined,
+        timeWatchedSecs: newTimeWatched,
+        isCompleted: isCompleted !== undefined ? isCompleted : undefined,
+      },
+      create: {
+        studentProfileId: student.id,
+        studyMaterialId: studyMaterialId,
+        isOpened: isOpened || false,
+        timeWatchedSecs: newTimeWatched,
+        isCompleted: isCompleted || false
+      }
+    });
+  }
 }

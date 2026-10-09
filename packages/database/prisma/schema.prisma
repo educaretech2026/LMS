@@ -325,6 +325,7 @@ model StudentProfile {
   revisionTasks    TopicRevisionTask[]
   AttendanceRecord AttendanceRecord[]
   examResults      ExamResult[]
+  materialProgress StudyMaterialProgress[]
 
   @@map("student_profiles")
 }
@@ -473,8 +474,29 @@ model StudyMaterial {
   topic        Topic?       @relation(fields: [topicId], references: [id])
   subtopic     Subtopic?    @relation(fields: [subtopicId], references: [id])
   uploader     User?        @relation(fields: [uploaderId], references: [id])
+  progress     StudyMaterialProgress[]
 
   @@map("study_materials")
+}
+
+model StudyMaterialProgress {
+  id               String         @id @default(uuid())
+  studentProfileId String
+  studyMaterialId  String
+
+  // Tracking metrics
+  isOpened         Boolean        @default(false)
+  timeWatchedSecs  Int            @default(0)
+  isCompleted      Boolean        @default(false)
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  student          StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  material         StudyMaterial  @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+
+  @@unique([studentProfileId, studyMaterialId])
+  @@map("study_material_progress")
 }
 
 enum MaterialType {

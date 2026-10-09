@@ -260,6 +260,23 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
         method: 'POST',
         body: JSON.stringify({ notes, attachments })
       });
+      
+      // Update syllabus progress
+      if (assignment.topicId && assignment.batchId) {
+        try {
+          await fetchApi(`/syllabus/student-progress/event`, {
+            method: 'POST',
+            body: JSON.stringify({
+              batchId: assignment.batchId,
+              topicId: assignment.topicId,
+              type: 'SUBMIT_ASSIGNMENT'
+            })
+          });
+        } catch (err) {
+          console.error("Failed to update syllabus progress", err);
+        }
+      }
+      
       onSuccess();
     } catch (e: any) {
       console.error(e);
