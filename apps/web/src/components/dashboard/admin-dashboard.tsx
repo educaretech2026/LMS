@@ -134,10 +134,10 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
             {quickLinks.map(({ label, href, icon: Icon, desc }) => (
               <Link key={label} href={href}>
                 <div className="group flex flex-col items-center justify-center gap-2 bg-white border border-border-soft rounded-xl p-4 shadow-sm hover:shadow-md hover:border-brand-blue/30 transition-all text-center cursor-pointer">
-                  <div className="h-10 w-10 rounded-xl bg-brand-blue/8 flex items-center justify-center group-hover:bg-brand-blue/15 transition-colors">
-                    <Icon className="h-5 w-5 text-brand-blue" />
+                  <div className="h-10 w-10 flex items-center justify-center transition-colors">
+                    <Icon className="h-6 w-6 text-text-muted group-hover:text-brand-blue transition-colors" />
                   </div>
-                  <span className="text-xs font-bold text-text-primary">{label}</span>
+                  <span className="text-xs font-bold text-text-primary group-hover:text-brand-blue transition-colors">{label}</span>
                 </div>
               </Link>
             ))}

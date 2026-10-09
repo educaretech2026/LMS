@@ -46,35 +46,35 @@ export function StudentDashboard({ user, liveClasses = [], notices = [] }: { use
 
       {/* ── Quick Actions ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link href="/estudy" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 rounded-full bg-brand-blue/10 text-brand-blue flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <BookOpen className="h-6 w-6" />
+        <Link href="/estudy" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-brand-blue/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
+          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <BookOpen className="h-7 w-7 text-text-muted group-hover:text-brand-blue transition-colors" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm">Study Materials</h3>
+          <h3 className="font-bold text-text-primary text-sm group-hover:text-brand-blue transition-colors">Study Materials</h3>
           <p className="text-xs text-text-muted mt-1">Access notes & videos</p>
         </Link>
         
-        <Link href="/live-class" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 rounded-full bg-brand-red/10 text-brand-red flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <Video className="h-6 w-6" />
+        <Link href="/live-class" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-brand-red/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
+          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <Video className="h-7 w-7 text-text-muted group-hover:text-brand-red transition-colors" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm">Live Classes</h3>
+          <h3 className="font-bold text-text-primary text-sm group-hover:text-brand-red transition-colors">Live Classes</h3>
           <p className="text-xs text-text-muted mt-1">Join upcoming sessions</p>
         </Link>
         
-        <Link href="/exam" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 rounded-full bg-warning/10 text-warning flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <FileText className="h-6 w-6" />
+        <Link href="/exam" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-warning/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
+          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <FileText className="h-7 w-7 text-text-muted group-hover:text-warning transition-colors" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm">Exams & Results</h3>
+          <h3 className="font-bold text-text-primary text-sm group-hover:text-warning transition-colors">Exams & Results</h3>
           <p className="text-xs text-text-muted mt-1">View your performance</p>
         </Link>
 
-        <Link href="/fee" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 rounded-full bg-success/10 text-success flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <CreditCard className="h-6 w-6" />
+        <Link href="/fee" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-success/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
+          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <CreditCard className="h-7 w-7 text-text-muted group-hover:text-success transition-colors" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm">Fee Status</h3>
+          <h3 className="font-bold text-text-primary text-sm group-hover:text-success transition-colors">Fee Status</h3>
           <p className="text-xs text-text-muted mt-1">Check dues & payments</p>
         </Link>
       </div>

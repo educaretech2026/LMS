@@ -128,10 +128,10 @@ export function TeacherDashboard({ user, stats, notices = [] }: { user: any; sta
               {quickLinks.map(({ label, href, icon: Icon }) => (
                 <Link key={label} href={href} className="flex items-center justify-between px-5 py-3.5 hover:bg-surface-2 transition-colors group">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg bg-brand-blue/8 flex items-center justify-center">
-                      <Icon className="h-4 w-4 text-brand-blue" />
+                    <div className="h-8 w-8 flex items-center justify-center">
+                      <Icon className="h-5 w-5 text-text-muted group-hover:text-brand-blue transition-colors" />
                     </div>
-                    <span className="text-sm font-medium text-text-primary">{label}</span>
+                    <span className="text-sm font-medium text-text-primary group-hover:text-brand-blue transition-colors">{label}</span>
                   </div>
                   <ArrowRight className="h-3.5 w-3.5 text-text-muted group-hover:text-brand-blue group-hover:translate-x-0.5 transition-all" />
                 </Link>
