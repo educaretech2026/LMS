@@ -168,7 +168,7 @@ function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
   const [loading, setLoading] = useState(true);
   
   const [formData, setFormData] = useState({
-    name: "", code: "", type: "MAIN", address: ""
+    name: "", code: "", type: "MAIN", address: "", contactNo: "", email: ""
   });
 
   useEffect(() => {
@@ -194,7 +194,7 @@ function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
       }
       setIsAdding(false);
       setEditingId(null);
-      setFormData({ name: "", code: "", type: "MAIN", address: "" });
+      setFormData({ name: "", code: "", type: "MAIN", address: "", contactNo: "", email: "" });
     } catch (e) {
       console.error(e);
     }
@@ -228,9 +228,17 @@ function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
             <label className="block text-xs font-bold text-text-secondary mb-1.5">Centre Code</label>
             <input type="text" value={formData.code} onChange={e => setFormData({...formData, code: e.target.value})} placeholder="e.g. EDU-SW" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
           </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1.5">Contact No</label>
+            <input type="text" value={formData.contactNo || ""} onChange={e => setFormData({...formData, contactNo: e.target.value})} placeholder="e.g. +91 99999 99999" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1.5">Email</label>
+            <input type="email" value={formData.email || ""} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="e.g. contact@educare.edu" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+          </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold text-text-secondary mb-1.5">Address</label>
-            <textarea rows={3} value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Full address" className="w-full rounded-lg border border-border-soft bg-surface-2 p-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none" />
+            <textarea rows={3} value={formData.address || ""} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Full address" className="w-full rounded-lg border border-border-soft bg-surface-2 p-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none" />
           </div>
         </div>
 
@@ -250,7 +258,7 @@ function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
           <h3 className="text-sm font-bold text-text-primary">Centres & Branches</h3>
           <p className="text-xs text-text-muted mt-1">Manage multiple learning centres within your institution.</p>
         </div>
-        <button onClick={() => { setFormData({ name: "", code: "", type: "MAIN", address: "" }); setEditingId(null); setIsAdding(true); }} className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors">
+        <button onClick={() => { setFormData({ name: "", code: "", type: "MAIN", address: "", contactNo: "", email: "" }); setEditingId(null); setIsAdding(true); }} className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors">
           <Plus className="h-3.5 w-3.5" /> Add New Centre
         </button>
       </div>
@@ -288,7 +296,7 @@ function CentreSetupTab({ onError }: { onError: (msg: string) => void }) {
                     <button 
                       onClick={() => {
                         setEditingId(c.id);
-                        setFormData({ name: c.name, code: c.code, type: c.type, address: c.address || "" });
+                        setFormData({ name: c.name, code: c.code, type: c.type, address: c.address || "", contactNo: c.contactNo || "", email: c.email || "" });
                         setIsAdding(true);
                       }}
                       className="h-8 w-8 inline-flex items-center justify-center rounded-lg hover:bg-surface-3 text-text-muted transition-colors"

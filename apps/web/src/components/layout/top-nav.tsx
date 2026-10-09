@@ -30,7 +30,7 @@ export function TopNav({ title = "Dashboard", onMenuClick }: { title?: string, o
         )}
         <div>
           <h1 className="text-base font-semibold text-text-primary tracking-tight">{title}</h1>
-          <p className="text-xs text-text-muted mt-0.5 hidden sm:block">Educare Kalathipady</p>
+          {role !== 'SUPER_ADMIN' && <p className="text-xs text-text-muted mt-0.5 hidden sm:block">Educare Kalathipady</p>}
         </div>
       </div>
 

@@ -21,6 +21,8 @@ interface FeeRecord {
   feeHead?: string;
   centreAddress?: string;
   centreName?: string;
+  centreContactNo?: string;
+  centreEmail?: string;
 }
 
 export function FeeClient({ initialFees, students, tracks = [] }: { initialFees: FeeRecord[], students: any[], tracks?: any[] }) {
@@ -41,19 +43,25 @@ export function FeeClient({ initialFees, students, tracks = [] }: { initialFees:
       const data = await fetchApi(`/fee?t=${Date.now()}`, { 
         headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } 
       });
-      const mapped = (data as any[]).map(d => ({
-        id: d.id,
-        receiptNo: d.receiptNo,
-        studentName: d.student?.user?.firstName ? `${d.student.user.firstName} ${d.student.user.lastName}` : "Unknown",
-        course: d.student?.enrollments?.[0]?.batch?.name || "N/A",
-        amount: d.amount,
-        date: new Date(d.createdAt || d.date || Date.now()).toLocaleDateString(),
-        status: d.status,
-        paymentMode: d.paymentMode || "-",
-        feeHead: d.feeHead || "General",
-        centreAddress: d.student?.enrollments?.[0]?.batch?.centre?.address,
-        centreName: d.student?.enrollments?.[0]?.batch?.centre?.name
-      }));
+      const mapped = (data as any[]).map(d => {
+        const dt = new Date(d.createdAt || d.date || Date.now());
+        const formattedDate = `${dt.getDate().toString().padStart(2, '0')}/${(dt.getMonth() + 1).toString().padStart(2, '0')}/${dt.getFullYear()}`;
+        return {
+          id: d.id,
+          receiptNo: d.receiptNo,
+          studentName: d.student?.user?.firstName ? `${d.student.user.firstName} ${d.student.user.lastName}` : "Unknown",
+          course: d.student?.enrollments?.[0]?.batch?.name || "N/A",
+          amount: d.amount,
+          date: formattedDate,
+          status: d.status,
+          paymentMode: d.paymentMode || "-",
+          feeHead: d.feeHead || "General",
+          centreAddress: d.student?.enrollments?.[0]?.batch?.centre?.address,
+          centreName: d.student?.enrollments?.[0]?.batch?.centre?.name,
+          centreContactNo: d.student?.enrollments?.[0]?.batch?.centre?.contactNo,
+          centreEmail: d.student?.enrollments?.[0]?.batch?.centre?.email
+        };
+      });
       setFees(mapped as FeeRecord[]);
       
       // Force Next.js to re-fetch Server Components if needed
@@ -783,14 +791,16 @@ function PrintReceiptModal({ receipt, onClose }: { receipt: FeeRecord, onClose: 
           {/* Header */}
           <div className="flex justify-between items-start border-b-2 border-brand-blue pb-6 mb-6">
             <div className="flex items-center gap-4">
-              <img src="/logo2.png" alt="Educare Logo" className="h-16 w-auto object-contain" />
+              <img src="/logo1.png" alt="Educare Logo" className="h-12 w-auto object-contain" />
               <div>
-                <h1 className="text-3xl font-black tracking-tight text-brand-blue uppercase">Educare</h1>
+                <h1 className="text-2xl font-black tracking-tight text-brand-blue uppercase">Educare</h1>
                 <p className="text-xs font-medium text-text-secondary mt-1">{receipt.centreName || "Kalathipady, North Wing"}</p>
                 {receipt.centreAddress && (
                   <p className="text-xs font-medium text-text-secondary">{receipt.centreAddress}</p>
                 )}
-                <p className="text-xs font-medium text-text-secondary">contact@educare.edu | +91 99999 99999</p>
+                <p className="text-xs font-medium text-text-secondary">
+                  {receipt.centreEmail || 'contact@educare.edu'} | {receipt.centreContactNo || '+91 99999 99999'}
+                </p>
               </div>
             </div>
             <div className="text-right">
