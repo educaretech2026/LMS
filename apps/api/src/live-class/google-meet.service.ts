@@ -30,6 +30,15 @@ export class GoogleMeetService {
         this.logger.error('GOOGLE_PRIVATE_KEY format is invalid. Missing header.');
         return;
       }
+
+      // Robust re-formatting: Extract base64, remove bad whitespaces, and rebuild PEM format.
+      // This fixes the DECODER routines::unsupported error caused by single-line paste or space issues.
+      const match = privateKey.match(/-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----/s);
+      if (match) {
+        const body = match[1].replace(/\s+/g, ''); // strip all inner whitespace/newlines
+        const chunked = body.match(/.{1,64}/g)?.join('\n') || body;
+        privateKey = `-----BEGIN PRIVATE KEY-----\n${chunked}\n-----END PRIVATE KEY-----\n`;
+      }
       const auth = new google.auth.GoogleAuth({
         credentials: {
           client_email: clientEmail,
