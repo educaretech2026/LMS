@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UsePipes, ValidationPipe, Query } from '@nestjs/common';
 import { LiveClassService } from './live-class.service';
-import { LiveKitService } from './livekit.service';
+import { GoogleMeetService } from './google-meet.service';
 
 @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
 @Controller('live-class')
 export class LiveClassController {
   constructor(
     private readonly liveClassService: LiveClassService,
-    private readonly liveKitService: LiveKitService,
+    private readonly googleMeetService: GoogleMeetService,
   ) {}
 
   @Get()
@@ -20,24 +20,20 @@ export class LiveClassController {
     return this.liveClassService.getStats();
   }
 
-  /**
-   * Generate a LiveKit join token.
-   * Query params: roomId, identity, name, role (ADMIN|STAFF|STUDENT)
-   */
-  @Get('token')
-  async getToken(
-    @Query('roomId') roomId: string,
-    @Query('identity') identity: string,
-    @Query('name') name: string,
-    @Query('role') role: string,
-  ) {
-    // Everyone can publish video and audio
-    const canPublish = true;
-    return this.liveKitService.generateToken(roomId, identity, name, canPublish);
-  }
-
   @Post()
-  create(@Body() data: any) {
+  async create(@Body() data: any) {
+    if (!data.zoomLink) {
+      try {
+        data.zoomLink = await this.googleMeetService.createMeetLink(
+          data.title,
+          data.subject,
+          new Date(data.scheduledAt),
+          data.duration
+        );
+      } catch (e) {
+        console.error("Failed to create Google Meet link, falling back to empty link", e);
+      }
+    }
     return this.liveClassService.create(data);
   }
 

@@ -123,7 +123,8 @@ export class StudentsService {
         enrollments: { 
           include: { 
             batch: true,
-            subjects: true 
+            subjects: true,
+            track: true 
           } 
         }
       },
@@ -146,7 +147,8 @@ export class StudentsService {
                 centre: true,
               }
             },
-            subjects: true
+            subjects: true,
+            track: true
           }
         }
       }
@@ -172,7 +174,8 @@ export class StudentsService {
                 centre: true,
               }
             },
-            subjects: true
+            subjects: true,
+            track: true
           }
         }
       },

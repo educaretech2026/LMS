@@ -90,7 +90,7 @@ export default function LiveClassPage() {
   const handleJoin = (cls: ApiLiveClass) => {
     let url = cls.roomId;
     if (!url.startsWith('http')) {
-      alert("Invalid Zoom link provided for this class.");
+      alert("Invalid Google Meet link provided for this class.");
       return;
     }
     window.open(url, "_blank");
@@ -111,7 +111,7 @@ export default function LiveClassPage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-text-primary">Live Classes</h2>
-              <p className="text-xs text-text-muted mt-0.5">Powered by Zoom Meetings</p>
+              <p className="text-xs text-text-muted mt-0.5">Powered by Google Meet</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -465,10 +465,10 @@ function ScheduleModal({
               className="input-base" />
           </Field>
 
-          {/* Zoom Link */}
-          <Field label="Zoom Join Link *">
+          {/* Google Meet Link */}
+          <Field label="Google Meet Link (Optional)">
             <input type="url" value={zoomLink} onChange={e => setZoomLink(e.target.value)}
-              placeholder="https://zoom.us/j/1234567890"
+              placeholder="Leave empty to auto-generate"
               className="input-base" />
           </Field>
 

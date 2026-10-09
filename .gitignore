@@ -6,3 +6,4 @@ build
 .env
 .DS_Store
 scratch.py
+google-meet-credentials.json
