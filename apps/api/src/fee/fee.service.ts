@@ -16,7 +16,16 @@ export class FeeService {
       include: {
         student: {
           include: {
-            user: true
+            user: true,
+            enrollments: {
+              include: {
+                batch: {
+                  include: {
+                    centre: true
+                  }
+                }
+              }
+            }
           }
         }
       },

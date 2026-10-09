@@ -15,7 +15,9 @@ export default async function FeePage() {
     date: new Date(d.date || d.createdAt || Date.now()).toLocaleDateString(),
     status: d.status,
     paymentMode: d.paymentMode || "-",
-    feeHead: d.feeHead || "General"
+    feeHead: d.feeHead || "General",
+    centreAddress: d.student?.enrollments?.[0]?.batch?.centre?.address,
+    centreName: d.student?.enrollments?.[0]?.batch?.centre?.name
   }));
 
   const students = await fetchApiServer<any[]>("/students").catch(() => []);

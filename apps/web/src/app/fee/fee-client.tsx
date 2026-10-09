@@ -19,6 +19,8 @@ interface FeeRecord {
   paymentMode: string;
   studentId?: string;
   feeHead?: string;
+  centreAddress?: string;
+  centreName?: string;
 }
 
 export function FeeClient({ initialFees, students, tracks = [] }: { initialFees: FeeRecord[], students: any[], tracks?: any[] }) {
@@ -48,7 +50,9 @@ export function FeeClient({ initialFees, students, tracks = [] }: { initialFees:
         date: new Date(d.createdAt || d.date || Date.now()).toLocaleDateString(),
         status: d.status,
         paymentMode: d.paymentMode || "-",
-        feeHead: d.feeHead || "General"
+        feeHead: d.feeHead || "General",
+        centreAddress: d.student?.enrollments?.[0]?.batch?.centre?.address,
+        centreName: d.student?.enrollments?.[0]?.batch?.centre?.name
       }));
       setFees(mapped as FeeRecord[]);
       
@@ -778,10 +782,16 @@ function PrintReceiptModal({ receipt, onClose }: { receipt: FeeRecord, onClose: 
         <div className="p-8 print:p-4 text-text-primary">
           {/* Header */}
           <div className="flex justify-between items-start border-b-2 border-brand-blue pb-6 mb-6">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-brand-blue uppercase">Educare</h1>
-              <p className="text-xs font-medium text-text-secondary mt-1">Kalathipady, North Wing</p>
-              <p className="text-xs font-medium text-text-secondary">contact@educare.edu | +91 99999 99999</p>
+            <div className="flex items-center gap-4">
+              <img src="/logo2.png" alt="Educare Logo" className="h-16 w-auto object-contain" />
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-brand-blue uppercase">Educare</h1>
+                <p className="text-xs font-medium text-text-secondary mt-1">{receipt.centreName || "Kalathipady, North Wing"}</p>
+                {receipt.centreAddress && (
+                  <p className="text-xs font-medium text-text-secondary">{receipt.centreAddress}</p>
+                )}
+                <p className="text-xs font-medium text-text-secondary">contact@educare.edu | +91 99999 99999</p>
+              </div>
             </div>
             <div className="text-right">
               <h2 className="text-xl font-bold uppercase tracking-wider text-text-muted">Fee Receipt</h2>
