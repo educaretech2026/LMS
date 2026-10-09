@@ -13,13 +13,27 @@ export class GoogleMeetService {
 
   private async init() {
     try {
+      const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+      let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+
+      if (!clientEmail || !privateKey) {
+        this.logger.warn('GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY not set. Meet links cannot be auto-generated.');
+        return;
+      }
+
+      // Handle multiline private key formatting issues from environment variables
+      privateKey = privateKey.replace(/\\n/g, '\n');
+
       const auth = new google.auth.GoogleAuth({
-        keyFile: path.join(process.cwd(), 'google-meet-credentials.json'),
+        credentials: {
+          client_email: clientEmail,
+          private_key: privateKey,
+        },
         scopes: ['https://www.googleapis.com/auth/calendar'],
       });
       const client = await auth.getClient();
       this.calendar = google.calendar({ version: 'v3', auth: client as any });
-      this.logger.log('Google Calendar API initialized');
+      this.logger.log('Google Calendar API initialized via Environment Variables');
     } catch (error) {
       this.logger.error('Failed to initialize Google Calendar API:', error);
     }
