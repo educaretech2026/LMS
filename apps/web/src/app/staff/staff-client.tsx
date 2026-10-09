@@ -431,21 +431,23 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Centre <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <select value={formData.centre} onChange={(e) => setFormData({...formData, centre: e.target.value})} className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-muted focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
-                    <option value="">---Select---</option>
-                    {config.centres.map((c: string) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
-                    <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
-                    <ChevronDown className="h-3 w-3 text-text-muted" />
+              {formData.role !== 'SUPER_ADMIN' && (
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Centre <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <select value={formData.centre} onChange={(e) => setFormData({...formData, centre: e.target.value})} className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-muted focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
+                      <option value="">---Select---</option>
+                      {config.centres.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
+                      <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
+                      <ChevronDown className="h-3 w-3 text-text-muted" />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-1.5">
@@ -608,7 +610,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                     email: formData.email || undefined,
                     phone: formData.phone || undefined,
                     role: formData.role || (config.roles[0] || "TEACHER"),
-                    centre: formData.centre || (config.centres[0] || ""),
+                    centre: formData.role === 'SUPER_ADMIN' ? null : (formData.centre || (config.centres[0] || "")),
                     status: formData.status as "Active" | "Inactive",
                     assignments: formData.assignments,
                     password: formData.password || undefined
