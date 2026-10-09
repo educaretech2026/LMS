@@ -3,3 +3,6 @@ NIXPACKS_NODE_VERSION = "24"
 
 [phases.setup]
 aptPkgs = ["...", "python3", "build-essential"]
+
+[phases.install]
+cmds = ["pnpm install --no-frozen-lockfile"]
