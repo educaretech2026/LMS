@@ -76,10 +76,12 @@ export default function SettingsPage() {
                 <h3 className="text-sm font-semibold text-text-primary">General</h3>
               </div>
               <div className="p-5 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">Centre Name</label>
-                  <input name="centreName" value={settings.centreName} onChange={handleChange} placeholder="Educare Kalathipady" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
-                </div>
+                {role !== 'SUPER_ADMIN' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5">Centre Name</label>
+                    <input name="centreName" value={settings.centreName} onChange={handleChange} placeholder="Educare Kalathipady" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-text-secondary mb-1.5">Contact Email</label>
                   <input name="contactEmail" value={settings.contactEmail} onChange={handleChange} placeholder="admin@educare.com" className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue/50" />
