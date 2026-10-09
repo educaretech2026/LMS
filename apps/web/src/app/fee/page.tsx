@@ -19,6 +19,7 @@ export default async function FeePage() {
   }));
 
   const students = await fetchApiServer<any[]>("/students").catch(() => []);
+  const tracks = await fetchApiServer<any[]>("/setup/tracks").catch(() => []);
 
-  return <FeeClient initialFees={mapped} students={students} />;
+  return <FeeClient initialFees={mapped} students={students} tracks={tracks} />;
 }

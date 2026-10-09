@@ -21,7 +21,7 @@ interface FeeRecord {
   feeHead?: string;
 }
 
-export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[], students: any[] }) {
+export function FeeClient({ initialFees, students, tracks = [] }: { initialFees: FeeRecord[], students: any[], tracks?: any[] }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("Records");
   const [fees, setFees] = useState<FeeRecord[]>(initialFees);
@@ -43,7 +43,7 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
         id: d.id,
         receiptNo: d.receiptNo,
         studentName: d.student?.user?.firstName ? `${d.student.user.firstName} ${d.student.user.lastName}` : "Unknown",
-        course: "Student",
+        course: d.student?.enrollments?.[0]?.batch?.name || "N/A",
         amount: d.amount,
         date: new Date(d.createdAt || d.date || Date.now()).toLocaleDateString(),
         status: d.status,
@@ -455,7 +455,7 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
       </div>
 
       {/* Collect Fee Modal */}
-      {showModal && <CollectFeeModal onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); refresh(); }} students={students} />}
+      {showModal && <CollectFeeModal onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); refresh(); }} students={students} tracks={tracks} />}
       
       {/* Print Receipt Modal */}
       {selectedReceipt && <PrintReceiptModal receipt={selectedReceipt} onClose={() => setSelectedReceipt(null)} />}
@@ -466,7 +466,7 @@ export function FeeClient({ initialFees, students }: { initialFees: FeeRecord[],
   );
 }
 
-function CollectFeeModal({ onClose, onSuccess, students }: { onClose: () => void, onSuccess: () => void, students: any[] }) {
+function CollectFeeModal({ onClose, onSuccess, students, tracks }: { onClose: () => void, onSuccess: () => void, students: any[], tracks: any[] }) {
   const [activeTab, setActiveTab] = useState("Payment Details");
   const [loading, setLoading] = useState(false);
 
@@ -659,9 +659,9 @@ function CollectFeeModal({ onClose, onSuccess, students }: { onClose: () => void
                     required
                   >
                     <option value="" disabled>Select Target Audience</option>
-                    <option value="BOTH">Both</option>
-                    <option value="TUITION">Tuition</option>
-                    <option value="ENTRANCE">Entrance</option>
+                    {tracks.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
