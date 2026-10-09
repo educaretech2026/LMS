@@ -546,131 +546,195 @@ function CollectFeeModal({ onClose, onSuccess, students, tracks }: { onClose: ()
         {/* Modal Content */}
         <div className="flex-1 overflow-y-auto p-6 bg-surface">
           <div className="bg-white rounded-xl border border-border-soft p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Select Student <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <select 
-                    value={studentId} 
-                    onChange={e => setStudentId(e.target.value)}
-                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                  >
-                    <option value="">---Select Student---</option>
-                    {students.map(s => (
-                      <option key={s.id} value={s.id}>{s.user?.firstName} {s.user?.lastName} ({s.admissionNo})</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
-                    <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
-                    <ChevronDown className="h-3 w-3 text-text-muted" />
+            {activeTab === "Payment Details" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Select Student <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={studentId} 
+                      onChange={e => setStudentId(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="">---Select Student---</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>{s.user?.firstName} {s.user?.lastName} ({s.admissionNo})</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
+                      <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
+                      <ChevronDown className="h-3 w-3 text-text-muted" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Fee Head <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <select 
-                    value={feeHead}
-                    onChange={e => setFeeHead(e.target.value)}
-                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                  >
-                    <option value="Tuition Fee">Tuition Fee</option>
-                    <option value="Admission Fee">Admission Fee</option>
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
-                    <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
-                    <ChevronDown className="h-3 w-3 text-text-muted" />
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Fee Head <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={feeHead}
+                      onChange={e => setFeeHead(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="Tuition Fee">Tuition Fee</option>
+                      <option value="Admission Fee">Admission Fee</option>
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
+                      <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
+                      <ChevronDown className="h-3 w-3 text-text-muted" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Amount (₹) <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <input 
-                    type="number" 
-                    value={amount}
-                    onChange={e => setAmount(e.target.value)}
-                    placeholder="0" 
-                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Payment Mode <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <select 
-                    value={paymentMode}
-                    onChange={e => setPaymentMode(e.target.value)}
-                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Online / UPI">Online / UPI</option>
-                    <option value="Bank Transfer">Bank Transfer</option>
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
-                    <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
-                    <ChevronDown className="h-3 w-3 text-text-muted" />
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Amount (₹) <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      value={amount}
+                      onChange={e => setAmount(e.target.value)}
+                      placeholder="0" 
+                      className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
+                    />
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Status <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <select 
-                    value={status}
-                    onChange={e => setStatus(e.target.value)}
-                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                  >
-                    <option value="PAID">Paid</option>
-                    <option value="PENDING">Pending</option>
-                    <option value="OVERDUE">Overdue</option>
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
-                    <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
-                    <ChevronDown className="h-3 w-3 text-text-muted" />
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Payment Mode <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={paymentMode}
+                      onChange={e => setPaymentMode(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Online / UPI">Online / UPI</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
+                      <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
+                      <ChevronDown className="h-3 w-3 text-text-muted" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">
-                  Target Audience <span className="text-brand-red">*</span>
-                </label>
-                <div className="relative">
-                  <select 
-                    value={targetTrack}
-                    onChange={e => setTargetTrack(e.target.value)}
-                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                    required
-                  >
-                    <option value="" disabled>Select Target Audience</option>
-                    {tracks.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
-                    <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
-                    <ChevronDown className="h-3 w-3 text-text-muted" />
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Status <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={status}
+                      onChange={e => setStatus(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="PAID">Paid</option>
+                      <option value="PENDING">Pending</option>
+                      <option value="OVERDUE">Overdue</option>
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
+                      <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
+                      <ChevronDown className="h-3 w-3 text-text-muted" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-            </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">
+                    Target Audience <span className="text-brand-red">*</span>
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={targetTrack}
+                      onChange={e => setTargetTrack(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                      required
+                    >
+                      <option value="" disabled>Select Target Audience</option>
+                      {tracks.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
+                      <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
+                      <ChevronDown className="h-3 w-3 text-text-muted" />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {activeTab === "Student Info" && (
+              <div className="flex flex-col gap-4">
+                {!studentId ? (
+                  <div className="py-8 text-center bg-surface-2 rounded-lg border border-border-soft">
+                    <User className="h-8 w-8 text-text-muted mx-auto mb-2 opacity-50" />
+                    <p className="text-sm text-text-muted">Select a student in the Payment Details tab to view their information here.</p>
+                  </div>
+                ) : (
+                  (() => {
+                    const s = students.find(x => x.id === studentId);
+                    if (!s) return null;
+                    return (
+                      <div className="bg-surface-2 p-6 rounded-lg border border-border-soft">
+                        <h3 className="text-sm font-bold text-text-primary mb-4 border-b border-border-soft pb-2">Student Profile</h3>
+                        <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-sm">
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-text-muted mb-1">Full Name</p>
+                            <p className="font-semibold text-text-primary">{s.user?.firstName} {s.user?.lastName}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-text-muted mb-1">Admission No</p>
+                            <p className="font-semibold text-text-primary">{s.admissionNo || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-text-muted mb-1">Parent Name</p>
+                            <p className="font-semibold text-text-primary">{s.parentName || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-text-muted mb-1">Contact Number</p>
+                            <p className="font-semibold text-text-primary">{s.parentPhone || s.user?.phone || 'N/A'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[10px] uppercase font-bold text-text-muted mb-1">Address</p>
+                            <p className="font-semibold text-text-primary">{s.address || 'N/A'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+            )}
+
+            {activeTab === "Remarks" && (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Internal Remarks (Optional)
+                  </label>
+                  <textarea 
+                    className="w-full rounded-lg border border-border-soft bg-surface-2 p-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    rows={5}
+                    placeholder="Add any notes about this fee payment (e.g. cheque number, late fee waiver reason)..."
+                  ></textarea>
+                </div>
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 flex items-start gap-2">
+                  <FileText className="h-4 w-4 shrink-0 mt-0.5" />
+                  <p>These remarks are stored locally for internal administrative use only. They will not appear on the student's final printed receipt.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
