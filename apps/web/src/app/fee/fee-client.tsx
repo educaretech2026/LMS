@@ -791,7 +791,7 @@ function PrintReceiptModal({ receipt, onClose }: { receipt: FeeRecord, onClose: 
           {/* Header */}
           <div className="flex justify-between items-start border-b-2 border-brand-blue pb-6 mb-6">
             <div className="flex items-center gap-6">
-              <img src="/logo1.png" alt="Educare Logo" className="h-24 w-auto object-contain max-w-[240px]" />
+              <img src="/logo2.png" alt="Educare Logo" className="h-20 w-auto object-contain" />
               <div>
                 <h1 className="text-2xl font-black tracking-tight text-brand-blue uppercase">Educare</h1>
                 <p className="text-xs font-medium text-text-secondary mt-1">{receipt.centreName || "Kalathipady, North Wing"}</p>
