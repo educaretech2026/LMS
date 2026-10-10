@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class FormsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notificationsService: NotificationsService) {}
 
   async createForm(data: { title: string; description?: string; isActive?: boolean; fields: any; centreId?: string }): Promise<any> {
     return this.prisma.customForm.create({
@@ -56,12 +57,28 @@ export class FormsService {
       throw new Error('Form is not active or does not exist');
     }
 
-    return this.prisma.customFormResponse.create({
+    const response = await this.prisma.customFormResponse.create({
       data: {
         formId,
         data,
       },
     });
+
+    // Notify Admins
+    try {
+      const admins = await this.prisma.user.findMany({ where: { role: { name: 'SUPER_ADMIN' } } });
+      for (const admin of admins) {
+        await this.notificationsService.sendNotification({
+          userId: admin.id,
+          title: 'New Form Response',
+          message: `A new response was submitted for "${form.title}"`,
+          type: 'INFO',
+          link: `/forms/${form.id}/responses`,
+        });
+      }
+    } catch (e) {}
+
+    return response;
   }
 
   async getFormResponses(formId: string): Promise<any> {

@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/providers/auth-provider";
+import { NotificationBell } from "./notification-bell";
 
 export function TopNav({ title = "Dashboard", onMenuClick }: { title?: string, onMenuClick?: () => void }) {
   const { email, role } = useAuth();
@@ -47,10 +48,7 @@ export function TopNav({ title = "Dashboard", onMenuClick }: { title?: string, o
         </div>
 
         {/* Notification */}
-        <button className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border-soft bg-surface-2 text-text-secondary hover:bg-surface hover:border-brand-blue/30 transition-colors">
-          <Bell className="h-4 w-4" />
-          <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand-red" />
-        </button>
+        <NotificationBell />
 
         {/* Divider */}
         <div className="h-6 w-px bg-border-soft" />

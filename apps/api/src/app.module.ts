@@ -28,6 +28,7 @@ import { CoursesModule } from './courses/courses.module';
 import { SupportModule } from './support/support.module';
 import { NoticesModule } from './notices/notices.module';
 import { FormsModule } from './forms/forms.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { FormsModule } from './forms/forms.module';
     SupportModule,
     NoticesModule,
     FormsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

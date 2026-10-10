@@ -1,9 +1,10 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AssignmentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notificationsService: NotificationsService) {}
 
   async getAll(userId: string, role: string): Promise<any> {
     try {
@@ -69,7 +70,7 @@ export class AssignmentsService {
 
   async create(data: any, uploaderId: string): Promise<any> {
     try {
-      return await this.prisma.assignment.create({
+      const assignment = await this.prisma.assignment.create({
         data: {
           title: data.title,
           description: data.description,
@@ -81,6 +82,27 @@ export class AssignmentsService {
           targetTrackId: data.targetTrackId || null,
         }
       });
+
+      // Notify students in the batch
+      try {
+        const enrollments = await this.prisma.enrollment.findMany({ 
+          where: { batchId: data.batchId },
+          include: { student: true }
+        });
+        for (const enr of enrollments) {
+          if (enr.student.userId) {
+            await this.notificationsService.sendNotification({
+              userId: enr.student.userId,
+              title: 'New Assignment',
+              message: `A new assignment "${data.title}" was posted in your batch.`,
+              type: 'INFO',
+              link: `/assignments`,
+            });
+          }
+        }
+      } catch (e) {}
+
+      return assignment;
     } catch (error) {
       console.error(error);
       throw new HttpException('Failed to create assignment', HttpStatus.INTERNAL_SERVER_ERROR);
@@ -90,12 +112,13 @@ export class AssignmentsService {
   async submit(assignmentId: string, studentUserId: string, data: any): Promise<any> {
     try {
       const profile = await this.prisma.studentProfile.findUnique({
-        where: { userId: studentUserId }
+        where: { userId: studentUserId },
+        include: { user: true }
       });
 
       if (!profile) throw new Error("Student profile not found");
 
-      return await this.prisma.assignmentSubmission.upsert({
+      const submission = await this.prisma.assignmentSubmission.upsert({
         where: {
           assignmentId_studentId: {
             assignmentId,
@@ -115,6 +138,22 @@ export class AssignmentsService {
           notes: data.notes,
         }
       });
+
+      // Notify the teacher who created it
+      try {
+        const assignment = await this.prisma.assignment.findUnique({ where: { id: assignmentId } });
+        if (assignment && assignment.uploaderId) {
+          await this.notificationsService.sendNotification({
+            userId: assignment.uploaderId,
+            title: 'Assignment Submitted',
+            message: `${profile.user.firstName} submitted "${assignment.title}".`,
+            type: 'SUCCESS',
+            link: `/assignments`,
+          });
+        }
+      } catch (e) {}
+
+      return submission;
     } catch (error) {
       console.error(error);
       throw new HttpException('Failed to submit assignment', HttpStatus.INTERNAL_SERVER_ERROR);
