@@ -11,9 +11,43 @@ export default function PublicFormView() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [formData, setFormData] = useState<Record<string, any>>({});
   const [error, setError] = useState("");
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [uploadingFields, setUploadingFields] = useState<Record<string, boolean>>({});
+
+  const handleCheckboxChange = (fieldId: string, option: string, checked: boolean) => {
+    setFormData(prev => {
+      const current = prev[fieldId] || [];
+      if (checked) {
+        return { ...prev, [fieldId]: [...current, option] };
+      } else {
+        return { ...prev, [fieldId]: current.filter((item: string) => item !== option) };
+      }
+    });
+  };
+
+  const handleFileUpload = async (fieldId: string, file: File) => {
+    if (!file) return;
+    setUploadingFields(prev => ({ ...prev, [fieldId]: true }));
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/forms/${id}/upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+      if (!res.ok) throw new Error("Failed to get upload URL");
+      const { uploadUrl, finalUrl } = await res.json();
+      
+      await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      
+      setFormData(prev => ({ ...prev, [fieldId]: finalUrl }));
+    } catch (err: any) {
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploadingFields(prev => ({ ...prev, [fieldId]: false }));
+    }
+  };
 
   useEffect(() => {
     const loadForm = async () => {
@@ -95,71 +129,158 @@ export default function PublicFormView() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-50/50 py-12 px-4 sm:px-6 lg:px-8 flex flex-col justify-center relative overflow-hidden">
+    <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8 flex flex-col items-center relative overflow-hidden">
       {/* Decorative background blobs */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-brand-blue/10 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob" />
-      <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-200/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000" />
-      <div className="absolute -bottom-32 left-1/2 w-96 h-96 bg-pink-100/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000" />
+      <div className="fixed top-0 left-1/4 w-96 h-96 bg-brand-blue/10 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob pointer-events-none" />
+      <div className="fixed top-0 right-1/4 w-96 h-96 bg-purple-200/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000 pointer-events-none" />
 
-      <div className="max-w-2xl mx-auto w-full relative z-10">
-        <div className="bg-white/80 backdrop-blur-2xl rounded-t-[2.5rem] shadow-xl border border-white/60 p-8 sm:p-12 mb-2 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-brand-blue to-indigo-400" />
-          <h1 className="text-4xl font-black text-gray-900 tracking-tight leading-tight">{form.title}</h1>
+      <div className="max-w-3xl w-full relative z-10 flex flex-col gap-5 pb-20">
+        
+        {/* Header Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sm:p-12 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2.5 bg-brand-blue" />
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight leading-tight">{form.title}</h1>
           {form.description && (
-            <p className="mt-5 text-gray-600 leading-relaxed text-lg">{form.description}</p>
+            <p className="mt-4 text-gray-600 leading-relaxed text-base sm:text-lg">{form.description}</p>
+          )}
+          {form.fields?.some((f: any) => f.required) && (
+            <p className="mt-6 text-sm font-medium text-red-500">* Indicates required question</p>
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur-2xl rounded-b-[2.5rem] shadow-xl border border-white/60 p-8 sm:p-12">
-          <div className="space-y-10">
-            {form.fields?.map((field: any) => (
+        {/* Form Fields */}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          {form.fields?.map((field: any) => {
+            const isFocused = focusedField === field.id;
+            
+            if (field.type === 'image') {
+              return (
+                <div key={field.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  {field.imageUrl ? (
+                    <img src={field.imageUrl} alt="Form visual" className="w-full h-auto object-cover" />
+                  ) : (
+                    <div className="p-8 text-center text-gray-400 bg-gray-50">Image placeholder</div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
               <div 
                 key={field.id} 
-                className={`group transition-all duration-300 ${focusedField === field.id ? 'transform scale-[1.01]' : ''}`}
+                className={`relative bg-white rounded-2xl shadow-sm border p-6 sm:p-8 transition-all duration-300 ${isFocused ? 'border-brand-blue ring-1 ring-brand-blue/20' : 'border-gray-100'}`}
+                onFocus={() => setFocusedField(field.id)}
+                onClick={() => setFocusedField(field.id)}
               >
-                <label className="block text-[0.95rem] font-bold text-gray-800 mb-3 ml-1">
-                  {field.label} 
-                  {field.required && <span className="text-red-500 ml-1.5 font-black">*</span>}
-                </label>
-                {field.type === 'textarea' ? (
-                  <textarea 
-                    required={field.required}
-                    value={formData[field.id] || ''}
-                    onChange={(e) => handleChange(field.id, e.target.value)}
-                    onFocus={() => setFocusedField(field.id)}
-                    onBlur={() => setFocusedField(null)}
-                    rows={4}
-                    className="w-full px-5 py-4 bg-white/50 border-2 border-gray-100 rounded-2xl focus:bg-white focus:ring-0 focus:border-brand-blue outline-none transition-all resize-none shadow-sm placeholder-gray-400 font-medium"
-                    placeholder="Type your answer here..."
-                  />
-                ) : (
-                  <input 
-                    type={field.type === 'tel' ? 'tel' : field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
-                    required={field.required}
-                    value={formData[field.id] || ''}
-                    onChange={(e) => handleChange(field.id, e.target.value)}
-                    onFocus={() => setFocusedField(field.id)}
-                    onBlur={() => setFocusedField(null)}
-                    className="w-full px-5 py-4 bg-white/50 border-2 border-gray-100 rounded-2xl focus:bg-white focus:ring-0 focus:border-brand-blue outline-none transition-all shadow-sm placeholder-gray-400 font-medium"
-                    placeholder={field.type === 'email' ? 'hello@example.com' : field.type === 'tel' ? '+1 234 567 8900' : 'Your answer...'}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+                {isFocused && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-brand-blue rounded-l-2xl" />}
+                
+                <div className="mb-4">
+                  <label className="block text-base sm:text-lg font-medium text-gray-900">
+                    {field.label} 
+                    {field.required && <span className="text-red-500 ml-1 font-bold">*</span>}
+                  </label>
+                </div>
 
-          <div className="mt-12 pt-8 border-t border-gray-200/50 flex flex-col sm:flex-row gap-6 justify-between items-center">
-            <div className="flex items-center gap-2 text-brand-blue/60 font-semibold tracking-wide text-sm uppercase">
-              <Sparkles className="w-4 h-4" />
-              Educare Forms
-            </div>
+                <div className="mt-2">
+                  {field.type === 'textarea' ? (
+                    <textarea 
+                      required={field.required}
+                      value={formData[field.id] || ''}
+                      onChange={(e) => handleChange(field.id, e.target.value)}
+                      onBlur={() => setFocusedField(null)}
+                      rows={3}
+                      className="w-full bg-transparent border-b border-gray-300 focus:border-brand-blue outline-none transition-colors py-2 text-gray-800 placeholder-gray-400 resize-y"
+                      placeholder="Your answer"
+                    />
+                  ) : field.type === 'radio' ? (
+                    <div className="flex flex-col gap-3">
+                      {field.options?.map((opt: string, i: number) => (
+                        <label key={i} className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="radio" 
+                            name={field.id}
+                            value={opt}
+                            checked={formData[field.id] === opt}
+                            onChange={(e) => handleChange(field.id, e.target.value)}
+                            required={field.required && !formData[field.id]}
+                            className="w-5 h-5 text-brand-blue border-gray-300 focus:ring-brand-blue"
+                          />
+                          <span className="text-gray-700 group-hover:text-gray-900">{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : field.type === 'checkbox' ? (
+                    <div className="flex flex-col gap-3">
+                      {field.options?.map((opt: string, i: number) => (
+                        <label key={i} className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="checkbox" 
+                            value={opt}
+                            checked={(formData[field.id] || []).includes(opt)}
+                            onChange={(e) => handleCheckboxChange(field.id, opt, e.target.checked)}
+                            className="w-5 h-5 text-brand-blue border-gray-300 rounded focus:ring-brand-blue"
+                          />
+                          <span className="text-gray-700 group-hover:text-gray-900">{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : field.type === 'select' ? (
+                    <select
+                      required={field.required}
+                      value={formData[field.id] || ''}
+                      onChange={(e) => handleChange(field.id, e.target.value)}
+                      className="w-full sm:w-1/2 p-3 bg-white border border-gray-300 rounded-lg focus:border-brand-blue outline-none transition-colors text-gray-800"
+                    >
+                      <option value="" disabled>Choose</option>
+                      {field.options?.map((opt: string, i: number) => (
+                        <option key={i} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  ) : field.type === 'file' ? (
+                    <div className="flex flex-col gap-2">
+                      <input 
+                        type="file"
+                        accept="image/*,application/pdf"
+                        required={field.required && !formData[field.id]}
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleFileUpload(field.id, e.target.files[0]);
+                          }
+                        }}
+                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 transition-colors"
+                      />
+                      {uploadingFields[field.id] && <p className="text-xs text-brand-blue font-medium animate-pulse">Uploading...</p>}
+                      {formData[field.id] && !uploadingFields[field.id] && <p className="text-xs text-green-600 font-medium">File uploaded successfully.</p>}
+                    </div>
+                  ) : (
+                    <input 
+                      type={field.type === 'tel' ? 'tel' : field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                      required={field.required}
+                      value={formData[field.id] || ''}
+                      onChange={(e) => handleChange(field.id, e.target.value)}
+                      onBlur={() => setFocusedField(null)}
+                      className="w-full sm:w-1/2 bg-transparent border-b border-gray-300 focus:border-brand-blue outline-none transition-colors py-2 text-gray-800 placeholder-gray-400"
+                      placeholder="Your answer"
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="mt-4 flex flex-col sm:flex-row gap-6 justify-between items-center px-2">
             <button 
               type="submit"
-              disabled={submitting}
-              className="w-full sm:w-auto bg-gradient-to-r from-brand-blue to-brand-blue-dark text-white px-10 py-4 rounded-2xl font-black text-lg hover:shadow-xl hover:shadow-brand-blue/30 transform hover:-translate-y-1 transition-all disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+              disabled={submitting || Object.values(uploadingFields).some(v => v)}
+              className="w-full sm:w-auto bg-brand-blue text-white px-8 py-2.5 rounded-lg font-medium hover:bg-brand-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Submitting..." : "Submit Response"}
+              {submitting ? "Submitting..." : "Submit"}
             </button>
+            
+            <div className="flex items-center gap-2 text-gray-400 font-medium tracking-wide text-xs uppercase">
+              <Sparkles className="w-3.5 h-3.5" />
+              Educare Forms
+            </div>
           </div>
         </form>
       </div>

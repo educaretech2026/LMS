@@ -12,6 +12,8 @@ type Field = {
   label: string;
   type: string;
   required: boolean;
+  options?: string[];
+  imageUrl?: string;
 };
 
 export default function FormBuilderPage() {
@@ -38,7 +40,33 @@ export default function FormBuilderPage() {
   const updateField = (index: number, key: keyof Field, value: any) => {
     const updated = [...fields];
     updated[index] = { ...updated[index], [key]: value };
+    
+    if (key === 'type') {
+      const needsOptions = ['radio', 'checkbox', 'select'].includes(value);
+      if (needsOptions && !updated[index].options) {
+        updated[index].options = ['Option 1'];
+      }
+    }
+    
     setFields(updated);
+  };
+
+  const handleImageUpload = async (index: number, file: File) => {
+    if (!file) return;
+    try {
+      const urlRes = await fetchApi(`/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+      const { uploadUrl, finalUrl } = urlRes;
+      
+      await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      
+      updateField(index, 'imageUrl', finalUrl);
+    } catch (e) {
+      alert('Failed to upload image');
+    }
   };
 
   const handleSave = async () => {
@@ -105,19 +133,41 @@ export default function FormBuilderPage() {
 
             <div className="space-y-4">
               {fields.map((field, idx) => (
-                <div key={field.id} className="flex items-start gap-4 p-4 border border-gray-100 rounded-xl bg-gray-50/50 hover:border-brand-200 transition-colors group">
-                  <div className="pt-2 text-gray-300 cursor-move">
+                <div key={field.id} className="relative flex items-start gap-4 p-4 border border-gray-100 rounded-xl bg-gray-50/50 hover:border-brand-200 transition-colors group">
+                  <div className="pt-2 text-gray-300 cursor-move hidden sm:block">
                     <GripVertical className="w-5 h-5" />
                   </div>
-                  <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="flex-1 flex flex-col gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-6">
-                      <label className="block text-xs font-semibold text-gray-500 mb-1">Field Label</label>
-                      <input 
-                        type="text" 
-                        value={field.label} 
-                        onChange={e => updateField(idx, 'label', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-blue outline-none"
-                      />
+                      {field.type !== 'image' ? (
+                        <>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Field Label</label>
+                          <input 
+                            type="text" 
+                            value={field.label} 
+                            onChange={e => updateField(idx, 'label', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-blue outline-none"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Upload Layout Image</label>
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={e => {
+                              if (e.target.files && e.target.files[0]) {
+                                handleImageUpload(idx, e.target.files[0]);
+                              }
+                            }}
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
+                          />
+                          {field.imageUrl && (
+                            <img src={field.imageUrl} alt="Preview" className="mt-2 h-20 w-auto rounded border" />
+                          )}
+                        </>
+                      )}
                     </div>
                     <div className="md:col-span-4">
                       <label className="block text-xs font-semibold text-gray-500 mb-1">Input Type</label>
@@ -132,21 +182,68 @@ export default function FormBuilderPage() {
                         <option value="tel">Phone / WhatsApp</option>
                         <option value="number">Number</option>
                         <option value="date">Date</option>
+                        <option value="radio">Multiple Choice</option>
+                        <option value="checkbox">Checkboxes</option>
+                        <option value="select">Dropdown</option>
+                        <option value="file">File Upload</option>
+                        <option value="image">Image Layout Block</option>
                       </select>
                     </div>
                     <div className="md:col-span-2 flex items-center pt-6">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={field.required}
-                          onChange={e => updateField(idx, 'required', e.target.checked)}
-                          className="rounded text-brand-blue focus:ring-brand-blue w-4 h-4"
-                        />
-                        <span className="text-sm font-medium text-gray-700">Required</span>
-                      </label>
+                      {field.type !== 'image' && (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={field.required}
+                            onChange={e => updateField(idx, 'required', e.target.checked)}
+                            className="rounded text-brand-blue focus:ring-brand-blue w-4 h-4"
+                          />
+                          <span className="text-sm font-medium text-gray-700">Required</span>
+                        </label>
+                      )}
                     </div>
+                    </div>
+                  
+                  {['radio', 'checkbox', 'select'].includes(field.type) && (
+                    <div className="mt-4 pl-9 space-y-2">
+                      <label className="block text-xs font-semibold text-gray-500">Options</label>
+                      {field.options?.map((opt, optIdx) => (
+                        <div key={optIdx} className="flex items-center gap-2">
+                          <input 
+                            type="text" 
+                            value={opt}
+                            onChange={e => {
+                              const newOpts = [...(field.options || [])];
+                              newOpts[optIdx] = e.target.value;
+                              updateField(idx, 'options', newOpts);
+                            }}
+                            className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-blue outline-none"
+                          />
+                          <button 
+                            onClick={() => {
+                              const newOpts = [...(field.options || [])];
+                              newOpts.splice(optIdx, 1);
+                              updateField(idx, 'options', newOpts);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-500"
+                          >
+                            <Trash className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button 
+                        onClick={() => {
+                          const newOpts = [...(field.options || []), `Option ${(field.options?.length || 0) + 1}`];
+                          updateField(idx, 'options', newOpts);
+                        }}
+                        className="text-xs font-semibold text-brand-600 hover:text-brand-800"
+                      >
+                        + Add Option
+                      </button>
+                    </div>
+                  )}
                   </div>
-                  <button onClick={() => removeField(idx)} className="pt-2 text-gray-400 hover:text-red-500 transition-colors">
+                  <button onClick={() => removeField(idx)} className="absolute right-4 top-4 text-gray-400 hover:text-red-500 transition-colors">
                     <Trash className="w-5 h-5" />
                   </button>
                 </div>
