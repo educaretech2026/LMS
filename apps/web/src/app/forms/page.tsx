@@ -50,7 +50,7 @@ export default function FormsPage() {
         subtitle="Create and manage custom forms for events and data collection."
         icon={FileText}
         actions={
-          <Link href="/forms/builder" className="bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-600 flex items-center transition-all">
+          <Link href="/forms/builder" className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-blue-dark flex items-center transition-all">
             <Plus className="w-4 h-4 mr-2" />
             Create New Form
           </Link>

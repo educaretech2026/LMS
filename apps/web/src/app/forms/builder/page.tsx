@@ -79,7 +79,7 @@ export default function FormBuilderPage() {
                   value={title} 
                   onChange={e => setTitle(e.target.value)} 
                   placeholder="e.g., Annual Sports Day Registration"
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none transition-all"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-blue focus:border-transparent outline-none transition-all"
                 />
               </div>
               <div>
@@ -89,7 +89,7 @@ export default function FormBuilderPage() {
                   onChange={e => setDescription(e.target.value)} 
                   placeholder="Provide some context for the respondents..."
                   rows={3}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none transition-all resize-none"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-blue focus:border-transparent outline-none transition-all resize-none"
                 />
               </div>
             </div>
@@ -116,7 +116,7 @@ export default function FormBuilderPage() {
                         type="text" 
                         value={field.label} 
                         onChange={e => updateField(idx, 'label', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-500 outline-none"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-blue outline-none"
                       />
                     </div>
                     <div className="md:col-span-4">
@@ -124,7 +124,7 @@ export default function FormBuilderPage() {
                       <select 
                         value={field.type} 
                         onChange={e => updateField(idx, 'type', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-500 outline-none bg-white"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-blue outline-none bg-white"
                       >
                         <option value="text">Short Text</option>
                         <option value="textarea">Long Paragraph</option>
@@ -140,7 +140,7 @@ export default function FormBuilderPage() {
                           type="checkbox" 
                           checked={field.required}
                           onChange={e => updateField(idx, 'required', e.target.checked)}
-                          className="rounded text-brand-600 focus:ring-brand-500 w-4 h-4"
+                          className="rounded text-brand-blue focus:ring-brand-blue w-4 h-4"
                         />
                         <span className="text-sm font-medium text-gray-700">Required</span>
                       </label>
