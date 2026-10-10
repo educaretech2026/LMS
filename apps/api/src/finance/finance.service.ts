@@ -18,12 +18,36 @@ export class FinanceService {
   }
 
   async getTransactions() {
-    return this.prisma.transaction.findMany({
+    const adhocTransactions = await this.prisma.transaction.findMany({
       orderBy: { date: 'desc' },
       include: {
         recordedBy: { select: { id: true, firstName: true, lastName: true } }
       }
     });
+
+    const paidFees = await this.prisma.feeRecord.findMany({
+      where: { status: 'PAID' },
+      include: {
+        student: { select: { firstName: true, lastName: true } }
+      }
+    });
+
+    const mappedFees = paidFees.map(f => ({
+      id: f.id,
+      type: TransactionType.INCOME,
+      category: f.feeHead || 'Tuition Fee',
+      amount: f.amount,
+      date: f.date,
+      reference: f.receiptNo,
+      description: `Fee payment by ${f.student.firstName} ${f.student.lastName}`,
+      paymentMode: f.paymentMode || 'N/A',
+      recordedBy: { firstName: 'System', lastName: 'Auto' }
+    }));
+
+    const allTransactions = [...adhocTransactions, ...mappedFees] as any[];
+    allTransactions.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    return allTransactions;
   }
 
   async getSummary() {
