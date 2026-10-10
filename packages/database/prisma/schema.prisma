@@ -1233,3 +1233,37 @@ model Notice {
 
   @@map("notices")
 }
+
+// -----------------------------------------------------------------------------
+// CUSTOM FORMS (PUBLIC RESPONSE FORMS)
+// -----------------------------------------------------------------------------
+
+model CustomForm {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  isActive    Boolean  @default(true)
+  fields      Json     // Array of field objects: { id, label, type, required }
+  
+  centreId    String?
+  centre      Centre?  @relation(fields: [centreId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  responses   CustomFormResponse[]
+
+  @@map("custom_forms")
+}
+
+model CustomFormResponse {
+  id          String   @id @default(uuid())
+  formId      String
+  data        Json     // Key-value pair of responses
+  
+  createdAt   DateTime @default(now())
+
+  form        CustomForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@map("custom_form_responses")
+}

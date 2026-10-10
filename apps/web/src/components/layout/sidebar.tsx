@@ -43,6 +43,7 @@ const mainNav = [
 const managementNav = [
   { label: "Staff / User", href: "/staff", icon: UserCheck },
   { label: "Enquiry / Leads", href: "/enquiry", icon: Headset },
+  { label: "Forms", href: "/forms", icon: FileText },
   { label: "SMS", href: "/sms", icon: MessageSquare },
   { label: "Expense & Income", href: "/expense", icon: Banknote },
   { label: "Report", href: "/report", icon: BarChart2 },

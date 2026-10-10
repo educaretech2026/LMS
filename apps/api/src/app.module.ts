@@ -27,6 +27,7 @@ import { PublicAuthModule } from './public-auth/public-auth.module';
 import { CoursesModule } from './courses/courses.module';
 import { SupportModule } from './support/support.module';
 import { NoticesModule } from './notices/notices.module';
+import { FormsModule } from './forms/forms.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { NoticesModule } from './notices/notices.module';
     CoursesModule,
     SupportModule,
     NoticesModule,
+    FormsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
