@@ -95,6 +95,7 @@ model Centre {
   liveClasses LiveClass[]
   exams       Exam[]
   Transaction Transaction[]
+  customForms CustomForm[]
 
   @@map("centres")
 }
