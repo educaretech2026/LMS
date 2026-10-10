@@ -54,7 +54,7 @@ export default function FormBuilderPage() {
   const handleImageUpload = async (index: number, file: File) => {
     if (!file) return;
     try {
-      const urlRes = await fetchApi(`/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+      const urlRes = await fetchApi<any>(`/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
       const { uploadUrl, finalUrl } = urlRes;
       
       await fetch(uploadUrl, {
