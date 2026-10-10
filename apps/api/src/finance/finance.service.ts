@@ -28,7 +28,7 @@ export class FinanceService {
     const paidFees = await this.prisma.feeRecord.findMany({
       where: { status: 'PAID' },
       include: {
-        student: { select: { firstName: true, lastName: true } }
+        student: { select: { user: { select: { firstName: true, lastName: true } } } }
       }
     });
 
@@ -39,7 +39,7 @@ export class FinanceService {
       amount: f.amount,
       date: f.date,
       reference: f.receiptNo,
-      description: `Fee payment by ${f.student.firstName} ${f.student.lastName}`,
+      description: `Fee payment by ${f.student.user.firstName} ${f.student.user.lastName}`,
       paymentMode: f.paymentMode || 'N/A',
       recordedBy: { firstName: 'System', lastName: 'Auto' }
     }));
