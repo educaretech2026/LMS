@@ -5,9 +5,7 @@ import { Bell, Check, ExternalLink, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -119,7 +117,7 @@ export function NotificationBell() {
       
       <DropdownMenuContent align="end" className="w-80 md:w-96 p-0 overflow-hidden border-border-soft shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 bg-surface-2 border-b border-border-soft">
-          <DropdownMenuLabel className="p-0 font-semibold text-text-primary">Notifications</DropdownMenuLabel>
+          <h2 className="p-0 font-semibold text-text-primary text-sm">Notifications</h2>
           {unreadCount > 0 && (
             <button 
               onClick={(e) => { e.preventDefault(); markAllAsRead(); }}
@@ -137,7 +135,7 @@ export function NotificationBell() {
               <p className="text-sm">You have no notifications</p>
             </div>
           ) : (
-            <DropdownMenuGroup>
+            <div className="max-h-[60vh] overflow-y-auto">
               {notifications.map((notification) => {
                 const isUnread = !notification.isRead;
                 
@@ -194,7 +192,7 @@ export function NotificationBell() {
                   </DropdownMenuItem>
                 );
               })}
-            </DropdownMenuGroup>
+            </div>
           )}
         </div>
       </DropdownMenuContent>
