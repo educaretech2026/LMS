@@ -5,7 +5,7 @@ import { PrismaService } from '../database/prisma.service';
 export class FormsService {
   constructor(private prisma: PrismaService) {}
 
-  async createForm(data: { title: string; description?: string; isActive?: boolean; fields: any; centreId?: string }) {
+  async createForm(data: { title: string; description?: string; isActive?: boolean; fields: any; centreId?: string }): Promise<any> {
     return this.prisma.customForm.create({
       data: {
         title: data.title,
@@ -17,7 +17,7 @@ export class FormsService {
     });
   }
 
-  async getForms() {
+  async getForms(): Promise<any> {
     return this.prisma.customForm.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -28,7 +28,7 @@ export class FormsService {
     });
   }
 
-  async getFormById(id: string) {
+  async getFormById(id: string): Promise<any> {
     const form = await this.prisma.customForm.findUnique({
       where: { id },
     });
@@ -36,20 +36,20 @@ export class FormsService {
     return form;
   }
 
-  async updateForm(id: string, data: { title?: string; description?: string; isActive?: boolean; fields?: any }) {
+  async updateForm(id: string, data: { title?: string; description?: string; isActive?: boolean; fields?: any }): Promise<any> {
     return this.prisma.customForm.update({
       where: { id },
       data,
     });
   }
 
-  async deleteForm(id: string) {
+  async deleteForm(id: string): Promise<any> {
     return this.prisma.customForm.delete({
       where: { id },
     });
   }
 
-  async submitResponse(formId: string, data: any) {
+  async submitResponse(formId: string, data: any): Promise<any> {
     // Validate form exists and is active
     const form = await this.prisma.customForm.findUnique({ where: { id: formId } });
     if (!form || !form.isActive) {
@@ -64,7 +64,7 @@ export class FormsService {
     });
   }
 
-  async getFormResponses(formId: string) {
+  async getFormResponses(formId: string): Promise<any> {
     return this.prisma.customFormResponse.findMany({
       where: { formId },
       orderBy: { createdAt: 'desc' },
