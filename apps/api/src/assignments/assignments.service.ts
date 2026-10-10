@@ -87,12 +87,12 @@ export class AssignmentsService {
       try {
         const enrollments = await this.prisma.enrollment.findMany({ 
           where: { batchId: data.batchId },
-          include: { student: true }
+          include: { studentProfile: true }
         });
         for (const enr of enrollments) {
-          if (enr.student.userId) {
+          if (enr.studentProfile.userId) {
             await this.notificationsService.sendNotification({
-              userId: enr.student.userId,
+              userId: enr.studentProfile.userId,
               title: 'New Assignment',
               message: `A new assignment "${data.title}" was posted in your batch.`,
               type: 'INFO',

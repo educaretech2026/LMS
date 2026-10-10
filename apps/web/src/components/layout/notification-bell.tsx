@@ -33,9 +33,9 @@ export function NotificationBell() {
   const fetchNotifications = async () => {
     if (!role) return;
     try {
-      const data = await fetchApi('/notifications');
+      const data = await fetchApi<any[]>('/notifications');
       setNotifications(data);
-      setUnreadCount(data.filter((n: Notification) => !n.isRead).length);
+      setUnreadCount(data.filter((n: any) => !n.isRead).length);
     } catch (e) {
       console.error("Failed to load notifications", e);
     }
@@ -167,9 +167,10 @@ export function NotificationBell() {
 
                 if (notification.link) {
                   return (
-                    <DropdownMenuItem asChild key={notification.id} className="p-0 cursor-pointer rounded-none focus:bg-transparent">
+                    <DropdownMenuItem key={notification.id} className="p-0 cursor-pointer rounded-none focus:bg-transparent">
                       <Link 
                         href={notification.link} 
+                        className="w-full"
                         onClick={(e) => {
                           if (isUnread) markAsRead(notification.id);
                         }}
