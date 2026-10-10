@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
 import { fetchApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { Plus, Trash, GripVertical, Save } from "lucide-react";
+import { Plus, Trash, GripVertical, Save, PenTool } from "lucide-react";
 
 type Field = {
   id: string;
@@ -67,7 +67,7 @@ export default function FormBuilderPage() {
 
   return (
     <DashboardLayout>
-      <PageShell title="Form Builder" description="Design a new public response form.">
+      <PageShell title="Form Builder" subtitle="Design a new public response form." icon={PenTool}>
         <div className="max-w-4xl mx-auto mt-6">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Form Details</h2>

@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
 import { fetchApi } from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, List } from "lucide-react";
 import Link from "next/link";
 
 export default function FormResponsesPage() {
@@ -23,7 +23,7 @@ export default function FormResponsesPage() {
           fetchApi(`/forms/${id}/responses`)
         ]);
         setForm(formData);
-        setResponses(responseData);
+        setResponses(responseData as any[]);
       } catch (err: any) {
         alert("Failed to load form responses");
       } finally {
@@ -62,7 +62,8 @@ export default function FormResponsesPage() {
     <DashboardLayout>
       <PageShell 
         title={form ? `Responses: ${form.title}` : "Loading..."}
-        description={form?.description || "Viewing collected data"}
+        subtitle={form?.description || "Viewing collected data"}
+        icon={List}
         actions={
           <div className="flex gap-2">
             <Link href="/forms" className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50 flex items-center transition-colors">

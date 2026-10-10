@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
-import { Plus, List, Eye, Link as LinkIcon, Trash } from "lucide-react";
+import { Plus, List, Eye, Link as LinkIcon, Trash, FileText } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import Link from "next/link";
 
@@ -14,7 +14,7 @@ export default function FormsPage() {
   const loadForms = async () => {
     try {
       const data = await fetchApi("/forms");
-      setForms(data);
+      setForms(data as any[]);
     } catch (error: any) {
       alert(error.message || "Failed to load forms");
     } finally {
@@ -47,7 +47,8 @@ export default function FormsPage() {
     <DashboardLayout>
       <PageShell
         title="Public Forms"
-        description="Create and manage custom forms for events and data collection."
+        subtitle="Create and manage custom forms for events and data collection."
+        icon={FileText}
         actions={
           <Link href="/forms/builder" className="bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-600 flex items-center transition-all">
             <Plus className="w-4 h-4 mr-2" />
