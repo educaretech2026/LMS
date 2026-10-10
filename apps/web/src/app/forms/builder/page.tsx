@@ -162,7 +162,7 @@ export default function FormBuilderPage() {
               <button 
                 onClick={handleSave} 
                 disabled={saving}
-                className="bg-brand-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-brand-700 flex items-center transition-all shadow-sm shadow-brand-200 disabled:opacity-70"
+                className="bg-brand-blue text-white px-6 py-2.5 rounded-xl font-bold hover:bg-brand-blue-dark flex items-center transition-all shadow-sm shadow-brand-blue-light/20 disabled:opacity-70"
               >
                 {saving ? "Saving..." : <><Save className="w-4 h-4 mr-2" /> Save & Publish Form</>}
               </button>

@@ -9,6 +9,7 @@ export default function proxy(request: NextRequest) {
     request.nextUrl.pathname === '/login' || 
     request.nextUrl.pathname === '/signup' ||
     request.nextUrl.pathname.startsWith('/admission') ||
+    request.nextUrl.pathname.startsWith('/f/') ||
     request.nextUrl.pathname.startsWith('/public');
 
   if (!token && !isPublicRoute) {
