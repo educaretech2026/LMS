@@ -47,34 +47,34 @@ export function StudentDashboard({ user, liveClasses = [], notices = [] }: { use
       {/* ── Quick Actions ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Link href="/estudy" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-brand-blue/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <BookOpen className="h-7 w-7 text-text-muted group-hover:text-brand-blue transition-colors" />
+          <div className="h-12 w-12 flex items-center justify-center mb-3 rounded-xl bg-blue-50/50 text-brand-blue transition-transform">
+            <BookOpen className="h-6 w-6" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm group-hover:text-brand-blue transition-colors">Study Materials</h3>
+          <h3 className="font-bold text-text-primary text-sm transition-colors">Study Materials</h3>
           <p className="text-xs text-text-muted mt-1">Access notes & videos</p>
         </Link>
         
         <Link href="/live-class" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-brand-red/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <Video className="h-7 w-7 text-text-muted group-hover:text-brand-red transition-colors" />
+          <div className="h-12 w-12 flex items-center justify-center mb-3 rounded-xl bg-red-50/50 text-brand-red transition-transform">
+            <Video className="h-6 w-6" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm group-hover:text-brand-red transition-colors">Live Classes</h3>
+          <h3 className="font-bold text-text-primary text-sm transition-colors">Live Classes</h3>
           <p className="text-xs text-text-muted mt-1">Join upcoming sessions</p>
         </Link>
         
         <Link href="/exam" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-warning/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <FileText className="h-7 w-7 text-text-muted group-hover:text-warning transition-colors" />
+          <div className="h-12 w-12 flex items-center justify-center mb-3 rounded-xl bg-orange-50/50 text-warning transition-transform">
+            <FileText className="h-6 w-6" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm group-hover:text-warning transition-colors">Exams & Results</h3>
+          <h3 className="font-bold text-text-primary text-sm transition-colors">Exams & Results</h3>
           <p className="text-xs text-text-muted mt-1">View your performance</p>
         </Link>
 
         <Link href="/fee" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-success/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">
-          <div className="h-12 w-12 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <CreditCard className="h-7 w-7 text-text-muted group-hover:text-success transition-colors" />
+          <div className="h-12 w-12 flex items-center justify-center mb-3 rounded-xl bg-green-50/50 text-success transition-transform">
+            <CreditCard className="h-6 w-6" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm group-hover:text-success transition-colors">Fee Status</h3>
+          <h3 className="font-bold text-text-primary text-sm transition-colors">Fee Status</h3>
           <p className="text-xs text-text-muted mt-1">Check dues & payments</p>
         </Link>
       </div>

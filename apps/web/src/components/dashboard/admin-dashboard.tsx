@@ -73,15 +73,15 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
   ];
 
   const quickLinks = [
-    { label: "Students",    href: "/students",  icon: Users,        color: "group-hover:text-blue-500", borderHover: "hover:border-blue-500/30",   desc: "Manage enrollments"   },
-    { label: "Attendance",  href: "/attendance",icon: CalendarCheck,color: "group-hover:text-green-500", borderHover: "hover:border-green-500/30",desc: "Mark daily attendance" },
-    { label: "Fee",         href: "/fee",        icon: CreditCard,   color: "group-hover:text-purple-500", borderHover: "hover:border-purple-500/30", desc: "Collect & track fees"  },
-    { label: "Enquiry",     href: "/enquiry",    icon: Headset,      color: "group-hover:text-amber-500", borderHover: "hover:border-amber-500/30",  desc: "Manage leads"          },
-    { label: "Expense",     href: "/expense",    icon: Banknote,     color: "group-hover:text-rose-500", borderHover: "hover:border-rose-500/30",  desc: "Income & expenses"     },
-    { label: "Staff",       href: "/staff",      icon: UserCheck,    color: "group-hover:text-indigo-500", borderHover: "hover:border-indigo-500/30",desc: "User management"       },
-    { label: "Notices",     href: "/notices",    icon: MessageSquare,color: "group-hover:text-cyan-500", borderHover: "hover:border-cyan-500/30",  desc: "Manage notice board"   },
-    { label: "Reports",     href: "/report",     icon: BarChart2,    color: "group-hover:text-teal-500", borderHover: "hover:border-teal-500/30",  desc: "Full analytics"        },
-    { label: "Setup",       href: "/setup",      icon: Wrench,       color: "group-hover:text-slate-600", borderHover: "hover:border-slate-600/30", desc: "System configuration"  },
+    { label: "Students",    href: "/students",  icon: Users,        color: "text-blue-600 bg-blue-50/50", borderHover: "hover:border-blue-500/30",   desc: "Manage enrollments"   },
+    { label: "Attendance",  href: "/attendance",icon: CalendarCheck,color: "text-green-600 bg-green-50/50", borderHover: "hover:border-green-500/30",desc: "Mark daily attendance" },
+    { label: "Fee",         href: "/fee",        icon: CreditCard,   color: "text-purple-600 bg-purple-50/50", borderHover: "hover:border-purple-500/30", desc: "Collect & track fees"  },
+    { label: "Enquiry",     href: "/enquiry",    icon: Headset,      color: "text-amber-600 bg-amber-50/50", borderHover: "hover:border-amber-500/30",  desc: "Manage leads"          },
+    { label: "Expense",     href: "/expense",    icon: Banknote,     color: "text-rose-600 bg-rose-50/50", borderHover: "hover:border-rose-500/30",  desc: "Income & expenses"     },
+    { label: "Staff",       href: "/staff",      icon: UserCheck,    color: "text-indigo-600 bg-indigo-50/50", borderHover: "hover:border-indigo-500/30",desc: "User management"       },
+    { label: "Notices",     href: "/notices",    icon: MessageSquare,color: "text-cyan-600 bg-cyan-50/50", borderHover: "hover:border-cyan-500/30",  desc: "Manage notice board"   },
+    { label: "Reports",     href: "/report",     icon: BarChart2,    color: "text-teal-600 bg-teal-50/50", borderHover: "hover:border-teal-500/30",  desc: "Full analytics"        },
+    { label: "Setup",       href: "/setup",      icon: Wrench,       color: "text-slate-600 bg-slate-50/50", borderHover: "hover:border-slate-600/30", desc: "System configuration"  },
   ].filter(link => {
     if (isSuperAdmin) return true;
     if (isReceptionist) return ['Students', 'Fee', 'Enquiry'].includes(link.label);
@@ -134,10 +134,10 @@ export function AdminDashboard({ user, statsData }: { user: any; statsData?: any
             {quickLinks.map(({ label, href, icon: Icon, color, borderHover }) => (
               <Link key={label} href={href}>
                 <div className={`group flex flex-col items-center justify-center gap-2 bg-white border border-border-soft rounded-xl p-4 shadow-sm hover:shadow-md transition-all text-center cursor-pointer ${borderHover}`}>
-                  <div className="h-10 w-10 flex items-center justify-center transition-colors">
-                    <Icon className={`h-6 w-6 text-text-muted transition-colors ${color}`} />
+                  <div className={`h-10 w-10 flex items-center justify-center rounded-lg transition-colors ${color}`}>
+                    <Icon className="h-5 w-5" />
                   </div>
-                  <span className={`text-xs font-bold text-text-primary transition-colors ${color}`}>{label}</span>
+                  <span className="text-xs font-bold text-text-primary transition-colors">{label}</span>
                 </div>
               </Link>
             ))}
