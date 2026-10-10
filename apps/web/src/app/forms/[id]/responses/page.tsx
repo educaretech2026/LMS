@@ -7,7 +7,6 @@ import { fetchApi } from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import Link from "next/link";
-import toast from "react-hot-toast";
 
 export default function FormResponsesPage() {
   const params = useParams();
@@ -26,7 +25,7 @@ export default function FormResponsesPage() {
         setForm(formData);
         setResponses(responseData);
       } catch (err: any) {
-        toast.error("Failed to load form responses");
+        alert("Failed to load form responses");
       } finally {
         setLoading(false);
       }

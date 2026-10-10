@@ -6,7 +6,6 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Plus, List, Eye, Link as LinkIcon, Trash } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import Link from "next/link";
-import toast from "react-hot-toast";
 
 export default function FormsPage() {
   const [forms, setForms] = useState<any[]>([]);
@@ -17,7 +16,7 @@ export default function FormsPage() {
       const data = await fetchApi("/forms");
       setForms(data);
     } catch (error: any) {
-      toast.error(error.message || "Failed to load forms");
+      alert(error.message || "Failed to load forms");
     } finally {
       setLoading(false);
     }
@@ -31,17 +30,17 @@ export default function FormsPage() {
     if (!confirm("Are you sure you want to delete this form?")) return;
     try {
       await fetchApi(`/forms/${id}`, { method: 'DELETE' });
-      toast.success("Form deleted");
+      alert("Form deleted");
       loadForms();
     } catch (error: any) {
-      toast.error(error.message);
+      alert(error.message);
     }
   };
 
   const copyLink = (id: string) => {
     const url = `${window.location.origin}/f/${id}`;
     navigator.clipboard.writeText(url);
-    toast.success("Public link copied to clipboard");
+    alert("Public link copied to clipboard");
   };
 
   return (

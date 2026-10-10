@@ -5,7 +5,6 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
 import { fetchApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
 import { Plus, Trash, GripVertical, Save } from "lucide-react";
 
 type Field = {
@@ -43,8 +42,8 @@ export default function FormBuilderPage() {
   };
 
   const handleSave = async () => {
-    if (!title) return toast.error("Form title is required");
-    if (fields.length === 0) return toast.error("Add at least one field");
+    if (!title) return alert("Form title is required");
+    if (fields.length === 0) return alert("Add at least one field");
 
     setSaving(true);
     try {
@@ -57,10 +56,10 @@ export default function FormBuilderPage() {
           isActive: true
         })
       });
-      toast.success("Form created successfully!");
+      alert("Form created successfully!");
       router.push("/forms");
     } catch (err: any) {
-      toast.error(err.message || "Failed to save form");
+      alert(err.message || "Failed to save form");
     } finally {
       setSaving(false);
     }
