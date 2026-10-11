@@ -116,10 +116,14 @@ export class ExamsService {
     if (exam.batchId) {
       whereClause.batchId = exam.batchId;
     } else {
-      if (exam.academicYearId) whereClause.academicYearId = exam.academicYearId;
-      if (exam.boardId) whereClause.boardId = exam.boardId;
-      if (exam.standardId) whereClause.standardId = exam.standardId;
-      if (exam.centreId) whereClause.centreId = exam.centreId;
+      const batchWhere: any = {};
+      if (exam.academicYearId) batchWhere.academicYearId = exam.academicYearId;
+      if (exam.boardId) batchWhere.boardId = exam.boardId;
+      if (exam.standardId) batchWhere.standardId = exam.standardId;
+      if (exam.centreId) batchWhere.centreId = exam.centreId;
+      if (Object.keys(batchWhere).length > 0) {
+        whereClause.batch = batchWhere;
+      }
       if (exam.targetTrackId) whereClause.trackId = exam.targetTrackId;
     }
 
@@ -128,11 +132,33 @@ export class ExamsService {
       include: { studentProfile: { include: { user: true } } }
     });
 
-    return enrollments.map(e => ({
-      studentId: e.studentProfileId,
-      name: `${e.studentProfile.user.firstName} ${e.studentProfile.user.lastName}`,
-      admissionNo: e.studentProfile.admissionNo
-    }));
+    const studentMap = new Map<string, any>();
+    for (const e of enrollments) {
+      if (e.studentProfile) {
+        studentMap.set(e.studentProfileId, {
+          studentId: e.studentProfileId,
+          name: `${e.studentProfile.user?.firstName || ''} ${e.studentProfile.user?.lastName || ''}`.trim() || 'Student',
+          admissionNo: e.studentProfile.admissionNo
+        });
+      }
+    }
+
+    // Also include any students who already submitted results for this exam
+    const results = await this.prisma.examResult.findMany({
+      where: { examId },
+      include: { student: { include: { user: true } } }
+    });
+    for (const r of results) {
+      if (r.student && !studentMap.has(r.studentId)) {
+        studentMap.set(r.studentId, {
+          studentId: r.studentId,
+          name: `${r.student.user?.firstName || ''} ${r.student.user?.lastName || ''}`.trim() || 'Student',
+          admissionNo: r.student.admissionNo
+        });
+      }
+    }
+
+    return Array.from(studentMap.values());
   }
 
   async saveExamResults(examId: string, results: any[]) {
