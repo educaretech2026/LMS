@@ -137,6 +137,8 @@ export default function TakeExamPage() {
         </div>
       </div>
     );
+  }
+
   const subjectName = typeof exam.subject === 'object' ? exam.subject?.name : (exam.subject || 'General');
   const durationMinutes = exam.duration || 60;
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, "0");
