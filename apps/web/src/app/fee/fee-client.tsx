@@ -261,14 +261,16 @@ export function FeeClient({ initialFees, students, tracks = [] }: { initialFees:
                     <BookOpen className="h-4 w-4" /> Fee Records
                   </div>
                 </button>
-                <button 
-                  onClick={() => setActiveTab("Students")}
-                  className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === "Students" ? "border-brand-blue text-brand-blue" : "border-transparent text-text-muted hover:text-text-primary"}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4" /> Student Balances
-                  </div>
-                </button>
+                {role !== 'STUDENT' && (
+                  <button 
+                    onClick={() => setActiveTab("Students")}
+                    className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === "Students" ? "border-brand-blue text-brand-blue" : "border-transparent text-text-muted hover:text-text-primary"}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4" /> Student Balances
+                    </div>
+                  </button>
+                )}
               </div>
               
               <div className="flex items-center gap-1 text-xs font-medium">
