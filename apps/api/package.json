@@ -44,7 +44,7 @@
     "googleapis": "^144.0.0",
     "ioredis": "^5.4.1",
     "@nestjs/throttler": "^5.2.0",
-    "throttler-storage-redis": "^3.0.0",
+    "@nest-lab/throttler-storage-redis": "^0.2.2",
     "uuid": "^10.0.0"
   },
   "devDependencies": {
