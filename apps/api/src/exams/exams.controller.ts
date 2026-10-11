@@ -15,8 +15,8 @@ export class ExamsController {
   ) { }
 
   @Get()
-  getExams(): Promise<any> {
-    return this.examsService.getExams();
+  getExams(@Req() req: any): Promise<any> {
+    return this.examsService.getExams(req.user);
   }
 
   @Get('by-topic/:topicId')
@@ -68,5 +68,10 @@ export class ExamsController {
     @Query('contentType') contentType: string,
   ) {
     return this.storageService.getPresignedUploadUrl(filename, contentType);
+  }
+
+  @Get(':examId')
+  getExamById(@Param('examId') examId: string): Promise<any> {
+    return this.examsService.getExamById(examId);
   }
 }

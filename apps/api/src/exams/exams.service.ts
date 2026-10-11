@@ -5,7 +5,71 @@ import { PrismaService } from '../database/prisma.service';
 export class ExamsService {
   constructor(private prisma: PrismaService) {}
 
-  async getExams(): Promise<any> {
+  async getExams(user?: any): Promise<any> {
+    const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    
+    if (isStudent && user?.id) {
+      const studentProfile = await this.prisma.studentProfile.findUnique({
+        where: { userId: user.id },
+        include: {
+          enrollments: {
+            include: {
+              batch: true,
+            }
+          }
+        }
+      });
+
+      if (!studentProfile) {
+        return [];
+      }
+
+      const batchIds = studentProfile.enrollments.map(e => e.batchId).filter(Boolean);
+      const boardIds = studentProfile.enrollments.map(e => e.batch?.boardId).filter(Boolean);
+      const standardIds = studentProfile.enrollments.map(e => e.batch?.standardId).filter(Boolean);
+      const centreIds = studentProfile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      const trackIds = studentProfile.enrollments.map(e => e.trackId || e.batch?.trackId).filter(Boolean);
+
+      const orConditions: any[] = [];
+      if (batchIds.length > 0) {
+        orConditions.push({ batchId: { in: batchIds } });
+      }
+
+      const hierarchyAnd: any[] = [{ batchId: null }];
+      if (boardIds.length > 0) {
+        hierarchyAnd.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
+      }
+      if (standardIds.length > 0) {
+        hierarchyAnd.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
+      }
+      if (centreIds.length > 0) {
+        hierarchyAnd.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
+      }
+      if (trackIds.length > 0) {
+        hierarchyAnd.push({ OR: [{ targetTrackId: null }, { targetTrackId: { in: trackIds } }] });
+      }
+      orConditions.push({ AND: hierarchyAnd });
+
+      return this.prisma.exam.findMany({
+        where: {
+          OR: orConditions
+        },
+        include: {
+          academicYear: true,
+          batch: true,
+          subject: true,
+          chapter: true,
+          topic: true,
+          mcqQuestions: true,
+          targetTrack: true,
+          results: {
+            where: { studentId: studentProfile.id }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+    }
+
     return this.prisma.exam.findMany({
       include: {
         academicYear: true,
@@ -14,9 +78,27 @@ export class ExamsService {
         chapter: true,
         topic: true,
         mcqQuestions: true,
+        targetTrack: true,
       },
       orderBy: { createdAt: 'desc' }
     });
+  }
+
+  async getExamById(id: string): Promise<any> {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id },
+      include: {
+        academicYear: true,
+        batch: true,
+        subject: true,
+        chapter: true,
+        topic: true,
+        mcqQuestions: true,
+        targetTrack: true,
+      }
+    });
+    if (!exam) throw new NotFoundException('Exam not found');
+    return exam;
   }
 
   async getExamResults(examId: string): Promise<any> {
@@ -73,9 +155,12 @@ export class ExamsService {
   }
 
   async submitExamAttempt(examId: string, studentId: string, answers: Record<string, string>, score: any) {
+    const profile = await this.prisma.studentProfile.findUnique({ where: { userId: studentId } });
+    const studentProfileId = profile ? profile.id : studentId;
+
     // 1. Check if an existing ExamResult is there for this student
     const existing = await this.prisma.examResult.findFirst({
-      where: { examId, studentId }
+      where: { examId, studentId: studentProfileId }
     });
 
     let examResultId = existing?.id;
@@ -83,7 +168,7 @@ export class ExamsService {
       const res = await this.prisma.examResult.create({
         data: {
           examId,
-          studentId,
+          studentId: studentProfileId,
           marksObtained: score.earned || 0,
           maxMarks: score.total || 0,
         }

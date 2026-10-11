@@ -13,13 +13,13 @@ export default function ExamOverviewPage() {
   const [stats, setStats] = React.useState({ totalQuestions: 0, activeExams: 0, studentsTested: 0 });
 
   React.useEffect(() => {
+    fetchApi('/exams').then((data: any) => {
+      setExams(data || []);
+      const activeCount = (data || []).length;
+      setStats(prev => ({ ...prev, activeExams: activeCount }));
+    }).catch(console.error);
+
     if (role && role.toUpperCase() !== 'STUDENT') {
-      fetchApi('/exams').then((data: any) => {
-        setExams(data || []);
-        const activeCount = (data || []).length;
-        setStats(prev => ({ ...prev, activeExams: activeCount }));
-      }).catch(console.error);
-      
       fetchApi('/exams/mcq').then((data: any) => {
         setStats(prev => ({ ...prev, totalQuestions: (data || []).length }));
       }).catch(console.error);
@@ -145,7 +145,7 @@ export default function ExamOverviewPage() {
               </div>
             </>
           ) : (
-            <StudentExamsList />
+            <StudentExamsList exams={exams} />
           )}
 
         </div>
@@ -172,14 +172,79 @@ function QuickCard({ href, icon: Icon, title, desc, color }: { href: string; ico
   );
 }
 
-function StudentExamsList() {
+function StudentExamsList({ exams }: { exams: any[] }) {
+  if (exams.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden p-10 text-center">
+        <Layers className="h-10 w-10 text-text-muted mx-auto mb-3 opacity-40" />
+        <h3 className="text-sm font-semibold text-text-primary">No Upcoming Exams</h3>
+        <p className="text-xs text-text-muted mt-1 max-w-sm mx-auto">
+          Your assigned exams will appear here when they are scheduled by your teachers.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden p-10 text-center">
-      <Layers className="h-10 w-10 text-text-muted mx-auto mb-3" />
-      <h3 className="text-sm font-semibold text-text-primary">No Upcoming Exams</h3>
-      <p className="text-xs text-text-muted mt-1 max-w-sm mx-auto">
-        Your assigned exams will appear here when they are scheduled by your teachers.
-      </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text-primary">Assigned Examinations</h3>
+        <span className="text-xs text-text-muted">{exams.length} exams available</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {exams.map((exam) => {
+          const subjectName = typeof exam.subject === 'object' ? exam.subject?.name : (exam.subject || 'General');
+          const qCount = exam.mcqQuestions?.length ?? exam.questions ?? 0;
+          const hasTaken = exam.results && exam.results.length > 0;
+          const score = hasTaken ? exam.results[0].marksObtained : null;
+          const maxMarks = hasTaken ? exam.results[0].maxMarks : null;
+
+          return (
+            <div key={exam.id} className="bg-white rounded-xl border border-border-soft shadow-sm p-5 flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-blue bg-brand-blue/10 px-2 py-0.5 rounded-full">
+                      {subjectName}
+                    </span>
+                    <h4 className="text-base font-semibold text-text-primary mt-1.5">{exam.title}</h4>
+                  </div>
+                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${hasTaken ? "bg-success/10 border-success/20 text-success" : "bg-brand-blue/10 border-brand-blue/20 text-brand-blue"}`}>
+                    {hasTaken ? "Completed" : "Available"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-text-muted mt-3 mb-5">
+                  <span className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" />{qCount} questions</span>
+                  <span className="flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5" />{exam.type || 'MCQ'}</span>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-border-soft flex items-center justify-between">
+                {hasTaken ? (
+                  <>
+                    <span className="text-xs font-bold text-success">
+                      Score: {score} / {maxMarks}
+                    </span>
+                    <Link
+                      href={`/exam/mcq/${exam.id}/take`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-white px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-surface-2 transition-colors"
+                    >
+                      Review
+                    </Link>
+                  </>
+                ) : (
+                  <Link
+                    href={`/exam/mcq/${exam.id}/take`}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-blue py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
+                  >
+                    Start Exam →
+                  </Link>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
