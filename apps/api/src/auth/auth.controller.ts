@@ -1,13 +1,18 @@
-import { Controller, Post, Body, Res, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Res, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { RedisService } from '../redis/redis.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
 import { LoginDto } from './dto/login.dto';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly redisService: RedisService
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -29,9 +34,15 @@ export class AuthController {
   }
 
   @Post('logout')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout user and clear cookie' })
-  async logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    // Revoke the session in Redis
+    if (req.user?.id && req.user?.jti) {
+      await this.redisService.revokeSession(req.user.id, req.user.jti);
+    }
+    
     res.cookie('AccessToken', '', {
       httpOnly: true,
       secure: true,
@@ -40,6 +51,25 @@ export class AuthController {
       expires: new Date(0),
     });
     return { message: 'Logout successful' };
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Log out of all devices' })
+  async logoutAll(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    if (req.user?.id) {
+      await this.redisService.revokeAllSessions(req.user.id);
+    }
+    
+    res.cookie('AccessToken', '', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+      expires: new Date(0),
+    });
+    return { message: 'Logged out of all devices successfully' };
   }
 
 

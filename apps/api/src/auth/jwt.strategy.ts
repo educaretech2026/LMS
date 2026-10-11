@@ -3,10 +3,11 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private prisma: PrismaService) {
+  constructor(private prisma: PrismaService, private redisService: RedisService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request: Request) => {
@@ -20,6 +21,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    if (payload.role !== 'PUBLIC_LEARNER') {
+      const isValid = await this.redisService.isSessionValid(payload.sub, payload.jti);
+      if (!isValid) {
+        throw new UnauthorizedException('Session has been revoked or expired');
+      }
+      
+      // Track user as online
+      await this.redisService.trackOnlineUser(payload.sub);
+    }
+
     if (payload.role === 'PUBLIC_LEARNER') {
       const publicUser = await this.prisma.publicUser.findUnique({
         where: { id: payload.sub }
@@ -47,6 +58,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User is inactive or not found');
     }
 
-    return user;
+    return { ...user, jti: payload.jti };
   }
 }

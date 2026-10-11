@@ -4,12 +4,15 @@ import { PrismaService } from '../database/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { BadRequestException } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { v4 as uuidv4 } from 'uuid';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private redisService: RedisService,
   ) {}
 
   async login(loginDto: LoginDto) {
@@ -52,8 +55,12 @@ export class AuthService {
       }
     }
 
-    const payload = { email: user.email, sub: user.id, role: user.role.name, centreName };
+    const jti = uuidv4();
+    const payload = { email: user.email, sub: user.id, role: user.role.name, centreName, jti };
     
+    // 7 days expiration for the session in Redis to match JWT validity (assuming 7d in config, fallback to 7d)
+    await this.redisService.whitelistSession(user.id, jti, 7 * 24 * 60 * 60);
+
     return {
       access_token: this.jwtService.sign(payload),
       user: {
