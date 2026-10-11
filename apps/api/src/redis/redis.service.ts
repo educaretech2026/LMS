@@ -26,7 +26,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     // Optional: expire the entire set if no activity, but since sessions have varied expirations, 
     // it's better to just periodically clean up or let individual lookups handle it.
     // For a strict TTL per session, we can also store a simple key:
-    await this.client.set(\`session:\${jti}\`, userId, 'EX', expiresInSeconds);
+    await this.client.set(`session:${jti}`, userId, 'EX', expiresInSeconds);
   }
 
   /**
@@ -34,7 +34,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    */
   async revokeSession(userId: string, jti: string): Promise<void> {
     await this.client.srem(`sessions:${userId}`, jti);
-    await this.client.del(\`session:\${jti}\`);
+    await this.client.del(`session:${jti}`);
   }
 
   /**
@@ -45,7 +45,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const sessions = await this.client.smembers(key);
     if (sessions.length > 0) {
       const pipeline = this.client.pipeline();
-      sessions.forEach(jti => pipeline.del(\`session:\${jti}\`));
+      sessions.forEach(jti => pipeline.del(`session:${jti}`));
       pipeline.del(key);
       await pipeline.exec();
     }
@@ -55,7 +55,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Checks if a session is valid.
    */
   async isSessionValid(userId: string, jti: string): Promise<boolean> {
-    const isValid = await this.client.exists(\`session:\${jti}\`);
+    const isValid = await this.client.exists(`session:${jti}`);
     return isValid === 1;
   }
 
@@ -65,7 +65,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Marks a user as active/online (TTL 5 minutes).
    */
   async trackOnlineUser(userId: string): Promise<void> {
-    await this.client.set(\`online:\${userId}\`, 'active', 'EX', 300);
+    await this.client.set(`online:${userId}`, 'active', 'EX', 300);
   }
 
   /**

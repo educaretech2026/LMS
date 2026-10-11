@@ -43,7 +43,7 @@
     "rxjs": "^7.8.1",
     "googleapis": "^144.0.0",
     "ioredis": "^5.4.1",
-    "@nestjs/throttler": "^5.2.0",
+    "@nestjs/throttler": "^6.2.1",
     "@nest-lab/throttler-storage-redis": "^1.2.0",
     "uuid": "^10.0.0"
   },
