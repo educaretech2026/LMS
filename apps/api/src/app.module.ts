@@ -36,14 +36,19 @@ import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot({
-      throttlers: [
-        {
-          ttl: 60000,
-          limit: 100, // 100 requests per minute by default
-        }
-      ],
-      storage: new ThrottlerStorageRedisService(process.env.REDIS_URL || 'redis://localhost:6379'),
+    ThrottlerModule.forRootAsync({
+      useFactory: () => {
+        const redisUrl = process.env.REDIS_URL;
+        return {
+          throttlers: [
+            {
+              ttl: 60000,
+              limit: 100, // 100 requests per minute by default
+            },
+          ],
+          storage: redisUrl ? new ThrottlerStorageRedisService(redisUrl) : undefined,
+        };
+      },
     }),
     RedisModule,
     DatabaseModule,

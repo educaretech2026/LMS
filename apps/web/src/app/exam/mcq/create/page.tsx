@@ -151,7 +151,7 @@ export default function CreateExamPage() {
         });
       }
       alert('Exam saved successfully!');
-      router.push('/exams');
+      router.push('/exam/mcq');
     } catch (e) {
       console.error(e);
       alert('Failed to save exam');
