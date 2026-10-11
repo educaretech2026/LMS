@@ -9,19 +9,31 @@ import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 export default function ExamOverviewPage() {
   const { role } = useAuth();
-    const [exams, setExams] = React.useState<any[]>([]);
-  const [stats, setStats] = React.useState({ totalQuestions: 0, activeExams: 0, studentsTested: 0 });
+  const [exams, setExams] = React.useState<any[]>([]);
+  const [stats, setStats] = React.useState({ totalQuestions: 0, activeExams: 0, studentsTested: 0, avgScore: "—" });
 
   React.useEffect(() => {
     fetchApi('/exams').then((data: any) => {
       setExams(data || []);
       const activeCount = (data || []).length;
-      setStats(prev => ({ ...prev, activeExams: activeCount }));
+      const testedCount = (data || []).reduce((acc: number, e: any) => acc + (e._count?.results || 0), 0);
+      setStats(prev => ({ ...prev, activeExams: activeCount, studentsTested: testedCount }));
     }).catch(console.error);
 
     if (role && role.toUpperCase() !== 'STUDENT') {
       fetchApi('/exams/mcq').then((data: any) => {
         setStats(prev => ({ ...prev, totalQuestions: (data || []).length }));
+      }).catch(console.error);
+
+      fetchApi('/exams/analytics/results').then((results: any) => {
+        if (Array.isArray(results) && results.length > 0) {
+          const totalPct = results.reduce((sum: number, r: any) => {
+            const pct = r.maxMarks > 0 ? (r.marksObtained / r.maxMarks) * 100 : 0;
+            return sum + pct;
+          }, 0);
+          const avg = Math.round(totalPct / results.length);
+          setStats(prev => ({ ...prev, avgScore: `${avg}%` }));
+        }
       }).catch(console.error);
     }
   }, [role]);
@@ -61,7 +73,7 @@ export default function ExamOverviewPage() {
                 { label: "Total Questions", value: stats.totalQuestions.toString(),  icon: Database,    color: "text-brand-blue bg-brand-blue/8" },
                 { label: "Active Exams",    value: stats.activeExams.toString(),  icon: Layers,      color: "text-brand-red  bg-brand-red/8"  },
                 { label: "Students Tested", value: stats.studentsTested.toString(),  icon: Users,       color: "text-success    bg-success/8"    },
-                { label: "Avg. Score",      value: "—",  icon: TrendingUp,  color: "text-warning    bg-warning/8"    },
+                { label: "Avg. Score",      value: stats.avgScore,  icon: TrendingUp,  color: "text-warning    bg-warning/8"    },
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="bg-white rounded-xl border border-border-soft p-5 shadow-sm">
                   <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${color} mb-3`}>

@@ -75,6 +75,9 @@ export class ExamsService {
           targetTrack: true,
           results: {
             where: { studentId: studentProfile.id }
+          },
+          _count: {
+            select: { results: true, mcqQuestions: true }
           }
         },
         orderBy: { createdAt: 'desc' }
@@ -90,6 +93,46 @@ export class ExamsService {
         topic: true,
         mcqQuestions: true,
         targetTrack: true,
+        _count: {
+          select: { results: true, mcqQuestions: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  async getAllResults(user?: any): Promise<any> {
+    const where: any = {};
+    const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    if (isStudent && user?.id) {
+      const studentProfile = await this.prisma.studentProfile.findUnique({
+        where: { userId: user.id }
+      });
+      if (studentProfile) {
+        where.studentId = studentProfile.id;
+      }
+    }
+    return this.prisma.examResult.findMany({
+      where,
+      include: {
+        exam: {
+          include: {
+            subject: true,
+            targetTrack: true
+          }
+        },
+        student: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -106,6 +149,9 @@ export class ExamsService {
         topic: true,
         mcqQuestions: true,
         targetTrack: true,
+        _count: {
+          select: { results: true, mcqQuestions: true }
+        }
       }
     });
     if (!exam) throw new NotFoundException('Exam not found');
@@ -352,6 +398,124 @@ export class ExamsService {
         negativeMarks: negativeMarks !== undefined ? Number(negativeMarks) : 1.0,
         examId,
       }
+    });
+  }
+
+  async updateExam(id: string, data: any): Promise<any> {
+    const {
+      title,
+      type,
+      academicYearId,
+      batchId,
+      subjectId,
+      chapterId,
+      topicId,
+      boardId,
+      standardId,
+      centreId,
+      targetTrackId,
+      questions,
+    } = data;
+
+    const updatePayload: any = {};
+    if (title !== undefined) updatePayload.title = title;
+    if (type !== undefined) updatePayload.type = type;
+    if (academicYearId !== undefined) updatePayload.academicYearId = academicYearId;
+    if (batchId !== undefined) updatePayload.batchId = batchId || null;
+    if (subjectId !== undefined) updatePayload.subjectId = subjectId;
+    if (chapterId !== undefined) updatePayload.chapterId = chapterId || null;
+    if (topicId !== undefined) updatePayload.topicId = topicId || null;
+    if (boardId !== undefined) updatePayload.boardId = boardId || null;
+    if (standardId !== undefined) updatePayload.standardId = standardId || null;
+    if (centreId !== undefined) updatePayload.centreId = centreId || null;
+    if (targetTrackId !== undefined) updatePayload.targetTrackId = targetTrackId || null;
+
+    await this.prisma.exam.update({
+      where: { id },
+      data: updatePayload,
+    });
+
+    if (Array.isArray(questions)) {
+      const existing = await this.prisma.mcqQuestion.findMany({
+        where: { examId: id },
+        select: { id: true }
+      });
+      const existingIds = new Set(existing.map(q => q.id));
+      const incomingIds = new Set(questions.filter(q => q.id).map(q => q.id));
+
+      const toDelete = [...existingIds].filter(qid => !incomingIds.has(qid));
+      if (toDelete.length > 0) {
+        await this.prisma.mcqQuestion.deleteMany({
+          where: { id: { in: toDelete } }
+        });
+      }
+
+      for (const q of questions) {
+        if (!q.text && !q.questionText) continue;
+        const qText = q.text || q.questionText;
+        const qType = q.type || 'MCQ';
+        const qOptions = q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : undefined;
+        let correctOption = q.correctOption;
+        if (correctOption === undefined && q.correct !== undefined && Array.isArray(qOptions)) {
+          correctOption = qOptions[q.correct]?.text ?? qOptions[q.correct];
+        }
+
+        const qData: any = {
+          questionText: qText,
+          type: qType,
+          imageUrl: q.imageUrl || null,
+          explanation: q.explanation || null,
+          options: qOptions,
+          correctOption: correctOption !== undefined ? String(correctOption) : null,
+          marks: q.marks !== undefined ? Number(q.marks) : 4.0,
+          negativeMarks: q.negativeMarks !== undefined ? Number(q.negativeMarks) : 1.0,
+        };
+
+        if (q.id && existingIds.has(q.id)) {
+          await this.prisma.mcqQuestion.update({
+            where: { id: q.id },
+            data: qData
+          });
+        } else {
+          await this.prisma.mcqQuestion.create({
+            data: {
+              ...qData,
+              examId: id
+            }
+          });
+        }
+      }
+    }
+
+    return this.getExamById(id);
+  }
+
+  async deleteExam(id: string): Promise<any> {
+    return this.prisma.exam.delete({
+      where: { id }
+    });
+  }
+
+  async updateMcqQuestion(id: string, data: any): Promise<any> {
+    const { questionText, text, imageUrl, options, correctOption, explanation, marks, negativeMarks, type } = data;
+    return this.prisma.mcqQuestion.update({
+      where: { id },
+      data: {
+        ...(questionText || text ? { questionText: questionText || text } : {}),
+        ...(type !== undefined ? { type } : {}),
+        ...(imageUrl !== undefined ? { imageUrl } : {}),
+        ...(options !== undefined ? { options: typeof options === 'string' ? JSON.parse(options) : options } : {}),
+        ...(correctOption !== undefined ? { correctOption: String(correctOption) } : {}),
+        ...(explanation !== undefined ? { explanation } : {}),
+        ...(marks !== undefined ? { marks: Number(marks) } : {}),
+        ...(negativeMarks !== undefined ? { negativeMarks: Number(negativeMarks) } : {})
+      }
+    });
+  }
+
+  async deleteMcqQuestion(id: string): Promise<any> {
+    return this.prisma.mcqQuestion.delete({
+      where: { id }
     });
   }
 }

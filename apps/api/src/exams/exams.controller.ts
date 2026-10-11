@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { ExamsService } from './exams.service';
 import { StorageService } from '../storage/storage.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,14 +19,32 @@ export class ExamsController {
     return this.examsService.getExams(req.user);
   }
 
+  @Get('analytics/results')
+  getAllResults(@Req() req: any): Promise<any> {
+    return this.examsService.getAllResults(req.user);
+  }
+
   @Get('by-topic/:topicId')
   getExamsByTopic(@Param('topicId') topicId: string): Promise<any> {
     return this.examsService.getExamsByTopic(topicId);
   }
+
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   createExam(@Body() data: any) {
     return this.examsService.createExam(data);
+  }
+
+  @Put(':examId')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  updateExam(@Param('examId') examId: string, @Body() data: any) {
+    return this.examsService.updateExam(examId, data);
+  }
+
+  @Delete(':examId')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  deleteExam(@Param('examId') examId: string) {
+    return this.examsService.deleteExam(examId);
   }
 
   @Get(':examId/results')
@@ -60,6 +78,18 @@ export class ExamsController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   createMcqQuestion(@Body() data: any): Promise<any> {
     return this.examsService.createMcqQuestion(data);
+  }
+
+  @Put('mcq/:questionId')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  updateMcqQuestion(@Param('questionId') questionId: string, @Body() data: any): Promise<any> {
+    return this.examsService.updateMcqQuestion(questionId, data);
+  }
+
+  @Delete('mcq/:questionId')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  deleteMcqQuestion(@Param('questionId') questionId: string): Promise<any> {
+    return this.examsService.deleteMcqQuestion(questionId);
   }
 
   @Get('upload-url')

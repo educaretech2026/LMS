@@ -5,7 +5,7 @@ import { fetchApi } from "@/lib/api";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ExamTabs } from "@/components/exam/exam-tabs";
 import Link from "next/link";
-import { Layers, Plus, Clock, FileText, Users, MoreVertical, Play, Eye } from "lucide-react";
+import { Layers, Plus, Clock, FileText, Users, MoreVertical, Play, Eye, Edit3, Trash2 } from "lucide-react";
 
 interface Exam {
   id: string;
@@ -61,6 +61,17 @@ export default function MCQExamPage() {
     fetchApi<any[]>('/exams').then(data => setExams(data || [])).catch(console.error);
   }, []);
 
+  const handleDeleteExam = async (id: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete the exam "${title}"? This will delete all questions and results.`)) return;
+    try {
+      await fetchApi(`/exams/${id}`, { method: 'DELETE' });
+      setExams(prev => prev.filter(e => e.id !== id));
+    } catch (e) {
+      console.error(e);
+      alert('Failed to delete exam');
+    }
+  };
+
   return (
     <DashboardLayout title="MCQ Exams">
       <div className="flex flex-col h-full">
@@ -101,6 +112,7 @@ export default function MCQExamPage() {
               const createdDate = exam.createdAt ? new Date(exam.createdAt).toLocaleDateString() : '-';
               const trackName = exam.targetTrack?.name || exam.targetTrack || '';
               const hasTaken = exam.results && exam.results.length > 0;
+              const attemptsCount = exam._count?.results ?? exam.results?.length ?? exam.attempts ?? 0;
 
               return (
                 <div key={exam.id} className="bg-white rounded-xl border border-border-soft shadow-sm p-5 flex items-center gap-5 group hover:shadow-md transition-shadow">
@@ -123,7 +135,7 @@ export default function MCQExamPage() {
                     <div className="flex items-center gap-4 mt-2 text-[11px] text-text-muted">
                       <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{qCount} questions</span>
                       <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{durationMin} min</span>
-                      {!isStudent && <span className="flex items-center gap-1"><Users className="h-3 w-3" />{exam.attempts || 0} attempts</span>}
+                      {!isStudent && <span className="flex items-center gap-1"><Users className="h-3 w-3" />{attemptsCount} attempts</span>}
                       <span>Created {createdDate}</span>
                     </div>
                   </div>
@@ -143,13 +155,23 @@ export default function MCQExamPage() {
                           <Eye className="h-3.5 w-3.5" /> Preview
                         </Link>
                         <Link
+                          href={`/exam/mcq/${exam.id}/edit`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-white px-3 py-1.5 text-xs font-medium text-brand-blue hover:bg-brand-blue/10 transition-colors"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" /> Edit
+                        </Link>
+                        <Link
                           href={`/exam/mcq/${exam.id}/take`}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-blue-dark transition-colors"
                         >
                           <Play className="h-3.5 w-3.5" /> Start
                         </Link>
-                        <button className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted transition-colors">
-                          <MoreVertical className="h-4 w-4" />
+                        <button
+                          onClick={() => handleDeleteExam(exam.id, exam.title)}
+                          className="p-1.5 rounded-lg hover:bg-brand-red/10 text-text-muted hover:text-brand-red transition-colors"
+                          title="Delete Exam"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </>
                     ) : (
