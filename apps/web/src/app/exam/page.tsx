@@ -4,10 +4,28 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ExamTabs } from "@/components/exam/exam-tabs";
 import { Trophy, Plus, TrendingUp, Users, CheckCircle2, Database, Layers, FileText } from "lucide-react";
 import Link from "next/link";
+import React from "react";
+import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
-
 export default function ExamOverviewPage() {
   const { role } = useAuth();
+    const [exams, setExams] = React.useState<any[]>([]);
+  const [stats, setStats] = React.useState({ totalQuestions: 0, activeExams: 0, studentsTested: 0 });
+
+  React.useEffect(() => {
+    if (role && role.toUpperCase() !== 'STUDENT') {
+      fetchApi('/exams').then((data: any) => {
+        setExams(data || []);
+        const activeCount = (data || []).length;
+        setStats(prev => ({ ...prev, activeExams: activeCount }));
+      }).catch(console.error);
+      
+      fetchApi('/exams/mcq').then((data: any) => {
+        setStats(prev => ({ ...prev, totalQuestions: (data || []).length }));
+      }).catch(console.error);
+    }
+  }, [role]);
+
   return (
     <DashboardLayout title="Exam">
       <div className="flex flex-col h-full">
@@ -40,9 +58,9 @@ export default function ExamOverviewPage() {
           {role?.toUpperCase() !== 'STUDENT' && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: "Total Questions", value: "0",  icon: Database,    color: "text-brand-blue bg-brand-blue/8" },
-                { label: "Active Exams",    value: "0",  icon: Layers,      color: "text-brand-red  bg-brand-red/8"  },
-                { label: "Students Tested", value: "0",  icon: Users,       color: "text-success    bg-success/8"    },
+                { label: "Total Questions", value: stats.totalQuestions.toString(),  icon: Database,    color: "text-brand-blue bg-brand-blue/8" },
+                { label: "Active Exams",    value: stats.activeExams.toString(),  icon: Layers,      color: "text-brand-red  bg-brand-red/8"  },
+                { label: "Students Tested", value: stats.studentsTested.toString(),  icon: Users,       color: "text-success    bg-success/8"    },
                 { label: "Avg. Score",      value: "—",  icon: TrendingUp,  color: "text-warning    bg-warning/8"    },
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="bg-white rounded-xl border border-border-soft p-5 shadow-sm">
@@ -103,9 +121,25 @@ export default function ExamOverviewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td colSpan={5} className="py-16 text-center text-sm text-text-muted">No exams created yet.</td>
-                    </tr>
+                    {exams.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-16 text-center text-sm text-text-muted">No exams created yet.</td>
+                      </tr>
+                    ) : (
+                      exams.slice(0, 5).map(exam => (
+                        <tr key={exam.id} className="border-t border-border-soft">
+                          <td className="px-5 py-4 font-medium text-text-primary">{exam.title}</td>
+                          <td className="px-5 py-4 text-text-secondary">{exam.subject?.name || '-'}</td>
+                          <td className="px-5 py-4 text-text-secondary">{exam.mcqQuestions?.length || 0}</td>
+                          <td className="px-5 py-4 text-text-secondary">60 mins</td>
+                          <td className="px-5 py-4">
+                            <span className="inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold bg-success/10 border-success/20 text-success">
+                              Active
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

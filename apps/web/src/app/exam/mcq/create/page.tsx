@@ -126,7 +126,7 @@ export default function CreateExamPage() {
           standardId: selectedStandard || undefined,
           chapterId: selectedChapter || undefined,
           topicId: selectedTopic || undefined,
-          targetTrack,
+          targetTrackId: targetTrack || undefined,
         })
       });
       

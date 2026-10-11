@@ -159,8 +159,11 @@ export class ExamsService {
     
     // Ensure we have a valid academicYear
     if (academicYearId === "dummy") {
-      const year = await this.prisma.academicYear.findFirst();
-      if (year) academicYearId = year.id;
+      let year = await this.prisma.academicYear.findFirst();
+      if (!year) {
+        year = await this.prisma.academicYear.create({ data: { name: "2026-27 (Dummy)" } });
+      }
+      academicYearId = year.id;
     }
     
     // Ensure we have a valid batch if requested
