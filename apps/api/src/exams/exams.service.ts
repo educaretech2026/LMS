@@ -1,6 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
+function calculateGrade(marksObtained: number, maxMarks: number): string {
+  if (!maxMarks || maxMarks <= 0) return 'F';
+  const percentage = (marksObtained / maxMarks) * 100;
+  if (percentage >= 90) return 'A+';
+  if (percentage >= 80) return 'A';
+  if (percentage >= 70) return 'B+';
+  if (percentage >= 60) return 'B';
+  if (percentage >= 50) return 'C';
+  return 'F';
+}
+
 @Injectable()
 export class ExamsService {
   constructor(private prisma: PrismaService) {}
@@ -167,14 +178,19 @@ export class ExamsService {
     
     if (results.length > 0) {
       await this.prisma.examResult.createMany({
-        data: results.map((r: any) => ({
-          examId,
-          studentId: r.studentId,
-          marksObtained: Number(r.marksObtained),
-          maxMarks: Number(r.maxMarks),
-          grade: r.grade || null,
-          remarks: r.remarks || null,
-        }))
+        data: results.map((r: any) => {
+          const marksObtained = Number(r.marksObtained || 0);
+          const maxMarks = Number(r.maxMarks || 100);
+          const grade = r.grade || calculateGrade(marksObtained, maxMarks);
+          return {
+            examId,
+            studentId: r.studentId,
+            marksObtained,
+            maxMarks,
+            grade,
+            remarks: r.remarks || null,
+          };
+        })
       });
     }
     return { success: true };
@@ -183,6 +199,10 @@ export class ExamsService {
   async submitExamAttempt(examId: string, studentId: string, answers: Record<string, string>, score: any) {
     const profile = await this.prisma.studentProfile.findUnique({ where: { userId: studentId } });
     const studentProfileId = profile ? profile.id : studentId;
+
+    const marksObtained = Number(score?.earned || 0);
+    const maxMarks = Number(score?.total || 0);
+    const grade = calculateGrade(marksObtained, maxMarks);
 
     // 1. Check if an existing ExamResult is there for this student
     const existing = await this.prisma.examResult.findFirst({
@@ -195,8 +215,9 @@ export class ExamsService {
         data: {
           examId,
           studentId: studentProfileId,
-          marksObtained: score.earned || 0,
-          maxMarks: score.total || 0,
+          marksObtained,
+          maxMarks,
+          grade,
         }
       });
       examResultId = res.id;
@@ -204,8 +225,9 @@ export class ExamsService {
       await this.prisma.examResult.update({
         where: { id: examResultId },
         data: {
-          marksObtained: score.earned || 0,
-          maxMarks: score.total || 0,
+          marksObtained,
+          maxMarks,
+          grade,
         }
       });
     }

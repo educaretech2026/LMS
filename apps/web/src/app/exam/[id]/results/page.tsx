@@ -19,6 +19,17 @@ export default function ExamResultsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const calculateGrade = (earned: number, max: number) => {
+    if (!max || max <= 0) return 'F';
+    const pct = (earned / max) * 100;
+    if (pct >= 90) return 'A+';
+    if (pct >= 80) return 'A';
+    if (pct >= 70) return 'B+';
+    if (pct >= 60) return 'B';
+    if (pct >= 50) return 'C';
+    return 'F';
+  };
+
   useEffect(() => {
     Promise.all([
       fetchApi(`/exams`).then((data: any) => {
@@ -33,11 +44,13 @@ export default function ExamResultsPage() {
       if (resData && resData.length > 0) {
         setResults(stds.map((s: any) => {
           const existing = resData.find((r: any) => r.studentId === s.studentId);
+          const earned = Number(existing?.marksObtained || 0);
+          const max = Number(existing?.maxMarks || 100);
           return {
             studentId: s.studentId,
-            marksObtained: existing?.marksObtained || 0,
-            maxMarks: existing?.maxMarks || 100,
-            grade: existing?.grade || "",
+            marksObtained: earned,
+            maxMarks: max,
+            grade: existing?.grade || calculateGrade(earned, max),
             remarks: existing?.remarks || ""
           };
         }));
@@ -46,7 +59,7 @@ export default function ExamResultsPage() {
           studentId: s.studentId,
           marksObtained: 0,
           maxMarks: 100,
-          grade: "",
+          grade: "F",
           remarks: ""
         })));
       }
@@ -54,9 +67,16 @@ export default function ExamResultsPage() {
   }, [id]);
 
   const updateResult = (studentId: string, field: string, value: any) => {
-    setResults(prev => prev.map(r => 
-      r.studentId === studentId ? { ...r, [field]: value } : r
-    ));
+    setResults(prev => prev.map(r => {
+      if (r.studentId !== studentId) return r;
+      const updated = { ...r, [field]: value };
+      if (field === 'marksObtained' || field === 'maxMarks') {
+        const earned = Number(field === 'marksObtained' ? value : updated.marksObtained);
+        const max = Number(field === 'maxMarks' ? value : updated.maxMarks);
+        updated.grade = calculateGrade(earned, max);
+      }
+      return updated;
+    }));
   };
 
   const handleSave = async () => {
