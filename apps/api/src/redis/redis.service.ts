@@ -75,4 +75,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const keys = await this.client.keys('online:*');
     return keys.map(k => k.replace('online:', ''));
   }
+
+  // --- Login Attempts Limiting ---
+
+  async incrementLoginAttempts(email: string): Promise<number> {
+    const key = `login_attempts:${email}`;
+    const attempts = await this.client.incr(key);
+    if (attempts === 1) {
+      await this.client.expire(key, 3600); // 1 hour block window
+    }
+    return attempts;
+  }
+
+  async resetLoginAttempts(email: string): Promise<void> {
+    const key = `login_attempts:${email}`;
+    await this.client.del(key);
+  }
 }
+

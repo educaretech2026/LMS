@@ -28,13 +28,23 @@ export class AuthService {
     }
 
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Your account is temporarily suspended. Please clear pending fee dues.');
+      if (user.status === 'SUSPENDED') {
+        throw new UnauthorizedException('Your account is suspended. Please contact an administrator.');
+      }
+      throw new UnauthorizedException('Your account is inactive.');
     }
 
     const isPasswordValid = await argon2.verify(user.password, loginDto.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      const attempts = await this.redisService.incrementLoginAttempts(user.email);
+      if (attempts >= 5) {
+        await this.prisma.user.update({ where: { id: user.id }, data: { status: 'SUSPENDED' } });
+        throw new UnauthorizedException('Maximum login attempts reached. Your account has been suspended. Please contact an administrator.');
+      }
+      throw new UnauthorizedException(`Invalid credentials. ${5 - attempts} attempts remaining.`);
     }
+
+    await this.redisService.resetLoginAttempts(user.email);
 
     let centreName = 'Educare HQ';
     if (user.role.name === 'STUDENT') {

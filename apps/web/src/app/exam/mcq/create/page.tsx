@@ -85,6 +85,7 @@ export default function CreateExamPage() {
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedTopic, setSelectedTopic] = useState("");
   const [targetTrack, setTargetTrack] = useState("");
+  const [tracks, setTracks] = useState<any[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -92,14 +93,16 @@ export default function CreateExamPage() {
       fetchApi<any[]>('/setup/boards'),
       fetchApi<any[]>('/setup/standards'),
       fetchApi<any[]>('/setup/centres'),
-      fetchApi<any[]>('/setup/subjects')
-    ]).then(([y, b, st, c, su]) => {
+      fetchApi<any[]>('/setup/subjects'),
+      fetchApi<any[]>('/setup/tracks')
+    ]).then(([y, b, st, c, su, tr]) => {
       setYears(y);
       setBoards(b);
       setStandards(st);
       setCentres(c);
       setSubjectsList(su);
-      if (su.length > 0) setSubject(su[0].name);
+      setTracks(tr);
+      if (su.length > 0) setSubject(su[0].id);
     }).catch(console.error);
   }, []);
 
@@ -224,7 +227,7 @@ export default function CreateExamPage() {
                     <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Class / Standard</label>
                     <select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
                       <option value="" disabled>Select Class</option>
-                      {standards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {standards.filter(s => !selectedBoard || s.boardId === selectedBoard).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -232,9 +235,7 @@ export default function CreateExamPage() {
                     <div className="relative">
                       <select value={targetTrack} onChange={(e) => setTargetTrack(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
                         <option value="" disabled>Select Target Audience</option>
-                        <option value="BOTH">Both</option>
-                        <option value="TUITION">Tuition</option>
-                        <option value="ENTRANCE">Entrance</option>
+                        {tracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                       </select>
                     </div>
                   </div>
