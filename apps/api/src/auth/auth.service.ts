@@ -33,7 +33,26 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload = { email: user.email, sub: user.id, role: user.role.name };
+    let centreName = 'Educare HQ';
+    if (user.role.name === 'STUDENT') {
+      const sp = await this.prisma.studentProfile.findUnique({
+        where: { userId: user.id },
+        include: { enrollments: { include: { batch: { include: { centre: true } } } } }
+      });
+      if (sp?.enrollments?.[0]?.batch?.centre?.name) {
+        centreName = sp.enrollments[0].batch.centre.name;
+      }
+    } else {
+      const uc = await this.prisma.userCentre.findFirst({
+        where: { userId: user.id },
+        include: { centre: true }
+      });
+      if (uc?.centre?.name) {
+        centreName = uc.centre.name;
+      }
+    }
+
+    const payload = { email: user.email, sub: user.id, role: user.role.name, centreName };
     
     return {
       access_token: this.jwtService.sign(payload),
@@ -43,6 +62,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role.name,
+        centreName,
       }
     };
   }

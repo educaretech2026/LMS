@@ -15,7 +15,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { NotificationBell } from "./notification-bell";
 
 export function TopNav({ title = "Dashboard", onMenuClick }: { title?: string, onMenuClick?: () => void }) {
-  const { email, role } = useAuth();
+  const { email, role, centreName } = useAuth();
   
   return (
     <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft bg-white px-4 md:px-6">
@@ -31,7 +31,7 @@ export function TopNav({ title = "Dashboard", onMenuClick }: { title?: string, o
         )}
         <div>
           <h1 className="text-base font-semibold text-text-primary tracking-tight">{title}</h1>
-          {role !== 'SUPER_ADMIN' && <p className="text-xs text-text-muted mt-0.5 hidden sm:block">Educare Kalathipady</p>}
+          {role !== 'SUPER_ADMIN' && <p className="text-xs text-text-muted mt-0.5 hidden sm:block">{centreName || 'Educare HQ'}</p>}
         </div>
       </div>
 
