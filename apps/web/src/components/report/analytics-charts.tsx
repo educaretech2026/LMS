@@ -149,8 +149,8 @@ export function DonutChart({
   let accumulatedPercent = 0;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-6 justify-center">
-      <div className="relative" style={{ width: size, height: size }}>
+    <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 justify-center">
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="rotate-[-90deg]">
           {/* Background Ring */}
           <circle
@@ -185,9 +185,9 @@ export function DonutChart({
             })}
         </svg>
 
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-2">
           {centerValue !== undefined && (
-            <span className="text-xl font-black text-text-primary">
+            <span className="text-lg sm:text-xl font-black text-text-primary truncate max-w-full">
               {centerValue}
             </span>
           )}
@@ -200,22 +200,22 @@ export function DonutChart({
       </div>
 
       {/* Legend */}
-      <div className="space-y-2 text-xs">
+      <div className="space-y-1.5 sm:space-y-2 text-xs w-full sm:w-auto">
         {segments.map((seg, idx) => {
           const pct = total > 0 ? ((seg.value / total) * 100).toFixed(1) : "0.0";
           return (
-            <div key={idx} className="flex items-center gap-3">
+            <div key={idx} className="flex items-center gap-2 sm:gap-3">
               <span
-                className="h-3 w-3 rounded-md shrink-0"
+                className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-md shrink-0"
                 style={{ backgroundColor: seg.color }}
               />
-              <span className="font-semibold text-text-secondary min-w-[90px]">
+              <span className="font-semibold text-text-secondary truncate min-w-[70px] sm:min-w-[90px]">
                 {seg.label}
               </span>
-              <span className="font-bold text-text-primary ml-auto">
+              <span className="font-bold text-text-primary ml-auto pl-2">
                 {seg.value.toLocaleString()}
               </span>
-              <span className="text-text-muted text-[11px] font-medium w-12 text-right">
+              <span className="text-text-muted text-[10px] sm:text-[11px] font-medium w-11 sm:w-12 text-right">
                 ({pct}%)
               </span>
             </div>

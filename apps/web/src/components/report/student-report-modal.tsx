@@ -20,32 +20,32 @@ export function StudentReportModal({ student, onClose }: StudentReportModalProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static">
-      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-border-soft overflow-hidden print:border-none print:shadow-none print:max-w-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static">
+      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-border-soft overflow-hidden my-auto print:border-none print:shadow-none print:max-w-none">
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border-soft bg-surface/50 print:bg-white print:border-b-2">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-brand-blue/10 flex items-center justify-center text-brand-blue font-black text-lg">
+        <div className="flex items-center justify-between p-3.5 sm:p-5 border-b border-border-soft bg-surface/50 print:bg-white print:border-b-2">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-brand-blue/10 flex items-center justify-center text-brand-blue font-black text-base sm:text-lg shrink-0">
               {student.name?.charAt(0) || "S"}
             </div>
             <div>
-              <h3 className="text-base font-black text-text-primary">
-                Comprehensive Student Dossier
+              <h3 className="text-sm sm:text-base font-black text-text-primary line-clamp-1">
+                Student Academic Dossier
               </h3>
-              <p className="text-xs text-text-muted font-medium">
-                Official Academic Performance & Attendance Record
+              <p className="text-[11px] sm:text-xs text-text-muted font-medium">
+                Official Performance & Attendance Record
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 print:hidden">
+          <div className="flex items-center gap-1.5 sm:gap-2 print:hidden shrink-0">
             <button
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-border-soft text-xs font-bold text-text-primary hover:bg-surface-2 transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-white border border-border-soft text-xs font-bold text-text-primary hover:bg-surface-2 transition-colors shadow-2xs"
             >
               <Printer className="h-3.5 w-3.5" />
-              Print Dossier
+              <span className="hidden sm:inline">Print Dossier</span>
             </button>
             <button
               onClick={onClose}
@@ -57,14 +57,14 @@ export function StudentReportModal({ student, onClose }: StudentReportModalProps
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 space-y-6">
+        <div className="p-3.5 sm:p-6 space-y-5 sm:space-y-6 max-h-[80vh] overflow-y-auto">
           {/* Student Profile Info */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-surface/40 border border-border-soft">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-surface/40 border border-border-soft">
             <div>
               <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">
                 Student Name
               </p>
-              <p className="text-sm font-black text-text-primary mt-0.5">
+              <p className="text-xs sm:text-sm font-black text-text-primary mt-0.5 truncate">
                 {student.name}
               </p>
             </div>
@@ -72,7 +72,7 @@ export function StudentReportModal({ student, onClose }: StudentReportModalProps
               <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">
                 Admission No
               </p>
-              <p className="text-sm font-bold text-brand-blue mt-0.5">
+              <p className="text-xs sm:text-sm font-bold text-brand-blue mt-0.5 truncate font-mono">
                 {student.admissionNo || "N/A"}
               </p>
             </div>
@@ -82,12 +82,12 @@ export function StudentReportModal({ student, onClose }: StudentReportModalProps
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 {percentage >= 75 ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-                    <CheckCircle className="h-3.5 w-3.5" /> Good
+                  <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-emerald-700">
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0" /> Good
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700">
-                    <AlertCircle className="h-3.5 w-3.5" /> At Risk
+                  <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-rose-700">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" /> At Risk
                   </span>
                 )}
               </div>
@@ -96,7 +96,7 @@ export function StudentReportModal({ student, onClose }: StudentReportModalProps
               <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">
                 Assessments Taken
               </p>
-              <p className="text-sm font-black text-text-primary mt-0.5">
+              <p className="text-xs sm:text-sm font-black text-text-primary mt-0.5">
                 {examResults.length}
               </p>
             </div>
@@ -104,38 +104,38 @@ export function StudentReportModal({ student, onClose }: StudentReportModalProps
 
           {/* Attendance Stats Cards */}
           <div>
-            <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2.5 sm:mb-3 flex items-center gap-1.5">
               <Calendar className="h-3.5 w-3.5 text-brand-blue" />
               Attendance Summary
             </h4>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="p-3.5 rounded-xl border border-border-soft bg-white text-center">
-                <p className="text-[10px] font-bold text-text-muted uppercase">
-                  Total Sessions
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="p-2.5 sm:p-3.5 rounded-xl border border-border-soft bg-white text-center">
+                <p className="text-[9px] sm:text-[10px] font-bold text-text-muted uppercase">
+                  Sessions
                 </p>
-                <p className="text-xl font-black text-text-primary mt-1">
+                <p className="text-lg sm:text-xl font-black text-text-primary mt-0.5 sm:mt-1">
                   {attendance.totalDays}
                 </p>
               </div>
-              <div className="p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/50 text-center">
-                <p className="text-[10px] font-bold text-emerald-700 uppercase">
-                  Sessions Present
+              <div className="p-2.5 sm:p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/50 text-center">
+                <p className="text-[9px] sm:text-[10px] font-bold text-emerald-700 uppercase">
+                  Present
                 </p>
-                <p className="text-xl font-black text-emerald-700 mt-1">
+                <p className="text-lg sm:text-xl font-black text-emerald-700 mt-0.5 sm:mt-1">
                   {attendance.presentDays}
                 </p>
               </div>
               <div
-                className={`p-3.5 rounded-xl border text-center ${
+                className={`p-2.5 sm:p-3.5 rounded-xl border text-center ${
                   percentage >= 75
                     ? "border-blue-100 bg-blue-50/50 text-blue-700"
                     : "border-rose-100 bg-rose-50/50 text-rose-700"
                 }`}
               >
-                <p className="text-[10px] font-bold uppercase">
-                  Attendance Percentage
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase">
+                  Standing %
                 </p>
-                <p className="text-xl font-black mt-1">{percentage}%</p>
+                <p className="text-lg sm:text-xl font-black mt-0.5 sm:mt-1">{percentage}%</p>
               </div>
             </div>
           </div>

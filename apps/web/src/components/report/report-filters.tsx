@@ -77,10 +77,10 @@ export function ReportFilterBar({
     filters.datePreset !== "month";
 
   return (
-    <div className="bg-white rounded-2xl border border-border-soft p-4 shadow-2xs space-y-3.5 print:hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Date presets pill selector */}
-        <div className="flex items-center gap-1 bg-surface-2 p-1 rounded-xl border border-border-soft/60">
+    <div className="bg-white rounded-2xl border border-border-soft p-3 sm:p-4 shadow-2xs space-y-3.5 print:hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Date presets pill selector - scrollable horizontally on mobile */}
+        <div className="flex items-center gap-1 bg-surface-2 p-1 rounded-xl border border-border-soft/60 overflow-x-auto no-scrollbar w-full sm:w-auto">
           {[
             { id: "today", label: "Today" },
             { id: "month", label: "This Month" },
@@ -92,7 +92,7 @@ export function ReportFilterBar({
               key={preset.id}
               type="button"
               onClick={() => handlePresetChange(preset.id as FilterState["datePreset"])}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg transition-all shrink-0 whitespace-nowrap ${
                 filters.datePreset === preset.id
                   ? "bg-white text-brand-blue shadow-xs"
                   : "text-text-secondary hover:text-text-primary"
@@ -104,7 +104,7 @@ export function ReportFilterBar({
         </div>
 
         {/* Action icons / Reset */}
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center justify-end gap-2 w-full sm:w-auto shrink-0">
           {hasActiveFilters && (
             <button
               onClick={handleReset}
@@ -129,7 +129,7 @@ export function ReportFilterBar({
       </div>
 
       {/* Inputs row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1 border-t border-border-soft/60">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 pt-1 border-t border-border-soft/60">
         {/* Start Date */}
         <div>
           <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1">

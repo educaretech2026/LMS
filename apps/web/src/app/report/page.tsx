@@ -841,15 +841,15 @@ export default function ReportsPage() {
         icon={BarChart3}
         accentColor="blue"
       >
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header Action Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 bg-white rounded-2xl border border-border-soft p-4 shadow-2xs print:hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-2xl border border-border-soft p-3.5 sm:p-4 shadow-2xs print:hidden">
             {/* Quick Student Deep-dive lookup */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-72">
+            <div className="relative w-full sm:w-auto">
+              <div className="relative w-full sm:w-72">
                 <input
                   type="text"
-                  placeholder="Student lookup (name or admission #)..."
+                  placeholder="Student lookup (name or adm #)..."
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleStudentSearch()}
@@ -868,9 +868,9 @@ export default function ReportsPage() {
                 </button>
               </div>
 
-              {/* Student Quick Search Results Dropdown */}
+              {/* Student Quick Search Results Dropdown - positioned relative to input */}
               {searchResults.length > 0 && (
-                <div className="absolute top-44 z-50 w-80 bg-white rounded-xl shadow-xl border border-border-soft p-2 space-y-1 max-h-60 overflow-y-auto">
+                <div className="absolute left-0 top-11 z-50 w-full sm:w-80 bg-white rounded-xl shadow-xl border border-border-soft p-2 space-y-1 max-h-60 overflow-y-auto">
                   <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-text-muted uppercase">
                     <span>Search Matches</span>
                     <button onClick={() => setSearchResults([])} className="hover:underline">Dismiss</button>
@@ -898,26 +898,26 @@ export default function ReportsPage() {
             </div>
 
             {/* Global Actions: CSV Export and Print */}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <button
                 onClick={exportCurrentTabCSV}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-surface hover:bg-surface-2 border border-border-soft text-xs font-bold text-text-primary transition-colors shadow-2xs"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-surface hover:bg-surface-2 border border-border-soft text-xs font-bold text-text-primary transition-colors shadow-2xs"
               >
                 <Download className="h-3.5 w-3.5 text-text-muted" />
-                Export CSV
+                <span>Export CSV</span>
               </button>
               <button
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-surface hover:bg-surface-2 border border-border-soft text-xs font-bold text-text-primary transition-colors shadow-2xs"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-surface hover:bg-surface-2 border border-border-soft text-xs font-bold text-text-primary transition-colors shadow-2xs"
               >
                 <Printer className="h-3.5 w-3.5 text-text-muted" />
-                Print Statement
+                <span>Print</span>
               </button>
             </div>
           </div>
 
-          {/* Tab Navigation */}
-          <div className="flex items-center gap-1 border-b border-border-soft overflow-x-auto pb-px print:hidden">
+          {/* Tab Navigation - smooth horizontal scrolling on mobile */}
+          <div className="flex items-center gap-1 border-b border-border-soft overflow-x-auto no-scrollbar pb-px print:hidden">
             {[
               { key: "OVERVIEW", label: "Executive Overview", icon: Layers },
               { key: "FINANCE", label: "Financials & Revenue", icon: DollarSign },
@@ -934,14 +934,14 @@ export default function ReportsPage() {
                     setActiveTab(tab.key as TabKey);
                     setTableSearch("");
                   }}
-                  className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap shrink-0 ${
                     isActive
                       ? "border-brand-blue text-brand-blue bg-brand-blue/5 rounded-t-lg"
                       : "border-transparent text-text-secondary hover:text-text-primary hover:border-border-soft"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
