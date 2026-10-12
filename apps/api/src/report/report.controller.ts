@@ -17,8 +17,12 @@ export class ReportController {
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('finance')
-  getFinanceReport(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
-    return this.reportService.getExpenseIncomeReport(startDate, endDate);
+  getFinanceReport(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('centreId') centreId?: string,
+  ) {
+    return this.reportService.getExpenseIncomeReport(startDate, endDate, centreId);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
@@ -52,8 +56,21 @@ export class ReportController {
     @Query('endDate') endDate?: string,
     @Query('batchId') batchId?: string,
     @Query('centreId') centreId?: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('boardId') boardId?: string,
+    @Query('standardId') standardId?: string,
+    @Query('subjectId') subjectId?: string,
   ) {
-    return this.reportService.getOverviewAnalytics(startDate, endDate, batchId, centreId);
+    return this.reportService.getOverviewAnalytics(
+      startDate,
+      endDate,
+      batchId,
+      centreId,
+      academicYearId,
+      boardId,
+      standardId,
+      subjectId,
+    );
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -62,8 +79,26 @@ export class ReportController {
     @Query('batchId') batchId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('centreId') centreId?: string,
+    @Query('boardId') boardId?: string,
+    @Query('standardId') standardId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('chapterId') chapterId?: string,
+    @Query('topicId') topicId?: string,
   ) {
-    return this.reportService.getExamsAnalytics(batchId, startDate, endDate);
+    return this.reportService.getExamsAnalytics(
+      batchId,
+      startDate,
+      endDate,
+      academicYearId,
+      centreId,
+      boardId,
+      standardId,
+      subjectId,
+      chapterId,
+      topicId,
+    );
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -72,8 +107,20 @@ export class ReportController {
     @Query('batchId') batchId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('centreId') centreId?: string,
+    @Query('boardId') boardId?: string,
+    @Query('standardId') standardId?: string,
+    @Query('subjectId') subjectId?: string,
   ) {
-    return this.reportService.getAttendanceAnalytics(batchId, startDate, endDate);
+    return this.reportService.getAttendanceAnalytics(
+      batchId,
+      startDate,
+      endDate,
+      centreId,
+      boardId,
+      standardId,
+      subjectId,
+    );
   }
 
   @Roles('TEACHER')

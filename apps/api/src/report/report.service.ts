@@ -23,23 +23,70 @@ export class ReportService {
     });
   }
 
-  async getExpenseIncomeReport(startDate: string, endDate: string) {
+  async getExpenseIncomeReport(startDate: string, endDate: string, centreId?: string) {
     const from = new Date(startDate);
     const to = new Date(endDate);
+    to.setHours(23, 59, 59, 999);
     
+    const txWhere: any = { date: { gte: from, lte: to } };
+    if (centreId) txWhere.centreId = centreId;
+
     const transactions = await this.prisma.transaction.findMany({
-      where: { date: { gte: from, lte: to } },
+      where: txWhere,
       orderBy: { date: 'desc' },
-      include: { recordedBy: { select: { firstName: true, lastName: true } } }
+      include: {
+        recordedBy: { select: { firstName: true, lastName: true, email: true } },
+        centre: { select: { id: true, name: true } },
+      }
     });
 
+    const feeWhere: any = { date: { gte: from, lte: to } };
     const feeRecords = await this.prisma.feeRecord.findMany({
-      where: { status: 'PAID', date: { gte: from, lte: to } }
+      where: feeWhere,
+      orderBy: { date: 'desc' },
+      include: {
+        student: {
+          include: {
+            user: { select: { firstName: true, lastName: true } },
+            enrollments: {
+              include: {
+                batch: {
+                  include: {
+                    centre: true,
+                    standard: true,
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     });
+
+    // If centreId specified, optionally filter fee records by student enrollment centre
+    const filteredFees = centreId
+      ? feeRecords.filter(f => f.student.enrollments.some(e => e.batch.centreId === centreId))
+      : feeRecords;
+
+    const paidFees = filteredFees.filter(f => f.status === 'PAID');
+    const feeTotal = paidFees.reduce((sum, f) => sum + f.amount, 0);
 
     return {
       transactions,
-      feeTotal: feeRecords.reduce((sum, f) => sum + f.amount, 0)
+      feeRecords: filteredFees.map(f => ({
+        id: f.id,
+        receiptNo: f.receiptNo,
+        amount: f.amount,
+        date: f.date,
+        status: f.status,
+        paymentMode: f.paymentMode || 'CASH',
+        feeHead: f.feeHead || 'Tuition Fee',
+        studentName: `${f.student.user.firstName} ${f.student.user.lastName}`,
+        admissionNo: f.student.admissionNo,
+        batchName: f.student.enrollments[0]?.batch?.name || '-',
+        centreName: f.student.enrollments[0]?.batch?.centre?.name || '-',
+      })),
+      feeTotal,
     };
   }
 
@@ -275,7 +322,16 @@ export class ReportService {
     return { batches, totalStudents, todayPresent, todayAbsent, subjects };
   }
 
-  async getOverviewAnalytics(startDate?: string, endDate?: string, batchId?: string, centreId?: string) {
+  async getOverviewAnalytics(
+    startDate?: string,
+    endDate?: string,
+    batchId?: string,
+    centreId?: string,
+    academicYearId?: string,
+    boardId?: string,
+    standardId?: string,
+    subjectId?: string,
+  ) {
     const from = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const to = endDate ? new Date(endDate) : new Date();
     to.setHours(23, 59, 59, 999);
@@ -289,10 +345,31 @@ export class ReportService {
     const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);
 
     const feeWhere: any = { date: { gte: from, lte: to } };
-    const feeRecords = await this.prisma.feeRecord.findMany({ where: feeWhere });
-    const paidFees = feeRecords.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
-    const pendingFees = feeRecords.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
-    const overdueFees = feeRecords.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
+    const feeRecords = await this.prisma.feeRecord.findMany({
+      where: feeWhere,
+      include: {
+        student: {
+          include: {
+            enrollments: {
+              include: { batch: true }
+            }
+          }
+        }
+      }
+    });
+
+    const matchingFees = feeRecords.filter(f => {
+      if (!centreId && !batchId) return true;
+      return f.student.enrollments.some(e => {
+        if (centreId && e.batch.centreId !== centreId) return false;
+        if (batchId && e.batch.id !== batchId) return false;
+        return true;
+      });
+    });
+
+    const paidFees = matchingFees.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
+    const pendingFees = matchingFees.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
+    const overdueFees = matchingFees.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
 
     const totalRevenue = income + paidFees;
     const netProfit = totalRevenue - expenses;
@@ -302,6 +379,8 @@ export class ReportService {
       attendance: {
         date: { gte: from, lte: to },
         ...(batchId ? { batchId } : {}),
+        ...(centreId ? { batch: { centreId } } : {}),
+        ...(subjectId ? { subjectId } : {}),
       }
     };
     const attRecords = await this.prisma.attendanceRecord.findMany({
@@ -315,7 +394,14 @@ export class ReportService {
     // 3. Exam summary
     const examWhere: any = {
       createdAt: { gte: from, lte: to },
-      ...(batchId ? { exam: { batchId } } : {}),
+      exam: {
+        ...(batchId ? { batchId } : {}),
+        ...(centreId ? { centreId } : {}),
+        ...(academicYearId ? { academicYearId } : {}),
+        ...(boardId ? { boardId } : {}),
+        ...(standardId ? { standardId } : {}),
+        ...(subjectId ? { subjectId } : {}),
+      }
     };
     const examResults = await this.prisma.examResult.findMany({
       where: examWhere,
@@ -326,20 +412,22 @@ export class ReportService {
       ? (examResults.reduce((s, r) => s + (r.maxMarks > 0 ? (r.marksObtained / r.maxMarks) * 100 : 0), 0) / totalExamsAttempted)
       : 0;
 
-    // Pass rate (marks >= 40%)
     const passedAttempts = examResults.filter(r => r.maxMarks > 0 && (r.marksObtained / r.maxMarks) >= 0.4).length;
     const passRate = totalExamsAttempted > 0 ? (passedAttempts / totalExamsAttempted) * 100 : 0;
 
     // 4. CRM / Enquiries summary
     const enquiries = await this.prisma.enquiry.findMany({
-      where: { createdAt: { gte: from, lte: to } },
+      where: {
+        createdAt: { gte: from, lte: to },
+        ...(centreId ? { centreId } : {}),
+      },
       select: { status: true }
     });
     const totalEnquiries = enquiries.length;
     const convertedEnquiries = enquiries.filter(e => e.status === EnquiryStatus.CONVERTED).length;
     const conversionRate = totalEnquiries > 0 ? (convertedEnquiries / totalEnquiries) * 100 : 0;
 
-    // 5. Total Active Students count
+    // 5. Active Students count
     const totalStudents = await this.prisma.studentProfile.count();
 
     return {
@@ -371,20 +459,44 @@ export class ReportService {
     };
   }
 
-  async getExamsAnalytics(batchId?: string, startDate?: string, endDate?: string) {
+  async getExamsAnalytics(
+    batchId?: string,
+    startDate?: string,
+    endDate?: string,
+    academicYearId?: string,
+    centreId?: string,
+    boardId?: string,
+    standardId?: string,
+    subjectId?: string,
+    chapterId?: string,
+    topicId?: string,
+  ) {
     const from = startDate ? new Date(startDate) : undefined;
     const to = endDate ? new Date(endDate) : undefined;
     if (to) to.setHours(23, 59, 59, 999);
 
     const where: any = {};
     if (batchId) where.batchId = batchId;
+    if (centreId) where.centreId = centreId;
+    if (academicYearId) where.academicYearId = academicYearId;
+    if (boardId) where.boardId = boardId;
+    if (standardId) where.standardId = standardId;
+    if (subjectId) where.subjectId = subjectId;
+    if (chapterId) where.chapterId = chapterId;
+    if (topicId) where.topicId = topicId;
     if (from && to) where.createdAt = { gte: from, lte: to };
 
     const exams = await this.prisma.exam.findMany({
       where,
       include: {
+        academicYear: { select: { id: true, name: true } },
+        centre: { select: { id: true, name: true, code: true } },
+        board: { select: { id: true, name: true } },
+        standard: { select: { id: true, name: true, level: true } },
         batch: { select: { id: true, name: true } },
         subject: { select: { id: true, name: true } },
+        chapter: { select: { id: true, name: true } },
+        topic: { select: { id: true, name: true } },
         results: {
           include: {
             student: {
@@ -393,8 +505,14 @@ export class ReportService {
           }
         }
       },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+      orderBy: [
+        { academicYear: { name: 'desc' } },
+        { centre: { name: 'asc' } },
+        { standard: { level: 'asc' } },
+        { subject: { name: 'asc' } },
+        { title: 'asc' }
+      ],
+      take: 100,
     });
 
     const gradeDistribution: Record<string, number> = {
@@ -427,8 +545,14 @@ export class ReportService {
         id: exam.id,
         title: exam.title,
         type: exam.type,
+        academicYearName: exam.academicYear?.name || 'Current Year',
+        centreName: exam.centre?.name || 'All Centres',
+        boardName: exam.board?.name || '-',
+        standardName: exam.standard?.name || '-',
         batchName: exam.batch?.name || 'All Batches',
         subjectName: exam.subject?.name || 'General',
+        chapterName: exam.chapter?.name || '-',
+        topicName: exam.topic?.name || '-',
         createdAt: exam.createdAt,
         attemptsCount: attempts,
         averagePercentage: Number(examAvg.toFixed(1)),
@@ -458,18 +582,45 @@ export class ReportService {
     };
   }
 
-  async getAttendanceAnalytics(batchId?: string, startDate?: string, endDate?: string) {
+  async getAttendanceAnalytics(
+    batchId?: string,
+    startDate?: string,
+    endDate?: string,
+    centreId?: string,
+    boardId?: string,
+    standardId?: string,
+    subjectId?: string,
+  ) {
     const from = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const to = endDate ? new Date(endDate) : new Date();
     to.setHours(23, 59, 59, 999);
 
+    const attWhere: any = {
+      date: { gte: from, lte: to },
+    };
+    if (batchId) attWhere.batchId = batchId;
+    if (subjectId) attWhere.subjectId = subjectId;
+    if (centreId || boardId || standardId) {
+      attWhere.batch = {
+        ...(centreId ? { centreId } : {}),
+        ...(boardId ? { boardId } : {}),
+        ...(standardId ? { standardId } : {}),
+      };
+    }
+
     const attendances = await this.prisma.attendance.findMany({
-      where: {
-        date: { gte: from, lte: to },
-        ...(batchId ? { batchId } : {}),
-      },
+      where: attWhere,
       include: {
-        batch: { select: { id: true, name: true } },
+        batch: {
+          select: {
+            id: true,
+            name: true,
+            centre: { select: { id: true, name: true } },
+            board: { select: { id: true, name: true } },
+            standard: { select: { id: true, name: true } },
+          }
+        },
+        subject: { select: { id: true, name: true } },
         records: {
           include: {
             student: {
@@ -478,12 +629,24 @@ export class ReportService {
           }
         }
       },
-      orderBy: { date: 'asc' }
+      orderBy: [
+        { date: 'asc' },
+      ]
     });
 
     // Daily attendance trend
     const dailyMap: Record<string, { date: string; total: number; present: number; absent: number; late: number }> = {};
-    const studentAggregates: Record<string, { id: string; name: string; admissionNo: string; total: number; present: number }> = {};
+    const studentAggregates: Record<string, {
+      id: string;
+      name: string;
+      admissionNo: string;
+      batchName: string;
+      centreName: string;
+      standardName: string;
+      boardName: string;
+      total: number;
+      present: number;
+    }> = {};
 
     attendances.forEach(att => {
       const dateStr = att.date.toISOString().split('T')[0];
@@ -502,6 +665,10 @@ export class ReportService {
             id: rec.studentId,
             name: `${rec.student?.user?.firstName || ''} ${rec.student?.user?.lastName || ''}`.trim(),
             admissionNo: rec.student?.admissionNo || '-',
+            batchName: att.batch?.name || '-',
+            centreName: att.batch?.centre?.name || '-',
+            standardName: att.batch?.standard?.name || '-',
+            boardName: att.batch?.board?.name || '-',
             total: 0,
             present: 0,
           };
@@ -518,6 +685,7 @@ export class ReportService {
       rate: d.total > 0 ? Number((( (d.present + d.late) / d.total) * 100).toFixed(1)) : 0,
     }));
 
+    // Hierarchical sort: Centre -> Standard -> Batch -> Name
     const studentList = Object.values(studentAggregates).map(s => {
       const percentage = s.total > 0 ? Number(((s.present / s.total) * 100).toFixed(1)) : 0;
       return {
@@ -525,7 +693,12 @@ export class ReportService {
         percentage,
         isAtRisk: percentage < 75,
       };
-    }).sort((a, b) => a.percentage - b.percentage);
+    }).sort((a, b) => {
+      if (a.centreName !== b.centreName) return a.centreName.localeCompare(b.centreName);
+      if (a.standardName !== b.standardName) return a.standardName.localeCompare(b.standardName);
+      if (a.batchName !== b.batchName) return a.batchName.localeCompare(b.batchName);
+      return a.name.localeCompare(b.name);
+    });
 
     const atRiskCount = studentList.filter(s => s.isAtRisk).length;
     const overallTotal = dailyTrends.reduce((s, d) => s + d.total, 0);

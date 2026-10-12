@@ -19,20 +19,25 @@ import {
   Layers,
   CheckCircle2,
   AlertTriangle,
-  FileSpreadsheet,
   ArrowUpRight,
   UserCheck,
   Percent,
+  Receipt,
+  CreditCard,
+  Building,
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import {
   MetricCard,
   DonutChart,
-  BarComparisonChart,
   FunnelChart,
   RadialGauge,
 } from "@/components/report/analytics-charts";
-import { ReportFilterBar, FilterState } from "@/components/report/report-filters";
+import {
+  ReportFilterBar,
+  HierarchyFilterState,
+} from "@/components/report/report-filters";
+import { SortableHeader, SortDirection } from "@/components/report/sortable-header";
 import { StudentReportModal } from "@/components/report/student-report-modal";
 
 type TabKey = "OVERVIEW" | "FINANCE" | "ACADEMICS" | "ATTENDANCE" | "CRM";
@@ -40,21 +45,30 @@ type TabKey = "OVERVIEW" | "FINANCE" | "ACADEMICS" | "ATTENDANCE" | "CRM";
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
 
-  // Filter state
-  const [filters, setFilters] = useState<FilterState>(() => {
+  // Hierarchy filter state
+  const [filters, setFilters] = useState<HierarchyFilterState>(() => {
     const d = new Date();
     const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
     return {
       datePreset: "month",
       startDate: firstDay.toISOString().split("T")[0],
       endDate: d.toISOString().split("T")[0],
-      batchId: "",
+      academicYearId: "",
       centreId: "",
+      boardId: "",
+      standardId: "",
+      batchId: "",
+      subjectId: "",
     };
   });
 
-  const [batches, setBatches] = useState<any[]>([]);
+  // Hierarchy master state
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [centres, setCentres] = useState<any[]>([]);
+  const [boards, setBoards] = useState<any[]>([]);
+  const [standards, setStandards] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
 
   // Analytics states
   const [loading, setLoading] = useState(false);
@@ -71,32 +85,89 @@ export default function ReportsPage() {
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [modalLoading, setModalLoading] = useState(false);
 
-  // Table sorting & query filter
+  // Table query filter
   const [tableSearch, setTableSearch] = useState("");
+
+  // Table Sorting state per tab
+  const [financeSort, setFinanceSort] = useState<{ field: string; direction: SortDirection }>({
+    field: "date",
+    direction: "desc",
+  });
+  const [academicSort, setAcademicSort] = useState<{ field: string; direction: SortDirection }>({
+    field: "academicYearName",
+    direction: "desc",
+  });
+  const [attendanceSort, setAttendanceSort] = useState<{ field: string; direction: SortDirection }>({
+    field: "centreName",
+    direction: "asc",
+  });
 
   // Initial load of master metadata
   useEffect(() => {
-    fetchApi("/setup/batches")
-      .then((b) => setBatches(Array.isArray(b) ? b : []))
-      .catch(() => {});
-    fetchApi("/setup/centres")
-      .then((c) => setCentres(Array.isArray(c) ? c : []))
-      .catch(() => {});
+    Promise.all([
+      fetchApi("/setup/academic-years").catch(() => []),
+      fetchApi("/setup/centres").catch(() => []),
+      fetchApi("/setup/boards").catch(() => []),
+      fetchApi("/setup/subjects").catch(() => []),
+    ]).then(([y, c, b, s]) => {
+      setAcademicYears(Array.isArray(y) ? y : []);
+      setCentres(Array.isArray(c) ? c : []);
+      setBoards(Array.isArray(b) ? b : []);
+      setSubjects(Array.isArray(s) ? s : []);
+    });
   }, []);
+
+  // Cascading Standards based on Board
+  useEffect(() => {
+    if (filters.boardId) {
+      fetchApi(`/setup/standards?boardId=${filters.boardId}`)
+        .then((st) => setStandards(Array.isArray(st) ? st : []))
+        .catch(() => setStandards([]));
+    } else {
+      fetchApi("/setup/standards")
+        .then((st) => setStandards(Array.isArray(st) ? st : []))
+        .catch(() => setStandards([]));
+    }
+  }, [filters.boardId]);
+
+  // Cascading Batches based on Centre / Standard
+  useEffect(() => {
+    let q = "";
+    if (filters.centreId && filters.standardId) {
+      q = `?centreId=${filters.centreId}&standardId=${filters.standardId}${filters.boardId ? `&boardId=${filters.boardId}` : ""}`;
+    }
+    fetchApi(q ? `/attendance/batches/filter${q}` : "/setup/batches")
+      .then((b) => setBatches(Array.isArray(b) ? b : []))
+      .catch(() => setBatches([]));
+  }, [filters.centreId, filters.standardId, filters.boardId]);
 
   // Fetch report data on tab or filter change
   useEffect(() => {
     loadTabData(activeTab, filters);
-  }, [activeTab, filters.startDate, filters.endDate, filters.batchId, filters.centreId]);
+  }, [
+    activeTab,
+    filters.startDate,
+    filters.endDate,
+    filters.academicYearId,
+    filters.centreId,
+    filters.boardId,
+    filters.standardId,
+    filters.batchId,
+    filters.subjectId,
+  ]);
 
-  const loadTabData = async (tab: TabKey, f: FilterState) => {
+  const loadTabData = async (tab: TabKey, f: HierarchyFilterState) => {
     setLoading(true);
     try {
       const q = new URLSearchParams();
       if (f.startDate) q.set("startDate", f.startDate);
       if (f.endDate) q.set("endDate", f.endDate);
-      if (f.batchId) q.set("batchId", f.batchId);
+      if (f.academicYearId) q.set("academicYearId", f.academicYearId);
       if (f.centreId) q.set("centreId", f.centreId);
+      if (f.boardId) q.set("boardId", f.boardId);
+      if (f.standardId) q.set("standardId", f.standardId);
+      if (f.batchId) q.set("batchId", f.batchId);
+      if (f.subjectId) q.set("subjectId", f.subjectId);
 
       const qs = q.toString() ? `?${q.toString()}` : "";
 
@@ -149,6 +220,21 @@ export default function ReportsPage() {
     }
   };
 
+  const handleSortToggle = (
+    currentSort: { field: string; direction: SortDirection },
+    setSort: React.Dispatch<React.SetStateAction<{ field: string; direction: SortDirection }>>,
+    field: string
+  ) => {
+    if (currentSort.field === field) {
+      setSort({
+        field,
+        direction: currentSort.direction === "asc" ? "desc" : currentSort.direction === "desc" ? null : "asc",
+      });
+    } else {
+      setSort({ field, direction: "asc" });
+    }
+  };
+
   // ── CSV Export ───────────────────────────────────────────────
   const exportCurrentTabCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -167,19 +253,24 @@ export default function ReportsPage() {
       csvContent += `Total Enquiries,${overviewData.crm?.totalEnquiries || 0}\n`;
       csvContent += `CRM Conversion Rate,${overviewData.crm?.conversionRate || 0}%\n`;
     } else if (activeTab === "FINANCE" && financeData) {
-      csvContent += "Date,Type,Category,Amount\n";
-      (financeData.transactions || []).forEach((t: any) => {
-        csvContent += `"${new Date(t.date).toLocaleDateString()}","${t.type}","${t.category}","${t.amount}"\n`;
+      csvContent += "Date,Classification,Category/Head,Payment Mode,Authorized By/Student,Amount\n";
+      const tx = financeData.transactions || [];
+      const fees = financeData.feeRecords || [];
+      tx.forEach((t: any) => {
+        csvContent += `"${new Date(t.date).toLocaleDateString()}","${t.type}","${t.category}","-","${t.recordedBy?.firstName || 'System'}","${t.amount}"\n`;
+      });
+      fees.forEach((f: any) => {
+        csvContent += `"${new Date(f.date).toLocaleDateString()}","FEE PAID","${f.feeHead}","${f.paymentMode}","${f.studentName} (${f.admissionNo})","${f.amount}"\n`;
       });
     } else if (activeTab === "ACADEMICS" && academicData) {
-      csvContent += "Exam Title,Batch,Subject,Attempts,Average Score %,Top Score\n";
-      (academicData.exams || []).forEach((e: any) => {
-        csvContent += `"${e.title}","${e.batchName}","${e.subjectName}","${e.attemptsCount}","${e.averagePercentage}%","${e.topScore}"\n`;
+      csvContent += "Academic Year,Centre,Class,Batch,Subject,Topic,Exam Title,Attempts,Avg Score %,Top Score\n";
+      sortedExams.forEach((e: any) => {
+        csvContent += `"${e.academicYearName}","${e.centreName}","${e.standardName}","${e.batchName}","${e.subjectName}","${e.topicName}","${e.title}","${e.attemptsCount}","${e.averagePercentage}%","${e.topScore}"\n`;
       });
     } else if (activeTab === "ATTENDANCE" && attendanceData) {
-      csvContent += "Student Name,Admission No,Total Sessions,Present,Attendance %\n";
-      (attendanceData.studentList || []).forEach((s: any) => {
-        csvContent += `"${s.name}","${s.admissionNo}","${s.total}","${s.present}","${s.percentage}%"\n`;
+      csvContent += "Centre,Class,Batch,Student Name,Admission No,Sessions Held,Present,Attendance %\n";
+      sortedAttendance.forEach((s: any) => {
+        csvContent += `"${s.centreName}","${s.standardName}","${s.batchName}","${s.name}","${s.admissionNo}","${s.total}","${s.present}","${s.percentage}%"\n`;
       });
     } else if (activeTab === "CRM" && crmData) {
       csvContent += "Status,Count\n";
@@ -198,6 +289,158 @@ export default function ReportsPage() {
     link.click();
     document.body.removeChild(link);
   };
+
+  // ─────────────────────────────────────────────────────────────
+  // SORTED & FILTERED DATA COMPUTATION
+  // ─────────────────────────────────────────────────────────────
+
+  // 1. Finance items (combining transactions + fee records with live details)
+  const combinedFinanceRecords = useMemo(() => {
+    if (!financeData) return [];
+    const items: any[] = [];
+
+    (financeData.transactions || []).forEach((t: any) => {
+      items.push({
+        id: `tx-${t.id}`,
+        date: new Date(t.date).getTime(),
+        dateStr: new Date(t.date).toLocaleDateString("en-IN"),
+        type: t.type,
+        category: t.category || "General",
+        mode: "-",
+        authorizedBy: t.recordedBy ? `${t.recordedBy.firstName} ${t.recordedBy.lastName}` : "System",
+        amount: t.amount,
+        isFee: false,
+      });
+    });
+
+    (financeData.feeRecords || []).forEach((f: any) => {
+      items.push({
+        id: `fee-${f.id}`,
+        date: new Date(f.date).getTime(),
+        dateStr: new Date(f.date).toLocaleDateString("en-IN"),
+        type: "FEE PAID",
+        category: f.feeHead || "Tuition Fee",
+        mode: f.paymentMode || "CASH",
+        authorizedBy: `${f.studentName} (${f.admissionNo})`,
+        amount: f.amount,
+        isFee: true,
+      });
+    });
+
+    let filtered = items;
+    if (tableSearch) {
+      const q = tableSearch.toLowerCase();
+      filtered = filtered.filter(
+        (it) =>
+          it.category.toLowerCase().includes(q) ||
+          it.type.toLowerCase().includes(q) ||
+          it.authorizedBy.toLowerCase().includes(q) ||
+          it.amount.toString().includes(q)
+      );
+    }
+
+    if (financeSort.direction) {
+      filtered = [...filtered].sort((a, b) => {
+        const valA = a[financeSort.field];
+        const valB = b[financeSort.field];
+        if (typeof valA === "number" && typeof valB === "number") {
+          return financeSort.direction === "asc" ? valA - valB : valB - valA;
+        }
+        return financeSort.direction === "asc"
+          ? String(valA).localeCompare(String(valB))
+          : String(valB).localeCompare(String(valA));
+      });
+    }
+
+    return filtered;
+  }, [financeData, tableSearch, financeSort]);
+
+  // 2. Academic Exams (hierarchically sorted: Year -> Centre -> Class -> Subject -> Topic -> Exam)
+  const sortedExams = useMemo(() => {
+    if (!academicData?.exams) return [];
+    let list = [...academicData.exams];
+
+    if (tableSearch) {
+      const q = tableSearch.toLowerCase();
+      list = list.filter(
+        (e: any) =>
+          e.title?.toLowerCase().includes(q) ||
+          e.centreName?.toLowerCase().includes(q) ||
+          e.standardName?.toLowerCase().includes(q) ||
+          e.subjectName?.toLowerCase().includes(q) ||
+          e.batchName?.toLowerCase().includes(q)
+      );
+    }
+
+    if (academicSort.direction) {
+      list.sort((a, b) => {
+        const valA = a[academicSort.field];
+        const valB = b[academicSort.field];
+        if (typeof valA === "number" && typeof valB === "number") {
+          return academicSort.direction === "asc" ? valA - valB : valB - valA;
+        }
+        return academicSort.direction === "asc"
+          ? String(valA || "").localeCompare(String(valB || ""))
+          : String(valB || "").localeCompare(String(valA || ""));
+      });
+    } else {
+      // Default Academic Hierarchy Sorting: Year -> Centre -> Class -> Subject -> Title
+      list.sort((a, b) => {
+        if (a.academicYearName !== b.academicYearName)
+          return b.academicYearName.localeCompare(a.academicYearName);
+        if (a.centreName !== b.centreName)
+          return a.centreName.localeCompare(b.centreName);
+        if (a.standardName !== b.standardName)
+          return a.standardName.localeCompare(b.standardName);
+        if (a.subjectName !== b.subjectName)
+          return a.subjectName.localeCompare(b.subjectName);
+        return a.title.localeCompare(b.title);
+      });
+    }
+
+    return list;
+  }, [academicData, tableSearch, academicSort]);
+
+  // 3. Attendance Registers (hierarchically sorted: Centre -> Class -> Batch -> Student Name)
+  const sortedAttendance = useMemo(() => {
+    if (!attendanceData?.studentList) return [];
+    let list = [...attendanceData.studentList];
+
+    if (tableSearch) {
+      const q = tableSearch.toLowerCase();
+      list = list.filter(
+        (s: any) =>
+          s.name?.toLowerCase().includes(q) ||
+          s.admissionNo?.toLowerCase().includes(q) ||
+          s.centreName?.toLowerCase().includes(q) ||
+          s.standardName?.toLowerCase().includes(q) ||
+          s.batchName?.toLowerCase().includes(q)
+      );
+    }
+
+    if (attendanceSort.direction) {
+      list.sort((a, b) => {
+        const valA = a[attendanceSort.field];
+        const valB = b[attendanceSort.field];
+        if (typeof valA === "number" && typeof valB === "number") {
+          return attendanceSort.direction === "asc" ? valA - valB : valB - valA;
+        }
+        return attendanceSort.direction === "asc"
+          ? String(valA || "").localeCompare(String(valB || ""))
+          : String(valB || "").localeCompare(String(valA || ""));
+      });
+    } else {
+      // Default Hierarchy: Centre -> Class -> Batch -> Name
+      list.sort((a, b) => {
+        if (a.centreName !== b.centreName) return a.centreName.localeCompare(b.centreName);
+        if (a.standardName !== b.standardName) return a.standardName.localeCompare(b.standardName);
+        if (a.batchName !== b.batchName) return a.batchName.localeCompare(b.batchName);
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return list;
+  }, [attendanceData, tableSearch, attendanceSort]);
 
   // ─────────────────────────────────────────────────────────────
   // RENDER TABS
@@ -262,7 +505,6 @@ export default function ReportsPage() {
 
         {/* Visual Analytics Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Revenue & Margin Breakdown */}
           <div className="bg-white rounded-2xl border border-border-soft p-5 shadow-2xs space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider">
@@ -283,7 +525,6 @@ export default function ReportsPage() {
             />
           </div>
 
-          {/* Academic & Attendance Performance */}
           <div className="bg-white rounded-2xl border border-border-soft p-5 shadow-2xs space-y-4">
             <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider">
               Engagement & Examination Gauges
@@ -304,7 +545,6 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* CRM Funnel */}
           <div className="bg-white rounded-2xl border border-border-soft p-5 shadow-2xs space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider">
@@ -317,7 +557,12 @@ export default function ReportsPage() {
             <FunnelChart
               stages={[
                 { label: "Total Inquiries", count: crm.totalEnquiries || 0, color: "#3b82f6" },
-                { label: "Converted Admissions", count: crm.converted || 0, percentage: crm.conversionRate, color: "#10b981" },
+                {
+                  label: "Converted Admissions",
+                  count: crm.converted || 0,
+                  percentage: crm.conversionRate,
+                  color: "#10b981",
+                },
               ]}
             />
             <div className="pt-2 text-center">
@@ -337,6 +582,7 @@ export default function ReportsPage() {
   const renderFinanceTab = () => {
     if (!financeData) return null;
     const transactions = financeData.transactions || [];
+    const feeRecords = financeData.feeRecords || [];
     const feeTotal = financeData.feeTotal || 0;
 
     const expenseTotal = transactions
@@ -348,24 +594,13 @@ export default function ReportsPage() {
     const totalIncome = feeTotal + adhocIncome;
     const netProfit = totalIncome - expenseTotal;
 
-    // Filtered transactions
-    const filteredTx = transactions.filter((t: any) => {
-      if (!tableSearch) return true;
-      const q = tableSearch.toLowerCase();
-      return (
-        t.category?.toLowerCase().includes(q) ||
-        t.type?.toLowerCase().includes(q) ||
-        t.amount?.toString().includes(q)
-      );
-    });
-
     return (
       <div className="space-y-6">
         {/* Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100">
             <p className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
-              Total Revenue Realized
+              Total Realized Revenue
             </p>
             <p className="text-2xl font-black text-emerald-700 mt-1 flex items-center">
               <IndianRupee className="h-5 w-5" />
@@ -385,39 +620,39 @@ export default function ReportsPage() {
               {expenseTotal.toLocaleString("en-IN")}
             </p>
             <p className="text-xs text-rose-600 font-medium mt-1">
-              {transactions.filter((t: any) => t.type === "EXPENSE").length} Expense Entries Logged
+              {transactions.filter((t: any) => t.type === "EXPENSE").length} Vouchers Logged
             </p>
           </div>
 
           <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100">
             <p className="text-[11px] font-bold text-brand-blue uppercase tracking-wider">
-              Net Financial Balance
+              Net Operating Balance
             </p>
             <p className="text-2xl font-black text-brand-blue mt-1 flex items-center">
               <IndianRupee className="h-5 w-5" />
               {netProfit.toLocaleString("en-IN")}
             </p>
             <p className="text-xs text-brand-blue/80 font-medium mt-1">
-              Operating Profit Margin: {totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(1) : 0}%
+              Net Operating Margin: {totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(1) : 0}%
             </p>
           </div>
         </div>
 
-        {/* Transaction Ledger Table */}
+        {/* Live Transaction Ledger Table with Complete Details */}
         <div className="bg-white rounded-2xl border border-border-soft overflow-hidden shadow-2xs">
           <div className="p-4 border-b border-border-soft flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-text-primary">
-                Financial Transaction Ledger
+                Live Transaction & Fee Collection Ledger
               </h3>
               <p className="text-xs text-text-muted">
-                Detailed statement of income and expense vouchers
+                Complete statement with voucher details, student receipt links, and payment modes
               </p>
             </div>
             <div className="w-64">
               <input
                 type="text"
-                placeholder="Filter transactions..."
+                placeholder="Search transactions, student, category..."
                 value={tableSearch}
                 onChange={(e) => setTableSearch(e.target.value)}
                 className="w-full h-8.5 rounded-lg border border-border-soft bg-surface pl-3 pr-3 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
@@ -425,49 +660,86 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto max-h-[420px]">
+          <div className="overflow-x-auto max-h-[440px]">
             <table className="w-full text-left text-xs">
               <thead className="bg-surface sticky top-0 border-b border-border-soft z-10">
                 <tr>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Date</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Classification</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Category / Purpose</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Authorized By</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-right">Amount</th>
+                  <SortableHeader
+                    label="Date"
+                    field="date"
+                    currentSortField={financeSort.field}
+                    currentDirection={financeSort.direction}
+                    onSort={(f) => handleSortToggle(financeSort, setFinanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Classification"
+                    field="type"
+                    currentSortField={financeSort.field}
+                    currentDirection={financeSort.direction}
+                    onSort={(f) => handleSortToggle(financeSort, setFinanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Category / Purpose"
+                    field="category"
+                    currentSortField={financeSort.field}
+                    currentDirection={financeSort.direction}
+                    onSort={(f) => handleSortToggle(financeSort, setFinanceSort, f)}
+                  />
+                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Payment Mode</th>
+                  <SortableHeader
+                    label="Authorized By / Student"
+                    field="authorizedBy"
+                    currentSortField={financeSort.field}
+                    currentDirection={financeSort.direction}
+                    onSort={(f) => handleSortToggle(financeSort, setFinanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Amount"
+                    field="amount"
+                    align="right"
+                    currentSortField={financeSort.field}
+                    currentDirection={financeSort.direction}
+                    onSort={(f) => handleSortToggle(financeSort, setFinanceSort, f)}
+                  />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-soft">
-                {filteredTx.length > 0 ? (
-                  filteredTx.map((t: any) => (
-                    <tr key={t.id} className="hover:bg-surface/50">
-                      <td className="px-5 py-3 font-medium text-text-secondary">
-                        {new Date(t.date).toLocaleDateString("en-IN")}
+                {combinedFinanceRecords.length > 0 ? (
+                  combinedFinanceRecords.map((item: any) => (
+                    <tr key={item.id} className="hover:bg-surface/50">
+                      <td className="px-5 py-3 font-medium text-text-secondary whitespace-nowrap">
+                        {item.dateStr}
                       </td>
                       <td className="px-5 py-3">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                            t.type === "INCOME"
+                            item.type === "INCOME"
+                              ? "bg-cyan-100 text-cyan-800"
+                              : item.type === "FEE PAID"
                               ? "bg-emerald-100 text-emerald-800"
                               : "bg-rose-100 text-rose-800"
                           }`}
                         >
-                          {t.type}
+                          {item.type}
                         </span>
                       </td>
                       <td className="px-5 py-3 font-bold text-text-primary">
-                        {t.category}
+                        {item.category}
                       </td>
-                      <td className="px-5 py-3 text-text-muted">
-                        {t.recordedBy ? `${t.recordedBy.firstName} ${t.recordedBy.lastName}` : "System"}
+                      <td className="px-5 py-3 text-text-muted font-mono uppercase text-[11px]">
+                        {item.mode}
                       </td>
-                      <td className="px-5 py-3 text-right font-black text-text-primary">
-                        ₹{t.amount.toLocaleString()}
+                      <td className="px-5 py-3 text-text-secondary">
+                        {item.authorizedBy}
+                      </td>
+                      <td className="px-5 py-3 text-right font-black text-text-primary whitespace-nowrap">
+                        ₹{item.amount.toLocaleString()}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-text-muted">
+                    <td colSpan={6} className="p-8 text-center text-text-muted">
                       No transaction records found matching your filters.
                     </td>
                   </tr>
@@ -482,24 +754,20 @@ export default function ReportsPage() {
 
   const renderAcademicsTab = () => {
     if (!academicData) return null;
-    const exams = academicData.exams || [];
     const summary = academicData.summary || {};
 
     const gradeEntries = Object.entries(summary.gradeDistribution || {}).map(([grade, count]: any) => ({
       name: grade,
       value: count,
-      color: grade === "A+" || grade === "A" ? "#10b981" : grade === "B+" || grade === "B" ? "#3b82f6" : grade === "C" ? "#f59e0b" : "#f43f5e",
+      color:
+        grade === "A+" || grade === "A"
+          ? "#10b981"
+          : grade === "B+" || grade === "B"
+          ? "#3b82f6"
+          : grade === "C"
+          ? "#f59e0b"
+          : "#f43f5e",
     }));
-
-    const filteredExams = exams.filter((e: any) => {
-      if (!tableSearch) return true;
-      const q = tableSearch.toLowerCase();
-      return (
-        e.title?.toLowerCase().includes(q) ||
-        e.batchName?.toLowerCase().includes(q) ||
-        e.subjectName?.toLowerCase().includes(q)
-      );
-    });
 
     return (
       <div className="space-y-6">
@@ -521,7 +789,7 @@ export default function ReportsPage() {
           />
           <MetricCard
             title="Highest Score Index"
-            value={exams.length > 0 ? Math.max(...exams.map((e: any) => e.topScore)) : 0}
+            value={sortedExams.length > 0 ? Math.max(...sortedExams.map((e: any) => e.topScore)) : 0}
             subtitle="Top mark awarded in selected period"
             icon={TrendingUp}
             accentColor="emerald"
@@ -556,21 +824,24 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Exams Table */}
+        {/* Academic Hierarchy Exams Table */}
         <div className="bg-white rounded-2xl border border-border-soft overflow-hidden shadow-2xs">
           <div className="p-4 border-b border-border-soft flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-text-primary">
-                Examinations & Assessment Reports
+              <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                <span>Academic Hierarchy Examination Directory</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-blue/10 text-brand-blue">
+                  Year → Centre → Class → Subject → Topic
+                </span>
               </h3>
               <p className="text-xs text-text-muted">
-                Cohort performance analytics across batches
+                Sorted hierarchically by institutional setup with multi-level column sort
               </p>
             </div>
             <div className="w-64">
               <input
                 type="text"
-                placeholder="Search exam, batch, or subject..."
+                placeholder="Search exam, class, subject..."
                 value={tableSearch}
                 onChange={(e) => setTableSearch(e.target.value)}
                 className="w-full h-8.5 rounded-lg border border-border-soft bg-surface pl-3 pr-3 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
@@ -578,32 +849,102 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto max-h-[420px]">
+          <div className="overflow-x-auto max-h-[460px]">
             <table className="w-full text-left text-xs">
               <thead className="bg-surface sticky top-0 border-b border-border-soft z-10">
                 <tr>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Exam Title</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Batch</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Subject</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-center">Attempts</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-center">Batch Avg %</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-right">Top Score</th>
+                  <SortableHeader
+                    label="Academic Year"
+                    field="academicYearName"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Centre"
+                    field="centreName"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Class / Board"
+                    field="standardName"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Subject / Topic"
+                    field="subjectName"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Exam Title"
+                    field="title"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Attempts"
+                    field="attemptsCount"
+                    align="center"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Batch Avg %"
+                    field="averagePercentage"
+                    align="center"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
+                  <SortableHeader
+                    label="Top Score"
+                    field="topScore"
+                    align="right"
+                    currentSortField={academicSort.field}
+                    currentDirection={academicSort.direction}
+                    onSort={(f) => handleSortToggle(academicSort, setAcademicSort, f)}
+                  />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-soft">
-                {filteredExams.length > 0 ? (
-                  filteredExams.map((exam: any) => (
+                {sortedExams.length > 0 ? (
+                  sortedExams.map((exam: any) => (
                     <tr key={exam.id} className="hover:bg-surface/50">
+                      <td className="px-5 py-3 font-semibold text-text-muted">
+                        {exam.academicYearName}
+                      </td>
+                      <td className="px-5 py-3 font-medium text-text-secondary">
+                        {exam.centreName}
+                      </td>
+                      <td className="px-5 py-3 font-semibold text-text-primary">
+                        {exam.standardName}
+                        {exam.boardName !== "-" && (
+                          <span className="text-[10px] text-text-muted block">{exam.boardName}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="font-bold text-text-primary">{exam.subjectName}</span>
+                        {exam.topicName !== "-" && (
+                          <span className="text-[10px] text-text-muted block truncate max-w-[140px]">
+                            {exam.topicName}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-3 font-bold text-text-primary">
                         {exam.title}
+                        <span className="text-[10px] text-text-muted block font-normal">
+                          {exam.batchName}
+                        </span>
                       </td>
-                      <td className="px-5 py-3 text-text-secondary font-medium">
-                        {exam.batchName}
-                      </td>
-                      <td className="px-5 py-3 text-text-secondary">
-                        {exam.subjectName}
-                      </td>
-                      <td className="px-5 py-3 text-center font-bold">
+                      <td className="px-5 py-3 text-center font-bold text-text-secondary">
                         {exam.attemptsCount}
                       </td>
                       <td className="px-5 py-3 text-center">
@@ -626,8 +967,8 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-text-muted">
-                      No examinations found matching your filter criteria.
+                    <td colSpan={8} className="p-8 text-center text-text-muted">
+                      No examinations found matching your filter hierarchy.
                     </td>
                   </tr>
                 )}
@@ -642,17 +983,6 @@ export default function ReportsPage() {
   const renderAttendanceTab = () => {
     if (!attendanceData) return null;
     const summary = attendanceData.summary || {};
-    const studentList = attendanceData.studentList || [];
-    const dailyTrends = attendanceData.dailyTrends || [];
-
-    const filteredStudents = studentList.filter((s: any) => {
-      if (!tableSearch) return true;
-      const q = tableSearch.toLowerCase();
-      return (
-        s.name?.toLowerCase().includes(q) ||
-        s.admissionNo?.toLowerCase().includes(q)
-      );
-    });
 
     return (
       <div className="space-y-6">
@@ -685,28 +1015,31 @@ export default function ReportsPage() {
           />
           <MetricCard
             title="Active Cohort Size"
-            value={studentList.length}
+            value={sortedAttendance.length}
             subtitle="Students tracked in batch/filter"
             icon={Users}
             accentColor="violet"
           />
         </div>
 
-        {/* Student Attendance Register */}
+        {/* Student Attendance Register organized by hierarchy */}
         <div className="bg-white rounded-2xl border border-border-soft overflow-hidden shadow-2xs">
           <div className="p-4 border-b border-border-soft flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-text-primary">
-                Student Attendance & Standing Register
+              <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                <span>Student Attendance Standing Register</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-blue/10 text-brand-blue">
+                  Centre → Class → Batch → Student
+                </span>
               </h3>
               <p className="text-xs text-text-muted">
-                Click any student row to view and print their comprehensive dossier
+                Mirrors Attendance module setup. Click any student row to view and print their comprehensive dossier
               </p>
             </div>
             <div className="w-64">
               <input
                 type="text"
-                placeholder="Search student or admission no..."
+                placeholder="Search student, class, batch..."
                 value={tableSearch}
                 onChange={(e) => setTableSearch(e.target.value)}
                 className="w-full h-8.5 rounded-lg border border-border-soft bg-surface pl-3 pr-3 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
@@ -718,26 +1051,83 @@ export default function ReportsPage() {
             <table className="w-full text-left text-xs">
               <thead className="bg-surface sticky top-0 border-b border-border-soft z-10">
                 <tr>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase">Student Name</th>
+                  <SortableHeader
+                    label="Centre"
+                    field="centreName"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Class"
+                    field="standardName"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Batch"
+                    field="batchName"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Student Name"
+                    field="name"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
                   <th className="px-5 py-3 font-bold text-text-muted uppercase">Admission No</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-center">Sessions Held</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-center">Present</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-center">Attendance %</th>
-                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-right">Action</th>
+                  <SortableHeader
+                    label="Sessions"
+                    field="total"
+                    align="center"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Present"
+                    field="present"
+                    align="center"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
+                  <SortableHeader
+                    label="Attendance %"
+                    field="percentage"
+                    align="center"
+                    currentSortField={attendanceSort.field}
+                    currentDirection={attendanceSort.direction}
+                    onSort={(f) => handleSortToggle(attendanceSort, setAttendanceSort, f)}
+                  />
+                  <th className="px-5 py-3 font-bold text-text-muted uppercase text-right">Dossier</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-soft">
-                {filteredStudents.length > 0 ? (
-                  filteredStudents.map((s: any) => (
+                {sortedAttendance.length > 0 ? (
+                  sortedAttendance.map((s: any) => (
                     <tr
                       key={s.id}
                       onClick={() => openStudentDossier(s.id)}
                       className="hover:bg-brand-blue/5 cursor-pointer transition-colors group"
                     >
-                      <td className="px-5 py-3 font-bold text-text-primary group-hover:text-brand-blue">
+                      <td className="px-5 py-3 font-medium text-text-secondary whitespace-nowrap">
+                        {s.centreName}
+                      </td>
+                      <td className="px-5 py-3 font-semibold text-text-primary whitespace-nowrap">
+                        {s.standardName}
+                      </td>
+                      <td className="px-5 py-3 text-text-secondary whitespace-nowrap">
+                        {s.batchName}
+                      </td>
+                      <td className="px-5 py-3 font-bold text-text-primary group-hover:text-brand-blue whitespace-nowrap">
                         {s.name}
                       </td>
-                      <td className="px-5 py-3 text-text-muted font-mono">
+                      <td className="px-5 py-3 text-text-muted font-mono whitespace-nowrap">
                         {s.admissionNo}
                       </td>
                       <td className="px-5 py-3 text-center font-semibold">
@@ -766,7 +1156,7 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-text-muted">
+                    <td colSpan={9} className="p-8 text-center text-text-muted">
                       No student attendance logs found.
                     </td>
                   </tr>
@@ -820,7 +1210,6 @@ export default function ReportsPage() {
           />
         </div>
 
-        {/* Funnel visualization */}
         <div className="bg-white rounded-2xl border border-border-soft p-6 shadow-2xs">
           <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-5">
             Admissions Pipeline Funnel Stages
@@ -835,9 +1224,24 @@ export default function ReportsPage() {
 
   return (
     <DashboardLayout title="Reports & Analytics">
+      {/* 60% Print scale styling injected for Bug 5 */}
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: auto;
+            margin: 10mm;
+          }
+          html, body {
+            zoom: 60% !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
+
       <PageShell
         title="Reports & Analytics"
-        subtitle="Executive institutional metrics, revenue realization, cohort academics, and operational reports."
+        subtitle="Executive institutional metrics, live financial ledgers, cohort academics, and operational reports."
         icon={BarChart3}
         accentColor="blue"
       >
@@ -868,7 +1272,7 @@ export default function ReportsPage() {
                 </button>
               </div>
 
-              {/* Student Quick Search Results Dropdown - positioned relative to input */}
+              {/* Student Quick Search Results Dropdown */}
               {searchResults.length > 0 && (
                 <div className="absolute left-0 top-11 z-50 w-full sm:w-80 bg-white rounded-xl shadow-xl border border-border-soft p-2 space-y-1 max-h-60 overflow-y-auto">
                   <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-text-muted uppercase">
@@ -911,12 +1315,12 @@ export default function ReportsPage() {
                 className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-surface hover:bg-surface-2 border border-border-soft text-xs font-bold text-text-primary transition-colors shadow-2xs"
               >
                 <Printer className="h-3.5 w-3.5 text-text-muted" />
-                <span>Print</span>
+                <span>Print (60%)</span>
               </button>
             </div>
           </div>
 
-          {/* Tab Navigation - smooth horizontal scrolling on mobile */}
+          {/* Tab Navigation */}
           <div className="flex items-center gap-1 border-b border-border-soft overflow-x-auto no-scrollbar pb-px print:hidden">
             {[
               { key: "OVERVIEW", label: "Executive Overview", icon: Layers },
@@ -947,12 +1351,16 @@ export default function ReportsPage() {
             })}
           </div>
 
-          {/* Unified Filter Bar */}
+          {/* Cascading Hierarchy Filter Bar */}
           <ReportFilterBar
             filters={filters}
             onChange={(newF) => setFilters(newF)}
-            batches={batches}
+            academicYears={academicYears}
             centres={centres}
+            boards={boards}
+            standards={standards}
+            batches={batches}
+            subjects={subjects}
             onRefresh={() => loadTabData(activeTab, filters)}
             loading={loading}
           />
@@ -962,7 +1370,7 @@ export default function ReportsPage() {
             {loading ? (
               <div className="h-64 flex flex-col items-center justify-center text-text-muted gap-3">
                 <Loader2 className="h-8 w-8 animate-spin text-brand-blue" />
-                <p className="text-xs font-semibold">Aggregating real-time analytical metrics...</p>
+                <p className="text-xs font-semibold">Live fetching and computing analytical metrics...</p>
               </div>
             ) : (
               <div className="animate-in fade-in duration-200">
