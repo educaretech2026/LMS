@@ -274,4 +274,273 @@ export class ReportService {
 
     return { batches, totalStudents, todayPresent, todayAbsent, subjects };
   }
+
+  async getOverviewAnalytics(startDate?: string, endDate?: string, batchId?: string, centreId?: string) {
+    const from = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const to = endDate ? new Date(endDate) : new Date();
+    to.setHours(23, 59, 59, 999);
+
+    // 1. Financial aggregates
+    const txWhere: any = { date: { gte: from, lte: to } };
+    if (centreId) txWhere.centreId = centreId;
+    const transactions = await this.prisma.transaction.findMany({ where: txWhere });
+
+    const income = transactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
+    const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);
+
+    const feeWhere: any = { date: { gte: from, lte: to } };
+    const feeRecords = await this.prisma.feeRecord.findMany({ where: feeWhere });
+    const paidFees = feeRecords.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
+    const pendingFees = feeRecords.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
+    const overdueFees = feeRecords.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
+
+    const totalRevenue = income + paidFees;
+    const netProfit = totalRevenue - expenses;
+
+    // 2. Attendance Summary
+    const attWhere: any = {
+      attendance: {
+        date: { gte: from, lte: to },
+        ...(batchId ? { batchId } : {}),
+      }
+    };
+    const attRecords = await this.prisma.attendanceRecord.findMany({
+      where: attWhere,
+      select: { status: true }
+    });
+    const totalAtt = attRecords.length;
+    const presentAtt = attRecords.filter(a => a.status === AttendanceStatus.PRESENT || a.status === AttendanceStatus.LATE).length;
+    const attendanceRate = totalAtt > 0 ? (presentAtt / totalAtt) * 100 : 0;
+
+    // 3. Exam summary
+    const examWhere: any = {
+      createdAt: { gte: from, lte: to },
+      ...(batchId ? { exam: { batchId } } : {}),
+    };
+    const examResults = await this.prisma.examResult.findMany({
+      where: examWhere,
+      select: { marksObtained: true, maxMarks: true, grade: true }
+    });
+    const totalExamsAttempted = examResults.length;
+    const avgScorePercent = totalExamsAttempted > 0
+      ? (examResults.reduce((s, r) => s + (r.maxMarks > 0 ? (r.marksObtained / r.maxMarks) * 100 : 0), 0) / totalExamsAttempted)
+      : 0;
+
+    // Pass rate (marks >= 40%)
+    const passedAttempts = examResults.filter(r => r.maxMarks > 0 && (r.marksObtained / r.maxMarks) >= 0.4).length;
+    const passRate = totalExamsAttempted > 0 ? (passedAttempts / totalExamsAttempted) * 100 : 0;
+
+    // 4. CRM / Enquiries summary
+    const enquiries = await this.prisma.enquiry.findMany({
+      where: { createdAt: { gte: from, lte: to } },
+      select: { status: true }
+    });
+    const totalEnquiries = enquiries.length;
+    const convertedEnquiries = enquiries.filter(e => e.status === EnquiryStatus.CONVERTED).length;
+    const conversionRate = totalEnquiries > 0 ? (convertedEnquiries / totalEnquiries) * 100 : 0;
+
+    // 5. Total Active Students count
+    const totalStudents = await this.prisma.studentProfile.count();
+
+    return {
+      financials: {
+        totalRevenue,
+        feeTotal: paidFees,
+        adhocIncome: income,
+        expenses,
+        netProfit,
+        pendingFees,
+        overdueFees,
+      },
+      attendance: {
+        totalRecords: totalAtt,
+        presentRecords: presentAtt,
+        rate: Number(attendanceRate.toFixed(1)),
+      },
+      academics: {
+        totalAttempts: totalExamsAttempted,
+        avgScore: Number(avgScorePercent.toFixed(1)),
+        passRate: Number(passRate.toFixed(1)),
+      },
+      crm: {
+        totalEnquiries,
+        converted: convertedEnquiries,
+        conversionRate: Number(conversionRate.toFixed(1)),
+      },
+      totalStudents,
+    };
+  }
+
+  async getExamsAnalytics(batchId?: string, startDate?: string, endDate?: string) {
+    const from = startDate ? new Date(startDate) : undefined;
+    const to = endDate ? new Date(endDate) : undefined;
+    if (to) to.setHours(23, 59, 59, 999);
+
+    const where: any = {};
+    if (batchId) where.batchId = batchId;
+    if (from && to) where.createdAt = { gte: from, lte: to };
+
+    const exams = await this.prisma.exam.findMany({
+      where,
+      include: {
+        batch: { select: { id: true, name: true } },
+        subject: { select: { id: true, name: true } },
+        results: {
+          include: {
+            student: {
+              include: { user: { select: { firstName: true, lastName: true } } }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    const gradeDistribution: Record<string, number> = {
+      'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C': 0, 'F': 0
+    };
+
+    let totalAttempts = 0;
+    let totalScoreSum = 0;
+
+    const examsReport = exams.map(exam => {
+      const attempts = exam.results.length;
+      let examAvg = 0;
+      let topScore = 0;
+
+      if (attempts > 0) {
+        const scores = exam.results.map(r => {
+          const pct = r.maxMarks > 0 ? (r.marksObtained / r.maxMarks) * 100 : 0;
+          const grade = r.grade || (pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B+' : pct >= 60 ? 'B' : pct >= 40 ? 'C' : 'F');
+          if (gradeDistribution[grade] !== undefined) gradeDistribution[grade]++;
+          return { marks: r.marksObtained, pct };
+        });
+
+        topScore = Math.max(...exam.results.map(r => r.marksObtained));
+        examAvg = scores.reduce((sum, s) => sum + s.pct, 0) / attempts;
+        totalAttempts += attempts;
+        totalScoreSum += scores.reduce((sum, s) => sum + s.pct, 0);
+      }
+
+      return {
+        id: exam.id,
+        title: exam.title,
+        type: exam.type,
+        batchName: exam.batch?.name || 'All Batches',
+        subjectName: exam.subject?.name || 'General',
+        createdAt: exam.createdAt,
+        attemptsCount: attempts,
+        averagePercentage: Number(examAvg.toFixed(1)),
+        topScore,
+        results: exam.results.map(r => ({
+          studentId: r.studentId,
+          studentName: `${r.student?.user?.firstName || ''} ${r.student?.user?.lastName || ''}`.trim(),
+          admissionNo: r.student?.admissionNo,
+          marksObtained: r.marksObtained,
+          maxMarks: r.maxMarks,
+          grade: r.grade,
+          percentage: r.maxMarks > 0 ? Number(((r.marksObtained / r.maxMarks) * 100).toFixed(1)) : 0,
+        }))
+      };
+    });
+
+    const overallAverage = totalAttempts > 0 ? Number((totalScoreSum / totalAttempts).toFixed(1)) : 0;
+
+    return {
+      exams: examsReport,
+      summary: {
+        totalExams: exams.length,
+        totalAttempts,
+        overallAverage,
+        gradeDistribution,
+      }
+    };
+  }
+
+  async getAttendanceAnalytics(batchId?: string, startDate?: string, endDate?: string) {
+    const from = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const to = endDate ? new Date(endDate) : new Date();
+    to.setHours(23, 59, 59, 999);
+
+    const attendances = await this.prisma.attendance.findMany({
+      where: {
+        date: { gte: from, lte: to },
+        ...(batchId ? { batchId } : {}),
+      },
+      include: {
+        batch: { select: { id: true, name: true } },
+        records: {
+          include: {
+            student: {
+              include: { user: { select: { firstName: true, lastName: true } } }
+            }
+          }
+        }
+      },
+      orderBy: { date: 'asc' }
+    });
+
+    // Daily attendance trend
+    const dailyMap: Record<string, { date: string; total: number; present: number; absent: number; late: number }> = {};
+    const studentAggregates: Record<string, { id: string; name: string; admissionNo: string; total: number; present: number }> = {};
+
+    attendances.forEach(att => {
+      const dateStr = att.date.toISOString().split('T')[0];
+      if (!dailyMap[dateStr]) {
+        dailyMap[dateStr] = { date: dateStr, total: 0, present: 0, absent: 0, late: 0 };
+      }
+
+      att.records.forEach(rec => {
+        dailyMap[dateStr].total++;
+        if (rec.status === AttendanceStatus.PRESENT) dailyMap[dateStr].present++;
+        else if (rec.status === AttendanceStatus.ABSENT) dailyMap[dateStr].absent++;
+        else if (rec.status === AttendanceStatus.LATE) dailyMap[dateStr].late++;
+
+        if (!studentAggregates[rec.studentId]) {
+          studentAggregates[rec.studentId] = {
+            id: rec.studentId,
+            name: `${rec.student?.user?.firstName || ''} ${rec.student?.user?.lastName || ''}`.trim(),
+            admissionNo: rec.student?.admissionNo || '-',
+            total: 0,
+            present: 0,
+          };
+        }
+        studentAggregates[rec.studentId].total++;
+        if (rec.status === AttendanceStatus.PRESENT || rec.status === AttendanceStatus.LATE) {
+          studentAggregates[rec.studentId].present++;
+        }
+      });
+    });
+
+    const dailyTrends = Object.values(dailyMap).map(d => ({
+      ...d,
+      rate: d.total > 0 ? Number((( (d.present + d.late) / d.total) * 100).toFixed(1)) : 0,
+    }));
+
+    const studentList = Object.values(studentAggregates).map(s => {
+      const percentage = s.total > 0 ? Number(((s.present / s.total) * 100).toFixed(1)) : 0;
+      return {
+        ...s,
+        percentage,
+        isAtRisk: percentage < 75,
+      };
+    }).sort((a, b) => a.percentage - b.percentage);
+
+    const atRiskCount = studentList.filter(s => s.isAtRisk).length;
+    const overallTotal = dailyTrends.reduce((s, d) => s + d.total, 0);
+    const overallPresent = dailyTrends.reduce((s, d) => s + d.present + d.late, 0);
+    const overallRate = overallTotal > 0 ? Number(((overallPresent / overallTotal) * 100).toFixed(1)) : 0;
+
+    return {
+      dailyTrends,
+      studentList,
+      summary: {
+        totalSessions: attendances.length,
+        totalRecords: overallTotal,
+        overallRate,
+        atRiskCount,
+      }
+    };
+  }
 }

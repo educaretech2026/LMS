@@ -45,6 +45,37 @@ export class ReportController {
     return this.reportService.getDashboardStats();
   }
 
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Get('overview')
+  getOverviewAnalytics(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('batchId') batchId?: string,
+    @Query('centreId') centreId?: string,
+  ) {
+    return this.reportService.getOverviewAnalytics(startDate, endDate, batchId, centreId);
+  }
+
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Get('exams-analytics')
+  getExamsAnalytics(
+    @Query('batchId') batchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.reportService.getExamsAnalytics(batchId, startDate, endDate);
+  }
+
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Get('attendance-analytics')
+  getAttendanceAnalytics(
+    @Query('batchId') batchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.reportService.getAttendanceAnalytics(batchId, startDate, endDate);
+  }
+
   @Roles('TEACHER')
   @Get('teacher-dashboard')
   getTeacherDashboard(@Req() req: any) {
