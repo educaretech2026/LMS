@@ -31,7 +31,15 @@ export class AssignmentsService {
             subject: true,
             chapter: true,
             topic: true,
-            batch: true,
+            targetTrack: true,
+            batch: {
+              include: {
+                board: true,
+                standard: true,
+                centre: true,
+                track: true,
+              }
+            },
             submissions: {
               where: { studentId: profile.id }
             }
@@ -47,7 +55,15 @@ export class AssignmentsService {
           subject: true,
           chapter: true,
           topic: true,
-          batch: true,
+          targetTrack: true,
+          batch: {
+            include: {
+              board: true,
+              standard: true,
+              centre: true,
+              track: true,
+            }
+          },
           _count: { select: { submissions: true } }
         },
         orderBy: { createdAt: 'desc' }
@@ -67,7 +83,15 @@ export class AssignmentsService {
         subject: true,
         chapter: true,
         topic: true,
-        batch: true,
+        targetTrack: true,
+        batch: {
+          include: {
+            board: true,
+            standard: true,
+            centre: true,
+            track: true,
+          }
+        },
         submissions: {
           include: {
             student: {
@@ -99,7 +123,15 @@ export class AssignmentsService {
           subject: true,
           chapter: true,
           topic: true,
-          batch: true,
+          targetTrack: true,
+          batch: {
+            include: {
+              board: true,
+              standard: true,
+              centre: true,
+              track: true,
+            }
+          },
         }
       });
 
@@ -157,7 +189,15 @@ export class AssignmentsService {
           subject: true,
           chapter: true,
           topic: true,
-          batch: true,
+          targetTrack: true,
+          batch: {
+            include: {
+              board: true,
+              standard: true,
+              centre: true,
+              track: true,
+            }
+          },
         }
       });
     } catch (error) {
