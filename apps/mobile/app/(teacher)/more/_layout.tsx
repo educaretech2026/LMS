@@ -15,7 +15,27 @@ export default function TeacherMoreLayout() {
         name="exams"
         options={{
           headerShown: true,
-          title: 'Live Exams Tracker',
+          title: 'Exam Manager',
+          headerTintColor: Colors.brand.blue,
+          headerStyle: { backgroundColor: Colors.surface.card },
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="estudy"
+        options={{
+          headerShown: true,
+          title: 'E-Study Materials',
+          headerTintColor: Colors.brand.blue,
+          headerStyle: { backgroundColor: Colors.surface.card },
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="live-classes"
+        options={{
+          headerShown: true,
+          title: 'Live Online Classes',
           headerTintColor: Colors.brand.blue,
           headerStyle: { backgroundColor: Colors.surface.card },
           headerShadowVisible: false,

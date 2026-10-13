@@ -15,6 +15,7 @@ export default function ProfileLayout() {
       <Stack.Screen name="id-card" options={{ title: 'Digital Student ID Card' }} />
       <Stack.Screen name="estudy" options={{ title: 'E-Study Materials' }} />
       <Stack.Screen name="attendance" options={{ title: 'Attendance Record' }} />
+      <Stack.Screen name="live-classes" options={{ title: 'Live Online Classes' }} />
     </Stack>
   );
 }

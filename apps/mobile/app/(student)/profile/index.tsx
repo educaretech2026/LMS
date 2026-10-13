@@ -15,6 +15,7 @@ import {
   CreditCard,
   BookOpen,
   CalendarCheck,
+  Video,
   Bell,
   LogOut,
   ChevronRight,
@@ -66,6 +67,21 @@ export default function StudentProfileScreen() {
 
       {/* Menu Options Group */}
       <View style={styles.menuGroup}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push('/(student)/profile/live-classes' as any)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.menuIconCircle, { backgroundColor: '#FEE2E2' }]}>
+            <Video size={18} color="#DC2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.menuTitle}>Live Online Classes</Text>
+            <Text style={styles.menuSubtitle}>Join real-time interactive lectures</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.text.muted} />
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.menuItem}
           onPress={() => router.push('/(student)/profile/id-card' as any)}

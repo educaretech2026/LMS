@@ -21,6 +21,10 @@ import {
   ChevronRight,
   Sparkles,
   BookOpen,
+  GraduationCap,
+  Video,
+  AlertCircle,
+  Plus,
 } from 'lucide-react-native';
 
 export default function TeacherHomeScreen() {
@@ -30,19 +34,25 @@ export default function TeacherHomeScreen() {
   const [batches, setBatches] = useState<any[]>([]);
   const [doubts, setDoubts] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
+  const [exams, setExams] = useState<any[]>([]);
+  const [liveClasses, setLiveClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
-      const [batchesData, doubtsData, assignmentsData] = await Promise.all([
+      const [batchesData, doubtsData, assignmentsData, examsData, liveData] = await Promise.all([
         fetchApi<any[]>('/setup/batches').catch(() => []),
         fetchApi<any[]>('/doubts').catch(() => []),
         fetchApi<any[]>('/assignments').catch(() => []),
+        fetchApi<any[]>('/exams').catch(() => []),
+        fetchApi<any[]>('/live-class').catch(() => []),
       ]);
       setBatches(batchesData || []);
       setDoubts(doubtsData || []);
       setAssignments(assignmentsData || []);
+      setExams(examsData || []);
+      setLiveClasses(liveData || []);
     } catch (e) {
       console.error('Failed to load teacher dashboard', e);
     } finally {
@@ -63,20 +73,32 @@ export default function TeacherHomeScreen() {
   const pendingDoubts = doubts.filter((d) => d.status === 'OPEN' || d.status === 'IN_PROGRESS');
   const urgentDoubts = pendingDoubts.filter((d) => d.priority === 'URGENT');
 
-  const fullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Teacher';
+  const fullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Educare Faculty';
+  const initials = fullName
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
 
   return (
     <View style={styles.container}>
-      {/* Header Bar */}
+      {/* Faculty Elevated Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Faculty Portal,</Text>
-          <Text style={styles.name}>{fullName}</Text>
-          {user?.centreName ? (
-            <View style={styles.centreBadge}>
-              <Text style={styles.centreBadgeText}>{user.centreName}</Text>
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>{initials || 'FC'}</Text>
+          </View>
+          <View>
+            <View style={styles.greetingRow}>
+              <Text style={styles.greeting}>Faculty Console</Text>
+              <Sparkles size={12} color={Colors.brand.blue} />
             </View>
-          ) : null}
+            <Text style={styles.name}>{fullName}</Text>
+            {user?.centreName ? (
+              <Text style={styles.centreName}>{user.centreName}</Text>
+            ) : null}
+          </View>
         </View>
 
         <TouchableOpacity
@@ -85,6 +107,7 @@ export default function TeacherHomeScreen() {
           activeOpacity={0.7}
         >
           <Bell size={20} color={Colors.text.primary} />
+          {pendingDoubts.length > 0 && <View style={styles.notificationDot} />}
         </TouchableOpacity>
       </View>
 
@@ -92,87 +115,189 @@ export default function TeacherHomeScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.brand.blue]} />}
       >
-        {/* Pending Alerts Banner */}
-        {pendingDoubts.length > 0 ? (
+        {/* Urgent Doubt Priority Alert */}
+        {urgentDoubts.length > 0 && (
           <TouchableOpacity
-            style={styles.alertBanner}
+            style={styles.urgentBanner}
+            onPress={() => router.push('/(teacher)/doubts' as any)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.urgentIconBox}>
+              <AlertCircle size={20} color="#DC2626" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.urgentTitle}>{urgentDoubts.length} Urgent Doubts Pending</Text>
+              <Text style={styles.urgentSub}>Students waiting for rapid academic clearance</Text>
+            </View>
+            <ChevronRight size={16} color="#DC2626" />
+          </TouchableOpacity>
+        )}
+
+        {/* Faculty Metric Stats Grid */}
+        <View style={styles.statGrid}>
+          <TouchableOpacity
+            style={[styles.statCard, { borderLeftColor: Colors.brand.blue, borderLeftWidth: 3 }]}
             onPress={() => router.push('/(teacher)/doubts' as any)}
             activeOpacity={0.8}
           >
-            <View style={styles.alertIconCircle}>
-              <MessagesSquare size={18} color={Colors.status.error} />
+            <View style={[styles.statIconBox, { backgroundColor: '#EFF6FF' }]}>
+              <MessagesSquare size={16} color={Colors.brand.blue} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.alertTitle}>
-                {pendingDoubts.length} Pending Student Questions
-              </Text>
-              <Text style={styles.alertSubtitle}>
-                {urgentDoubts.length > 0
-                  ? `${urgentDoubts.length} marked as URGENT priority`
-                  : 'Students waiting for academic guidance'}
-              </Text>
-            </View>
-            <ChevronRight size={18} color={Colors.status.error} />
-          </TouchableOpacity>
-        ) : null}
-
-        {/* Quick Action Cards */}
-        <Text style={styles.sectionTitle}>Quick Classroom Actions</Text>
-        <View style={styles.quickGrid}>
-          <TouchableOpacity
-            style={styles.quickCard}
-            onPress={() => router.push('/(teacher)/attendance/mark' as any)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.quickIconCircle, { backgroundColor: Colors.status.successLight }]}>
-              <CalendarCheck size={22} color={Colors.status.success} />
-            </View>
-            <Text style={styles.quickTitle}>Take Attendance</Text>
-            <Text style={styles.quickSub}>1-Tap batch roll call</Text>
+            <Text style={styles.statNumber}>{pendingDoubts.length}</Text>
+            <Text style={styles.statLabel}>Doubts In Queue</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.quickCard}
-            onPress={() => router.push('/(teacher)/assignments/create' as any)}
+            style={[styles.statCard, { borderLeftColor: '#7C3AED', borderLeftWidth: 3 }]}
+            onPress={() => router.push('/(teacher)/more/exams' as any)}
             activeOpacity={0.8}
           >
-            <View style={[styles.quickIconCircle, { backgroundColor: Colors.brand.blueLight }]}>
-              <ClipboardList size={22} color={Colors.brand.blue} />
+            <View style={[styles.statIconBox, { backgroundColor: '#EDE9FE' }]}>
+              <GraduationCap size={16} color="#7C3AED" />
             </View>
-            <Text style={styles.quickTitle}>Assign Homework</Text>
-            <Text style={styles.quickSub}>Upload worksheets</Text>
+            <Text style={styles.statNumber}>{exams.length}</Text>
+            <Text style={styles.statLabel}>Assessments</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.statCard, { borderLeftColor: '#D97706', borderLeftWidth: 3 }]}
+            onPress={() => router.push('/(teacher)/assignments' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.statIconBox, { backgroundColor: '#FEF3C7' }]}>
+              <ClipboardList size={16} color="#D97706" />
+            </View>
+            <Text style={styles.statNumber}>{assignments.length}</Text>
+            <Text style={styles.statLabel}>Homework Sets</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.statCard, { borderLeftColor: '#DC2626', borderLeftWidth: 3 }]}
+            onPress={() => router.push('/(teacher)/more/live-classes' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.statIconBox, { backgroundColor: '#FEE2E2' }]}>
+              <Video size={16} color="#DC2626" />
+            </View>
+            <Text style={styles.statNumber}>{liveClasses.length}</Text>
+            <Text style={styles.statLabel}>Live Classes</Text>
           </TouchableOpacity>
         </View>
 
-        {/* My Batches Roster */}
+        {/* Faculty Command Matrix */}
+        <Text style={styles.sectionTitle}>FACULTY TOOLS</Text>
+        <View style={styles.grid}>
+          <TouchableOpacity
+            style={styles.gridItem}
+            onPress={() => router.push('/(teacher)/attendance' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.gridIconCircle, { backgroundColor: '#DCFCE7' }]}>
+              <CalendarCheck size={22} color="#16A34A" />
+            </View>
+            <Text style={styles.gridTitle}>1-Tap Roll Call</Text>
+            <Text style={styles.gridSub}>Mark attendance</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.gridItem}
+            onPress={() => router.push('/(teacher)/more/exams' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.gridIconCircle, { backgroundColor: '#EDE9FE' }]}>
+              <GraduationCap size={22} color="#7C3AED" />
+            </View>
+            <Text style={styles.gridTitle}>Exam Manager</Text>
+            <Text style={styles.gridSub}>MCQs & scores</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.gridItem}
+            onPress={() => router.push('/(teacher)/assignments' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.gridIconCircle, { backgroundColor: '#FEF3C7' }]}>
+              <ClipboardList size={22} color="#D97706" />
+            </View>
+            <Text style={styles.gridTitle}>Homework</Text>
+            <Text style={styles.gridSub}>Grade student work</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.gridItem}
+            onPress={() => router.push('/(teacher)/doubts' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.gridIconCircle, { backgroundColor: '#EFF6FF' }]}>
+              <MessagesSquare size={22} color={Colors.brand.blue} />
+            </View>
+            <Text style={styles.gridTitle}>Doubt Clearance</Text>
+            <Text style={styles.gridSub}>Priority answering</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.gridItem}
+            onPress={() => router.push('/(teacher)/more/live-classes' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.gridIconCircle, { backgroundColor: '#FEE2E2' }]}>
+              <Video size={22} color="#DC2626" />
+            </View>
+            <Text style={styles.gridTitle}>Live Classes</Text>
+            <Text style={styles.gridSub}>Stream & rooms</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.gridItem}
+            onPress={() => router.push('/(teacher)/more/estudy' as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.gridIconCircle, { backgroundColor: '#EEF2FF' }]}>
+              <BookOpen size={22} color="#4F46E5" />
+            </View>
+            <Text style={styles.gridTitle}>E-Study Notes</Text>
+            <Text style={styles.gridSub}>Upload handouts</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Assigned Batches Attendance Callout */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>My Batches & Classes</Text>
-          <Text style={styles.counterText}>{batches.length} Batches</Text>
+          <Text style={styles.sectionTitle}>MY ACADEMIC BATCHES</Text>
+          <TouchableOpacity onPress={() => router.push('/(teacher)/attendance' as any)}>
+            <Text style={styles.seeAllText}>Take Attendance</Text>
+          </TouchableOpacity>
         </View>
 
         {batches.length === 0 ? (
           <View style={styles.emptyCard}>
             <Users size={32} color={Colors.text.muted} />
-            <Text style={styles.emptyText}>No assigned batches found</Text>
+            <Text style={styles.emptyCardTitle}>No Batches Assigned</Text>
+            <Text style={styles.emptyCardSub}>Contact center administration to map batches.</Text>
           </View>
         ) : (
-          batches.map((batch) => (
-            <View key={batch.id} style={styles.batchCard}>
-              <View style={styles.batchInfo}>
-                <Text style={styles.batchName}>{batch.name}</Text>
+          batches.slice(0, 3).map((b) => (
+            <TouchableOpacity
+              key={b.id}
+              style={styles.batchCard}
+              activeOpacity={0.8}
+              onPress={() => router.push(`/(teacher)/attendance/mark?batchId=${b.id}&batchName=${encodeURIComponent(b.name)}` as any)}
+            >
+              <View style={styles.batchIcon}>
+                <Users size={18} color={Colors.brand.blue} />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.batchName}>{b.name}</Text>
                 <Text style={styles.batchMeta}>
-                  {batch.board?.name || 'CBSE'} • {batch.standard?.name || 'Standard'} • {batch.centre?.name || 'Main'}
+                  {b.centre?.name || 'Assigned Center'} • {b.students?.length || b._count?.enrollments || 0} Students
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.rollCallShortcut}
-                onPress={() => router.push({ pathname: '/(teacher)/attendance/mark', params: { batchId: batch.id } } as any)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.rollCallShortcutText}>Roll Call</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.rollCallBtn}>
+                <Text style={styles.rollCallBtnText}>Roll Call</Text>
+                <ChevronRight size={13} color={Colors.brand.blue} />
+              </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -186,159 +311,214 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface.background,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingTop: 56,
     paddingHorizontal: 20,
-    paddingTop: 54,
     paddingBottom: 16,
     backgroundColor: Colors.surface.card,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border.default,
+    borderBottomColor: Colors.border.light,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.brand.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.glowBlue,
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   greeting: {
     fontSize: 12,
-    color: Colors.text.secondary,
-    fontWeight: '500',
+    color: Colors.text.muted,
+    fontWeight: '600',
   },
   name: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: Colors.text.primary,
   },
-  centreBadge: {
-    backgroundColor: Colors.brand.blueLight,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginTop: 4,
-    alignSelf: 'flex-start',
-  },
-  centreBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
+  centreName: {
+    fontSize: 11,
     color: Colors.brand.blue,
+    fontWeight: '700',
   },
   bellButton: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.surface.subtle,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 9,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#DC2626',
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 32,
   },
-  alertBanner: {
+  urgentBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.status.errorLight,
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
-    marginBottom: 20,
     gap: 12,
+    marginBottom: 16,
+    ...Shadows.sm,
   },
-  alertIconCircle: {
-    width: 38,
-    height: 38,
+  urgentIconBox: {
+    width: 36,
+    height: 36,
     borderRadius: 10,
-    backgroundColor: '#FEE2E2',
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  alertTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.status.error,
+  urgentTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#991B1B',
   },
-  alertSubtitle: {
+  urgentSub: {
+    fontSize: 12,
+    color: '#B91C1C',
+    marginTop: 1,
+  },
+  statGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statCard: {
+    width: '48%',
+    backgroundColor: Colors.surface.card,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    ...Shadows.sm,
+  },
+  statIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: Colors.text.primary,
+  },
+  statLabel: {
     fontSize: 11,
-    color: Colors.text.secondary,
+    color: Colors.text.muted,
+    fontWeight: '600',
     marginTop: 2,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginBottom: 12,
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.text.muted,
+    letterSpacing: 0.8,
+    marginBottom: 10,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  counterText: {
+  seeAllText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.brand.blue,
   },
-  quickGrid: {
+  grid: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 10,
     marginBottom: 20,
   },
-  quickCard: {
-    flex: 1,
-    backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    ...Shadows.sm,
-  },
-  quickIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  quickTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.text.primary,
-  },
-  quickSub: {
-    fontSize: 10,
-    color: Colors.text.muted,
-    marginTop: 2,
-  },
-  emptyCard: {
+  gridItem: {
+    width: '31%',
     backgroundColor: Colors.surface.card,
     borderRadius: 14,
-    padding: 24,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.border.default,
+    borderColor: Colors.border.light,
+    ...Shadows.sm,
   },
-  emptyText: {
-    color: Colors.text.muted,
+  gridIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  gridTitle: {
     fontSize: 12,
-    marginTop: 8,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    textAlign: 'center',
+  },
+  gridSub: {
+    fontSize: 10,
+    color: Colors.text.muted,
+    textAlign: 'center',
+    marginTop: 2,
   },
   batchCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: Colors.surface.card,
     borderRadius: 14,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: Colors.border.default,
-    marginBottom: 10,
+    borderColor: Colors.border.light,
+    marginBottom: 8,
+    gap: 12,
     ...Shadows.sm,
   },
-  batchInfo: {
-    flex: 1,
+  batchIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   batchName: {
     fontSize: 14,
@@ -350,15 +530,37 @@ const styles = StyleSheet.create({
     color: Colors.text.muted,
     marginTop: 2,
   },
-  rollCallShortcut: {
-    backgroundColor: Colors.status.successLight,
-    paddingHorizontal: 12,
+  rollCallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  rollCallShortcutText: {
-    color: Colors.status.success,
+  rollCallBtnText: {
     fontSize: 12,
     fontWeight: '700',
+    color: Colors.brand.blue,
+  },
+  emptyCard: {
+    backgroundColor: Colors.surface.card,
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  emptyCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginTop: 8,
+  },
+  emptyCardSub: {
+    fontSize: 12,
+    color: Colors.text.muted,
+    marginTop: 2,
   },
 });

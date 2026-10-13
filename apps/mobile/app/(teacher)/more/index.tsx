@@ -11,11 +11,12 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../../hooks/useAuth';
 import { Colors, Shadows } from '../../../lib/theme';
 import {
-  User,
   GraduationCap,
   CalendarCheck,
   ClipboardList,
   MessagesSquare,
+  BookOpen,
+  Video,
   Bell,
   LogOut,
   ChevronRight,
@@ -44,7 +45,7 @@ export default function TeacherMoreScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      {/* Header Profile Card */}
+      {/* Faculty Profile Hero Card */}
       <View style={styles.profileCard}>
         <View style={styles.avatarCircle}>
           <Text style={styles.avatarInitials}>{initials || 'FC'}</Text>
@@ -66,8 +67,8 @@ export default function TeacherMoreScreen() {
         </View>
       </View>
 
-      {/* Faculty Tools & Shortcuts */}
-      <Text style={styles.sectionHeader}>FACULTY MODULES</Text>
+      {/* Primary Academic Modules */}
+      <Text style={styles.sectionHeader}>ACADEMIC MANAGEMENT</Text>
       <View style={styles.menuGroup}>
         <TouchableOpacity
           style={styles.menuItem}
@@ -78,12 +79,46 @@ export default function TeacherMoreScreen() {
             <GraduationCap size={18} color="#7C3AED" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>Live MCQ Exams Tracker</Text>
-            <Text style={styles.menuSubtitle}>Monitor active student test submissions</Text>
+            <Text style={styles.menuTitle}>Exam Manager</Text>
+            <Text style={styles.menuSubtitle}>Create assessments, MCQs & view scorecards</Text>
           </View>
           <ChevronRight size={18} color={Colors.text.muted} />
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push('/(teacher)/more/live-classes' as any)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.menuIconCircle, { backgroundColor: '#FEE2E2' }]}>
+            <Video size={18} color="#DC2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.menuTitle}>Live Online Classes</Text>
+            <Text style={styles.menuSubtitle}>Host live stream sessions & doubt rooms</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.text.muted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push('/(teacher)/more/estudy' as any)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.menuIconCircle, { backgroundColor: '#EEF2FF' }]}>
+            <BookOpen size={18} color="#4F46E5" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.menuTitle}>E-Study Repository</Text>
+            <Text style={styles.menuSubtitle}>Upload PDF notes, handouts & lecture videos</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.text.muted} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Classroom Operations */}
+      <Text style={styles.sectionHeader}>CLASSROOM OPERATIONS</Text>
+      <View style={styles.menuGroup}>
         <TouchableOpacity
           style={styles.menuItem}
           onPress={() => router.push('/(teacher)/attendance' as any)}
@@ -115,7 +150,7 @@ export default function TeacherMoreScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.menuItem, { borderBottomWidth: 0 }]}
+          style={styles.menuItem}
           onPress={() => router.push('/(teacher)/doubts' as any)}
           activeOpacity={0.7}
         >
@@ -130,7 +165,7 @@ export default function TeacherMoreScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Settings & System */}
+      {/* System & Session */}
       <Text style={styles.sectionHeader}>PREFERENCES & SYSTEM</Text>
       <View style={styles.menuGroup}>
         <TouchableOpacity
@@ -165,8 +200,8 @@ export default function TeacherMoreScreen() {
       </View>
 
       <View style={styles.footerInfo}>
-        <Text style={styles.versionText}>Educare LMS • Faculty Edition v1.0.0</Text>
-        <Text style={styles.copyrightText}>Protected by Institutional Authentication</Text>
+        <Text style={styles.versionText}>Educare LMS • Faculty Edition v2.0</Text>
+        <Text style={styles.copyrightText}>Institutional Academic Control Suite</Text>
       </View>
     </ScrollView>
   );
@@ -200,11 +235,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    shadowColor: Colors.brand.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    ...Shadows.glowBlue,
   },
   avatarInitials: {
     fontSize: 26,
@@ -278,9 +309,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   menuIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
