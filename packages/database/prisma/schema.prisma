@@ -34,6 +34,9 @@ model User {
   recordedAttendances  Attendance[]  @relation("AttendanceRecorder")
   supportTickets       SupportTicket[]
   notifications        Notification[]
+  doubtsAsked          Doubt[]         @relation("StudentDoubts")
+  doubtsAssigned       Doubt[]         @relation("TeacherDoubts")
+  doubtMessagesSent    DoubtMessage[]  @relation("DoubtMessageSender")
 
   @@map("users")
 }
@@ -97,6 +100,7 @@ model Centre {
   exams       Exam[]
   Transaction Transaction[]
   customForms CustomForm[]
+  doubts      Doubt[]
 
   @@map("centres")
 }
@@ -183,6 +187,7 @@ model Subject {
 
   enrollments        Enrollment[]
   attendances        Attendance[]
+  doubts             Doubt[]
 
   @@map("subjects")
 }
@@ -224,6 +229,7 @@ model Chapter {
   materials     StudyMaterial[]
   batchProgress BatchChapterProgress[]
   assignments   Assignment[]
+  doubts        Doubt[]
 
   @@map("chapters")
 }
@@ -245,6 +251,7 @@ model Topic {
   studentProgress StudentTopicProgress[]
   revisionTasks   TopicRevisionTask[]
   assignments     Assignment[]
+  doubts          Doubt[]
 
   examImportance  String?
   difficulty      String?
@@ -1285,3 +1292,75 @@ model Notification {
 
   @@map("notifications")
 }
+
+// -----------------------------------------------------------------------------
+// DOUBT CLEARANCE & ACADEMIC CHAT
+// -----------------------------------------------------------------------------
+
+enum DoubtStatus {
+  OPEN
+  IN_PROGRESS
+  ANSWERED
+  RESOLVED
+  CLOSED
+}
+
+enum DoubtPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Doubt {
+  id          String        @id @default(uuid())
+  title       String
+  description String?       @db.Text
+  status      DoubtStatus   @default(OPEN)
+  priority    DoubtPriority @default(MEDIUM)
+  
+  studentId   String
+  student     User          @relation("StudentDoubts", fields: [studentId], references: [id], onDelete: Cascade)
+  
+  teacherId   String
+  teacher     User          @relation("TeacherDoubts", fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  subjectId   String?
+  subject     Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  
+  chapterId   String?
+  chapter     Chapter?      @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  
+  topicId     String?
+  topic       Topic?        @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  centreId    String?
+  centre      Centre?       @relation(fields: [centreId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  resolvedAt  DateTime?
+
+  messages    DoubtMessage[]
+
+  @@map("doubts")
+}
+
+model DoubtMessage {
+  id                  String   @id @default(uuid())
+  doubtId             String
+  doubt               Doubt    @relation(fields: [doubtId], references: [id], onDelete: Cascade)
+
+  senderId            String
+  sender              User     @relation("DoubtMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  senderRole          String   // "STUDENT", "TEACHER", "ADMIN"
+  content             String   @db.Text
+  attachments         Json?    // [{ url: string, filename: string, type: string }]
+  isInternalAdminNote Boolean  @default(false)
+
+  createdAt           DateTime @default(now())
+
+  @@map("doubt_messages")
+}
+

@@ -29,6 +29,7 @@ import { SupportModule } from './support/support.module';
 import { NoticesModule } from './notices/notices.module';
 import { FormsModule } from './forms/forms.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { DoubtsModule } from './doubts/doubts.module';
 import { RedisModule } from './redis/redis.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
@@ -79,6 +80,7 @@ import { APP_GUARD } from '@nestjs/core';
     NoticesModule,
     FormsModule,
     NotificationsModule,
+    DoubtsModule,
   ],
   controllers: [AppController],
   providers: [

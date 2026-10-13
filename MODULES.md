@@ -132,7 +132,23 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 
 ---
 
-## 12. ⚙️ Technology Stack & Infrastructure
+## 12. 💬 Doubt Clearance & Academic Chat System (`/doubts`)
+* **Strict Student-to-Teacher Communication**:
+  * Direct 1-on-1 academic doubt asking where students can direct questions to verified teachers and faculty members only.
+  * Structural boundary preventing student-to-student private messaging to protect classroom focus and prevent harassment.
+* **Faculty Answering & Guidance Workflow**:
+  * Dedicated teacher dashboard to review student doubt queues by priority (`LOW`, `MEDIUM`, `HIGH`, `URGENT`).
+  * Structured explanations, resource linking, and status transitions (`PENDING` ➔ `IN_PROGRESS` ➔ `ANSWERED` ➔ `RESOLVED`).
+* **Institutional Supervision & Administrative Oversight**:
+  * Complete audit visibility across all doubt threads for `SUPER_ADMIN`, `CENTRE_ADMIN`, and `ADMIN`.
+  * Official Academic Supervisor intervention badges on administrative messages.
+  * Dynamic faculty reassignment tool allowing administrators to route doubts between subject specialists.
+* **Interactive Live Experience**:
+  * Two-column split-thread conversation layout, active thread polling, optimistic UI updates, and attachment previews.
+
+---
+
+## 13. ⚙️ Technology Stack & Infrastructure
 * **Frontend**: Next.js 16 (App Router, React Server Components, Tailwind CSS, Lucide Icons).
 * **Backend API**: NestJS (TypeScript, Modular Architecture, Guards, Interceptors, Swagger OpenAPI).
 * **Database & ORM**: PostgreSQL with Prisma ORM (relational schema, relational cascades, migrations).
