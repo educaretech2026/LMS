@@ -8,6 +8,7 @@ import Link from "next/link";
 import { FileUploader } from "@/components/upload/file-uploader";
 import { fetchApi } from "@/lib/api";
 import { CurriculumBrowser } from "./curriculum-browser";
+import { VideoPlayerModal, isVideoUrl, getYouTubeId, VideoItem } from "@/components/media/video-player-modal";
 
 
 export interface Material {
@@ -52,6 +53,7 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
   const [filterTrack, setFilterTrack] = useState("All Tracks");
   const [sortBy, setSortBy] = useState("Date Added (Newest First)");
   const [showModal, setShowModal] = useState(false);
+  const [playingVideo, setPlayingVideo] = useState<VideoItem | null>(null);
 
   useEffect(() => {
     if (isStudent) return; // Students don't need the flat list data
@@ -283,14 +285,29 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-3">
-                                <button
-                                  onClick={() => {
-                                    if (!m.url) return;
-                                    window.open(m.url, '_blank');
-                                  }}
-                                  className="inline-flex items-center gap-1.5 text-brand-blue hover:text-brand-blue-dark text-xs font-bold transition-colors">
-                                  {m.type === "VIDEO" ? <><Play className="h-3.5 w-3.5" /> Play</> : m.type === "LINK" ? <><ExternalLink className="h-3.5 w-3.5" /> Open</> : <><Download className="h-3.5 w-3.5" /> Download</>}
-                                </button>
+                                {(() => {
+                                  const isVideo = m.type === "VIDEO" || isVideoUrl(m.url) || Boolean(getYouTubeId(m.url));
+                                  return (
+                                    <button
+                                      onClick={() => {
+                                        if (!m.url && !m.id) return;
+                                        if (isVideo) {
+                                          setPlayingVideo({
+                                            id: m.id,
+                                            url: m.url || "",
+                                            title: m.title,
+                                            subject: m.syllabus?.subject?.name,
+                                          });
+                                        } else {
+                                          window.open(m.url, '_blank');
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1.5 text-brand-blue hover:text-brand-blue-dark text-xs font-bold transition-colors"
+                                    >
+                                      {isVideo ? <><Play className="h-3.5 w-3.5" /> Play</> : m.type === "LINK" ? <><ExternalLink className="h-3.5 w-3.5" /> Open</> : <><Download className="h-3.5 w-3.5" /> Download</>}
+                                    </button>
+                                  );
+                                })()}
                                 {!isStudent && (
                                   <button
                                     onClick={() => handleDelete(m.id)}
@@ -318,6 +335,11 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
 
       {/* Add Material Modal */}
       {showModal && <AddMaterialModal onClose={() => setShowModal(false)} onSuccess={() => window.location.reload()} />}
+
+      {/* On-Page Video Player */}
+      {playingVideo && (
+        <VideoPlayerModal video={playingVideo} onClose={() => setPlayingVideo(null)} />
+      )}
     </DashboardLayout>
   );
 }

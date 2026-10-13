@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
+import { VideoPlayerModal, isVideoUrl, getYouTubeId } from "@/components/media/video-player-modal";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,11 +86,6 @@ function ImportanceBadge({ value }: { value?: string }) {
 
 // ─── Content Drawer ───────────────────────────────────────────────────────────
 
-function getYouTubeId(url: string) {
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
-  return match ? match[1] : null;
-}
-
 function ContentDrawer({
   topic, contentType, materials, exams, studentBatchId, onClose,
 }: {
@@ -140,7 +136,8 @@ function ContentDrawer({
           body: JSON.stringify({ batchId: studentBatchId, topicId: topic.id, type: 'VIEW_MATERIAL', materialId: item.id })
         }).catch(console.error);
       }
-      if (m.type === "VIDEO") {
+      const isVideo = m.type === "VIDEO" || Boolean(getYouTubeId(m.url)) || isVideoUrl(m.url);
+      if (isVideo) {
         setPlayingVideo(m);
       } else {
         window.open(m.url, "_blank");
@@ -184,7 +181,8 @@ function ContentDrawer({
               const isExam = isExamType;
               const exam = item as TopicExam;
               const mat = item as TopicMaterial;
-              const ytId = !isExam && (mat.type === 'LINK' || mat.type === 'VIDEO') && mat.url ? getYouTubeId(mat.url) : null;
+              const ytId = !isExam && mat.url ? getYouTubeId(mat.url) : null;
+              const isVideo = !isExam && (mat.type === "VIDEO" || Boolean(ytId) || isVideoUrl(mat.url));
               
               return (
                 <div key={item.id} className="px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
@@ -216,7 +214,7 @@ function ContentDrawer({
                       className={`ml-3 shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${contentType.color} hover:opacity-80`}
                     >
                       {isExam ? <><Zap className="h-3 w-3" /> Start</> :
-                       mat.type === "VIDEO" ? <><Play className="h-3 w-3" /> Play</> :
+                       isVideo ? <><Play className="h-3 w-3" /> Play</> :
                        mat.type === "LINK" ? <><ExternalLink className="h-3 w-3" /> Open</> :
                        <><Download className="h-3 w-3" /> Download</>}
                     </button>
@@ -239,77 +237,15 @@ function ContentDrawer({
       
       {playingVideo && (
         <VideoPlayerModal 
-          material={playingVideo} 
+          video={{
+            id: playingVideo.id,
+            url: playingVideo.url || "",
+            title: playingVideo.title,
+            subject: topic.name,
+          }}
           onClose={() => setPlayingVideo(null)} 
         />
       )}
-    </div>
-  );
-}
-
-// ─── Video Player Modal ────────────────────────────────────────────────────────
-
-function VideoPlayerModal({ material, onClose }: { material: TopicMaterial, onClose: () => void }) {
-  const [playUrl, setPlayUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const fetchUrl = async () => {
-      try {
-        const res = await fetchApi<any>(`/study-materials/${material.id}/play-url`);
-        setPlayUrl(res.playUrl);
-      } catch (err: any) {
-        setError(err.message || "Failed to load video");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUrl();
-  }, [material.id]);
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm" onClick={onClose}>
-      <div 
-        className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl mx-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button 
-          onClick={onClose} 
-          className="absolute top-4 right-4 z-10 h-10 w-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-        >
-          <X className="h-5 w-5" />
-        </button>
-
-        {loading ? (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-          </div>
-        ) : error ? (
-          <div className="w-full h-full flex items-center justify-center flex-col gap-2 text-white">
-            <AlertCircle className="h-8 w-8 text-brand-red" />
-            <p>{error}</p>
-          </div>
-        ) : (
-          playUrl?.includes("youtube.com") || playUrl?.includes("youtu.be") ? (
-            <iframe 
-              src={playUrl} 
-              className="w-full h-full border-0" 
-              allowFullScreen 
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            />
-          ) : (
-            <video 
-              src={playUrl!} 
-              className="w-full h-full object-contain" 
-              controls 
-              autoPlay 
-              controlsList="nodownload" 
-              onContextMenu={(e) => e.preventDefault()}
-            />
-          )
-        )}
-      </div>
     </div>
   );
 }

@@ -26,10 +26,12 @@ import {
   FolderOpen,
   School,
   Building,
-  Target
+  Target,
+  Play
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { FileUploader } from "@/components/upload/file-uploader";
+import { VideoPlayerModal, isVideoUrl, getYouTubeId, VideoItem } from "@/components/media/video-player-modal";
 
 export function AssignmentsClient({ initialAssignments }: { initialAssignments: any[] }) {
   const { role } = useAuth();
@@ -60,6 +62,7 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
   const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
   const [deletingAssignment, setDeletingAssignment] = useState<any | null>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<any | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<VideoItem | null>(null);
 
   const refresh = () => {
     fetchApi("/assignments")
@@ -641,6 +644,7 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
             setSelectedAssignment(null);
             refresh();
           }}
+          onPreviewVideo={setPreviewVideo}
         />
       )}
 
@@ -648,7 +652,13 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
         <ViewSubmissionsModal
           assignmentId={selectedAssignment.id}
           onClose={() => setSelectedAssignment(null)}
+          onPreviewVideo={setPreviewVideo}
         />
+      )}
+
+      {/* On-Page Video Player */}
+      {previewVideo && (
+        <VideoPlayerModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
       )}
     </DashboardLayout>
   );
@@ -1450,7 +1460,17 @@ function DeleteConfirmationModal({ assignment, onClose, onSuccess }: { assignmen
 // -----------------------------------------------------------------------------
 // STUDENT: SUBMIT ASSIGNMENT MODAL
 // -----------------------------------------------------------------------------
-function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment: any; onClose: () => void; onSuccess: () => void }) {
+function SubmitAssignmentModal({
+  assignment,
+  onClose,
+  onSuccess,
+  onPreviewVideo
+}: {
+  assignment: any;
+  onClose: () => void;
+  onSuccess: () => void;
+  onPreviewVideo?: (v: VideoItem) => void;
+}) {
   const [currentAssignment, setCurrentAssignment] = useState<any>(assignment);
   const existingSubmission = currentAssignment.submissions?.[0];
   const [notes, setNotes] = useState(existingSubmission?.notes || "");
@@ -1540,21 +1560,37 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
               <div className="pt-2">
                 <h4 className="text-xs font-bold text-text-secondary mb-2">Teacher Resources</h4>
                 <div className="space-y-2">
-                  {assignment.attachments.map((a: any, i: number) => (
-                    <a
-                      key={i}
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center justify-between p-2.5 rounded-xl border border-border-soft bg-surface-2/40 hover:border-brand-blue hover:bg-white transition-all group"
-                    >
-                      <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
-                        <FileText className="h-4 w-4 text-brand-blue" />
-                        <span className="line-clamp-1">{a.filename || `Attachment ${i + 1}`}</span>
-                      </div>
-                      <Download className="h-3.5 w-3.5 text-text-muted group-hover:text-brand-blue" />
-                    </a>
-                  ))}
+                  {assignment.attachments.map((a: any, i: number) => {
+                    const isVideo = isVideoUrl(a.url) || Boolean(getYouTubeId(a.url));
+                    return isVideo ? (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => onPreviewVideo?.({ url: a.url, title: a.filename || `Video Resource ${i + 1}`, subject: assignment.subject?.name })}
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl border border-brand-blue/30 bg-brand-blue/5 hover:border-brand-blue hover:bg-brand-blue/10 transition-all text-left group"
+                      >
+                        <div className="flex items-center gap-2 text-xs font-semibold text-brand-blue">
+                          <Play className="h-4 w-4 shrink-0" />
+                          <span className="line-clamp-1">{a.filename || `Video Resource ${i + 1}`}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-brand-blue bg-white/80 px-2 py-0.5 rounded-md">Play on page</span>
+                      </button>
+                    ) : (
+                      <a
+                        key={i}
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between p-2.5 rounded-xl border border-border-soft bg-surface-2/40 hover:border-brand-blue hover:bg-white transition-all group"
+                      >
+                        <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+                          <FileText className="h-4 w-4 text-brand-blue" />
+                          <span className="line-clamp-1">{a.filename || `Attachment ${i + 1}`}</span>
+                        </div>
+                        <Download className="h-3.5 w-3.5 text-text-muted group-hover:text-brand-blue" />
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1664,7 +1700,15 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
 // -----------------------------------------------------------------------------
 // TEACHER: VIEW SUBMISSIONS MODAL
 // -----------------------------------------------------------------------------
-function ViewSubmissionsModal({ assignmentId, onClose }: { assignmentId: string; onClose: () => void }) {
+function ViewSubmissionsModal({
+  assignmentId,
+  onClose,
+  onPreviewVideo
+}: {
+  assignmentId: string;
+  onClose: () => void;
+  onPreviewVideo?: (v: VideoItem) => void;
+}) {
   const [assignment, setAssignment] = useState<any>(null);
   const [submissionFilter, setSubmissionFilter] = useState("ALL");
   const [gradingSubId, setGradingSubId] = useState<string | null>(null);
@@ -1798,19 +1842,32 @@ function ViewSubmissionsModal({ assignmentId, onClose }: { assignmentId: string;
 
                   {sub.attachments && sub.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {sub.attachments.map((a: any, i: number) => (
-                        <a
-                          key={i}
-                          href={a.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-blue/10 text-brand-blue text-xs font-bold rounded-lg hover:bg-brand-blue/20 transition-colors"
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          <span>{a.filename || `File ${i + 1}`}</span>
-                          <ExternalLink className="h-3 w-3 ml-0.5 opacity-60" />
-                        </a>
-                      ))}
+                      {sub.attachments.map((a: any, i: number) => {
+                        const isVideo = isVideoUrl(a.url) || Boolean(getYouTubeId(a.url));
+                        return isVideo ? (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => onPreviewVideo?.({ url: a.url, title: a.filename || `Submission Video ${i + 1}`, subject: sub.student?.user ? `${sub.student.user.firstName} ${sub.student.user.lastName}` : "Student Submission" })}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-blue/10 text-brand-blue text-xs font-bold rounded-lg hover:bg-brand-blue/20 transition-colors"
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                            <span>{a.filename || `Video ${i + 1}`}</span>
+                          </button>
+                        ) : (
+                          <a
+                            key={i}
+                            href={a.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-blue/10 text-brand-blue text-xs font-bold rounded-lg hover:bg-brand-blue/20 transition-colors"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>{a.filename || `File ${i + 1}`}</span>
+                            <ExternalLink className="h-3 w-3 ml-0.5 opacity-60" />
+                          </a>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
