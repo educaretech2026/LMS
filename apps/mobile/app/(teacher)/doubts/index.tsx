@@ -86,13 +86,13 @@ export default function TeacherDoubtsQueue() {
   const getPriorityStyle = (priority: string) => {
     switch (priority) {
       case 'URGENT':
-        return { bg: '#FEE2E2', text: '#DC2626', label: 'Urgent' };
+        return { bg: Colors.brand.redLight, text: Colors.brand.red, label: 'Urgent' };
       case 'HIGH':
-        return { bg: '#FFEDD5', text: '#EA580C', label: 'High' };
+        return { bg: Colors.brand.amberLight, text: Colors.brand.amber, label: 'High' };
       case 'MEDIUM':
-        return { bg: '#FEF3C7', text: '#D97706', label: 'Medium' };
+        return { bg: Colors.brand.blueLight, text: Colors.brand.blue, label: 'Medium' };
       default:
-        return { bg: '#F1F5F9', text: '#64748B', label: 'Normal' };
+        return { bg: Colors.surface.subtle, text: Colors.text.muted, label: 'Normal' };
     }
   };
 
@@ -100,11 +100,11 @@ export default function TeacherDoubtsQueue() {
     switch (status) {
       case 'RESOLVED':
       case 'CLOSED':
-        return { bg: '#DCFCE7', text: '#16A34A', label: 'Resolved' };
+        return { bg: Colors.brand.emeraldLight, text: Colors.brand.emerald, label: 'Resolved' };
       case 'ANSWERED':
-        return { bg: '#EFF6FF', text: '#2563EB', label: 'Answered' };
+        return { bg: Colors.brand.blueLight, text: Colors.brand.blue, label: 'Answered' };
       default:
-        return { bg: '#FEF9C3', text: '#CA8A04', label: 'Needs Reply' };
+        return { bg: Colors.brand.amberLight, text: Colors.brand.amber, label: 'Open' };
     }
   };
 
@@ -116,15 +116,14 @@ export default function TeacherDoubtsQueue() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Doubt Clearing Queue</Text>
-          <Text style={styles.subtitle}>
-            {pendingCount} student question{pendingCount === 1 ? '' : 's'} waiting for faculty response
-          </Text>
-        </View>
-        <View style={styles.headerBadge}>
-          <MessagesSquare size={18} color={Colors.brand.blue} />
-          <Text style={styles.headerBadgeText}>{doubts.length}</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerEyebrow}>STUDENT Q&A</Text>
+            <Text style={styles.title}>Doubts Queue</Text>
+          </View>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{pendingCount} Open</Text>
+          </View>
         </View>
       </View>
 
@@ -258,6 +257,14 @@ export default function TeacherDoubtsQueue() {
                   {item.description}
                 </Text>
 
+                {item.teacher ? (
+                  <View style={styles.assignedBadgeRow}>
+                    <Text style={styles.assignedBadgeText}>
+                      Faculty: Prof. {item.teacher.firstName} {item.teacher.lastName || ''}
+                    </Text>
+                  </View>
+                ) : null}
+
                 <View style={styles.cardFooter}>
                   <View style={styles.footerLeft}>
                     <Clock size={13} color={Colors.text.muted} />
@@ -303,29 +310,35 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 3,
+  },
   title: {
     fontSize: 22,
     fontWeight: '800',
     color: Colors.text.primary,
   },
-  subtitle: {
-    fontSize: 13,
-    color: Colors.text.secondary,
-    marginTop: 2,
-  },
   headerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: Colors.brand.amberLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   headerBadgeText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
-    color: Colors.brand.blue,
+    color: Colors.brand.amber,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -473,7 +486,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.text.secondary,
     lineHeight: 18,
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  assignedBadgeRow: {
+    backgroundColor: 'rgba(1,98,177,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(1,98,177,0.15)',
+  },
+  assignedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
   },
   cardFooter: {
     flexDirection: 'row',

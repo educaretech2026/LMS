@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Text, Image } from 'react-native';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { Colors } from '../lib/theme';
 
@@ -46,7 +46,7 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>E</Text>
+          <Image source={require('../assets/logo.png')} style={styles.logoImage} resizeMode="contain" />
         </View>
         <Text style={styles.appName}>Educare LMS</Text>
         <ActivityIndicator size="small" color={Colors.brand.blue} style={{ marginTop: 16 }} />
@@ -91,22 +91,22 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface.background,
   },
   logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    backgroundColor: Colors.brand.blue,
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.brand.blue,
+    padding: 8,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '800',
+  logoImage: {
+    width: 56,
+    height: 56,
   },
   appName: {
     marginTop: 16,

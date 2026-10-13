@@ -386,9 +386,20 @@ export class DoubtsService {
     try {
       const normalizedRole = this.normalizeRole(role);
       const isAdmin = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole);
+      const isTeacher = normalizedRole === 'TEACHER';
 
-      if (!isAdmin) {
-        throw new ForbiddenException('Only administrators can reassign doubts');
+      const existingDoubt = await this.prisma.doubt.findUnique({
+        where: { id: doubtId },
+        include: { teacher: true },
+      });
+
+      if (!existingDoubt) {
+        throw new HttpException('Doubt session not found', HttpStatus.NOT_FOUND);
+      }
+
+      const isAssignedTeacher = isTeacher && existingDoubt.teacherId === userId;
+      if (!isAdmin && !isAssignedTeacher) {
+        throw new ForbiddenException('Only administrators or the assigned faculty can reassign this doubt');
       }
 
       const newTeacher = await this.prisma.user.findUnique({
@@ -399,6 +410,12 @@ export class DoubtsService {
       if (!newTeacher) {
         throw new HttpException('Selected teacher not found', HttpStatus.BAD_REQUEST);
       }
+
+      const actor = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      });
+      const actorName = actor ? `${actor.firstName} ${actor.lastName}` : (isAdmin ? 'Academic Supervisor' : 'Assigned Faculty');
 
       const doubt = await this.prisma.doubt.update({
         where: { id: doubtId },
@@ -412,13 +429,13 @@ export class DoubtsService {
         },
       });
 
-      // Post system moderation message
+      // Post moderation/audit message in doubt thread
       await this.prisma.doubtMessage.create({
         data: {
           doubtId,
           senderId: userId,
-          senderRole: 'ADMIN',
-          content: `Reassigned to Teacher ${newTeacher.firstName} ${newTeacher.lastName} by Academic Supervisor.`,
+          senderRole: isAdmin ? 'ADMIN' : 'TEACHER',
+          content: `Reassigned to Prof. ${newTeacher.firstName} ${newTeacher.lastName} by ${actorName}.`,
           isInternalAdminNote: false,
         },
       });
@@ -427,7 +444,7 @@ export class DoubtsService {
       this.notificationsService.sendNotification({
         userId: newTeacherId,
         title: 'Doubt Reassigned to You',
-        message: `Academic Supervisor reassigned doubt "${doubt.title}" to you.`,
+        message: `${actorName} reassigned doubt "${doubt.title}" to you.`,
         type: 'DOUBT',
         link: `/doubts?id=${doubt.id}`,
       }).catch(err => this.logger.warn('Failed to notify new teacher', err));

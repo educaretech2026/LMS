@@ -20,26 +20,29 @@ export default function TeacherMoreLayout() {
           headerTintColor: Colors.brand.blue,
           headerStyle: { backgroundColor: Colors.surface.card },
           headerShadowVisible: false,
+          headerTitleStyle: { fontWeight: '700', fontSize: 16, color: Colors.text.primary },
         }}
       />
       <Stack.Screen
         name="estudy"
         options={{
           headerShown: true,
-          title: 'E-Study Curriculum Hub',
+          title: 'E-Study Hub',
           headerTintColor: Colors.brand.blue,
           headerStyle: { backgroundColor: Colors.surface.card },
           headerShadowVisible: false,
+          headerTitleStyle: { fontWeight: '700', fontSize: 16, color: Colors.text.primary },
         }}
       />
       <Stack.Screen
         name="live-classes"
         options={{
           headerShown: true,
-          title: 'Live Online Classes',
+          title: 'Live Classes',
           headerTintColor: Colors.brand.blue,
           headerStyle: { backgroundColor: Colors.surface.card },
           headerShadowVisible: false,
+          headerTitleStyle: { fontWeight: '700', fontSize: 16, color: Colors.text.primary },
         }}
       />
     </Stack>

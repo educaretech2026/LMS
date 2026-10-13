@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,17 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { fetchApi } from '../../../lib/api';
-import { Colors, Shadows } from '../../../lib/theme';
-import { FileText, Clock, Award, CheckCircle2, ChevronRight, Play } from 'lucide-react-native';
+import { Colors, Shadows, Radii } from '../../../lib/theme';
+import { FileText, Clock, Award, ChevronRight, Play, ArrowUpDown } from 'lucide-react-native';
 
 export default function StudentExamsList() {
   const router = useRouter();
   const [tab, setTab] = useState<'AVAILABLE' | 'COMPLETED'>('AVAILABLE');
+  const [sortBy, setSortBy] = useState<'date' | 'title'>('date');
   const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,23 +43,44 @@ export default function StudentExamsList() {
     loadExams();
   };
 
-  const availableExams = exams.filter((e) => !e.results || e.results.length === 0);
-  const completedExams = exams.filter((e) => e.results && e.results.length > 0);
+  const availableExams = useMemo(() => {
+    return exams.filter((e) => !e.results || e.results.length === 0);
+  }, [exams]);
 
-  const displayedList = tab === 'AVAILABLE' ? availableExams : completedExams;
+  const completedExams = useMemo(() => {
+    return exams.filter((e) => e.results && e.results.length > 0);
+  }, [exams]);
+
+  const displayedList = useMemo(() => {
+    const list = tab === 'AVAILABLE' ? [...availableExams] : [...completedExams];
+    if (sortBy === 'title') {
+      list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else {
+      list.sort((a, b) => new Date(b.startTime || b.createdAt || 0).getTime() - new Date(a.startTime || a.createdAt || 0).getTime());
+    }
+    return list;
+  }, [tab, availableExams, completedExams, sortBy]);
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Exams & Tests</Text>
-        <Text style={styles.subtitle}>Scheduled MCQ and class assessments</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerEyebrow}>EVALUATION</Text>
+            <Text style={styles.title}>Exams & Tests</Text>
+          </View>
+          <View style={styles.badgeCount}>
+            <Text style={styles.badgeCountText}>{exams.length} Total</Text>
+          </View>
+        </View>
 
         {/* Tab Pills */}
         <View style={styles.tabsRow}>
           <TouchableOpacity
             style={[styles.tabButton, tab === 'AVAILABLE' && styles.tabButtonActive]}
             onPress={() => setTab('AVAILABLE')}
+            activeOpacity={0.8}
           >
             <Text style={[styles.tabText, tab === 'AVAILABLE' && styles.tabTextActive]}>
               Available ({availableExams.length})
@@ -66,30 +89,44 @@ export default function StudentExamsList() {
           <TouchableOpacity
             style={[styles.tabButton, tab === 'COMPLETED' && styles.tabButtonActive]}
             onPress={() => setTab('COMPLETED')}
+            activeOpacity={0.8}
           >
             <Text style={[styles.tabText, tab === 'COMPLETED' && styles.tabTextActive]}>
               Completed ({completedExams.length})
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Hierarchy & Sort Bar */}
+        <View style={styles.sortBar}>
+          <Text style={styles.sortLabel}>SORT</Text>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'date' && styles.sortChipActive]}
+            onPress={() => setSortBy('date')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'date' && styles.sortChipTextActive]}>Recent</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'title' && styles.sortChipActive]}
+            onPress={() => setSortBy('title')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'title' && styles.sortChipTextActive]}>Title A-Z</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.brand.blue]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand.blue} />}
+        showsVerticalScrollIndicator={false}
       >
         {loading ? (
           <ActivityIndicator color={Colors.brand.blue} style={{ marginTop: 40 }} />
         ) : displayedList.length === 0 ? (
           <View style={styles.emptyCard}>
-            <FileText size={36} color={Colors.text.muted} />
+            <FileText size={32} color={Colors.text.muted} />
             <Text style={styles.emptyTitle}>
-              {tab === 'AVAILABLE' ? 'No pending exams' : 'No completed tests yet'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {tab === 'AVAILABLE'
-                ? 'Your scheduled tests will show up here.'
-                : 'Tests you submit will appear here with your grades and breakdown.'}
+              {tab === 'AVAILABLE' ? 'No pending exams' : 'No completed tests'}
             </Text>
           </View>
         ) : (
@@ -99,64 +136,67 @@ export default function StudentExamsList() {
 
             return (
               <View key={exam.id} style={styles.card}>
-                <View style={styles.cardTop}>
-                  <View style={styles.subjectBadge}>
-                    <Text style={styles.subjectBadgeText}>{exam.subject?.name || 'General'}</Text>
-                  </View>
-                  {hasResult && result ? (
-                    <View style={styles.gradeBadge}>
-                      <Text style={styles.gradeBadgeText}>Grade {result.grade || 'A'}</Text>
+                <View style={styles.cardAccent} />
+                <View style={styles.cardInner}>
+                  <View style={styles.cardTop}>
+                    <View style={styles.subjectBadge}>
+                      <Text style={styles.subjectBadgeText}>{exam.subject?.name || exam.subject || 'Assessment'}</Text>
                     </View>
-                  ) : (
-                    <View style={styles.activePill}>
-                      <Text style={styles.activePillText}>Live</Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.examTitle}>{exam.title}</Text>
-
-                <View style={styles.metaRow}>
-                  <View style={styles.metaItem}>
-                    <FileText size={13} color={Colors.text.muted} />
-                    <Text style={styles.metaText}>
-                      {exam.mcqQuestions?.length || exam.questions || 10} Questions
-                    </Text>
+                    {hasResult && result ? (
+                      <View style={styles.gradeBadge}>
+                        <Text style={styles.gradeBadgeText}>Grade {result.grade || 'Passed'}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.activePill}>
+                        <Text style={styles.activePillText}>Ready</Text>
+                      </View>
+                    )}
                   </View>
-                  <View style={styles.metaItem}>
-                    <Clock size={13} color={Colors.text.muted} />
-                    <Text style={styles.metaText}>{exam.duration || 60} mins</Text>
-                  </View>
-                  {hasResult && result ? (
+
+                  <Text style={styles.examTitle}>{exam.title}</Text>
+
+                  <View style={styles.metaRow}>
                     <View style={styles.metaItem}>
-                      <Award size={13} color={Colors.status.success} />
-                      <Text style={[styles.metaText, { color: Colors.status.success, fontWeight: '700' }]}>
-                        {result.marksObtained} / {result.maxMarks}
+                      <FileText size={12} color={Colors.text.muted} />
+                      <Text style={styles.metaText}>
+                        {exam.mcqQuestions?.length || exam.questions || 10} Qs
                       </Text>
                     </View>
-                  ) : null}
-                </View>
+                    <View style={styles.metaItem}>
+                      <Clock size={12} color={Colors.text.muted} />
+                      <Text style={styles.metaText}>{exam.duration || 60}m</Text>
+                    </View>
+                    {hasResult && result ? (
+                      <View style={styles.metaItem}>
+                        <Award size={12} color={Colors.brand.emerald} />
+                        <Text style={[styles.metaText, { color: Colors.brand.emerald, fontWeight: '700' }]}>
+                          {result.marksObtained}/{result.maxMarks}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
 
-                {/* Card Action */}
-                {hasResult ? (
-                  <TouchableOpacity
-                    style={styles.reviewButton}
-                    onPress={() => router.push(`/(student)/exams/${exam.id}/result` as any)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.reviewButtonText}>View Scorecard & Review</Text>
-                    <ChevronRight size={15} color={Colors.brand.blue} />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.startButton}
-                    onPress={() => router.push(`/(student)/exams/${exam.id}/take` as any)}
-                    activeOpacity={0.8}
-                  >
-                    <Play size={15} color="#FFFFFF" />
-                    <Text style={styles.startButtonText}>Start Test</Text>
-                  </TouchableOpacity>
-                )}
+                  {/* Card Action */}
+                  {hasResult ? (
+                    <TouchableOpacity
+                      style={styles.reviewButton}
+                      onPress={() => router.push(`/(student)/exams/${exam.id}/result` as any)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.reviewButtonText}>View Scorecard</Text>
+                      <ChevronRight size={14} color={Colors.brand.blue} />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.startButton}
+                      onPress={() => router.push(`/(student)/exams/${exam.id}/take` as any)}
+                      activeOpacity={0.8}
+                    >
+                      <Play size={14} color="#FFFFFF" />
+                      <Text style={styles.startButtonText}>Start Test</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             );
           })
@@ -173,38 +213,59 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 54,
-    paddingBottom: 16,
+    paddingTop: Platform.OS === 'ios' ? 56 : 44,
+    paddingBottom: 12,
     backgroundColor: Colors.surface.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.default,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 3,
   },
   title: {
     fontSize: 22,
     fontWeight: '800',
     color: Colors.text.primary,
+    letterSpacing: -0.4,
   },
-  subtitle: {
-    fontSize: 12,
+  badgeCount: {
+    backgroundColor: Colors.surface.subtle,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.sm,
+  },
+  badgeCountText: {
+    fontSize: 11,
+    fontWeight: '600',
     color: Colors.text.secondary,
-    marginTop: 2,
   },
   tabsRow: {
     flexDirection: 'row',
     backgroundColor: Colors.surface.subtle,
-    borderRadius: 10,
+    borderRadius: Radii.md,
     padding: 3,
-    marginTop: 14,
+    marginBottom: 10,
   },
   tabButton: {
     flex: 1,
     paddingVertical: 7,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: Radii.sm,
   },
   tabButtonActive: {
     backgroundColor: Colors.surface.card,
-    ...Shadows.sm,
+    ...Shadows.xs,
   },
   tabText: {
     fontSize: 12,
@@ -215,40 +276,74 @@ const styles = StyleSheet.create({
     color: Colors.brand.blue,
     fontWeight: '700',
   },
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 4,
+  },
+  sortLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.text.muted,
+    letterSpacing: 0.5,
+  },
+  sortChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.surface.card,
+  },
+  sortChipActive: {
+    backgroundColor: Colors.brand.blueLight,
+    borderColor: Colors.brand.blue,
+  },
+  sortChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  sortChipTextActive: {
+    color: Colors.brand.blue,
+    fontWeight: '700',
+  },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 36,
   },
   emptyCard: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 32,
+    borderRadius: Radii.lg,
+    padding: 36,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border.default,
     marginTop: 20,
+    gap: 10,
+    ...Shadows.xs,
   },
   emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginTop: 12,
-  },
-  emptySubtitle: {
-    fontSize: 11,
+    fontSize: 13,
+    fontWeight: '600',
     color: Colors.text.muted,
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 16,
   },
   card: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: Radii.lg,
     borderWidth: 1,
     borderColor: Colors.border.default,
     marginBottom: 12,
-    ...Shadows.sm,
+    overflow: 'hidden',
+    ...Shadows.xs,
+  },
+  cardAccent: {
+    height: 2,
+    backgroundColor: Colors.brand.blue,
+  },
+  cardInner: {
+    padding: 14,
   },
   cardTop: {
     flexDirection: 'row',
@@ -257,50 +352,50 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subjectBadge: {
-    backgroundColor: Colors.brand.blueLight,
+    backgroundColor: Colors.surface.subtle,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: Radii.sm,
   },
   subjectBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.brand.blue,
-    textTransform: 'uppercase',
+    color: Colors.text.secondary,
   },
-  activePill: {
-    backgroundColor: Colors.status.successLight,
+  gradeBadge: {
+    backgroundColor: Colors.brand.emeraldLight,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: Radii.sm,
+  },
+  gradeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.emerald,
+  },
+  activePill: {
+    backgroundColor: Colors.brand.blueLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
   },
   activePillText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.status.success,
-  },
-  gradeBadge: {
-    backgroundColor: Colors.status.warningLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  gradeBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.status.warning,
+    color: Colors.brand.blue,
   },
   examTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: Colors.text.primary,
+    marginBottom: 10,
+    lineHeight: 20,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    marginTop: 10,
-    marginBottom: 14,
+    gap: 12,
+    marginBottom: 12,
   },
   metaItem: {
     flexDirection: 'row',
@@ -309,34 +404,36 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 11,
+    fontWeight: '500',
     color: Colors.text.muted,
   },
   startButton: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.brand.blue,
-    borderRadius: 10,
     paddingVertical: 10,
+    borderRadius: Radii.md,
     gap: 6,
+    ...Shadows.glowBlue,
   },
   startButtonText: {
-    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+    color: '#FFFFFF',
   },
   reviewButton: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.surface.subtle,
-    borderRadius: 10,
+    justifyContent: 'center',
+    backgroundColor: Colors.brand.blueLight,
     paddingVertical: 10,
-    gap: 6,
+    borderRadius: Radii.md,
+    gap: 4,
   },
   reviewButtonText: {
-    color: Colors.brand.blue,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+    color: Colors.brand.blue,
   },
 });

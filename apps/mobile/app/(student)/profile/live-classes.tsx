@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,15 @@ import {
   ActivityIndicator,
   Linking,
   Alert,
+  Platform,
 } from 'react-native';
 import { fetchApi } from '../../../lib/api';
-import { Colors, Shadows } from '../../../lib/theme';
-import { Video, Calendar, Clock, Play, Radio, Users } from 'lucide-react-native';
+import { Colors, Shadows, Radii } from '../../../lib/theme';
+import { Video, Calendar, Clock, Play, Radio, Users, ChevronRight } from 'lucide-react-native';
 
 export default function StudentLiveClassesScreen() {
   const [classes, setClasses] = useState<any[]>([]);
+  const [filter, setFilter] = useState<'ALL' | 'LIVE' | 'UPCOMING'>('ALL');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -50,99 +52,167 @@ export default function StudentLiveClassesScreen() {
     }
   };
 
+  const liveClasses = useMemo(() => classes.filter((c) => c.status === 'LIVE'), [classes]);
+  const upcomingClasses = useMemo(() => classes.filter((c) => c.status !== 'LIVE' && c.status !== 'ENDED'), [classes]);
+
+  const displayedList = useMemo(() => {
+    if (filter === 'LIVE') return liveClasses;
+    if (filter === 'UPCOMING') return upcomingClasses;
+    return classes;
+  }, [classes, filter, liveClasses, upcomingClasses]);
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.brand.blue]} />}
-    >
-      <View style={styles.banner}>
-        <View style={styles.bannerIconBox}>
-          <Radio size={24} color="#DC2626" />
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerEyebrow}>SESSIONS</Text>
+            <Text style={styles.title}>Live Classes</Text>
+          </View>
+          {liveClasses.length > 0 && (
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveIndicatorText}>{liveClasses.length} LIVE NOW</Text>
+            </View>
+          )}
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.bannerTitle}>Interactive Live Sessions</Text>
-          <Text style={styles.bannerSub}>Join real-time video lectures and doubt discussions</Text>
+
+        {/* Filter Tabs */}
+        <View style={styles.tabsRow}>
+          <TouchableOpacity
+            style={[styles.tabButton, filter === 'ALL' && styles.tabButtonActive]}
+            onPress={() => setFilter('ALL')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, filter === 'ALL' && styles.tabTextActive]}>
+              All ({classes.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, filter === 'LIVE' && styles.tabButtonActive]}
+            onPress={() => setFilter('LIVE')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, filter === 'LIVE' && styles.tabTextActive]}>
+              Live Now ({liveClasses.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, filter === 'UPCOMING' && styles.tabButtonActive]}
+            onPress={() => setFilter('UPCOMING')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, filter === 'UPCOMING' && styles.tabTextActive]}>
+              Upcoming ({upcomingClasses.length})
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.brand.blue} />
-          <Text style={styles.loadingText}>Fetching scheduled classes...</Text>
-        </View>
-      ) : classes.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Video size={48} color={Colors.text.muted} />
-          <Text style={styles.emptyTitle}>No Live Classes Scheduled</Text>
-          <Text style={styles.emptySubtitle}>You will be notified as soon as a faculty member schedules a lecture.</Text>
-        </View>
-      ) : (
-        classes.map((item) => {
-          const isLive = item.status === 'LIVE';
-          const isEnded = item.status === 'ENDED';
-          const meetUrl = item.zoomLink || item.meetLink || '';
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand.blue} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {loading ? (
+          <ActivityIndicator color={Colors.brand.blue} style={{ marginTop: 40 }} />
+        ) : displayedList.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Video size={32} color={Colors.text.muted} />
+            <Text style={styles.emptyTitle}>
+              {filter === 'LIVE' ? 'No sessions live right now' : 'No upcoming classes scheduled'}
+            </Text>
+          </View>
+        ) : (
+          displayedList.map((item) => {
+            const isLive = item.status === 'LIVE';
+            const isEnded = item.status === 'ENDED';
+            const meetUrl = item.zoomLink || item.meetLink || '';
+            const dt = item.scheduledAt ? new Date(item.scheduledAt) : null;
 
-          return (
-            <View key={item.id} style={[styles.card, isLive && styles.cardLive]}>
-              <View style={styles.cardTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.subjectTag}>{item.subject || 'Live Lecture'}</Text>
-                  <Text style={styles.classTitle}>{item.title}</Text>
-                  <Text style={styles.facultyText}>Faculty: {item.teacherName || 'Educare Faculty'}</Text>
-                </View>
-
+            return (
+              <View key={item.id} style={[styles.card, isLive && styles.cardLive]}>
                 <View
                   style={[
-                    styles.badge,
-                    isLive ? styles.badgeLive : isEnded ? styles.badgeEnded : styles.badgeScheduled,
+                    styles.cardAccent,
+                    {
+                      backgroundColor: isLive
+                        ? Colors.brand.red
+                        : isEnded
+                        ? Colors.text.muted
+                        : Colors.brand.blue,
+                    },
                   ]}
-                >
-                  {isLive && <Radio size={10} color="#DC2626" />}
-                  <Text
-                    style={[
-                      styles.badgeText,
-                      isLive ? { color: '#DC2626' } : isEnded ? { color: Colors.text.muted } : { color: Colors.brand.blue },
-                    ]}
-                  >
-                    {item.status || 'SCHEDULED'}
+                />
+                <View style={styles.cardInner}>
+                  <View style={styles.cardTop}>
+                    <View style={styles.subjectTag}>
+                      <Text style={styles.subjectTagText}>{item.subject || 'Lecture'}</Text>
+                    </View>
+
+                    {isLive ? (
+                      <View style={styles.badgeLive}>
+                        <Radio size={10} color="#FFFFFF" />
+                        <Text style={styles.badgeLiveText}>LIVE</Text>
+                      </View>
+                    ) : isEnded ? (
+                      <View style={styles.badgeEnded}>
+                        <Text style={styles.badgeEndedText}>Ended</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.badgeScheduled}>
+                        <Clock size={10} color={Colors.brand.blue} />
+                        <Text style={styles.badgeScheduledText}>Scheduled</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <Text style={styles.classTitle} numberOfLines={2}>
+                    {item.title}
                   </Text>
+
+                  <View style={styles.metaRow}>
+                    <Text style={styles.facultyText}>
+                      Faculty: {item.teacherName || 'Faculty'}
+                    </Text>
+                    {dt && (
+                      <View style={styles.timeTag}>
+                        <Calendar size={11} color={Colors.text.muted} />
+                        <Text style={styles.timeText}>
+                          {dt.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })} ·{' '}
+                          {dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Action button */}
+                  {isLive ? (
+                    <TouchableOpacity
+                      style={styles.joinLiveBtn}
+                      onPress={() => handleJoin(meetUrl)}
+                      activeOpacity={0.85}
+                    >
+                      <Play size={13} color="#FFFFFF" />
+                      <Text style={styles.joinLiveBtnText}>Join Live Classroom</Text>
+                    </TouchableOpacity>
+                  ) : meetUrl ? (
+                    <TouchableOpacity
+                      style={styles.joinBtn}
+                      onPress={() => handleJoin(meetUrl)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.joinBtnText}>Open Meeting Link</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               </View>
-
-              <View style={styles.infoRow}>
-                <View style={styles.infoItem}>
-                  <Calendar size={13} color={Colors.text.muted} />
-                  <Text style={styles.infoText}>
-                    {new Date(item.scheduledAt).toLocaleDateString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </View>
-                <View style={styles.infoItem}>
-                  <Clock size={13} color={Colors.text.muted} />
-                  <Text style={styles.infoText}>{item.duration || 60} mins</Text>
-                </View>
-              </View>
-
-              {!isEnded && (
-                <TouchableOpacity
-                  style={[styles.joinBtn, isLive ? styles.joinBtnLive : styles.joinBtnDefault]}
-                  onPress={() => handleJoin(meetUrl)}
-                  activeOpacity={0.8}
-                >
-                  <Play size={15} color="#FFFFFF" />
-                  <Text style={styles.joinBtnText}>{isLive ? 'Join Live Stream' : 'Join Classroom'}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        })
-      )}
-    </ScrollView>
+            );
+          })
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -151,157 +221,227 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.surface.background,
   },
-  scrollContent: {
-    padding: 16,
-    gap: 12,
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 56 : 44,
+    paddingBottom: 12,
+    backgroundColor: Colors.surface.card,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.default,
   },
-  banner: {
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 3,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    letterSpacing: -0.4,
+  },
+  liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    gap: 12,
-    marginBottom: 4,
+    gap: 6,
+    backgroundColor: Colors.brand.redLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.sm,
   },
-  bannerIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.brand.red,
   },
-  bannerTitle: {
-    fontSize: 14,
+  liveIndicatorText: {
+    fontSize: 10,
     fontWeight: '800',
-    color: '#991B1B',
+    color: Colors.brand.red,
+    letterSpacing: 0.5,
   },
-  bannerSub: {
-    fontSize: 11,
-    color: '#B91C1C',
-    marginTop: 1,
+  tabsRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface.subtle,
+    borderRadius: Radii.md,
+    padding: 3,
   },
-  loadingContainer: {
-    paddingVertical: 48,
+  tabButton: {
+    flex: 1,
+    paddingVertical: 7,
     alignItems: 'center',
+    borderRadius: Radii.sm,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: Colors.text.secondary,
+  tabButtonActive: {
+    backgroundColor: Colors.surface.card,
+    ...Shadows.xs,
   },
-  emptyContainer: {
-    paddingVertical: 64,
+  tabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.text.muted,
+  },
+  tabTextActive: {
+    color: Colors.brand.blue,
+    fontWeight: '700',
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 36,
+  },
+  emptyCard: {
+    backgroundColor: Colors.surface.card,
+    borderRadius: Radii.lg,
+    padding: 36,
     alignItems: 'center',
-    paddingHorizontal: 32,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    marginTop: 20,
+    gap: 10,
+    ...Shadows.xs,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginTop: 12,
-  },
-  emptySubtitle: {
     fontSize: 13,
+    fontWeight: '600',
     color: Colors.text.muted,
-    textAlign: 'center',
-    marginTop: 4,
   },
   card: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: Radii.lg,
     borderWidth: 1,
-    borderColor: Colors.border.light,
-    ...Shadows.sm,
+    borderColor: Colors.border.default,
+    marginBottom: 10,
+    overflow: 'hidden',
+    ...Shadows.xs,
   },
   cardLive: {
-    borderColor: '#FCA5A5',
-    backgroundColor: '#FFFBFB',
+    borderColor: `${Colors.brand.red}40`,
+  },
+  cardAccent: {
+    height: 2,
+  },
+  cardInner: {
+    padding: 14,
   },
   cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 8,
   },
   subjectTag: {
+    backgroundColor: Colors.surface.subtle,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  subjectTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.text.secondary,
+  },
+  badgeLive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.brand.red,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  badgeLiveText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  badgeEnded: {
+    backgroundColor: Colors.surface.subtle,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  badgeEndedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.text.muted,
+  },
+  badgeScheduled: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.brand.blueLight,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  badgeScheduledText: {
     fontSize: 10,
     fontWeight: '700',
     color: Colors.brand.blue,
-    textTransform: 'uppercase',
   },
   classTitle: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
     color: Colors.text.primary,
-    marginTop: 2,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
   facultyText: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginTop: 2,
+    fontSize: 11,
+    color: Colors.text.muted,
+    fontWeight: '500',
   },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  badgeLive: {
-    backgroundColor: '#FEE2E2',
-  },
-  badgeScheduled: {
-    backgroundColor: '#EFF6FF',
-  },
-  badgeEnded: {
-    backgroundColor: '#F1F5F9',
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
-  },
-  infoItem: {
+  timeTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  infoText: {
-    fontSize: 12,
-    color: Colors.text.secondary,
+  timeText: {
+    fontSize: 11,
+    color: Colors.text.muted,
+    fontWeight: '500',
   },
-  joinBtn: {
+  joinLiveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 6,
-    ...Shadows.sm,
+    backgroundColor: Colors.brand.red,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
   },
-  joinBtnLive: {
-    backgroundColor: '#DC2626',
+  joinLiveBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  joinBtnDefault: {
-    backgroundColor: Colors.brand.blue,
+  joinBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.brand.blueLight,
+    paddingVertical: 9,
+    borderRadius: Radii.md,
   },
   joinBtnText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.brand.blue,
   },
 });

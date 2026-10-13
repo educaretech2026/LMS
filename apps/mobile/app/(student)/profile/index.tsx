@@ -1,25 +1,14 @@
 import React from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, Alert, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../../hooks/useAuth';
-import { Colors, Shadows } from '../../../lib/theme';
+import { Colors, Shadows, Radii } from '../../../lib/theme';
 import {
-  User,
-  CreditCard,
-  BookOpen,
-  CalendarCheck,
-  Video,
-  Bell,
-  LogOut,
-  ChevronRight,
-  ShieldCheck,
+  BookOpen, Video, CreditCard, CalendarCheck, Bell, LogOut,
+  ChevronRight, Building2, User,
 } from 'lucide-react-native';
 
 export default function StudentProfileScreen() {
@@ -27,260 +16,162 @@ export default function StudentProfileScreen() {
   const router = useRouter();
 
   const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to log out of your Educare LMS account?', [
+    Alert.alert('Sign Out', 'Exit your student session?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: () => logout() },
+      { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
     ]);
   };
 
-  const fullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Student User';
-  const initials = fullName
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .substring(0, 2)
-    .toUpperCase();
+  const fullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Student';
+  const initials = fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+  const services = [
+    { label: 'E-Study Materials', sub: 'Notes & video lectures', icon: BookOpen, color: Colors.brand.blue, bg: Colors.brand.blueLight, route: '/(student)/profile/estudy', accent: Colors.brand.blue },
+    { label: 'Live Classes', sub: 'Join real-time sessions', icon: Video, color: Colors.brand.red, bg: Colors.brand.redLight, route: '/(student)/profile/live-classes', accent: Colors.brand.red },
+    { label: 'Attendance', sub: 'Your attendance record', icon: CalendarCheck, color: Colors.brand.emerald, bg: Colors.brand.emeraldLight, route: '/(student)/profile/attendance', accent: Colors.brand.emerald },
+    { label: 'Student ID Card', sub: 'Digital QR identity', icon: CreditCard, color: Colors.brand.indigo, bg: Colors.brand.indigoLight, route: '/(student)/profile/id-card', accent: Colors.brand.indigo },
+  ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      {/* Header Info Card */}
-      <View style={styles.profileCard}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarInitials}>{initials || 'ST'}</Text>
+    <View style={styles.root}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerEyebrow}>STUDENT ACCOUNT</Text>
+          <Text style={styles.headerTitle}>Profile</Text>
+        </View>
+        <View style={styles.headerRole}>
+          <Text style={styles.headerRoleText}>Student</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile summary */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.profileName}>{fullName}</Text>
+            <Text style={styles.profileEmail}>{user?.email}</Text>
+            {user?.centreName && (
+              <View style={styles.centreBadge}>
+                <Building2 size={11} color={Colors.brand.blue} />
+                <Text style={styles.centreBadgeText}>{user.centreName}</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.rolePill}>
+            <User size={11} color={Colors.brand.blue} />
+            <Text style={styles.rolePillText}>Enrolled</Text>
+          </View>
         </View>
 
-        <Text style={styles.name}>{fullName}</Text>
-        <Text style={styles.email}>{user?.email}</Text>
+        {/* Academic Services */}
+        <Text style={styles.sectionLabel}>ACADEMIC SERVICES</Text>
+        {services.map(item => {
+          const Icon = item.icon;
+          return (
+            <TouchableOpacity
+              key={item.label}
+              style={[styles.serviceCard, { borderLeftColor: item.accent }]}
+              onPress={() => router.push(item.route as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.serviceIcon, { backgroundColor: item.bg }]}>
+                <Icon size={20} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.serviceTitle}>{item.label}</Text>
+                <Text style={styles.serviceSub}>{item.sub}</Text>
+              </View>
+              <ChevronRight size={16} color={Colors.text.muted} />
+            </TouchableOpacity>
+          );
+        })}
 
-        <View style={styles.badgeRow}>
-          <View style={styles.roleBadge}>
-            <ShieldCheck size={12} color={Colors.brand.blue} />
-            <Text style={styles.roleBadgeText}>Enrolled Student</Text>
-          </View>
-          {user?.centreName ? (
-            <View style={styles.centreBadge}>
-              <Text style={styles.centreBadgeText}>{user.centreName}</Text>
+        {/* System */}
+        <Text style={[styles.sectionLabel, { marginTop: 20 }]}>ACCOUNT</Text>
+        <View style={styles.opsCard}>
+          <TouchableOpacity
+            style={[styles.opsRow, styles.opsRowBorder]}
+            onPress={() => router.push('/notifications' as any)}
+            activeOpacity={0.75}
+          >
+            <View style={[styles.opsIcon, { backgroundColor: Colors.surface.subtle }]}>
+              <Bell size={17} color={Colors.text.secondary} />
             </View>
-          ) : null}
+            <Text style={[styles.opsTitle, { flex: 1 }]}>Notifications</Text>
+            <ChevronRight size={15} color={Colors.text.muted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.opsRow} onPress={handleLogout} activeOpacity={0.75}>
+            <View style={[styles.opsIcon, { backgroundColor: Colors.brand.redLight }]}>
+              <LogOut size={17} color={Colors.brand.red} />
+            </View>
+            <Text style={[styles.opsTitle, { flex: 1, color: Colors.brand.red }]}>Sign Out</Text>
+            <ChevronRight size={15} color={Colors.brand.red} />
+          </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Menu Options Group */}
-      <View style={styles.menuGroup}>
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push('/(student)/profile/live-classes' as any)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconCircle, { backgroundColor: '#FEE2E2' }]}>
-            <Video size={18} color="#DC2626" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>Live Online Classes</Text>
-            <Text style={styles.menuSubtitle}>Join real-time interactive lectures</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.text.muted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push('/(student)/profile/id-card' as any)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconCircle, { backgroundColor: Colors.brand.blueLight }]}>
-            <CreditCard size={18} color={Colors.brand.blue} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>Digital Student ID Card</Text>
-            <Text style={styles.menuSubtitle}>Scan-ready QR code identity</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.text.muted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push('/(student)/profile/estudy' as any)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconCircle, { backgroundColor: Colors.status.indigoLight }]}>
-            <BookOpen size={18} color={Colors.status.indigo} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>E-Study Materials</Text>
-            <Text style={styles.menuSubtitle}>Video lectures & PDF notes</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.text.muted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push('/(student)/profile/attendance' as any)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconCircle, { backgroundColor: Colors.status.successLight }]}>
-            <CalendarCheck size={18} color={Colors.status.success} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>Attendance History</Text>
-            <Text style={styles.menuSubtitle}>Calendar record & stats</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.text.muted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push('/notifications' as any)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconCircle, { backgroundColor: Colors.status.warningLight }]}>
-            <Bell size={18} color={Colors.status.warning} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>Notifications</Text>
-            <Text style={styles.menuSubtitle}>Academic updates & alerts</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.text.muted} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Logout Button */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.8}>
-        <LogOut size={18} color={Colors.brand.red} />
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.versionText}>Educare LMS Mobile v1.0.0 (Build 57)</Text>
-    </ScrollView>
+        <Text style={styles.footer}>Educare LMS · Student Edition</Text>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.surface.background,
+  root: { flex: 1, backgroundColor: Colors.surface.background },
+  header: {
+    paddingTop: Platform.OS === 'ios' ? 56 : 44, paddingBottom: 16,
+    paddingHorizontal: 20, backgroundColor: Colors.surface.card,
+    borderBottomWidth: 1, borderBottomColor: Colors.border.default,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
   },
-  scrollContent: {
-    padding: 20,
-    paddingTop: 54,
-    paddingBottom: 40,
-  },
+  headerEyebrow: { fontSize: 10, fontWeight: '700', color: Colors.brand.blue, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: Colors.text.primary, letterSpacing: -0.5 },
+  headerRole: { backgroundColor: Colors.brand.blueLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radii.sm },
+  headerRoleText: { fontSize: 11, fontWeight: '700', color: Colors.brand.blue },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 40 },
   profileCard: {
-    backgroundColor: Colors.surface.card,
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    marginBottom: 24,
-    ...Shadows.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: Colors.surface.card, borderRadius: Radii.lg,
+    borderWidth: 1, borderColor: Colors.border.default, padding: 16,
+    marginBottom: 20, ...Shadows.xs,
   },
   avatarCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.brand.blue,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-    ...Shadows.md,
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: Colors.brand.blue, alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
   },
-  avatarInitials: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  avatarText: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  profileName: { fontSize: 16, fontWeight: '700', color: Colors.text.primary, marginBottom: 2 },
+  profileEmail: { fontSize: 12, color: Colors.text.muted, marginBottom: 6 },
+  centreBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
+  centreBadgeText: { fontSize: 11, fontWeight: '600', color: Colors.brand.blue },
+  rolePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.brand.blueLight, paddingHorizontal: 8, paddingVertical: 5, borderRadius: Radii.sm, alignSelf: 'flex-start' },
+  rolePillText: { fontSize: 11, fontWeight: '700', color: Colors.brand.blue },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: Colors.text.muted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
+  serviceCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: Colors.surface.card, borderRadius: Radii.lg,
+    borderWidth: 1, borderColor: Colors.border.default, borderLeftWidth: 3,
+    padding: 14, marginBottom: 10, ...Shadows.xs,
   },
-  name: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.text.primary,
+  serviceIcon: { width: 40, height: 40, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center' },
+  serviceTitle: { fontSize: 14, fontWeight: '700', color: Colors.text.primary, marginBottom: 2 },
+  serviceSub: { fontSize: 12, color: Colors.text.muted },
+  opsCard: {
+    backgroundColor: Colors.surface.card, borderRadius: Radii.lg,
+    borderWidth: 1, borderColor: Colors.border.default, overflow: 'hidden', ...Shadows.xs,
   },
-  email: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginTop: 2,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  roleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.brand.blueLight,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  roleBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.brand.blue,
-  },
-  centreBadge: {
-    backgroundColor: Colors.surface.subtle,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  centreBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.text.secondary,
-  },
-  menuGroup: {
-    backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    overflow: 'hidden',
-    marginBottom: 24,
-    ...Shadows.sm,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.subtle,
-    gap: 14,
-  },
-  menuIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.text.primary,
-  },
-  menuSubtitle: {
-    fontSize: 11,
-    color: Colors.text.muted,
-    marginTop: 2,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.brand.redLight,
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: 8,
-  },
-  logoutText: {
-    color: Colors.brand.red,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  versionText: {
-    textAlign: 'center',
-    fontSize: 10,
-    color: Colors.text.muted,
-    marginTop: 20,
-  },
+  opsRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  opsRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  opsIcon: { width: 36, height: 36, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center' },
+  opsTitle: { fontSize: 14, fontWeight: '600', color: Colors.text.primary },
+  footer: { textAlign: 'center', fontSize: 11, color: Colors.text.muted, marginTop: 24 },
 });

@@ -6,7 +6,6 @@ import { Platform } from 'react-native';
 
 export default function StudentTabsLayout() {
   const router = useRouter();
-
   return (
     <Tabs
       screenOptions={{
@@ -15,14 +14,18 @@ export default function StudentTabsLayout() {
         tabBarInactiveTintColor: Colors.text.muted,
         tabBarStyle: {
           backgroundColor: Colors.surface.card,
+          borderTopWidth: 1,
           borderTopColor: Colors.border.default,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+          height: Platform.OS === 'ios' ? 84 : 62,
+          paddingBottom: Platform.OS === 'ios' ? 26 : 10,
           paddingTop: 8,
+          elevation: 0,
+          shadowOpacity: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
+          letterSpacing: 0.2,
         },
       }}
     >
@@ -30,35 +33,35 @@ export default function StudentTabsLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Home size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="exams"
         options={{
           title: 'Exams',
-          tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <FileText size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="assignments"
         options={{
           title: 'Homework',
-          tabBarIcon: ({ color, size }) => <ClipboardList size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <ClipboardList size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="doubts"
         options={{
           title: 'Doubts',
-          tabBarIcon: ({ color, size }) => <MessagesSquare size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <MessagesSquare size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <User size={size - 2} color={color} />,
         }}
         listeners={{
           tabPress: (e) => {

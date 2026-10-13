@@ -16,41 +16,17 @@ import { fetchApi } from '../../../lib/api';
 import { uploadMobileFile } from '../../../lib/upload';
 import { Colors, Shadows } from '../../../lib/theme';
 import { Camera, Trash2, Send } from 'lucide-react-native';
+import { AcademicHierarchyPicker, AcademicHierarchyValue } from '../../../components/AcademicHierarchyPicker';
 
 export default function CreateAssignmentScreen() {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [batches, setBatches] = useState<any[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState('');
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [selectedSubjectId, setSelectedSubjectId] = useState('');
+  const [hierarchy, setHierarchy] = useState<AcademicHierarchyValue>({});
   const [dueDateDays, setDueDateDays] = useState(3);
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [uploadingFile, setUploadingFile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [loadingSetup, setLoadingSetup] = useState(true);
-
-  useEffect(() => {
-    async function loadMeta() {
-      try {
-        const [bList, sList] = await Promise.all([
-          fetchApi<any[]>('/setup/batches').catch(() => []),
-          fetchApi<any[]>('/setup/subjects').catch(() => []),
-        ]);
-        setBatches(bList || []);
-        if (bList && bList.length > 0) setSelectedBatchId(bList[0].id);
-
-        setSubjects(sList || []);
-        if (sList && sList.length > 0) setSelectedSubjectId(sList[0].id);
-      } catch (e) {
-        console.error('Failed to load metadata', e);
-      } finally {
-        setLoadingSetup(false);
-      }
-    }
-    loadMeta();
-  }, []);
 
   const pickImage = async () => {
     try {
@@ -79,8 +55,8 @@ export default function CreateAssignmentScreen() {
       Alert.alert('Incomplete', 'Please enter an assignment title.');
       return;
     }
-    if (!selectedBatchId || !selectedSubjectId) {
-      Alert.alert('Incomplete', 'Please select a batch and subject.');
+    if (!hierarchy.batchId || !hierarchy.subjectId) {
+      Alert.alert('Missing Target', 'Please select academic hierarchy down to Subject and Batch.');
       return;
     }
 
@@ -94,10 +70,10 @@ export default function CreateAssignmentScreen() {
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),
-          batchId: selectedBatchId,
-          subjectId: selectedSubjectId,
+          batchId: hierarchy.batchId,
+          subjectId: hierarchy.subjectId,
           dueDate: dueDate.toISOString(),
-          attachments: attachmentUrl ? [attachmentUrl] : [],
+          attachments: attachmentUrl ? [{ url: attachmentUrl, filename: 'worksheet.jpg' }] : [],
         }),
       });
 
@@ -110,14 +86,6 @@ export default function CreateAssignmentScreen() {
       setSubmitting(false);
     }
   };
-
-  if (loadingSetup) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.brand.blue} />
-      </View>
-    );
-  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
@@ -147,51 +115,13 @@ export default function CreateAssignmentScreen() {
         />
       </View>
 
-      {/* Target Batch */}
-      {batches.length > 0 ? (
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Target Batch *</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {batches.map((b) => {
-              const isSelected = selectedBatchId === b.id;
-              return (
-                <TouchableOpacity
-                  key={b.id}
-                  style={[styles.chip, isSelected && styles.chipActive]}
-                  onPress={() => setSelectedBatchId(b.id)}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
-                    {b.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* Subject */}
-      {subjects.length > 0 ? (
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Subject *</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {subjects.map((s) => {
-              const isSelected = selectedSubjectId === s.id;
-              return (
-                <TouchableOpacity
-                  key={s.id}
-                  style={[styles.chip, isSelected && styles.chipActive]}
-                  onPress={() => setSelectedSubjectId(s.id)}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
-                    {s.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
+      {/* Target Academic Hierarchy */}
+      <AcademicHierarchyPicker
+        label="Target Academic Level & Batch"
+        required
+        value={hierarchy}
+        onChange={setHierarchy}
+      />
 
       {/* Due Date Offset */}
       <View style={styles.fieldGroup}>

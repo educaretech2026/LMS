@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { fetchApi } from '../../../lib/api';
 import { Colors, Shadows } from '../../../lib/theme';
+import { AcademicHierarchyPicker, AcademicHierarchyValue } from '../../../components/AcademicHierarchyPicker';
 import {
   GraduationCap,
   Plus,
@@ -42,6 +43,9 @@ export default function TeacherExamManager() {
   const [selectedExamForResults, setSelectedExamForResults] = useState<any | null>(null);
   const [resultsList, setResultsList] = useState<any[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
+
+  // Target Academic Hierarchy
+  const [hierarchy, setHierarchy] = useState<AcademicHierarchyValue>({});
 
   // Create Exam Form State
   const [examTitle, setExamTitle] = useState('');
@@ -90,12 +94,12 @@ export default function TeacherExamManager() {
     const end = exam.endTime ? new Date(exam.endTime) : null;
 
     if (start && start > now) {
-      return { key: 'UPCOMING', label: 'Upcoming', bg: '#EFF6FF', text: Colors.brand.blue };
+      return { key: 'UPCOMING', label: 'Upcoming', bg: Colors.brand.blueLight, text: Colors.brand.blue };
     }
     if (end && end < now) {
-      return { key: 'COMPLETED', label: 'Ended', bg: '#F1F5F9', text: Colors.text.muted };
+      return { key: 'COMPLETED', label: 'Ended', bg: Colors.surface.subtle, text: Colors.text.muted };
     }
-    return { key: 'ACTIVE', label: 'Live Now', bg: '#DCFCE7', text: '#16A34A' };
+    return { key: 'ACTIVE', label: 'Live Now', bg: Colors.brand.emeraldLight, text: Colors.brand.emerald };
   };
 
   const handleOpenResults = async (exam: any) => {
@@ -170,7 +174,12 @@ export default function TeacherExamManager() {
     try {
       const payload: any = {
         title: examTitle.trim(),
-        subject: subjectName.trim() || 'General Assessment',
+        subjectId: hierarchy.subjectId || undefined,
+        subject: hierarchy.subjectName || subjectName.trim() || 'General Assessment',
+        centreId: hierarchy.centreId || undefined,
+        boardId: hierarchy.boardId || undefined,
+        standardId: hierarchy.standardId || undefined,
+        batchId: hierarchy.batchId || undefined,
         durationMinutes: parseInt(durationMinutes, 10) || 60,
         totalMarks: parseFloat(totalMarks) || 100,
         passingPercentage: parseFloat(passingPercentage) || 40,
@@ -192,6 +201,7 @@ export default function TeacherExamManager() {
       Alert.alert('Success', 'Exam published successfully!');
       setExamTitle('');
       setSubjectName('');
+      setHierarchy({});
       setMcqQuestions([]);
       setActiveTab('LIST');
       loadExams();
@@ -369,8 +379,21 @@ export default function TeacherExamManager() {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer}>
           <View style={styles.formSectionHeader}>
             <Sparkles size={18} color={Colors.brand.purple} />
-            <Text style={styles.formSectionTitle}>Assessment Details</Text>
+            <Text style={styles.formSectionTitle}>Assessment Hierarchy & Mapping</Text>
           </View>
+
+          {/* Academic Hierarchy Picker */}
+          <AcademicHierarchyPicker
+            label="Target Academic Level & Batch"
+            required
+            value={hierarchy}
+            onChange={(val) => {
+              setHierarchy(val);
+              if (val.subjectName && !subjectName) {
+                setSubjectName(val.subjectName);
+              }
+            }}
+          />
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Exam Title *</Text>
@@ -781,7 +804,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: Colors.brand.blueLight,
     paddingVertical: 8,
     borderRadius: 8,
   },
@@ -793,7 +816,7 @@ const styles = StyleSheet.create({
   deleteButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: Colors.brand.redLight,
   },
   formContainer: {
     padding: 16,
@@ -953,7 +976,7 @@ const styles = StyleSheet.create({
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surface.subtle,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,

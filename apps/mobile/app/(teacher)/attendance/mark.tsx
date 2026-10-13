@@ -16,27 +16,59 @@ import { Check, CheckCheck, Save } from 'lucide-react-native';
 type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
 
 export default function MarkAttendanceScreen() {
-  const { batchId, batchName } = useLocalSearchParams();
+  const { batchId, batchName, subjectId, subjectName, boardName, standardName } = useLocalSearchParams<{
+    batchId: string;
+    batchName: string;
+    subjectId?: string;
+    subjectName?: string;
+    boardName?: string;
+    standardName?: string;
+  }>();
   const router = useRouter();
 
   const [students, setStudents] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [existingRecordedBy, setExistingRecordedBy] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadBatchStudents() {
+    async function loadBatchStudentsAndRecords() {
       try {
-        const data = await fetchApi<any[]>(`/students?batchId=${batchId}`);
-        const list = data || [];
+        const todayDate = new Date().toISOString();
+        const dateQuery = todayDate.split('T')[0];
+
+        // Fetch students and existing attendance in parallel
+        const [studentsData, existingAtt] = await Promise.all([
+          fetchApi<any[]>(`/attendance/students/${batchId}${subjectId ? `?subjectId=${subjectId}` : ''}`).catch(() =>
+            fetchApi<any[]>(`/students?batchId=${batchId}`).catch(() => [])
+          ),
+          fetchApi<any>(`/attendance/${batchId}?date=${dateQuery}${subjectId ? `?subjectId=${subjectId}` : ''}`).catch(() => null),
+        ]);
+
+        const list = Array.isArray(studentsData) ? studentsData : [];
         setStudents(list);
 
-        // Default all to PRESENT
         const initialMap: Record<string, AttendanceStatus> = {};
-        list.forEach((s) => {
-          const sid = s.studentProfile?.id || s.id;
-          initialMap[sid] = 'PRESENT';
+
+        // If existing attendance exists, prefill recorded statuses
+        if (existingAtt?.records && Array.isArray(existingAtt.records)) {
+          existingAtt.records.forEach((rec: any) => {
+            initialMap[rec.studentId] = rec.status;
+          });
+          if (existingAtt.recordedBy) {
+            setExistingRecordedBy(`${existingAtt.recordedBy.firstName} ${existingAtt.recordedBy.lastName || ''}`.trim());
+          }
+        }
+
+        // Fill remaining with PRESENT
+        list.forEach((s, idx) => {
+          const sid = s.studentId || s.studentProfile?.id || s.id || `student-${idx}`;
+          if (!initialMap[sid]) {
+            initialMap[sid] = 'PRESENT';
+          }
         });
+
         setStatuses(initialMap);
       } catch (err: any) {
         Alert.alert('Error', err.message || 'Failed to load student roster');
@@ -44,8 +76,8 @@ export default function MarkAttendanceScreen() {
         setLoading(false);
       }
     }
-    loadBatchStudents();
-  }, [batchId]);
+    loadBatchStudentsAndRecords();
+  }, [batchId, subjectId]);
 
   const setStudentStatus = (studentId: string, status: AttendanceStatus) => {
     setStatuses((prev) => ({
@@ -56,8 +88,8 @@ export default function MarkAttendanceScreen() {
 
   const markAllPresent = () => {
     const updated: Record<string, AttendanceStatus> = {};
-    students.forEach((s) => {
-      const sid = s.studentProfile?.id || s.id;
+    students.forEach((s, idx) => {
+      const sid = s.studentId || s.studentProfile?.id || s.id || `student-${idx}`;
       updated[sid] = 'PRESENT';
     });
     setStatuses(updated);
@@ -71,17 +103,18 @@ export default function MarkAttendanceScreen() {
         status,
       }));
 
-      await fetchApi('/attendance/batch', {
+      await fetchApi('/attendance', {
         method: 'POST',
         body: JSON.stringify({
           batchId,
           date: new Date().toISOString(),
+          subjectId: subjectId || undefined,
           records,
         }),
       });
 
-      Alert.alert('Success', 'Attendance marked successfully!', [
-        { text: 'OK', onPress: () => router.back() },
+      Alert.alert('Roll Call Saved', 'Attendance marked successfully!', [
+        { text: 'Done', onPress: () => router.back() },
       ]);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to submit attendance');
@@ -106,11 +139,28 @@ export default function MarkAttendanceScreen() {
     <View style={styles.container}>
       {/* Roster Summary Header */}
       <View style={styles.headerBar}>
-        <View>
-          <Text style={styles.batchTitle}>{batchName || 'Batch Roll Call'}</Text>
+        <View style={{ flex: 1 }}>
+          {(boardName || standardName) && (
+            <Text style={styles.hierarchyBreadcrumb}>
+              {[boardName, standardName].filter(Boolean).join(' › ')}
+            </Text>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Text style={styles.batchTitle}>{batchName || 'Batch Roll Call'}</Text>
+            {subjectName ? (
+              <View style={styles.subjectBadge}>
+                <Text style={styles.subjectBadgeText}>{subjectName}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.countText}>
             {presentCount} Present • {absentCount} Absent • {students.length} Total
           </Text>
+          {existingRecordedBy ? (
+            <Text style={styles.previouslyRecordedText}>
+              Logged by {existingRecordedBy}
+            </Text>
+          ) : null}
         </View>
 
         <TouchableOpacity style={styles.allPresentBtn} onPress={markAllPresent}>
@@ -126,12 +176,13 @@ export default function MarkAttendanceScreen() {
           </View>
         ) : (
           students.map((student, idx) => {
-            const sid = student.studentProfile?.id || student.id;
+            const sid = student.studentId || student.studentProfile?.id || student.id || `student-${idx}`;
             const currentStatus = statuses[sid] || 'PRESENT';
             const sName =
-              student.user?.firstName
+              student.name ||
+              (student.user?.firstName
                 ? `${student.user.firstName} ${student.user.lastName || ''}`.trim()
-                : student.name || `Student ${idx + 1}`;
+                : `Student #${idx + 1}`);
 
             return (
               <View key={sid} style={styles.studentRow}>
@@ -265,15 +316,42 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.default,
   },
+  hierarchyBreadcrumb: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
   batchTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: Colors.text.primary,
   },
+  subjectBadge: {
+    backgroundColor: 'rgba(1,98,177,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(1,98,177,0.25)',
+  },
+  subjectBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+  },
   countText: {
     fontSize: 11,
     fontWeight: '600',
     color: Colors.text.muted,
+    marginTop: 2,
+  },
+  previouslyRecordedText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.brand.emerald,
     marginTop: 2,
   },
   allPresentBtn: {

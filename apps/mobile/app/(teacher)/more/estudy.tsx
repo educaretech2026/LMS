@@ -16,6 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { fetchApi } from '../../../lib/api';
 import { uploadMobileFile } from '../../../lib/upload';
 import { Colors, Shadows } from '../../../lib/theme';
+import { AcademicHierarchyPicker, AcademicHierarchyValue } from '../../../components/AcademicHierarchyPicker';
 import {
   BookOpen,
   Plus,
@@ -34,14 +35,15 @@ import {
   Dna,
   ChevronRight,
   FolderOpen,
+  Layers,
 } from 'lucide-react-native';
 
 const DEFAULT_SUBJECTS = [
-  { id: 'all', name: 'All Subjects', icon: BookOpen, color: '#0F52BA', bg: '#EFF6FF' },
-  { id: 'physics', name: 'Physics', icon: Atom, color: '#7C3AED', bg: '#EDE9FE' },
-  { id: 'chemistry', name: 'Chemistry', icon: FlaskConical, color: '#059669', bg: '#D1FAE5' },
-  { id: 'mathematics', name: 'Mathematics', icon: Calculator, color: '#D97706', bg: '#FEF3C7' },
-  { id: 'biology', name: 'Biology', icon: Dna, color: '#DC2626', bg: '#FEE2E2' },
+  { id: 'all', name: 'All Subjects', icon: BookOpen, color: Colors.brand.blue, bg: Colors.brand.blueLight },
+  { id: 'physics', name: 'Physics', icon: Atom, color: Colors.brand.indigo, bg: Colors.brand.indigoLight },
+  { id: 'chemistry', name: 'Chemistry', icon: FlaskConical, color: Colors.brand.emerald, bg: Colors.brand.emeraldLight },
+  { id: 'mathematics', name: 'Mathematics', icon: Calculator, color: Colors.brand.amber, bg: Colors.brand.amberLight },
+  { id: 'biology', name: 'Biology', icon: Dna, color: Colors.brand.red, bg: Colors.brand.redLight },
 ];
 
 export default function TeacherEStudyCurriculumScreen() {
@@ -53,11 +55,27 @@ export default function TeacherEStudyCurriculumScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
 
+  // Main filter hierarchy
+  const [filterHierarchy, setFilterHierarchy] = useState<AcademicHierarchyValue>({});
+
   // Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [title, setTitle] = useState('');
-  const [uploadSubject, setUploadSubject] = useState('Physics');
-  const [topicName, setTopicName] = useState('');
+  const [uploadHierarchy, setUploadHierarchy] = useState<AcademicHierarchyValue>({});
+
+  // Deep Curriculum State (Chapter, Topic, Subtopic)
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+  const [customChapterName, setCustomChapterName] = useState('');
+
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [customTopicName, setCustomTopicName] = useState('');
+
+  const [subtopics, setSubtopics] = useState<any[]>([]);
+  const [selectedSubtopicId, setSelectedSubtopicId] = useState<string | null>(null);
+  const [customSubtopicName, setCustomSubtopicName] = useState('');
+
   const [uploadType, setUploadType] = useState<'DOCUMENT' | 'VIDEO'>('DOCUMENT');
   const [url, setUrl] = useState('');
   const [selectedFileUri, setSelectedFileUri] = useState<string | null>(null);
@@ -89,6 +107,91 @@ export default function TeacherEStudyCurriculumScreen() {
     loadData();
   };
 
+  // Cascade Chapters when syllabusId or board+standard+subject change
+  useEffect(() => {
+    let isMounted = true;
+    async function loadChapters() {
+      if (!uploadHierarchy.syllabusId && (!uploadHierarchy.boardId || !uploadHierarchy.standardId)) {
+        setChapters([]);
+        return;
+      }
+      try {
+        let sylId = uploadHierarchy.syllabusId;
+        if (!sylId && uploadHierarchy.boardId && uploadHierarchy.standardId && uploadHierarchy.subjectId) {
+          const syls = await fetchApi<any[]>(
+            `/setup/syllabi?boardId=${uploadHierarchy.boardId}&standardId=${uploadHierarchy.standardId}`
+          ).catch(() => []);
+          const match = syls.find(s => s.subjectId === uploadHierarchy.subjectId || s.subject?.id === uploadHierarchy.subjectId);
+          if (match) sylId = match.id;
+        }
+
+        const query = sylId ? `?syllabusId=${sylId}` : '';
+        const chList = await fetchApi<any[]>(`/setup/chapters${query}`).catch(() => []);
+        if (isMounted) {
+          setChapters(Array.isArray(chList) ? chList : []);
+        }
+      } catch (e) {
+        if (isMounted) setChapters([]);
+      }
+    }
+    loadChapters();
+    return () => { isMounted = false; };
+  }, [uploadHierarchy.syllabusId, uploadHierarchy.boardId, uploadHierarchy.standardId, uploadHierarchy.subjectId]);
+
+  // Cascade Topics when chapter is selected
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTopics() {
+      if (!selectedChapterId) {
+        setTopics([]);
+        setSelectedTopicId(null);
+        return;
+      }
+      const ch = chapters.find(c => c.id === selectedChapterId);
+      if (ch && Array.isArray(ch.topics) && ch.topics.length > 0) {
+        setTopics(ch.topics);
+        return;
+      }
+      try {
+        const tList = await fetchApi<any[]>(`/setup/topics?chapterId=${selectedChapterId}`).catch(() => []);
+        if (isMounted) {
+          setTopics(Array.isArray(tList) ? tList : []);
+        }
+      } catch (e) {
+        if (isMounted) setTopics([]);
+      }
+    }
+    loadTopics();
+    return () => { isMounted = false; };
+  }, [selectedChapterId, chapters]);
+
+  // Cascade Subtopics when topic is selected
+  useEffect(() => {
+    let isMounted = true;
+    async function loadSubtopics() {
+      if (!selectedTopicId) {
+        setSubtopics([]);
+        setSelectedSubtopicId(null);
+        return;
+      }
+      const tp = topics.find(t => t.id === selectedTopicId);
+      if (tp && Array.isArray(tp.subtopics) && tp.subtopics.length > 0) {
+        setSubtopics(tp.subtopics);
+        return;
+      }
+      try {
+        const stList = await fetchApi<any[]>(`/setup/subtopics?topicId=${selectedTopicId}`).catch(() => []);
+        if (isMounted) {
+          setSubtopics(Array.isArray(stList) ? stList : []);
+        }
+      } catch (e) {
+        if (isMounted) setSubtopics([]);
+      }
+    }
+    loadSubtopics();
+    return () => { isMounted = false; };
+  }, [selectedTopicId, topics]);
+
   const handlePickDocument = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
@@ -108,7 +211,11 @@ export default function TeacherEStudyCurriculumScreen() {
 
   const handleUploadMaterial = async () => {
     if (!title.trim()) {
-      Alert.alert('Validation Error', 'Please enter a title for the study material.');
+      Alert.alert('Missing Field', 'Please enter a title for the study material.');
+      return;
+    }
+    if (!uploadHierarchy.boardId || !uploadHierarchy.standardId || !uploadHierarchy.subjectId) {
+      Alert.alert('Missing Hierarchy', 'Please select Board, Class, and Subject using the hierarchy picker.');
       return;
     }
 
@@ -122,9 +229,51 @@ export default function TeacherEStudyCurriculumScreen() {
       }
 
       if (!finalUrl) {
-        Alert.alert('Validation Error', 'Please upload a file or provide a video/document URL.');
+        Alert.alert('Missing Resource', 'Please attach a file or provide a video/document URL.');
         setUploading(false);
         return;
+      }
+
+      // Resolve or create chapter if custom name entered
+      let finalChapterId = selectedChapterId;
+      if (!finalChapterId && customChapterName.trim() && uploadHierarchy.syllabusId) {
+        try {
+          const newCh = await fetchApi('/setup/chapters', {
+            method: 'POST',
+            body: JSON.stringify({ name: customChapterName.trim(), syllabusId: uploadHierarchy.syllabusId }),
+          });
+          if (newCh?.id) finalChapterId = newCh.id;
+        } catch (e) {
+          // Fall back gracefully
+        }
+      }
+
+      // Resolve or create topic if custom name entered (optional)
+      let finalTopicId = selectedTopicId;
+      if (!finalTopicId && customTopicName.trim() && finalChapterId) {
+        try {
+          const newTop = await fetchApi('/setup/topics', {
+            method: 'POST',
+            body: JSON.stringify({ name: customTopicName.trim(), chapterId: finalChapterId }),
+          });
+          if (newTop?.id) finalTopicId = newTop.id;
+        } catch (e) {
+          // Fall back gracefully
+        }
+      }
+
+      // Resolve or create subtopic if custom name entered (optional)
+      let finalSubtopicId = selectedSubtopicId;
+      if (!finalSubtopicId && customSubtopicName.trim() && finalTopicId) {
+        try {
+          const newSub = await fetchApi('/setup/subtopics', {
+            method: 'POST',
+            body: JSON.stringify({ name: customSubtopicName.trim(), topicId: finalTopicId }),
+          });
+          if (newSub?.id) finalSubtopicId = newSub.id;
+        } catch (e) {
+          // Fall back gracefully
+        }
       }
 
       await fetchApi('/study-materials', {
@@ -132,18 +281,28 @@ export default function TeacherEStudyCurriculumScreen() {
         body: JSON.stringify({
           title: title.trim(),
           type: uploadType === 'DOCUMENT' ? 'PDF' : 'VIDEO',
-          subject: uploadSubject.trim(),
-          topic: topicName.trim() || undefined,
+          boardId: uploadHierarchy.boardId,
+          standardId: uploadHierarchy.standardId,
+          subjectId: uploadHierarchy.subjectId,
+          syllabusId: uploadHierarchy.syllabusId,
+          chapterId: finalChapterId || undefined,
+          topicId: finalTopicId || undefined,
+          subtopicId: finalSubtopicId || undefined,
           url: finalUrl,
         }),
       });
 
-      Alert.alert('Success', 'Study material published successfully!');
+      Alert.alert('Published', 'Study material published to curriculum successfully!');
       setTitle('');
-      setTopicName('');
       setUrl('');
       setSelectedFileUri(null);
       setSelectedFileName(null);
+      setSelectedChapterId(null);
+      setCustomChapterName('');
+      setSelectedTopicId(null);
+      setCustomTopicName('');
+      setSelectedSubtopicId(null);
+      setCustomSubtopicName('');
       setShowUploadModal(false);
       loadData();
     } catch (err: any) {
@@ -244,6 +403,17 @@ export default function TeacherEStudyCurriculumScreen() {
         />
       </View>
 
+      {/* Institutional Filter Hierarchy */}
+      <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
+        <AcademicHierarchyPicker
+          label="Filter by Academic Level"
+          showBatch={false}
+          showSubject={false}
+          value={filterHierarchy}
+          onChange={setFilterHierarchy}
+        />
+      </View>
+
       {/* Horizontal Subject Carousel */}
       <View style={styles.subjectSection}>
         <Text style={styles.sectionHeading}>SELECT SUBJECT</Text>
@@ -316,10 +486,7 @@ export default function TeacherEStudyCurriculumScreen() {
             </Text>
             <TouchableOpacity
               style={styles.uploadPromptBtn}
-              onPress={() => {
-                setUploadSubject(selectedSubject !== 'all' ? selectedSubject : 'Physics');
-                setShowUploadModal(true);
-              }}
+              onPress={() => setShowUploadModal(true)}
             >
               <Plus size={14} color="#FFFFFF" />
               <Text style={styles.uploadPromptBtnText}>Upload to this Subject</Text>
@@ -328,8 +495,12 @@ export default function TeacherEStudyCurriculumScreen() {
         ) : (
           filteredMaterials.map((item) => {
             const isVid = (item.type || '').toUpperCase().includes('VID');
-            const subj = item.subject?.name || item.subject || 'General Academics';
-            const chapter = item.chapter?.name || item.topic || 'Lesson Resource';
+            const subj = item.syllabus?.subject?.name || item.subject?.name || item.subject || 'Academics';
+            const boardName = item.syllabus?.board?.name;
+            const stdName = item.syllabus?.standard?.name;
+            const chapterName = item.chapter?.name;
+            const topicName = item.topic?.name;
+            const subtopicName = item.subtopic?.name;
 
             return (
               <View key={item.id} style={styles.materialCard}>
@@ -343,15 +514,22 @@ export default function TeacherEStudyCurriculumScreen() {
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {(boardName || stdName) && (
+                    <Text style={styles.boardBadgeText}>
+                      {[boardName, stdName].filter(Boolean).join(' • ')}
+                    </Text>
+                  )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                     <Text style={styles.subjectTag}>{subj}</Text>
-                    <Text style={styles.topicTag}>• {chapter}</Text>
+                    {chapterName && <Text style={styles.topicTag}>• {chapterName}</Text>}
+                    {topicName && <Text style={styles.subtopicTag}>› {topicName}</Text>}
+                    {subtopicName && <Text style={styles.subtopicTag}>› {subtopicName}</Text>}
                   </View>
                   <Text style={styles.materialTitle} numberOfLines={2}>
                     {item.title}
                   </Text>
                   <Text style={styles.materialMeta}>
-                    {isVid ? 'High-Def Video' : 'PDF Document'} •{' '}
+                    {isVid ? 'Video Lecture' : 'PDF Document'} •{' '}
                     {new Date(item.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                   </Text>
                 </View>
@@ -386,47 +564,149 @@ export default function TeacherEStudyCurriculumScreen() {
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalTitle}>Upload Curriculum Material</Text>
-                <Text style={styles.modalSubtitle}>Map handouts directly to subjects & topics</Text>
+                <Text style={styles.modalSubtitle}>Institutional hierarchy & curriculum mapping</Text>
               </View>
               <TouchableOpacity onPress={() => setShowUploadModal(false)}>
                 <X size={20} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalBody}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Subject *</Text>
-                <View style={styles.subjectChipsSelector}>
-                  {['Physics', 'Chemistry', 'Mathematics', 'Biology'].map((sName) => (
-                    <TouchableOpacity
-                      key={sName}
-                      style={[
-                        styles.chipOption,
-                        uploadSubject.toLowerCase() === sName.toLowerCase() && styles.chipOptionActive,
-                      ]}
-                      onPress={() => setUploadSubject(sName)}
-                    >
-                      <Text
-                        style={[
-                          styles.chipOptionText,
-                          uploadSubject.toLowerCase() === sName.toLowerCase() && styles.chipOptionTextActive,
-                        ]}
-                      >
-                        {sName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
+            <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Institutional Hierarchy Picker */}
+              <AcademicHierarchyPicker
+                label="Academic Hierarchy"
+                required
+                showBatch={false}
+                value={uploadHierarchy}
+                onChange={setUploadHierarchy}
+              />
 
+              {/* Deep Curriculum Hierarchy: Chapter */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Chapter / Topic Name</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Chapter *</Text>
+                  {selectedChapterId && (
+                    <TouchableOpacity onPress={() => { setSelectedChapterId(null); setCustomChapterName(''); }}>
+                      <Text style={{ fontSize: 11, color: Colors.brand.red, fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {chapters.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 8 }}>
+                    {chapters.map((c) => {
+                      const sel = selectedChapterId === c.id;
+                      return (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[styles.curriculumChip, sel && styles.curriculumChipActive]}
+                          onPress={() => {
+                            setSelectedChapterId(c.id);
+                            setCustomChapterName(c.name);
+                          }}
+                        >
+                          <Text style={[styles.curriculumChipText, sel && styles.curriculumChipTextActive]}>
+                            {c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. Kinematics in 2D / Thermodynamics"
+                  placeholder={chapters.length > 0 ? 'Or enter custom chapter title' : 'Enter chapter title (e.g. Thermodynamics)'}
                   placeholderTextColor={Colors.text.muted}
-                  value={topicName}
-                  onChangeText={setTopicName}
+                  value={customChapterName}
+                  onChangeText={(txt) => {
+                    setCustomChapterName(txt);
+                    if (selectedChapterId) setSelectedChapterId(null);
+                  }}
+                />
+              </View>
+
+              {/* Deep Curriculum Hierarchy: Topic (Optional) */}
+              <View style={styles.inputGroup}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Topic (Optional)</Text>
+                  {selectedTopicId && (
+                    <TouchableOpacity onPress={() => { setSelectedTopicId(null); setCustomTopicName(''); }}>
+                      <Text style={{ fontSize: 11, color: Colors.brand.red, fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {topics.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 8 }}>
+                    {topics.map((t) => {
+                      const sel = selectedTopicId === t.id;
+                      return (
+                        <TouchableOpacity
+                          key={t.id}
+                          style={[styles.curriculumChip, sel && styles.curriculumChipActive]}
+                          onPress={() => {
+                            setSelectedTopicId(t.id);
+                            setCustomTopicName(t.name);
+                          }}
+                        >
+                          <Text style={[styles.curriculumChipText, sel && styles.curriculumChipTextActive]}>
+                            {t.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Optional topic (e.g. Carnot Cycle)"
+                  placeholderTextColor={Colors.text.muted}
+                  value={customTopicName}
+                  onChangeText={(txt) => {
+                    setCustomTopicName(txt);
+                    if (selectedTopicId) setSelectedTopicId(null);
+                  }}
+                />
+              </View>
+
+              {/* Deep Curriculum Hierarchy: Subtopic (Optional) */}
+              <View style={styles.inputGroup}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Subtopic (Optional)</Text>
+                  {selectedSubtopicId && (
+                    <TouchableOpacity onPress={() => { setSelectedSubtopicId(null); setCustomSubtopicName(''); }}>
+                      <Text style={{ fontSize: 11, color: Colors.brand.red, fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {subtopics.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 8 }}>
+                    {subtopics.map((st) => {
+                      const sel = selectedSubtopicId === st.id;
+                      return (
+                        <TouchableOpacity
+                          key={st.id}
+                          style={[styles.curriculumChip, sel && styles.curriculumChipActive]}
+                          onPress={() => {
+                            setSelectedSubtopicId(st.id);
+                            setCustomSubtopicName(st.name);
+                          }}
+                        >
+                          <Text style={[styles.curriculumChipText, sel && styles.curriculumChipTextActive]}>
+                            {st.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Optional subtopic (e.g. Reversible Efficiency)"
+                  placeholderTextColor={Colors.text.muted}
+                  value={customSubtopicName}
+                  onChangeText={(txt) => {
+                    setCustomSubtopicName(txt);
+                    if (selectedSubtopicId) setSelectedSubtopicId(null);
+                  }}
                 />
               </View>
 
@@ -434,7 +714,7 @@ export default function TeacherEStudyCurriculumScreen() {
                 <Text style={styles.inputLabel}>Resource Title *</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. Unit 3 Handwritten Formula Sheet"
+                  placeholder="e.g. Unit 3 Comprehensive Formula Sheet"
                   placeholderTextColor={Colors.text.muted}
                   value={title}
                   onChangeText={setTitle}
@@ -887,8 +1167,42 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitUploadBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
+  boardBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.text.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  subtopicTag: {
+    fontSize: 10,
+    color: Colors.text.muted,
+    fontWeight: '500',
+  },
+  curriculumChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+  },
+  curriculumChipActive: {
+    backgroundColor: 'rgba(1,98,177,0.12)',
+    borderColor: Colors.brand.blue,
+  },
+  curriculumChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  curriculumChipTextActive: {
+    color: Colors.brand.blue,
+    fontWeight: '700',
+  },
 });
+

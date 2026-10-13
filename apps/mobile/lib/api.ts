@@ -55,3 +55,36 @@ export async function fetchApi<T = any>(
 
   return await response.json();
 }
+
+export async function postApi<T = any>(
+  endpoint: string,
+  body?: any,
+  options: RequestInit = {}
+): Promise<T> {
+  return fetchApi<T>(endpoint, {
+    method: 'POST',
+    body: body ? JSON.stringify(body) : undefined,
+    ...options,
+  });
+}
+export async function patchApi<T = any>(
+  endpoint: string,
+  body?: any,
+  options: RequestInit = {}
+): Promise<T> {
+  return fetchApi<T>(endpoint, {
+    method: 'PATCH',
+    body: body ? JSON.stringify(body) : undefined,
+    ...options,
+  });
+}
+
+export async function deleteApi<T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  return fetchApi<T>(endpoint, {
+    method: 'DELETE',
+    ...options,
+  });
+}

@@ -5,331 +5,348 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Image,
 } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
-import { Colors, Shadows } from '../../lib/theme';
-import {
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  GraduationCap,
-  ArrowRight,
-  UserCheck,
-  Sparkles,
-} from 'lucide-react-native';
+import { Colors, Shadows, Radii } from '../../lib/theme';
+
+const DEMO_ACCOUNTS = [
+  { label: 'Faculty', email: 'akshaid@educarelearning.in', password: 'password123' },
+  { label: 'Student', email: 'akshai@educarelearning.in', password: 'password123' },
+];
 
 export default function LoginScreen() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      setErrorMessage('Please enter both email and password.');
+      Alert.alert('Missing Fields', 'Please enter your email and password.');
       return;
     }
-
-    setErrorMessage('');
-    setIsSubmitting(true);
-
+    setLoading(true);
     try {
-      await login(email, password);
+      await login(email.trim().toLowerCase(), password);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Login failed. Please check your credentials.');
+      Alert.alert('Login Failed', err.message || 'Invalid credentials. Please try again.');
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
-  };
-
-  const handleFillDemo = (type: 'TEACHER' | 'STUDENT') => {
-    if (type === 'TEACHER') {
-      setEmail('akshaid@educarelearning.in');
-      setPassword('password123');
-    } else {
-      setEmail('akshai@educarelearning.in');
-      setPassword('password123');
-    }
-    setErrorMessage('');
   };
 
   return (
     <KeyboardAvoidingView
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <View style={styles.iconCircle}>
-            <GraduationCap size={38} color="#FFFFFF" />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header Banner — web gradient style */}
+        <View style={styles.banner}>
+          {/* Geometric accents (like web) */}
+          <View style={styles.geoCircle1} />
+          <View style={styles.geoCircle2} />
+          {/* Red bottom accent line (web brand signature) */}
+          <View style={styles.redLine} />
+
+          <View style={styles.logoContainer}>
+            <View style={styles.logoMark}>
+              <Image source={require('../../assets/logo.png')} style={styles.logoImage} resizeMode="contain" />
+            </View>
+            <View>
+              <Text style={styles.brandName}>Educare LMS</Text>
+              <Text style={styles.brandTagline}>INSTITUTIONAL MANAGEMENT SUITE</Text>
+            </View>
           </View>
-          <Text style={styles.title}>Educare LMS</Text>
-          <Text style={styles.subtitle}>Unified Student & Faculty Learning Suite</Text>
         </View>
 
-        {/* Quick Demo Credentials Toolbar */}
-        <View style={styles.demoPillsRow}>
-          <TouchableOpacity
-            style={styles.demoPill}
-            onPress={() => handleFillDemo('TEACHER')}
-            activeOpacity={0.8}
-          >
-            <UserCheck size={12} color={Colors.brand.blue} />
-            <Text style={styles.demoPillText}>Faculty Auto-fill</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.demoPill}
-            onPress={() => handleFillDemo('STUDENT')}
-            activeOpacity={0.8}
-          >
-            <Sparkles size={12} color="#7C3AED" />
-            <Text style={[styles.demoPillText, { color: '#7C3AED' }]}>Student Auto-fill</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Form Card */}
+        {/* Form card */}
         <View style={styles.card}>
-          {errorMessage ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
-            </View>
-          ) : null}
+          <Text style={styles.cardTitle}>Sign In</Text>
+          <Text style={styles.cardSubtitle}>Access your academic dashboard</Text>
 
-          {/* Email Field */}
+          {/* Email */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Email Address</Text>
-            <View style={styles.inputWrapper}>
-              <Mail size={18} color={Colors.text.muted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="name@educarelearning.in"
-                placeholderTextColor={Colors.text.muted}
-                value={email}
-                onChangeText={(t) => {
-                  setEmail(t);
-                  setErrorMessage('');
-                }}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-              />
-            </View>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={[styles.input, focusedField === 'email' && styles.inputFocused]}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@educarelearning.in"
+              placeholderTextColor={Colors.text.muted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onFocus={() => setFocusedField('email')}
+              onBlur={() => setFocusedField(null)}
+            />
           </View>
 
-          {/* Password Field */}
+          {/* Password */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
-            <View style={styles.inputWrapper}>
-              <Lock size={18} color={Colors.text.muted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor={Colors.text.muted}
-                value={password}
-                onChangeText={(t) => {
-                  setPassword(t);
-                  setErrorMessage('');
-                }}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeIcon}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                {showPassword ? (
-                  <EyeOff size={18} color={Colors.text.muted} />
-                ) : (
-                  <Eye size={18} color={Colors.text.muted} />
-                )}
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              style={[styles.input, focusedField === 'password' && styles.inputFocused]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Enter password"
+              placeholderTextColor={Colors.text.muted}
+              secureTextEntry
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+              onSubmitEditing={handleLogin}
+              returnKeyType="go"
+            />
           </View>
 
-          {/* Submit Button */}
+          {/* Login Button */}
           <TouchableOpacity
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+            style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
             onPress={handleLogin}
-            disabled={isSubmitting}
-            activeOpacity={0.8}
+            disabled={loading}
+            activeOpacity={0.85}
           >
-            {isSubmitting ? (
+            {loading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <>
-                <Text style={styles.buttonText}>Sign In</Text>
-                <ArrowRight size={18} color="#FFFFFF" />
-              </>
+              <Text style={styles.loginBtnText}>Sign In</Text>
             )}
           </TouchableOpacity>
+
+          {/* Demo Accounts */}
+          <View style={styles.demoSection}>
+            <View style={styles.dividerRow}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>Quick Demo</Text>
+              <View style={styles.divider} />
+            </View>
+            <View style={styles.demoRow}>
+              {DEMO_ACCOUNTS.map((acc) => (
+                <TouchableOpacity
+                  key={acc.label}
+                  style={styles.demoChip}
+                  onPress={() => { setEmail(acc.email); setPassword(acc.password); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.demoChipText}>{acc.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
-        {/* Footer Support Text */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Protected by institutional multi-role authentication</Text>
-          <Text style={styles.footerSupport}>Need access? Contact your campus center administrator.</Text>
-        </View>
+        <Text style={styles.footer}>Educare Learning System © 2026</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: Colors.surface.background,
   },
-  scrollContent: {
+  scroll: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 48,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  iconCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 20,
+  // Banner — matches web teacher/student dashboard header
+  banner: {
     backgroundColor: Colors.brand.blue,
+    paddingTop: Platform.OS === 'ios' ? 64 : 48,
+    paddingBottom: 40,
+    paddingHorizontal: 24,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  geoCircle1: {
+    position: 'absolute',
+    top: -40,
+    right: 20,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 24,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  geoCircle2: {
+    position: 'absolute',
+    bottom: -20,
+    right: -10,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 14,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  redLine: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: Colors.brand.red,
+    opacity: 0.7,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  logoMark: {
+    width: 52,
+    height: 52,
+    borderRadius: Radii.lg,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    ...Shadows.glowBlue,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: Colors.text.primary,
-    letterSpacing: -0.5,
+  logoImage: {
+    width: 44,
+    height: 44,
   },
-  subtitle: {
-    fontSize: 13,
-    color: Colors.text.secondary,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  demoPillsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    marginBottom: 16,
-  },
-  demoPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.surface.card,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    ...Shadows.sm,
-  },
-  demoPillText: {
-    fontSize: 12,
+  brandName: {
+    fontSize: 20,
     fontWeight: '700',
-    color: Colors.brand.blue,
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
   },
+  brandTagline: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.55)',
+    letterSpacing: 1.2,
+    marginTop: 2,
+  },
+  // Card
   card: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 20,
+    marginHorizontal: 20,
+    marginTop: -20,
+    borderRadius: Radii.xl,
     padding: 24,
     borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderColor: Colors.border.default,
     ...Shadows.md,
+    marginBottom: 20,
   },
-  errorBox: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  fieldGroup: {
-    marginBottom: 18,
-  },
-  label: {
-    fontSize: 13,
+  cardTitle: {
+    fontSize: 22,
     fontWeight: '700',
     color: Colors.text.primary,
+    letterSpacing: -0.4,
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 13,
+    color: Colors.text.muted,
+    marginBottom: 24,
+  },
+  fieldGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+    letterSpacing: 0.3,
     marginBottom: 6,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    height: 48,
-  },
-  inputIcon: {
-    marginRight: 10,
+    textTransform: 'uppercase',
   },
   input: {
-    flex: 1,
-    height: '100%',
+    height: 46,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    borderRadius: Radii.md,
+    paddingHorizontal: 14,
+    fontSize: 14,
     color: Colors.text.primary,
-    fontSize: 15,
+    backgroundColor: Colors.surface.background,
   },
-  eyeIcon: {
-    padding: 4,
+  inputFocused: {
+    borderColor: Colors.brand.blue,
+    backgroundColor: Colors.surface.card,
   },
-  button: {
+  loginBtn: {
+    height: 48,
     backgroundColor: Colors.brand.blue,
-    height: 50,
-    borderRadius: 14,
-    flexDirection: 'row',
+    borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    gap: 8,
     ...Shadows.glowBlue,
   },
-  buttonDisabled: {
-    opacity: 0.65,
+  loginBtnDisabled: {
+    opacity: 0.7,
   },
-  buttonText: {
+  loginBtnText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
-  footer: {
-    marginTop: 28,
+  // Demo
+  demoSection: {
+    marginTop: 24,
+  },
+  dividerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
   },
-  footerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.text.muted,
-    textAlign: 'center',
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border.default,
   },
-  footerSupport: {
+  dividerText: {
     fontSize: 11,
     color: Colors.text.muted,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  demoRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  demoChip: {
+    flex: 1,
+    height: 38,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface.subtle,
+  },
+  demoChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  footer: {
     textAlign: 'center',
-    marginTop: 4,
+    fontSize: 11,
+    color: Colors.text.muted,
+    paddingBottom: 32,
+    paddingTop: 4,
   },
 });

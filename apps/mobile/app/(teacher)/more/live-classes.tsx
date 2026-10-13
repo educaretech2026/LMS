@@ -15,6 +15,7 @@ import {
 import { fetchApi } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { Colors, Shadows } from '../../../lib/theme';
+import { AcademicHierarchyPicker, AcademicHierarchyValue } from '../../../components/AcademicHierarchyPicker';
 import {
   Video,
   Plus,
@@ -38,6 +39,7 @@ export default function TeacherLiveClassesScreen() {
 
   // Schedule Modal
   const [showModal, setShowModal] = useState(false);
+  const [hierarchy, setHierarchy] = useState<AcademicHierarchyValue>({});
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');
   const [duration, setDuration] = useState('60');
@@ -66,8 +68,9 @@ export default function TeacherLiveClassesScreen() {
   };
 
   const handleCreateClass = async () => {
-    if (!title.trim() || !subject.trim()) {
-      Alert.alert('Validation Error', 'Title and subject are required.');
+    const finalSubject = hierarchy.subjectName || subject.trim();
+    if (!title.trim() || !finalSubject) {
+      Alert.alert('Missing Field', 'Session title and subject are required.');
       return;
     }
 
@@ -80,7 +83,10 @@ export default function TeacherLiveClassesScreen() {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
-          subject: subject.trim(),
+          subject: finalSubject,
+          centreId: hierarchy.centreId || undefined,
+          boardId: hierarchy.boardId || undefined,
+          standardId: hierarchy.standardId || undefined,
           duration: parseInt(duration, 10) || 60,
           scheduledAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
           teacherName,
@@ -88,9 +94,10 @@ export default function TeacherLiveClassesScreen() {
         }),
       });
 
-      Alert.alert('Success', 'Live class scheduled successfully!');
+      Alert.alert('Broadcast Scheduled', 'Live class scheduled successfully!');
       setTitle('');
       setSubject('');
+      setHierarchy({});
       setZoomLink('');
       setShowModal(false);
       loadClasses();
@@ -301,6 +308,19 @@ export default function TeacherLiveClassesScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.modalBody}>
+              {/* Academic Hierarchy Picker */}
+              <AcademicHierarchyPicker
+                label="Target Academic Level"
+                showBatch={false}
+                value={hierarchy}
+                onChange={(val) => {
+                  setHierarchy(val);
+                  if (val.subjectName && !subject) {
+                    setSubject(val.subjectName);
+                  }
+                }}
+              />
+
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Session Title *</Text>
                 <TextInput
@@ -550,7 +570,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   launchBtnLive: {
-    backgroundColor: '#DC2626',
+    backgroundColor: Colors.brand.red,
     ...Shadows.sm,
   },
   launchBtnDefault: {
@@ -565,9 +585,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: Colors.brand.blueLight,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: Colors.brand.blue,
   },
   goLiveBtnText: {
     fontSize: 12,
@@ -578,17 +598,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: Colors.brand.redLight,
   },
   endBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#DC2626',
+    color: Colors.brand.red,
   },
   trashBtn: {
     padding: 10,
     borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surface.subtle,
   },
   modalOverlay: {
     flex: 1,

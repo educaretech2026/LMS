@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -27,6 +28,7 @@ import {
   X,
   Clock,
   Sparkles,
+  UserCheck,
 } from 'lucide-react-native';
 
 export default function TeacherDoubtChatScreen() {
@@ -42,6 +44,13 @@ export default function TeacherDoubtChatScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Faculty Reassignment Modal State
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [loadingTeachers, setLoadingTeachers] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -134,6 +143,49 @@ export default function TeacherDoubtChatScreen() {
     }
   };
 
+  const handleOpenReassignModal = async () => {
+    setShowReassignModal(true);
+    setLoadingTeachers(true);
+    try {
+      const list = await fetchApi<any[]>('/doubts/teachers/available');
+      setTeachers(Array.isArray(list) ? list : []);
+      // If currently assigned teacher exists, prefill
+      if (doubt?.teacherId) {
+        setSelectedTeacherId(doubt.teacherId);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not load faculty list');
+    } finally {
+      setLoadingTeachers(false);
+    }
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!selectedTeacherId) {
+      Alert.alert('Select Faculty', 'Please select a faculty member to delegate this doubt session.');
+      return;
+    }
+    if (selectedTeacherId === doubt?.teacherId) {
+      Alert.alert('Already Assigned', 'This doubt is already assigned to this faculty member.');
+      return;
+    }
+
+    setReassigning(true);
+    try {
+      await fetchApi(`/doubts/${id}/reassign`, {
+        method: 'PATCH',
+        body: JSON.stringify({ teacherId: selectedTeacherId }),
+      });
+      setShowReassignModal(false);
+      Alert.alert('Faculty Reassigned', 'Doubt has been successfully delegated to the selected faculty.');
+      await loadThread();
+    } catch (err: any) {
+      Alert.alert('Reassign Failed', err.message || 'Could not reassign doubt session');
+    } finally {
+      setReassigning(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -203,6 +255,16 @@ export default function TeacherDoubtChatScreen() {
               <Text style={styles.markAnsweredButtonText}>Mark Answered</Text>
             </TouchableOpacity>
           ) : null}
+
+          {/* Reassign Faculty Button */}
+          <TouchableOpacity
+            style={styles.reassignButton}
+            onPress={handleOpenReassignModal}
+            activeOpacity={0.8}
+          >
+            <UserCheck size={13} color={Colors.brand.blue} />
+            <Text style={styles.reassignButtonText}>Reassign</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -337,6 +399,93 @@ export default function TeacherDoubtChatScreen() {
           {previewImage && (
             <Image source={{ uri: previewImage }} style={styles.fullImage} resizeMode="contain" />
           )}
+        </View>
+      </Modal>
+
+      {/* Reassign Faculty Modal */}
+      <Modal visible={showReassignModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Delegate Doubt Session</Text>
+                <Text style={styles.modalSubtitle}>
+                  Reassign to a specialized faculty member
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowReassignModal(false)}>
+                <X size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {loadingTeachers ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={Colors.brand.blue} />
+                <Text style={{ marginTop: 8, fontSize: 12, color: Colors.text.muted }}>
+                  Fetching available faculty...
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 340, marginTop: 12 }} showsVerticalScrollIndicator={false}>
+                {teachers.map((t) => {
+                  const isSel = selectedTeacherId === t.id;
+                  const isCurrent = doubt?.teacherId === t.id;
+                  const teacherName = `${t.firstName} ${t.lastName || ''}`.trim();
+                  const subjectsStr =
+                    t.teacherProfile?.subjects?.map((s: any) => s.name).join(', ') ||
+                    (t.role?.name === 'TEACHER' ? 'Faculty Member' : 'Educare Staff');
+
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={[styles.teacherCard, isSel && styles.teacherCardSelected]}
+                      onPress={() => setSelectedTeacherId(t.id)}
+                    >
+                      <View style={[styles.teacherAvatar, isSel && styles.teacherAvatarSelected]}>
+                        <User size={16} color={isSel ? '#FFFFFF' : Colors.brand.blue} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.teacherName, isSel && styles.teacherNameSelected]}>
+                            Prof. {teacherName}
+                          </Text>
+                          {isCurrent && (
+                            <View style={styles.currentBadge}>
+                              <Text style={styles.currentBadgeText}>Current</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.teacherSubject}>{subjectsStr}</Text>
+                      </View>
+                      {isSel && (
+                        <CheckCircle2 size={18} color={Colors.brand.blue} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <View style={styles.reassignModalFooter}>
+              <TouchableOpacity
+                style={[
+                  styles.confirmReassignBtn,
+                  (!selectedTeacherId || reassigning) && styles.btnDisabled,
+                ]}
+                onPress={handleConfirmReassign}
+                disabled={!selectedTeacherId || reassigning}
+              >
+                {reassigning ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <UserCheck size={16} color="#FFFFFF" />
+                    <Text style={styles.confirmReassignBtnText}>Confirm Reassignment</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -634,5 +783,127 @@ const styles = StyleSheet.create({
   fullImage: {
     width: '95%',
     height: '80%',
+  },
+  reassignButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(1,98,177,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(1,98,177,0.25)',
+  },
+  reassignButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+  },
+
+  // Reassign Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: Colors.surface.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.text.primary,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: Colors.text.muted,
+    marginTop: 2,
+  },
+  teacherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.surface.subtle,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    marginBottom: 8,
+  },
+  teacherCardSelected: {
+    backgroundColor: 'rgba(1,98,177,0.08)',
+    borderColor: Colors.brand.blue,
+  },
+  teacherAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teacherAvatarSelected: {
+    backgroundColor: Colors.brand.blue,
+  },
+  teacherName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text.primary,
+  },
+  teacherNameSelected: {
+    color: Colors.brand.blue,
+  },
+  teacherSubject: {
+    fontSize: 11,
+    color: Colors.text.muted,
+    marginTop: 1,
+  },
+  currentBadge: {
+    backgroundColor: 'rgba(1,98,177,0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  currentBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    textTransform: 'uppercase',
+  },
+  reassignModalFooter: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  confirmReassignBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.brand.blue,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmReassignBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  btnDisabled: {
+    opacity: 0.5,
   },
 });

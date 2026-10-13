@@ -15,6 +15,7 @@ export class StudyMaterialService {
           },
           chapter: true,
           topic: true,
+          subtopic: true,
           uploader: {
             select: { id: true, firstName: true, lastName: true, email: true }
           }
@@ -77,8 +78,9 @@ export class StudyMaterialService {
           thumbnailUrl: data.thumbnailUrl,
           academicYearId,
           syllabusId,
-          chapterId: data.chapterId,
-          topicId: data.topicId,
+          chapterId: data.chapterId || null,
+          topicId: data.topicId || null,
+          subtopicId: data.subtopicId || null,
           uploaderId: data.uploaderId,
           targetTrackId: data.targetTrackId || null,
         },

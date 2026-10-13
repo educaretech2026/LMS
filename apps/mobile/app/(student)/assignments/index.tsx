@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,17 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { fetchApi } from '../../../lib/api';
-import { Colors, Shadows } from '../../../lib/theme';
-import { ClipboardList, Calendar, Award, ChevronRight, AlertCircle, CheckCircle } from 'lucide-react-native';
+import { Colors, Shadows, Radii } from '../../../lib/theme';
+import { ClipboardList, Calendar, CheckCircle, ChevronRight, AlertCircle } from 'lucide-react-native';
 
 export default function StudentAssignmentsList() {
   const router = useRouter();
   const [tab, setTab] = useState<'PENDING' | 'SUBMITTED' | 'GRADED'>('PENDING');
+  const [sortBy, setSortBy] = useState<'dueDate' | 'title'>('dueDate');
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,35 +43,71 @@ export default function StudentAssignmentsList() {
     loadAssignments();
   };
 
-  const pendingList = assignments.filter((a) => !a.submissions || a.submissions.length === 0);
-  const submittedList = assignments.filter(
-    (a) => a.submissions && a.submissions.length > 0 && a.submissions[0].status !== 'GRADED'
+  const pendingList = useMemo(
+    () => assignments.filter((a) => !a.submissions || a.submissions.length === 0),
+    [assignments]
   );
-  const gradedList = assignments.filter(
-    (a) => a.submissions && a.submissions.length > 0 && a.submissions[0].status === 'GRADED'
+  const submittedList = useMemo(
+    () =>
+      assignments.filter(
+        (a) => a.submissions && a.submissions.length > 0 && a.submissions[0].status !== 'GRADED'
+      ),
+    [assignments]
+  );
+  const gradedList = useMemo(
+    () =>
+      assignments.filter(
+        (a) => a.submissions && a.submissions.length > 0 && a.submissions[0].status === 'GRADED'
+      ),
+    [assignments]
   );
 
-  const displayedList =
-    tab === 'PENDING' ? pendingList : tab === 'SUBMITTED' ? submittedList : gradedList;
+  const displayedList = useMemo(() => {
+    const list =
+      tab === 'PENDING'
+        ? [...pendingList]
+        : tab === 'SUBMITTED'
+        ? [...submittedList]
+        : [...gradedList];
+
+    if (sortBy === 'title') {
+      list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else {
+      list.sort((a, b) => {
+        const da = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+        const db = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+        return da - db;
+      });
+    }
+    return list;
+  }, [tab, pendingList, submittedList, gradedList, sortBy]);
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'No due date';
     const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
   };
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Homework & Assignments</Text>
-        <Text style={styles.subtitle}>Batch homework tasks and teacher feedback</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerEyebrow}>COURSEWORK</Text>
+            <Text style={styles.title}>Homework</Text>
+          </View>
+          <View style={styles.badgeCount}>
+            <Text style={styles.badgeCountText}>{assignments.length} Total</Text>
+          </View>
+        </View>
 
         {/* Tab Selector */}
         <View style={styles.tabsRow}>
           <TouchableOpacity
             style={[styles.tabButton, tab === 'PENDING' && styles.tabButtonActive]}
             onPress={() => setTab('PENDING')}
+            activeOpacity={0.8}
           >
             <Text style={[styles.tabText, tab === 'PENDING' && styles.tabTextActive]}>
               Pending ({pendingList.length})
@@ -78,6 +116,7 @@ export default function StudentAssignmentsList() {
           <TouchableOpacity
             style={[styles.tabButton, tab === 'SUBMITTED' && styles.tabButtonActive]}
             onPress={() => setTab('SUBMITTED')}
+            activeOpacity={0.8}
           >
             <Text style={[styles.tabText, tab === 'SUBMITTED' && styles.tabTextActive]}>
               Submitted ({submittedList.length})
@@ -86,83 +125,127 @@ export default function StudentAssignmentsList() {
           <TouchableOpacity
             style={[styles.tabButton, tab === 'GRADED' && styles.tabButtonActive]}
             onPress={() => setTab('GRADED')}
+            activeOpacity={0.8}
           >
             <Text style={[styles.tabText, tab === 'GRADED' && styles.tabTextActive]}>
               Graded ({gradedList.length})
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Sort hierarchy */}
+        <View style={styles.sortBar}>
+          <Text style={styles.sortLabel}>SORT</Text>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'dueDate' && styles.sortChipActive]}
+            onPress={() => setSortBy('dueDate')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'dueDate' && styles.sortChipTextActive]}>Due Date</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'title' && styles.sortChipActive]}
+            onPress={() => setSortBy('title')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'title' && styles.sortChipTextActive]}>Title A-Z</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.brand.blue]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand.blue} />}
+        showsVerticalScrollIndicator={false}
       >
         {loading ? (
           <ActivityIndicator color={Colors.brand.blue} style={{ marginTop: 40 }} />
         ) : displayedList.length === 0 ? (
           <View style={styles.emptyCard}>
-            <ClipboardList size={36} color={Colors.text.muted} />
-            <Text style={styles.emptyTitle}>No assignments in this view</Text>
-            <Text style={styles.emptySubtitle}>
+            <ClipboardList size={32} color={Colors.text.muted} />
+            <Text style={styles.emptyTitle}>
               {tab === 'PENDING'
-                ? "You've submitted all assigned homework!"
-                : 'Assignments will appear here once turned in or graded.'}
+                ? 'No pending assignments'
+                : tab === 'SUBMITTED'
+                ? 'No submissions under review'
+                : 'No graded tasks yet'}
             </Text>
           </View>
         ) : (
           displayedList.map((assignment) => {
-            const hasSubmission = assignment.submissions && assignment.submissions.length > 0;
-            const submission = hasSubmission ? assignment.submissions[0] : null;
-            const isLate = assignment.dueDate ? new Date() > new Date(assignment.dueDate) : false;
+            const isSubmitted = assignment.submissions && assignment.submissions.length > 0;
+            const submission = isSubmitted ? assignment.submissions[0] : null;
+            const isGraded = submission?.status === 'GRADED';
+            const isOverdue =
+              !isSubmitted && assignment.dueDate && new Date(assignment.dueDate) < new Date();
 
             return (
               <TouchableOpacity
                 key={assignment.id}
                 style={styles.card}
-                onPress={() => router.push(`/(student)/assignments/${assignment.id}/submit` as any)}
-                activeOpacity={0.7}
+                onPress={() => router.push(`/(student)/assignments/${assignment.id}` as any)}
+                activeOpacity={0.85}
               >
-                <View style={styles.cardTop}>
-                  <View style={styles.subjectBadge}>
-                    <Text style={styles.subjectBadgeText}>{assignment.subject?.name || 'Subject'}</Text>
+                <View
+                  style={[
+                    styles.cardAccent,
+                    {
+                      backgroundColor: isGraded
+                        ? Colors.brand.emerald
+                        : isOverdue
+                        ? Colors.brand.red
+                        : Colors.brand.blue,
+                    },
+                  ]}
+                />
+                <View style={styles.cardInner}>
+                  <View style={styles.cardTop}>
+                    <View style={styles.subjectBadge}>
+                      <Text style={styles.subjectBadgeText}>
+                        {assignment.batch?.name || assignment.subject || 'Classwork'}
+                      </Text>
+                    </View>
+
+                    {isGraded ? (
+                      <View style={styles.gradedBadge}>
+                        <CheckCircle size={11} color={Colors.brand.emerald} />
+                        <Text style={styles.gradedBadgeText}>Graded</Text>
+                      </View>
+                    ) : isOverdue ? (
+                      <View style={styles.overdueBadge}>
+                        <AlertCircle size={11} color={Colors.brand.red} />
+                        <Text style={styles.overdueBadgeText}>Overdue</Text>
+                      </View>
+                    ) : isSubmitted ? (
+                      <View style={styles.submittedBadge}>
+                        <Text style={styles.submittedBadgeText}>Submitted</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.pendingBadge}>
+                        <Text style={styles.pendingBadgeText}>Pending</Text>
+                      </View>
+                    )}
                   </View>
 
-                  {submission?.status === 'GRADED' ? (
-                    <View style={styles.gradedPill}>
-                      <Award size={12} color={Colors.status.success} />
-                      <Text style={styles.gradedPillText}>Graded: {submission.grade} marks</Text>
-                    </View>
-                  ) : submission ? (
-                    <View style={styles.submittedPill}>
-                      <CheckCircle size={12} color={Colors.brand.blue} />
-                      <Text style={styles.submittedPillText}>Turned In</Text>
-                    </View>
-                  ) : isLate ? (
-                    <View style={styles.latePill}>
-                      <AlertCircle size={12} color={Colors.status.error} />
-                      <Text style={styles.latePillText}>Overdue</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <Text style={styles.assignmentTitle}>{assignment.title}</Text>
-                {assignment.description ? (
-                  <Text style={styles.assignmentDesc} numberOfLines={2}>
-                    {assignment.description}
+                  <Text style={styles.assignmentTitle} numberOfLines={2}>
+                    {assignment.title}
                   </Text>
-                ) : null}
 
-                <View style={styles.footerRow}>
-                  <View style={styles.dateMeta}>
-                    <Calendar size={13} color={Colors.text.muted} />
-                    <Text style={styles.dateMetaText}>Due: {formatDate(assignment.dueDate)}</Text>
-                  </View>
-                  <View style={styles.actionArrow}>
-                    <Text style={styles.openText}>
-                      {tab === 'PENDING' ? 'Submit' : 'View'}
-                    </Text>
-                    <ChevronRight size={14} color={Colors.brand.blue} />
+                  <View style={styles.metaRow}>
+                    <View style={styles.metaItem}>
+                      <Calendar size={12} color={isOverdue ? Colors.brand.red : Colors.text.muted} />
+                      <Text style={[styles.metaText, isOverdue && { color: Colors.brand.red, fontWeight: '700' }]}>
+                        Due {formatDate(assignment.dueDate)}
+                      </Text>
+                    </View>
+
+                    {isGraded && submission?.marks !== undefined && (
+                      <View style={styles.metaItem}>
+                        <Text style={styles.gradeScore}>
+                          Score: {submission.marks}/{assignment.totalMarks || 100}
+                        </Text>
+                      </View>
+                    )}
+
+                    <ChevronRight size={14} color={Colors.text.muted} style={{ marginLeft: 'auto' }} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -181,41 +264,62 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 54,
-    paddingBottom: 16,
+    paddingTop: Platform.OS === 'ios' ? 56 : 44,
+    paddingBottom: 12,
     backgroundColor: Colors.surface.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.default,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 3,
   },
   title: {
     fontSize: 22,
     fontWeight: '800',
     color: Colors.text.primary,
+    letterSpacing: -0.4,
   },
-  subtitle: {
-    fontSize: 12,
+  badgeCount: {
+    backgroundColor: Colors.surface.subtle,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.sm,
+  },
+  badgeCountText: {
+    fontSize: 11,
+    fontWeight: '600',
     color: Colors.text.secondary,
-    marginTop: 2,
   },
   tabsRow: {
     flexDirection: 'row',
     backgroundColor: Colors.surface.subtle,
-    borderRadius: 10,
+    borderRadius: Radii.md,
     padding: 3,
-    marginTop: 14,
+    marginBottom: 10,
   },
   tabButton: {
     flex: 1,
     paddingVertical: 7,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: Radii.sm,
   },
   tabButtonActive: {
     backgroundColor: Colors.surface.card,
-    ...Shadows.sm,
+    ...Shadows.xs,
   },
   tabText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.text.muted,
   },
@@ -223,39 +327,73 @@ const styles = StyleSheet.create({
     color: Colors.brand.blue,
     fontWeight: '700',
   },
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 4,
+  },
+  sortLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.text.muted,
+    letterSpacing: 0.5,
+  },
+  sortChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.surface.card,
+  },
+  sortChipActive: {
+    backgroundColor: Colors.brand.blueLight,
+    borderColor: Colors.brand.blue,
+  },
+  sortChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  sortChipTextActive: {
+    color: Colors.brand.blue,
+    fontWeight: '700',
+  },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 36,
   },
   emptyCard: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 32,
+    borderRadius: Radii.lg,
+    padding: 36,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border.default,
     marginTop: 20,
+    gap: 10,
+    ...Shadows.xs,
   },
   emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginTop: 12,
-  },
-  emptySubtitle: {
-    fontSize: 11,
+    fontSize: 13,
+    fontWeight: '600',
     color: Colors.text.muted,
-    textAlign: 'center',
-    marginTop: 4,
   },
   card: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: Radii.lg,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    marginBottom: 12,
-    ...Shadows.sm,
+    marginBottom: 10,
+    overflow: 'hidden',
+    ...Shadows.xs,
+  },
+  cardAccent: {
+    height: 2,
+  },
+  cardInner: {
+    padding: 14,
   },
   cardTop: {
     flexDirection: 'row',
@@ -264,96 +402,91 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subjectBadge: {
-    backgroundColor: Colors.brand.blueLight,
+    backgroundColor: Colors.surface.subtle,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: Radii.sm,
   },
   subjectBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.brand.blue,
-    textTransform: 'uppercase',
+    color: Colors.text.secondary,
   },
-  gradedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.status.successLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 4,
-  },
-  gradedPillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.status.success,
-  },
-  submittedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  pendingBadge: {
     backgroundColor: Colors.brand.blueLight,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
-    gap: 4,
+    borderRadius: Radii.sm,
   },
-  submittedPillText: {
+  pendingBadgeText: {
     fontSize: 10,
     fontWeight: '700',
     color: Colors.brand.blue,
   },
-  latePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.status.errorLight,
-    paddingHorizontal: 8,
+  submittedBadge: {
+    backgroundColor: Colors.surface.subtle,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
-    gap: 4,
+    borderRadius: Radii.sm,
   },
-  latePillText: {
+  submittedBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.status.error,
+    color: Colors.text.secondary,
+  },
+  gradedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.brand.emeraldLight,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  gradedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.emerald,
+  },
+  overdueBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.brand.redLight,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  overdueBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.brand.red,
   },
   assignmentTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: Colors.text.primary,
+    marginBottom: 8,
+    lineHeight: 19,
   },
-  assignmentDesc: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  footerRow: {
+  metaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.subtle,
+    gap: 12,
   },
-  dateMeta: {
+  metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  dateMetaText: {
+  metaText: {
     fontSize: 11,
+    fontWeight: '500',
     color: Colors.text.muted,
   },
-  actionArrow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  openText: {
+  gradeScore: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.brand.blue,
+    color: Colors.brand.emerald,
   },
 });

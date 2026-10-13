@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,18 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  TextInput,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { fetchApi } from '../../../lib/api';
-import { Colors, Shadows } from '../../../lib/theme';
-import { MessagesSquare, Plus, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { Colors, Shadows, Radii } from '../../../lib/theme';
+import { MessagesSquare, Plus, ChevronRight, Search, X } from 'lucide-react-native';
 
 export default function StudentDoubtsList() {
   const router = useRouter();
   const [tab, setTab] = useState<'ACTIVE' | 'RESOLVED'>('ACTIVE');
+  const [search, setSearch] = useState('');
   const [doubts, setDoubts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,116 +44,178 @@ export default function StudentDoubtsList() {
     loadDoubts();
   };
 
-  const activeDoubts = doubts.filter((d) => d.status !== 'RESOLVED' && d.status !== 'CLOSED');
-  const resolvedDoubts = doubts.filter((d) => d.status === 'RESOLVED' || d.status === 'CLOSED');
+  const activeDoubts = useMemo(
+    () => doubts.filter((d) => d.status !== 'RESOLVED' && d.status !== 'CLOSED'),
+    [doubts]
+  );
+  const resolvedDoubts = useMemo(
+    () => doubts.filter((d) => d.status === 'RESOLVED' || d.status === 'CLOSED'),
+    [doubts]
+  );
 
-  const displayedList = tab === 'ACTIVE' ? activeDoubts : resolvedDoubts;
-
-  const getPriorityColor = (p: string) => {
-    switch (p) {
-      case 'URGENT':
-        return Colors.status.error;
-      case 'HIGH':
-        return Colors.status.warning;
-      default:
-        return Colors.brand.blue;
+  const displayedList = useMemo(() => {
+    let list = tab === 'ACTIVE' ? [...activeDoubts] : [...resolvedDoubts];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (d) =>
+          (d.question || '').toLowerCase().includes(q) ||
+          (d.subject || '').toLowerCase().includes(q)
+      );
     }
-  };
+    return list;
+  }, [tab, activeDoubts, resolvedDoubts, search]);
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Doubt Clearance</Text>
-          <Text style={styles.subtitle}>Direct 1-on-1 academic assistance from faculty</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerEyebrow}>ACADEMIC SUPPORT</Text>
+            <Text style={styles.title}>Doubts</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.askButton}
+            onPress={() => router.push('/(student)/doubts/ask' as any)}
+            activeOpacity={0.85}
+          >
+            <Plus size={15} color="#FFFFFF" />
+            <Text style={styles.askButtonText}>Ask Doubt</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={styles.askButton}
-          onPress={() => router.push('/(student)/doubts/ask' as any)}
-          activeOpacity={0.8}
-        >
-          <Plus size={16} color="#FFFFFF" />
-          <Text style={styles.askButtonText}>Ask</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabButton, tab === 'ACTIVE' && styles.tabButtonActive]}
-          onPress={() => setTab('ACTIVE')}
-        >
-          <Text style={[styles.tabText, tab === 'ACTIVE' && styles.tabTextActive]}>
-            Active ({activeDoubts.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, tab === 'RESOLVED' && styles.tabButtonActive]}
-          onPress={() => setTab('RESOLVED')}
-        >
-          <Text style={[styles.tabText, tab === 'RESOLVED' && styles.tabTextActive]}>
-            Resolved ({resolvedDoubts.length})
-          </Text>
-        </TouchableOpacity>
+        {/* Search */}
+        <View style={styles.searchBar}>
+          <Search size={14} color={Colors.text.muted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search questions or subjects..."
+            placeholderTextColor={Colors.text.muted}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search ? (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <X size={14} color={Colors.text.muted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Tabs */}
+        <View style={styles.tabsRow}>
+          <TouchableOpacity
+            style={[styles.tabButton, tab === 'ACTIVE' && styles.tabButtonActive]}
+            onPress={() => setTab('ACTIVE')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, tab === 'ACTIVE' && styles.tabTextActive]}>
+              Active ({activeDoubts.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, tab === 'RESOLVED' && styles.tabButtonActive]}
+            onPress={() => setTab('RESOLVED')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, tab === 'RESOLVED' && styles.tabTextActive]}>
+              Resolved ({resolvedDoubts.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.brand.blue]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand.blue} />}
+        showsVerticalScrollIndicator={false}
       >
         {loading ? (
           <ActivityIndicator color={Colors.brand.blue} style={{ marginTop: 40 }} />
         ) : displayedList.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MessagesSquare size={36} color={Colors.text.muted} />
+            <MessagesSquare size={32} color={Colors.text.muted} />
             <Text style={styles.emptyTitle}>
-              {tab === 'ACTIVE' ? 'No active doubts' : 'No resolved questions yet'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {tab === 'ACTIVE'
-                ? 'Stuck on a concept or textbook problem? Tap "Ask" to get teacher guidance.'
-                : 'Questions you resolve with your teacher will be archived here.'}
+              {search
+                ? 'No matching questions found'
+                : tab === 'ACTIVE'
+                ? 'No active doubts'
+                : 'No resolved questions'}
             </Text>
           </View>
         ) : (
           displayedList.map((doubt) => {
-            const priorityColor = getPriorityColor(doubt.priority);
-            const teacherName = doubt.teacher
-              ? `${doubt.teacher.firstName || ''} ${doubt.teacher.lastName || ''}`.trim()
-              : 'Assigned Teacher';
+            const isResolved = doubt.status === 'RESOLVED';
+            const isUrgent = doubt.priority === 'URGENT' || doubt.priority === 'HIGH';
 
             return (
               <TouchableOpacity
                 key={doubt.id}
-                style={styles.card}
-                onPress={() => router.push(`/(student)/doubts/${doubt.id}/chat` as any)}
-                activeOpacity={0.7}
+                style={[styles.card, isUrgent && { borderColor: `${Colors.brand.red}40` }]}
+                onPress={() => router.push(`/(student)/doubts/${doubt.id}` as any)}
+                activeOpacity={0.85}
               >
-                <View style={styles.cardTop}>
-                  <View style={styles.subjectBadge}>
-                    <Text style={styles.subjectBadgeText}>{doubt.subject?.name || 'General'}</Text>
+                <View
+                  style={[
+                    styles.cardAccent,
+                    {
+                      backgroundColor: isResolved
+                        ? Colors.brand.emerald
+                        : isUrgent
+                        ? Colors.brand.red
+                        : Colors.brand.blue,
+                    },
+                  ]}
+                />
+                <View style={styles.cardInner}>
+                  <View style={styles.cardTop}>
+                    <View style={styles.subjectBadge}>
+                      <Text style={styles.subjectBadgeText}>{doubt.subject || 'General'}</Text>
+                    </View>
+
+                    {isUrgent && (
+                      <View style={styles.urgentBadge}>
+                        <Text style={styles.urgentBadgeText}>URGENT</Text>
+                      </View>
+                    )}
+
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        {
+                          backgroundColor: isResolved
+                            ? Colors.brand.emeraldLight
+                            : Colors.brand.blueLight,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          {
+                            color: isResolved ? Colors.brand.emerald : Colors.brand.blue,
+                          },
+                        ]}
+                      >
+                        {isResolved ? 'Answered' : 'Pending'}
+                      </Text>
+                    </View>
                   </View>
 
-                  <View style={[styles.priorityPill, { borderColor: priorityColor }]}>
-                    <Text style={[styles.priorityPillText, { color: priorityColor }]}>
-                      {doubt.priority || 'MEDIUM'}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.doubtTitle}>{doubt.title}</Text>
-                {doubt.description ? (
-                  <Text style={styles.doubtDesc} numberOfLines={2}>
-                    {doubt.description}
+                  <Text style={styles.questionText} numberOfLines={2}>
+                    {doubt.question}
                   </Text>
-                ) : null}
 
-                <View style={styles.footerRow}>
-                  <Text style={styles.teacherText}>Faculty: {teacherName}</Text>
-                  <View style={styles.actionArrow}>
-                    <Text style={styles.openText}>Open Chat</Text>
-                    <ChevronRight size={14} color={Colors.brand.blue} />
+                  <View style={styles.metaRow}>
+                    <Text style={styles.dateText}>
+                      {doubt.createdAt
+                        ? new Date(doubt.createdAt).toLocaleDateString('en-IN', {
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : 'Recent'}
+                    </Text>
+                    <ChevronRight size={14} color={Colors.text.muted} style={{ marginLeft: 'auto' }} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -168,56 +233,81 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface.background,
   },
   header: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 56 : 44,
+    paddingBottom: 12,
+    backgroundColor: Colors.surface.card,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.default,
+  },
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 54,
-    paddingBottom: 16,
-    backgroundColor: Colors.surface.card,
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.brand.blue,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 3,
   },
   title: {
     fontSize: 22,
     fontWeight: '800',
     color: Colors.text.primary,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginTop: 2,
+    letterSpacing: -0.4,
   },
   askButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     backgroundColor: Colors.brand.blue,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 4,
-    ...Shadows.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: Radii.md,
+    ...Shadows.glowBlue,
   },
   askButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.surface.subtle,
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text.primary,
+    padding: 0,
   },
   tabsRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.surface.card,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.default,
-    gap: 8,
+    backgroundColor: Colors.surface.subtle,
+    borderRadius: Radii.md,
+    padding: 3,
   },
   tabButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: Colors.surface.subtle,
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    borderRadius: Radii.sm,
   },
   tabButtonActive: {
-    backgroundColor: Colors.brand.blueLight,
+    backgroundColor: Colors.surface.card,
+    ...Shadows.xs,
   },
   tabText: {
     fontSize: 12,
@@ -229,101 +319,93 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 36,
   },
   emptyCard: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 32,
+    borderRadius: Radii.lg,
+    padding: 36,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border.default,
     marginTop: 20,
+    gap: 10,
+    ...Shadows.xs,
   },
   emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginTop: 12,
-  },
-  emptySubtitle: {
-    fontSize: 11,
+    fontSize: 13,
+    fontWeight: '600',
     color: Colors.text.muted,
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 16,
   },
   card: {
     backgroundColor: Colors.surface.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: Radii.lg,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    marginBottom: 12,
-    ...Shadows.sm,
+    marginBottom: 10,
+    overflow: 'hidden',
+    ...Shadows.xs,
+  },
+  cardAccent: {
+    height: 2,
+  },
+  cardInner: {
+    padding: 14,
   },
   cardTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginBottom: 8,
   },
   subjectBadge: {
-    backgroundColor: Colors.brand.blueLight,
+    backgroundColor: Colors.surface.subtle,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: Radii.sm,
   },
   subjectBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.brand.blue,
-    textTransform: 'uppercase',
+    color: Colors.text.secondary,
   },
-  priorityPill: {
-    borderWidth: 1,
+  urgentBadge: {
+    backgroundColor: Colors.brand.redLight,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: Radii.sm,
   },
-  priorityPillText: {
+  urgentBadgeText: {
     fontSize: 9,
     fontWeight: '800',
+    color: Colors.brand.red,
+    letterSpacing: 0.5,
   },
-  doubtTitle: {
-    fontSize: 15,
+  statusBadge: {
+    marginLeft: 'auto',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.sm,
+  },
+  statusBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
+  },
+  questionText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: Colors.text.primary,
+    lineHeight: 20,
+    marginBottom: 8,
   },
-  doubtDesc: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  footerRow: {
+  metaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.subtle,
   },
-  teacherText: {
+  dateText: {
     fontSize: 11,
     color: Colors.text.muted,
     fontWeight: '500',
-  },
-  actionArrow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  openText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.brand.blue,
   },
 });
