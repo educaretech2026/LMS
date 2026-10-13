@@ -58,6 +58,11 @@ export default function StudentTabsLayout() {
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('profile', { screen: 'index' });
+          },
+        })}
       />
     </Tabs>
   );

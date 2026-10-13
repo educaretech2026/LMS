@@ -58,6 +58,11 @@ export default function TeacherTabsLayout() {
           title: 'More',
           tabBarIcon: ({ color, size }) => <Menu size={size} color={color} />,
         }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('more', { screen: 'index' });
+          },
+        })}
       />
     </Tabs>
   );

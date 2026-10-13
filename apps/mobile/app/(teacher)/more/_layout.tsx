@@ -5,6 +5,7 @@ import { Colors } from '../../../lib/theme';
 export default function TeacherMoreLayout() {
   return (
     <Stack
+      initialRouteName="index"
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: Colors.surface.background },
