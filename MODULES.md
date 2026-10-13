@@ -61,14 +61,31 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 
 ---
 
-## 5. 📅 Attendance Management (`/attendance`)
+## 5. 📑 Homework & Assignments Management (`/assignments`)
+* **Multi-Tier Curriculum Targeting**:
+  * Assignment allocation mapped to Batches, Subjects, Chapters, and Topics with target track filtering (`TUITION`, `ENTRANCE`, `BOTH`).
+* **Attachment Distribution**:
+  * Multi-file document and worksheet distribution via secure presigned cloud storage uploads.
+* **Student Submissions & Status Tracking**:
+  * Dedicated student submission modal with file upload attachments and notes.
+  * Automatic late submission evaluation (`LATE` vs `SUBMITTED`) comparing against assignment due dates.
+* **Teacher Grading & Review**:
+  * Submission inspection drawer with direct attachment preview and quantitative marks + qualitative feedback entry.
+* **Automated Syllabus Progress Synchronization**:
+  * Student submission events automatically calculate and feed into the 30% practice progress weighting in the syllabus tracker.
+* **Full CRUD Management**:
+  * Creation, live editing, and deletion with cascading removal of linked student submissions.
+
+---
+
+## 6. 📅 Attendance Management (`/attendance`)
 * Batch-wise daily student attendance recording (Present, Absent, Late, Excused).
 * Teacher and administrative staff attendance logging.
 * Student-wise attendance percentage reporting and historical attendance logs.
 
 ---
 
-## 6. 💰 Fee & Financial Management (`/fee`, `/expense`)
+## 7. 💰 Fee & Financial Management (`/fee`, `/expense`)
 * **Student Fee Engine (`/fee`)**:
   * Customizable fee structures, scholarship/discount allocations, and installment schedules.
   * Payment collection recording, outstanding dues tracking, and receipt generation.
@@ -78,7 +95,7 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 
 ---
 
-## 7. 📑 Dynamic Form Builder & Admissions (`/forms`, `/admission`, `/enquiry`)
+## 8. 📑 Dynamic Form Builder & Admissions (`/forms`, `/admission`, `/enquiry`)
 * **No-Code Form Builder (`/forms/builder`, `/forms`)**:
   * Drag-and-drop form creation supporting various input types (text, numbers, dropdowns, uploads, dates).
   * Public form sharing URLs (`/f/[id]`) and live response aggregation (`/forms/[id]/responses`).
@@ -89,7 +106,7 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 
 ---
 
-## 8. 🔔 Communications & Notifications (`/notices`, `/sms`)
+## 9. 🔔 Communications & Notifications (`/notices`, `/sms`)
 * **In-App Notification Centre**:
   * Real-time notification drawer with unread counts and read-state synchronization.
 * **Notice Board & Announcements (`/notices`)**:
@@ -99,13 +116,13 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 
 ---
 
-## 9. 🎥 Live Classes & Virtual Classroom (`/live-class`)
+## 10. 🎥 Live Classes & Virtual Classroom (`/live-class`)
 * Batch and subject-wise live class scheduling.
 * WebRTC / LiveKit integration layer for real-time video, audio, screen sharing, and automated room access token issuance.
 
 ---
 
-## 10. 📜 Certificates, Reports & Help Desk
+## 11. 📜 Certificates, Reports & Help Desk
 * **Certificate Generator (`/certificate`)**:
   * Templated certificate generation for course completions and student achievements.
 * **Consolidated Reporting (`/report`)**:
@@ -115,7 +132,7 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 
 ---
 
-## 11. ⚙️ Technology Stack & Infrastructure
+## 12. ⚙️ Technology Stack & Infrastructure
 * **Frontend**: Next.js 16 (App Router, React Server Components, Tailwind CSS, Lucide Icons).
 * **Backend API**: NestJS (TypeScript, Modular Architecture, Guards, Interceptors, Swagger OpenAPI).
 * **Database & ORM**: PostgreSQL with Prisma ORM (relational schema, relational cascades, migrations).

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, UsePipes, ValidationPipe } from '@nestjs/common';
 import { AssignmentsService } from './assignments.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -21,6 +21,16 @@ export class AssignmentsController {
   @Post()
   create(@Body() data: any, @Req() req: any): Promise<any> {
     return this.assignmentsService.create(data, req.user.id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() data: any, @Req() req: any): Promise<any> {
+    return this.assignmentsService.update(id, data, req.user.id, req.user.role);
+  }
+
+  @Delete(':id')
+  delete(@Param('id') id: string, @Req() req: any): Promise<any> {
+    return this.assignmentsService.delete(id, req.user.id, req.user.role);
   }
 
   @Post(':id/submit')

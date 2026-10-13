@@ -1,19 +1,128 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { FileText, Plus, ChevronDown, CheckCircle, Clock, Upload, X, Loader2, Download } from "lucide-react";
+import {
+  FileText,
+  Plus,
+  ChevronDown,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  X,
+  Loader2,
+  Download,
+  Search,
+  Filter,
+  Edit2,
+  Trash2,
+  ExternalLink,
+  BookOpen,
+  Layers,
+  GraduationCap,
+  Calendar,
+  AlertTriangle,
+  FolderOpen
+} from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { FileUploader } from "@/components/upload/file-uploader";
 
 export function AssignmentsClient({ initialAssignments }: { initialAssignments: any[] }) {
   const { role } = useAuth();
-  const [assignments, setAssignments] = useState(initialAssignments);
+  const isTeacherOrAdmin = role !== "STUDENT" && role !== "PUBLIC_LEARNER";
+
+  const [assignments, setAssignments] = useState<any[]>(initialAssignments || []);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState("ALL");
+  const [selectedSubject, setSelectedSubject] = useState("ALL");
+  const [selectedTrack, setSelectedTrack] = useState("ALL");
+  const [activeTab, setActiveTab] = useState("ALL");
+
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
+  const [deletingAssignment, setDeletingAssignment] = useState<any | null>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<any | null>(null);
 
-  const refresh = () => fetchApi('/assignments').then((data: any) => setAssignments(data)).catch(console.error);
+  const refresh = () => {
+    fetchApi("/assignments")
+      .then((data: any) => setAssignments(data || []))
+      .catch(console.error);
+  };
+
+  // Unique batches and subjects from assignments for filtering
+  const filterBatches = useMemo(() => {
+    const map = new Map<string, string>();
+    assignments.forEach((a) => {
+      if (a.batch?.id && a.batch?.name) map.set(a.batch.id, a.batch.name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [assignments]);
+
+  const filterSubjects = useMemo(() => {
+    const map = new Map<string, string>();
+    assignments.forEach((a) => {
+      if (a.subject?.id && a.subject?.name) map.set(a.subject.id, a.subject.name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [assignments]);
+
+  // Derived filtered assignments
+  const filteredAssignments = useMemo(() => {
+    return assignments.filter((a) => {
+      // Search
+      const matchesSearch =
+        !searchQuery ||
+        a.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.subject?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      if (!matchesSearch) return false;
+
+      // Batch
+      if (selectedBatch !== "ALL" && a.batchId !== selectedBatch) return false;
+
+      // Subject
+      if (selectedSubject !== "ALL" && a.subjectId !== selectedSubject) return false;
+
+      // Track
+      if (selectedTrack !== "ALL") {
+        const tr = a.targetTrackId || a.batch?.track;
+        if (tr && tr !== "BOTH" && tr !== selectedTrack) return false;
+      }
+
+      // Tab Filtering
+      const sub = a.submissions?.[0];
+      const isPastDue = a.dueDate && new Date() > new Date(a.dueDate);
+
+      if (!isTeacherOrAdmin) {
+        if (activeTab === "PENDING") return !sub;
+        if (activeTab === "SUBMITTED") return sub && sub.status !== "GRADED";
+        if (activeTab === "GRADED") return sub?.status === "GRADED";
+        if (activeTab === "OVERDUE") return !sub && isPastDue;
+      } else {
+        if (activeTab === "ACTIVE") return !isPastDue;
+        if (activeTab === "PAST_DUE") return isPastDue;
+      }
+
+      return true;
+    });
+  }, [assignments, searchQuery, selectedBatch, selectedSubject, selectedTrack, activeTab, isTeacherOrAdmin]);
+
+  // KPI Calculations
+  const stats = useMemo(() => {
+    const total = assignments.length;
+    if (!isTeacherOrAdmin) {
+      const submitted = assignments.filter((a) => a.submissions && a.submissions.length > 0).length;
+      const graded = assignments.filter((a) => a.submissions?.[0]?.status === "GRADED").length;
+      const pending = assignments.filter((a) => !a.submissions || a.submissions.length === 0).length;
+      return { total, first: pending, firstLabel: "Pending", second: submitted, secondLabel: "Submitted", third: graded, thirdLabel: "Graded" };
+    } else {
+      const pastDue = assignments.filter((a) => a.dueDate && new Date() > new Date(a.dueDate)).length;
+      const totalSubmissions = assignments.reduce((acc, a) => acc + (a._count?.submissions || 0), 0);
+      return { total, first: total - pastDue, firstLabel: "Active", second: pastDue, secondLabel: "Past Due", third: totalSubmissions, thirdLabel: "Submissions" };
+    }
+  }, [assignments, isTeacherOrAdmin]);
 
   return (
     <DashboardLayout title="Assignments">
@@ -22,118 +131,484 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary tracking-tight">Assignments</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-text-primary tracking-tight">Assignments</h1>
             <p className="text-sm text-text-secondary mt-1">
-              {role === 'STUDENT' ? 'View and submit your assignments' : 'Create and manage assignments for your batches'}
+              {!isTeacherOrAdmin
+                ? "Track coursework deadlines, submit responses, and review teacher evaluations"
+                : "Manage homework, track batch submissions, and evaluate student work"}
             </p>
           </div>
-          {role !== 'STUDENT' && (
-            <button 
+          {isTeacherOrAdmin && (
+            <button
               onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-brand-blue-dark text-white text-sm font-bold rounded-xl transition-all shadow-sm shadow-brand-blue/20">
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-blue hover:bg-brand-blue-dark text-white text-sm font-bold rounded-xl transition-all shadow-md shadow-brand-blue/20 hover:scale-[1.02] active:scale-[0.98]"
+            >
               <Plus className="h-4 w-4" />
               New Assignment
             </button>
           )}
         </div>
 
-        {/* List */}
+        {/* KPI Strip */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl border border-border-soft p-4 shadow-sm flex items-center gap-4">
+            <div className="p-3 bg-brand-blue/10 rounded-xl text-brand-blue shrink-0">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-text-secondary">Total Assignments</p>
+              <p className="text-2xl font-black text-text-primary mt-0.5">{stats.total}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-border-soft p-4 shadow-sm flex items-center gap-4">
+            <div className="p-3 bg-warning/10 rounded-xl text-warning shrink-0">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-text-secondary">{stats.firstLabel}</p>
+              <p className="text-2xl font-black text-text-primary mt-0.5">{stats.first}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-border-soft p-4 shadow-sm flex items-center gap-4">
+            <div className="p-3 bg-brand-blue/10 rounded-xl text-brand-blue shrink-0">
+              <Layers className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-text-secondary">{stats.secondLabel}</p>
+              <p className="text-2xl font-black text-text-primary mt-0.5">{stats.second}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-border-soft p-4 shadow-sm flex items-center gap-4">
+            <div className="p-3 bg-brand-green/10 rounded-xl text-brand-green shrink-0">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-text-secondary">{stats.thirdLabel}</p>
+              <p className="text-2xl font-black text-text-primary mt-0.5">{stats.third}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Toolbar */}
+        <div className="bg-white rounded-2xl border border-border-soft p-4 shadow-sm space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            
+            {/* Tab switchers */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              {!isTeacherOrAdmin ? (
+                <>
+                  <TabButton active={activeTab === "ALL"} onClick={() => setActiveTab("ALL")} label="All" count={assignments.length} />
+                  <TabButton active={activeTab === "PENDING"} onClick={() => setActiveTab("PENDING")} label="Pending" count={assignments.filter(a => !a.submissions?.length).length} />
+                  <TabButton active={activeTab === "SUBMITTED"} onClick={() => setActiveTab("SUBMITTED")} label="Submitted" count={assignments.filter(a => a.submissions?.length && a.submissions[0].status !== "GRADED").length} />
+                  <TabButton active={activeTab === "GRADED"} onClick={() => setActiveTab("GRADED")} label="Graded" count={assignments.filter(a => a.submissions?.[0]?.status === "GRADED").length} />
+                  <TabButton active={activeTab === "OVERDUE"} onClick={() => setActiveTab("OVERDUE")} label="Overdue" count={assignments.filter(a => !a.submissions?.length && a.dueDate && new Date() > new Date(a.dueDate)).length} />
+                </>
+              ) : (
+                <>
+                  <TabButton active={activeTab === "ALL"} onClick={() => setActiveTab("ALL")} label="All" count={assignments.length} />
+                  <TabButton active={activeTab === "ACTIVE"} onClick={() => setActiveTab("ACTIVE")} label="Active" count={assignments.filter(a => !a.dueDate || new Date() <= new Date(a.dueDate)).length} />
+                  <TabButton active={activeTab === "PAST_DUE"} onClick={() => setActiveTab("PAST_DUE")} label="Past Due" count={assignments.filter(a => a.dueDate && new Date() > new Date(a.dueDate)).length} />
+                </>
+              )}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full lg:w-72 shrink-0">
+              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search assignments..."
+                className="w-full h-9.5 pl-9 pr-3 rounded-xl border border-border-soft bg-surface-2 text-xs text-text-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Secondary Select Dropdowns */}
+          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border-soft text-xs">
+            <div className="flex items-center gap-1.5 text-text-secondary font-semibold">
+              <Filter className="h-3.5 w-3.5 text-text-muted" />
+              <span>Filters:</span>
+            </div>
+
+            {/* Batch Filter */}
+            <div className="relative">
+              <select
+                value={selectedBatch}
+                onChange={(e) => setSelectedBatch(e.target.value)}
+                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+              >
+                <option value="ALL">All Batches</option>
+                {filterBatches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            </div>
+
+            {/* Subject Filter */}
+            <div className="relative">
+              <select
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+              >
+                <option value="ALL">All Subjects</option>
+                {filterSubjects.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            </div>
+
+            {/* Track Filter */}
+            <div className="relative">
+              <select
+                value={selectedTrack}
+                onChange={(e) => setSelectedTrack(e.target.value)}
+                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+              >
+                <option value="ALL">All Tracks</option>
+                <option value="TUITION">Tuition</option>
+                <option value="ENTRANCE">Entrance</option>
+                <option value="BOTH">Both</option>
+              </select>
+              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            </div>
+
+            {(selectedBatch !== "ALL" || selectedSubject !== "ALL" || selectedTrack !== "ALL" || searchQuery) && (
+              <button
+                onClick={() => {
+                  setSelectedBatch("ALL");
+                  setSelectedSubject("ALL");
+                  setSelectedTrack("ALL");
+                  setSearchQuery("");
+                }}
+                className="text-xs font-bold text-brand-red hover:underline ml-auto"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Assignments Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {assignments.length === 0 ? (
-            <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-border-soft">
-              <FileText className="h-10 w-10 text-text-muted mx-auto mb-3" />
-              <p className="text-text-secondary font-medium">No assignments found</p>
+          {filteredAssignments.length === 0 ? (
+            <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-border-soft shadow-sm">
+              <FolderOpen className="h-12 w-12 text-text-muted mx-auto mb-3 opacity-60" />
+              <h3 className="text-base font-bold text-text-primary">No assignments found</h3>
+              <p className="text-xs text-text-secondary mt-1 max-w-sm mx-auto">
+                No assignments match the selected criteria or none have been assigned yet.
+              </p>
             </div>
           ) : (
-            assignments.map((assignment) => (
-              <div key={assignment.id} onClick={() => setSelectedAssignment(assignment)} className="bg-white rounded-2xl border border-border-soft p-5 hover:border-brand-blue/30 hover:shadow-md cursor-pointer transition-all flex flex-col group relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-brand-blue/5 to-transparent rounded-bl-full -mr-4 -mt-4 opacity-50 transition-transform group-hover:scale-110"></div>
-                <div className="flex justify-between items-start mb-3 relative z-10">
-                  <div className="p-2.5 bg-surface-2 rounded-xl text-brand-blue">
-                    <FileText className="h-5 w-5" />
+            filteredAssignments.map((assignment) => {
+              const sub = assignment.submissions?.[0];
+              const isPastDue = assignment.dueDate && new Date() > new Date(assignment.dueDate);
+              const trackBadge = assignment.targetTrackId || assignment.batch?.track;
+
+              return (
+                <div
+                  key={assignment.id}
+                  className="bg-white rounded-2xl border border-border-soft p-5 hover:border-brand-blue/40 hover:shadow-lg transition-all flex flex-col group relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-brand-blue/5 to-transparent rounded-bl-full pointer-events-none" />
+
+                  {/* Top Bar: Subject, Track, and Due Date */}
+                  <div className="flex items-start justify-between gap-2 mb-3 relative z-10">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-blue/10 text-brand-blue border border-brand-blue/20">
+                        {assignment.subject?.name || "General"}
+                      </span>
+                      {trackBadge && trackBadge !== "BOTH" && (
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase bg-surface-2 text-text-secondary border border-border-soft">
+                          {trackBadge}
+                        </span>
+                      )}
+                    </div>
+
+                    {assignment.dueDate && (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border shrink-0 ${
+                          isPastDue
+                            ? "bg-brand-red/10 text-brand-red border-brand-red/20"
+                            : "bg-warning/10 text-warning border-warning/20"
+                        }`}
+                      >
+                        <Clock className="h-3 w-3" />
+                        {isPastDue ? "Expired" : "Due"} {new Date(assignment.dueDate).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
-                  {assignment.dueDate && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-warning/10 text-warning border border-warning/20">
-                      <Clock className="h-3 w-3" />
-                      Due {new Date(assignment.dueDate).toLocaleDateString()}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mb-1 relative z-10">
-                  <h3 className="text-lg font-bold text-text-primary line-clamp-1">{assignment.title}</h3>
-                  {assignment.batch?.track && assignment.batch.track !== "BOTH" && (
-                    <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase bg-brand-blue/10 text-brand-blue border-brand-blue/20">
-                      {assignment.batch.track}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-text-muted mb-4 line-clamp-2 min-h-[32px] relative z-10">{assignment.description || "No description provided."}</p>
-                
-                <div className="mt-auto pt-4 border-t border-border-soft flex items-center justify-between text-xs font-medium text-text-secondary relative z-10">
-                  <span>{assignment.subject?.name || 'General'} • {assignment.batch?.name || 'All Batches'}</span>
-                  {role !== 'STUDENT' ? (
-                    <span className="text-brand-blue">{assignment._count?.submissions || 0} Submissions</span>
-                  ) : (
-                    assignment.submissions?.length > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-brand-green"><CheckCircle className="h-3.5 w-3.5" /> Submitted</span>
+
+                  {/* Title & Hierarchy */}
+                  <div className="relative z-10 mb-2">
+                    <h3 className="text-base font-bold text-text-primary group-hover:text-brand-blue transition-colors line-clamp-1">
+                      {assignment.title}
+                    </h3>
+                    {(assignment.chapter?.name || assignment.topic?.name) && (
+                      <p className="text-[11px] font-medium text-text-muted mt-0.5 line-clamp-1">
+                        {assignment.chapter?.name}{assignment.topic?.name ? ` › ${assignment.topic.name}` : ""}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-text-secondary mb-4 line-clamp-2 min-h-[32px] relative z-10">
+                    {assignment.description || "No description provided."}
+                  </p>
+
+                  {/* Meta / Batch Info */}
+                  <div className="text-[11px] text-text-muted mb-4 relative z-10 flex items-center gap-2">
+                    <span className="font-semibold text-text-secondary">{assignment.batch?.name || "All Batches"}</span>
+                    {assignment.attachments && assignment.attachments.length > 0 && (
+                      <span className="inline-flex items-center gap-1 text-brand-blue font-bold">
+                        • {assignment.attachments.length} file{assignment.attachments.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Footer Action & Status */}
+                  <div className="mt-auto pt-4 border-t border-border-soft flex items-center justify-between gap-3 relative z-10">
+                    {!isTeacherOrAdmin ? (
+                      <div>
+                        {sub?.status === "GRADED" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand-green/10 text-brand-green border border-brand-green/20">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Graded ({sub.grade ?? "—"})
+                          </span>
+                        ) : sub?.status === "LATE" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-warning/10 text-warning border border-warning/20">
+                            <AlertCircle className="h-3.5 w-3.5" /> Submitted (Late)
+                          </span>
+                        ) : sub ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand-blue/10 text-brand-blue border border-brand-blue/20">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Submitted
+                          </span>
+                        ) : isPastDue ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand-red/10 text-brand-red border border-brand-red/20">
+                            <AlertTriangle className="h-3.5 w-3.5" /> Overdue
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-surface-2 text-text-secondary border border-border-soft">
+                            Pending
+                          </span>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-warning">Pending</span>
-                    )
-                  )}
+                      <div className="text-xs font-bold text-brand-blue">
+                        {assignment._count?.submissions || 0} Submissions
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      {!isTeacherOrAdmin ? (
+                        <button
+                          onClick={() => setSelectedAssignment(assignment)}
+                          className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-brand-blue text-white hover:bg-brand-blue-dark transition-all shadow-sm shadow-brand-blue/20"
+                        >
+                          {sub ? "View Submission" : "Submit Work"}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setSelectedAssignment(assignment)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-2 text-text-primary hover:bg-surface-3 transition-colors"
+                          >
+                            Review
+                          </button>
+                          <button
+                            onClick={() => setEditingAssignment(assignment)}
+                            title="Edit Assignment"
+                            className="p-1.5 rounded-lg text-text-muted hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeletingAssignment(assignment)}
+                            title="Delete Assignment"
+                            className="p-1.5 rounded-lg text-text-muted hover:text-brand-red hover:bg-brand-red/10 transition-colors"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
 
-      {showCreateModal && <CreateAssignmentModal onClose={() => setShowCreateModal(false)} onSuccess={() => { setShowCreateModal(false); refresh(); }} />}
-      {selectedAssignment && role === 'STUDENT' && <SubmitAssignmentModal assignment={selectedAssignment} onClose={() => setSelectedAssignment(null)} onSuccess={() => { setSelectedAssignment(null); refresh(); }} />}
-      {selectedAssignment && role !== 'STUDENT' && <ViewSubmissionsModal assignmentId={selectedAssignment.id} onClose={() => setSelectedAssignment(null)} />}
+      {/* MODALS */}
+      {showCreateModal && (
+        <CreateAssignmentModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={() => {
+            setShowCreateModal(false);
+            refresh();
+          }}
+        />
+      )}
+
+      {editingAssignment && (
+        <EditAssignmentModal
+          assignment={editingAssignment}
+          onClose={() => setEditingAssignment(null)}
+          onSuccess={() => {
+            setEditingAssignment(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {deletingAssignment && (
+        <DeleteConfirmationModal
+          assignment={deletingAssignment}
+          onClose={() => setDeletingAssignment(null)}
+          onSuccess={() => {
+            setDeletingAssignment(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {selectedAssignment && !isTeacherOrAdmin && (
+        <SubmitAssignmentModal
+          assignment={selectedAssignment}
+          onClose={() => setSelectedAssignment(null)}
+          onSuccess={() => {
+            setSelectedAssignment(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {selectedAssignment && isTeacherOrAdmin && (
+        <ViewSubmissionsModal
+          assignmentId={selectedAssignment.id}
+          onClose={() => setSelectedAssignment(null)}
+        />
+      )}
     </DashboardLayout>
   );
 }
 
 // -----------------------------------------------------------------------------
-// TEACHER: CREATE ASSIGNMENT MODAL
+// TAB BUTTON COMPONENT
 // -----------------------------------------------------------------------------
-function CreateAssignmentModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
+function TabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count?: number }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+        active
+          ? "bg-brand-blue text-white shadow-sm shadow-brand-blue/20"
+          : "bg-surface-2 text-text-secondary hover:bg-surface-3 hover:text-text-primary"
+      }`}
+    >
+      <span>{label}</span>
+      {typeof count === "number" && (
+        <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${active ? "bg-white/20 text-white" : "bg-white text-text-muted"}`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// TEACHER: CREATE ASSIGNMENT MODAL (WITH CASCADING CHAPTER & TOPIC)
+// -----------------------------------------------------------------------------
+function CreateAssignmentModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [batchId, setBatchId] = useState("");
   const [subjectId, setSubjectId] = useState("");
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [chapterId, setChapterId] = useState("");
+  const [topicId, setTopicId] = useState("");
   const [targetTrack, setTargetTrack] = useState<"TUITION" | "ENTRANCE" | "BOTH" | "">("");
-  
-  const [batches, setBatches] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetchApi('/setup/batches').then((data: any) => setBatches(data)).catch(console.error);
-    fetchApi('/setup/subjects').then((data: any) => setSubjects(data)).catch(console.error);
-  }, []);
-
-  const [step, setStep] = useState<1 | 2>(1);
   const [attachments, setAttachments] = useState<any[]>([]);
 
+  const [batches, setBatches] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [topics, setTopics] = useState<any[]>([]);
+
+  const [step, setStep] = useState<1 | 2>(1);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchApi("/setup/batches").then((data: any) => setBatches(data || [])).catch(console.error);
+    fetchApi("/setup/subjects").then((data: any) => setSubjects(data || [])).catch(console.error);
+  }, []);
+
+  // Fetch chapters when subject changes
+  useEffect(() => {
+    if (!subjectId) {
+      setChapters([]);
+      setChapterId("");
+      setTopics([]);
+      setTopicId("");
+      return;
+    }
+    fetchApi(`/setup/chapters?subjectId=${subjectId}`)
+      .then((data: any) => setChapters(data || []))
+      .catch(console.error);
+    setChapterId("");
+    setTopics([]);
+    setTopicId("");
+  }, [subjectId]);
+
+  // Fetch topics when chapter changes
+  useEffect(() => {
+    if (!chapterId) {
+      setTopics([]);
+      setTopicId("");
+      return;
+    }
+    fetchApi(`/setup/topics?chapterId=${chapterId}`)
+      .then((data: any) => setTopics(data || []))
+      .catch(console.error);
+    setTopicId("");
+  }, [chapterId]);
+
   const handleUploadSuccess = (url: string) => {
-    setAttachments([...attachments, { url, filename: "Attachment" }]);
-    // We stay on step 2 so they can upload more or finish
+    setAttachments([...attachments, { url, filename: `Attachment ${attachments.length + 1}` }]);
   };
 
   const handleSave = async () => {
-    if (!title || !batchId || !subjectId || !targetTrack) {
+    if (!title.trim() || !batchId || !subjectId || !targetTrack) {
       setError("Title, batch, subject, and target track are required");
       return;
     }
     setSaving(true);
     try {
-      await fetchApi('/assignments', {
-        method: 'POST',
+      await fetchApi("/assignments", {
+        method: "POST",
         body: JSON.stringify({
-          title, description, dueDate, batchId, subjectId, targetTrack, attachments: attachments.length > 0 ? attachments : null
+          title,
+          description,
+          dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+          batchId,
+          subjectId,
+          chapterId: chapterId || null,
+          topicId: topicId || null,
+          targetTrackId: targetTrack,
+          attachments: attachments.length > 0 ? attachments : null
         })
       });
       onSuccess();
@@ -144,94 +619,201 @@ function CreateAssignmentModal({ onClose, onSuccess }: { onClose: () => void, on
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 sm:p-6">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-full overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0">
-          <h2 className="text-base font-bold text-text-primary">Create Assignment</h2>
+          <div>
+            <h2 className="text-base font-bold text-text-primary">Create Assignment</h2>
+            <p className="text-xs text-text-secondary">Distribute coursework with syllabus tracking</p>
+          </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-surface-2 flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 bg-surface space-y-4">
-          {error && <p className="text-xs text-brand-red bg-brand-red/10 p-3 rounded-lg border border-brand-red/20">{error}</p>}
-          
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {error && <p className="text-xs text-brand-red bg-brand-red/10 p-3 rounded-xl border border-brand-red/20">{error}</p>}
+
           {step === 1 ? (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">Title *</label>
-                <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20" />
+                <label className="block text-xs font-bold text-text-secondary mb-1">Title *</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Chapter 4 Practice Set & Problems"
+                  className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+                />
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">Description</label>
-                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full rounded-lg border border-border-soft bg-white p-3 text-sm focus:ring-2 focus:ring-brand-blue/20" />
+                <label className="block text-xs font-bold text-text-secondary mb-1">Description</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Add instructions, problem numbers, or submission guidelines..."
+                  rows={3}
+                  className="w-full rounded-xl border border-border-soft bg-white p-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+                />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+
+              {/* Batch & Track */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Batch *</label>
-                  <select value={batchId} onChange={e => setBatchId(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20" required>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Batch *</label>
+                  <select
+                    value={batchId}
+                    onChange={(e) => setBatchId(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+                  >
                     <option value="" disabled>Select Batch</option>
-                    {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Subject *</label>
-                  <select value={subjectId} onChange={e => setSubjectId(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20" required>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Target Track *</label>
+                  <select
+                    value={targetTrack}
+                    onChange={(e) => setTargetTrack(e.target.value as any)}
+                    className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+                  >
+                    <option value="" disabled>Select Target Track</option>
+                    <option value="BOTH">Both (Tuition + Entrance)</option>
+                    <option value="TUITION">Tuition Only</option>
+                    <option value="ENTRANCE">Entrance Only</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Subject & Due Date */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Subject *</label>
+                  <select
+                    value={subjectId}
+                    onChange={(e) => setSubjectId(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+                  >
                     <option value="" disabled>Select Subject</option>
-                    {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Due Date</label>
+                  <input
+                    type="datetime-local"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+              </div>
+
+              {/* Chapter & Topic Cascading Selectors */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-surface-2/60 p-3.5 rounded-xl border border-border-soft">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Chapter (Optional)</label>
+                  <select
+                    value={chapterId}
+                    onChange={(e) => setChapterId(e.target.value)}
+                    disabled={!subjectId}
+                    className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs focus:ring-2 focus:ring-brand-blue/20 disabled:opacity-50"
+                  >
+                    <option value="">No Chapter Selected</option>
+                    {chapters.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Topic (Syncs with Syllabus)</label>
+                  <select
+                    value={topicId}
+                    onChange={(e) => setTopicId(e.target.value)}
+                    disabled={!chapterId}
+                    className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs focus:ring-2 focus:ring-brand-blue/20 disabled:opacity-50"
+                  >
+                    <option value="">No Topic Selected</option>
+                    {topics.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Due Date</label>
-                  <input type="datetime-local" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Target Audience <span className="text-brand-red">*</span></label>
-                  <div className="relative">
-                    <select 
-                      value={targetTrack} 
-                      onChange={(e) => setTargetTrack(e.target.value as any)}
-                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-                      required
-                    >
-                      <option value="" disabled>Select Target Audience</option>
-                      <option value="BOTH">Both</option>
-                      <option value="TUITION">Tuition</option>
-                      <option value="ENTRANCE">Entrance</option>
-                    </select>
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <ChevronDown className="h-4 w-4 text-text-muted" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="pt-4 flex gap-3">
-                <button onClick={() => setStep(2)} className="w-full py-2.5 text-sm font-bold text-brand-blue bg-brand-blue/10 rounded-lg">Add Attachments</button>
-                <button onClick={handleSave} disabled={saving} className="w-full py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg flex items-center justify-center gap-2">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Assignment"}
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="w-full py-2.5 text-xs font-bold text-brand-blue bg-brand-blue/10 hover:bg-brand-blue/20 rounded-xl transition-colors"
+                >
+                  Manage Attachments ({attachments.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full py-2.5 text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish Assignment"}
                 </button>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <FileUploader type="FILE" onUploadSuccess={handleUploadSuccess} onUploadError={setError} onCancel={() => setStep(1)} />
+              <FileUploader
+                type="FILE"
+                onUploadSuccess={handleUploadSuccess}
+                onUploadError={setError}
+                onCancel={() => setStep(1)}
+              />
+
               {attachments.length > 0 && (
-                <div className="bg-brand-blue/5 border border-brand-blue/20 rounded-xl p-4">
-                  <p className="text-xs font-bold text-brand-blue mb-2">Attachments ({attachments.length})</p>
-                  <div className="flex flex-col gap-2">
-                    {attachments.map((a, i) => (
-                      <div key={i} className="text-xs text-text-primary bg-white p-2 rounded flex items-center gap-2 border border-border-soft">
-                        <FileText className="h-4 w-4 text-brand-blue" />
-                        Attachment {i + 1}
+                <div className="bg-brand-blue/5 border border-brand-blue/20 rounded-xl p-4 space-y-2">
+                  <p className="text-xs font-bold text-brand-blue">Uploaded Files ({attachments.length})</p>
+                  {attachments.map((a, i) => (
+                    <div key={i} className="text-xs text-text-primary bg-white p-2.5 rounded-lg flex items-center justify-between border border-border-soft">
+                      <div className="flex items-center gap-2 line-clamp-1">
+                        <FileText className="h-4 w-4 text-brand-blue shrink-0" />
+                        <span>{a.filename || `Attachment ${i + 1}`}</span>
                       </div>
-                    ))}
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachments(attachments.filter((_, idx) => idx !== i))}
+                        className="text-text-muted hover:text-brand-red ml-2"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              <button onClick={handleSave} disabled={saving} className="w-full py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg flex items-center justify-center gap-2 mt-4">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Assignment"}
-              </button>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="w-full py-2.5 text-xs font-bold text-text-secondary bg-surface-2 hover:bg-surface-3 rounded-xl transition-colors"
+                >
+                  Back to Details
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full py-2.5 text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish Assignment"}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -241,42 +823,298 @@ function CreateAssignmentModal({ onClose, onSuccess }: { onClose: () => void, on
 }
 
 // -----------------------------------------------------------------------------
+// TEACHER: EDIT ASSIGNMENT MODAL
+// -----------------------------------------------------------------------------
+function EditAssignmentModal({ assignment, onClose, onSuccess }: { assignment: any; onClose: () => void; onSuccess: () => void }) {
+  const [title, setTitle] = useState(assignment.title || "");
+  const [description, setDescription] = useState(assignment.description || "");
+  const [dueDate, setDueDate] = useState(
+    assignment.dueDate ? new Date(assignment.dueDate).toISOString().slice(0, 16) : ""
+  );
+  const [batchId, setBatchId] = useState(assignment.batchId || "");
+  const [subjectId, setSubjectId] = useState(assignment.subjectId || "");
+  const [chapterId, setChapterId] = useState(assignment.chapterId || "");
+  const [topicId, setTopicId] = useState(assignment.topicId || "");
+  const [targetTrack, setTargetTrack] = useState<any>(assignment.targetTrackId || assignment.batch?.track || "BOTH");
+  const [attachments, setAttachments] = useState<any[]>(assignment.attachments || []);
+
+  const [batches, setBatches] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [topics, setTopics] = useState<any[]>([]);
+
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchApi("/setup/batches").then((data: any) => setBatches(data || [])).catch(console.error);
+    fetchApi("/setup/subjects").then((data: any) => setSubjects(data || [])).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (subjectId) {
+      fetchApi(`/setup/chapters?subjectId=${subjectId}`)
+        .then((data: any) => setChapters(data || []))
+        .catch(console.error);
+    }
+  }, [subjectId]);
+
+  useEffect(() => {
+    if (chapterId) {
+      fetchApi(`/setup/topics?chapterId=${chapterId}`)
+        .then((data: any) => setTopics(data || []))
+        .catch(console.error);
+    }
+  }, [chapterId]);
+
+  const handleUpdate = async () => {
+    if (!title.trim() || !batchId || !subjectId) {
+      setError("Title, batch, and subject are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await fetchApi(`/assignments/${assignment.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title,
+          description,
+          dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+          batchId,
+          subjectId,
+          chapterId: chapterId || null,
+          topicId: topicId || null,
+          targetTrackId: targetTrack,
+          attachments: attachments.length > 0 ? attachments : null
+        })
+      });
+      onSuccess();
+    } catch (e: any) {
+      setError("Failed to update assignment");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-text-primary">Edit Assignment</h2>
+            <p className="text-xs text-text-secondary">Update deadlines or content</p>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full bg-surface-2 flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {error && <p className="text-xs text-brand-red bg-brand-red/10 p-3 rounded-xl border border-brand-red/20">{error}</p>}
+
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-border-soft bg-white p-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Batch *</label>
+              <select
+                value={batchId}
+                onChange={(e) => setBatchId(e.target.value)}
+                className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+              >
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Target Track</label>
+              <select
+                value={targetTrack}
+                onChange={(e) => setTargetTrack(e.target.value)}
+                className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+              >
+                <option value="BOTH">Both</option>
+                <option value="TUITION">Tuition</option>
+                <option value="ENTRANCE">Entrance</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Subject *</label>
+              <select
+                value={subjectId}
+                onChange={(e) => {
+                  setSubjectId(e.target.value);
+                  setChapterId("");
+                  setTopicId("");
+                }}
+                className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+              >
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Due Date</label>
+              <input
+                type="datetime-local"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-surface-2/60 p-3.5 rounded-xl border border-border-soft">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Chapter</label>
+              <select
+                value={chapterId}
+                onChange={(e) => {
+                  setChapterId(e.target.value);
+                  setTopicId("");
+                }}
+                className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs"
+              >
+                <option value="">No Chapter</option>
+                {chapters.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Topic</label>
+              <select
+                value={topicId}
+                onChange={(e) => setTopicId(e.target.value)}
+                className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs"
+              >
+                <option value="">No Topic</option>
+                {topics.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="pt-2 flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 text-xs font-bold text-text-secondary bg-surface-2 hover:bg-surface-3 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleUpdate}
+              disabled={saving}
+              className="w-full py-2.5 text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// TEACHER: DELETE CONFIRMATION MODAL
+// -----------------------------------------------------------------------------
+function DeleteConfirmationModal({ assignment, onClose, onSuccess }: { assignment: any; onClose: () => void; onSuccess: () => void }) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await fetchApi(`/assignments/${assignment.id}`, { method: "DELETE" });
+      onSuccess();
+    } catch (e) {
+      console.error(e);
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="p-3 bg-brand-red/10 text-brand-red rounded-xl w-fit">
+          <Trash2 className="h-6 w-6" />
+        </div>
+        <div>
+          <h3 className="text-base font-bold text-text-primary">Delete Assignment?</h3>
+          <p className="text-xs text-text-secondary mt-1">
+            Are you sure you want to delete <span className="font-semibold text-text-primary">"{assignment.title}"</span>? All student submissions and grades linked to this assignment will be permanently deleted.
+          </p>
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onClose}
+            className="w-full py-2 text-xs font-bold rounded-xl bg-surface-2 text-text-secondary hover:bg-surface-3 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-full py-2 text-xs font-bold rounded-xl bg-brand-red text-white hover:bg-brand-red/90 flex items-center justify-center gap-2 transition-colors shadow-sm"
+          >
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
 // STUDENT: SUBMIT ASSIGNMENT MODAL
 // -----------------------------------------------------------------------------
-function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment: any, onClose: () => void, onSuccess: () => void }) {
+function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment: any; onClose: () => void; onSuccess: () => void }) {
   const existingSubmission = assignment.submissions?.[0];
   const [notes, setNotes] = useState(existingSubmission?.notes || "");
   const [attachments, setAttachments] = useState<any[]>(existingSubmission?.attachments || []);
   const [saving, setSaving] = useState(false);
 
+  const isPastDue = assignment.dueDate && new Date() > new Date(assignment.dueDate);
+
   const handleUploadSuccess = (url: string) => {
-    setAttachments([...attachments, { url, filename: "Submission" }]);
+    setAttachments([...attachments, { url, filename: `Submission File ${attachments.length + 1}` }]);
   };
 
   const handleSubmit = async () => {
     setSaving(true);
     try {
       await fetchApi(`/assignments/${assignment.id}/submit`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ notes, attachments })
       });
-      
-      // Update syllabus progress
-      if (assignment.topicId && assignment.batchId) {
-        try {
-          await fetchApi(`/syllabus/student-progress/event`, {
-            method: 'POST',
-            body: JSON.stringify({
-              batchId: assignment.batchId,
-              topicId: assignment.topicId,
-              type: 'SUBMIT_ASSIGNMENT'
-            })
-          });
-        } catch (err) {
-          console.error("Failed to update syllabus progress", err);
-        }
-      }
-      
       onSuccess();
     } catch (e: any) {
       console.error(e);
@@ -285,73 +1123,142 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 sm:p-6">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-full overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0">
-          <h2 className="text-base font-bold text-text-primary">{assignment.title}</h2>
+          <div>
+            <h2 className="text-base font-bold text-text-primary">{assignment.title}</h2>
+            <p className="text-xs text-text-secondary">
+              {assignment.subject?.name} • {assignment.batch?.name}
+            </p>
+          </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-surface-2 flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 bg-surface grid md:grid-cols-2 gap-6">
+
+        <div className="flex-1 overflow-y-auto p-6 grid md:grid-cols-2 gap-6">
+          {/* Assignment Instructions & Attachments */}
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider">Assignment Details</h3>
-            <p className="text-sm text-text-primary whitespace-pre-wrap">{assignment.description}</p>
+            <div>
+              <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Instructions</h3>
+              <p className="text-xs text-text-primary whitespace-pre-wrap leading-relaxed bg-surface-2/50 p-3.5 rounded-xl border border-border-soft">
+                {assignment.description || "No specific instructions provided."}
+              </p>
+            </div>
+
+            {assignment.dueDate && (
+              <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
+                <Calendar className="h-4 w-4 text-text-muted" />
+                <span>Deadline: {new Date(assignment.dueDate).toLocaleString()}</span>
+              </div>
+            )}
+
+            {isPastDue && !existingSubmission && (
+              <div className="p-3 bg-warning/10 border border-warning/20 rounded-xl flex items-start gap-2.5 text-xs text-warning">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>This assignment has passed its due date. If submitted now, it will be marked as <strong>Late</strong>.</span>
+              </div>
+            )}
+
             {assignment.attachments && assignment.attachments.length > 0 && (
-              <div className="pt-4 border-t border-border-soft">
-                <h4 className="text-xs font-bold text-text-secondary mb-2">Teacher Attachments</h4>
+              <div className="pt-2">
+                <h4 className="text-xs font-bold text-text-secondary mb-2">Teacher Resources</h4>
                 <div className="space-y-2">
                   {assignment.attachments.map((a: any, i: number) => (
-                    <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex items-center justify-between p-3 rounded-lg border border-border-soft bg-white hover:border-brand-blue transition-colors group">
-                      <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                    <a
+                      key={i}
+                      href={a.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-border-soft bg-surface-2/40 hover:border-brand-blue hover:bg-white transition-all group"
+                    >
+                      <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
                         <FileText className="h-4 w-4 text-brand-blue" />
-                        Attachment {i + 1}
+                        <span className="line-clamp-1">{a.filename || `Attachment ${i + 1}`}</span>
                       </div>
-                      <Download className="h-4 w-4 text-text-muted group-hover:text-brand-blue" />
+                      <Download className="h-3.5 w-3.5 text-text-muted group-hover:text-brand-blue" />
                     </a>
                   ))}
                 </div>
               </div>
             )}
           </div>
-          
+
+          {/* Submission Area */}
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider">Your Submission</h3>
-            {existingSubmission && existingSubmission.status === 'GRADED' ? (
+            <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider">Your Work</h3>
+
+            {existingSubmission && existingSubmission.status === "GRADED" ? (
               <div className="bg-brand-green/10 border border-brand-green/20 rounded-xl p-4">
-                <p className="text-xs font-bold text-brand-green mb-1">Graded</p>
-                <p className="text-2xl font-black text-brand-green">{existingSubmission.grade}</p>
-                {existingSubmission.feedback && <p className="text-sm text-text-secondary mt-2">"{existingSubmission.feedback}"</p>}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-brand-green">Teacher Evaluation</p>
+                  <span className="text-xs font-bold px-2 py-0.5 bg-brand-green text-white rounded-md">GRADED</span>
+                </div>
+                <p className="text-3xl font-black text-brand-green mt-1">{existingSubmission.grade}</p>
+                {existingSubmission.feedback && (
+                  <p className="text-xs text-text-secondary mt-2 italic bg-white/60 p-2.5 rounded-lg border border-brand-green/10">
+                    "{existingSubmission.feedback}"
+                  </p>
+                )}
+              </div>
+            ) : existingSubmission ? (
+              <div className="bg-brand-blue/10 border border-brand-blue/20 rounded-xl p-3 text-xs text-brand-blue font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>Submitted on {new Date(existingSubmission.updatedAt || existingSubmission.createdAt).toLocaleString()}</span>
               </div>
             ) : null}
 
-            <textarea 
-              value={notes} 
-              onChange={e => setNotes(e.target.value)} 
-              placeholder="Add any notes for the teacher..."
-              rows={3} 
-              className="w-full rounded-xl border border-border-soft bg-white p-3 text-sm focus:ring-2 focus:ring-brand-blue/20"
-              disabled={existingSubmission?.status === 'GRADED'}
-            />
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Student Notes</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add comments or notes for your teacher..."
+                rows={3}
+                disabled={existingSubmission?.status === "GRADED"}
+                className="w-full rounded-xl border border-border-soft bg-white p-3 text-xs focus:ring-2 focus:ring-brand-blue/20 disabled:opacity-60"
+              />
+            </div>
 
             {attachments.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-text-muted uppercase tracking-wider">Your Uploaded Files</p>
                 {attachments.map((a: any, i: number) => (
-                  <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-3 rounded-lg border border-brand-blue/30 bg-brand-blue/5 text-sm font-bold text-brand-blue">
-                    <CheckCircle className="h-4 w-4" /> Submission File {i + 1}
-                  </a>
+                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-surface-2 border border-border-soft text-xs">
+                    <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-bold text-brand-blue hover:underline line-clamp-1">
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>{a.filename || `File ${i + 1}`}</span>
+                    </a>
+                    {existingSubmission?.status !== "GRADED" && (
+                      <button
+                        type="button"
+                        onClick={() => setAttachments(attachments.filter((_, idx) => idx !== i))}
+                        className="text-text-muted hover:text-brand-red ml-2"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
 
-            {existingSubmission?.status !== 'GRADED' && (
-              <div className="pt-2 border-t border-border-soft">
-                <FileUploader type="FILE" onUploadSuccess={handleUploadSuccess} onUploadError={console.error} onCancel={() => {}} />
-                <button 
-                  onClick={handleSubmit} 
-                  disabled={saving || (attachments.length === 0 && !notes.trim())} 
-                  className="w-full mt-4 py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg flex items-center justify-center gap-2 disabled:opacity-50">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Assignment"}
+            {existingSubmission?.status !== "GRADED" && (
+              <div className="pt-2">
+                <FileUploader
+                  type="FILE"
+                  onUploadSuccess={handleUploadSuccess}
+                  onUploadError={console.error}
+                  onCancel={() => {}}
+                />
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={saving || (attachments.length === 0 && !notes.trim())}
+                  className="w-full mt-3 py-2.5 text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-sm"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : existingSubmission ? "Update Submission" : "Submit Assignment"}
                 </button>
               </div>
             )}
@@ -365,81 +1272,224 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
 // -----------------------------------------------------------------------------
 // TEACHER: VIEW SUBMISSIONS MODAL
 // -----------------------------------------------------------------------------
-function ViewSubmissionsModal({ assignmentId, onClose }: { assignmentId: string, onClose: () => void }) {
+function ViewSubmissionsModal({ assignmentId, onClose }: { assignmentId: string; onClose: () => void }) {
   const [assignment, setAssignment] = useState<any>(null);
+  const [submissionFilter, setSubmissionFilter] = useState("ALL");
+  const [gradingSubId, setGradingSubId] = useState<string | null>(null);
+
+  const loadData = () => {
+    fetchApi(`/assignments/${assignmentId}`).then(setAssignment).catch(console.error);
+  };
 
   useEffect(() => {
-    fetchApi(`/assignments/${assignmentId}`).then(setAssignment).catch(console.error);
+    loadData();
   }, [assignmentId]);
 
   const handleGrade = async (subId: string, grade: number, feedback: string) => {
     try {
+      setGradingSubId(subId);
       await fetchApi(`/assignments/submissions/${subId}/grade`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify({ grade, feedback })
       });
-      fetchApi(`/assignments/${assignmentId}`).then(setAssignment);
+      loadData();
     } catch (e) {
       console.error(e);
+    } finally {
+      setGradingSubId(null);
     }
   };
 
   if (!assignment) return null;
 
+  const submissions = assignment.submissions || [];
+  const filteredSubmissions = submissions.filter((sub: any) => {
+    if (submissionFilter === "GRADED") return sub.status === "GRADED";
+    if (submissionFilter === "LATE") return sub.status === "LATE";
+    if (submissionFilter === "PENDING_GRADE") return sub.status !== "GRADED";
+    return true;
+  });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 sm:p-6">
-      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-full overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0">
           <div>
             <h2 className="text-base font-bold text-text-primary">{assignment.title}</h2>
-            <p className="text-xs text-text-secondary mt-0.5">{assignment.submissions?.length || 0} Submissions</p>
+            <p className="text-xs text-text-secondary">
+              {assignment.batch?.name} • {assignment.subject?.name} • {submissions.length} Total Submission{submissions.length === 1 ? "" : "s"}
+            </p>
           </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-surface-2 flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 bg-surface">
-          {assignment.submissions?.length === 0 ? (
-            <p className="text-center py-10 text-text-muted text-sm font-medium">No submissions yet.</p>
+
+        {/* Filter bar */}
+        <div className="px-6 py-2.5 border-b border-border-soft bg-surface-2/40 flex items-center gap-2">
+          <span className="text-[11px] font-bold text-text-secondary mr-2">Filter Submissions:</span>
+          <button
+            onClick={() => setSubmissionFilter("ALL")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+              submissionFilter === "ALL" ? "bg-brand-blue text-white" : "bg-white text-text-secondary border border-border-soft"
+            }`}
+          >
+            All ({submissions.length})
+          </button>
+          <button
+            onClick={() => setSubmissionFilter("PENDING_GRADE")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+              submissionFilter === "PENDING_GRADE" ? "bg-brand-blue text-white" : "bg-white text-text-secondary border border-border-soft"
+            }`}
+          >
+            Needs Grading ({submissions.filter((s: any) => s.status !== "GRADED").length})
+          </button>
+          <button
+            onClick={() => setSubmissionFilter("LATE")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+              submissionFilter === "LATE" ? "bg-brand-blue text-white" : "bg-white text-text-secondary border border-border-soft"
+            }`}
+          >
+            Late ({submissions.filter((s: any) => s.status === "LATE").length})
+          </button>
+          <button
+            onClick={() => setSubmissionFilter("GRADED")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+              submissionFilter === "GRADED" ? "bg-brand-blue text-white" : "bg-white text-text-secondary border border-border-soft"
+            }`}
+          >
+            Graded ({submissions.filter((s: any) => s.status === "GRADED").length})
+          </button>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {filteredSubmissions.length === 0 ? (
+            <div className="text-center py-12">
+              <FileText className="h-10 w-10 text-text-muted mx-auto mb-2 opacity-50" />
+              <p className="text-text-secondary text-xs font-semibold">No submissions found for this filter.</p>
+            </div>
           ) : (
-            <div className="grid gap-4">
-              {assignment.submissions?.map((sub: any) => (
-                <div key={sub.id} className="bg-white rounded-xl border border-border-soft p-5 flex flex-col sm:flex-row gap-6">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-text-primary">{sub.student.user.firstName} {sub.student.user.lastName}</h3>
-                    <p className="text-xs text-text-secondary mb-3">Admission No: {sub.student.admissionNo}</p>
-                    
-                    {sub.notes && <p className="text-sm text-text-primary bg-surface-2 p-3 rounded-lg mb-3">"{sub.notes}"</p>}
-                    
-                    {sub.attachments?.map((a: any, i: number) => (
-                      <a key={i} href={a.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-blue/10 text-brand-blue text-xs font-bold rounded-lg hover:bg-brand-blue/20 transition-colors mr-2 mb-2">
-                        <FileText className="h-3.5 w-3.5" /> View Attached File {i + 1}
-                      </a>
-                    ))}
+            filteredSubmissions.map((sub: any) => (
+              <div key={sub.id} className="bg-white rounded-xl border border-border-soft p-5 flex flex-col md:flex-row gap-6 shadow-sm">
+                
+                {/* Student Info & Work */}
+                <div className="flex-1 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-sm text-text-primary">
+                        {sub.student?.user?.firstName} {sub.student?.user?.lastName}
+                      </h3>
+                      <p className="text-xs text-text-secondary">Admission No: {sub.student?.admissionNo || "—"}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {sub.status === "LATE" && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-warning/10 text-warning border border-warning/20 flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> Late Submission
+                        </span>
+                      )}
+                      <span className="text-[10px] text-text-muted">
+                        {new Date(sub.updatedAt || sub.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
+
+                  {sub.notes && (
+                    <div className="bg-surface-2 p-3 rounded-xl border border-border-soft text-xs text-text-primary">
+                      <p className="text-[10px] font-bold text-text-muted uppercase mb-1">Student Note</p>
+                      <p className="italic">"{sub.notes}"</p>
+                    </div>
+                  )}
+
+                  {sub.attachments && sub.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {sub.attachments.map((a: any, i: number) => (
+                        <a
+                          key={i}
+                          href={a.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-blue/10 text-brand-blue text-xs font-bold rounded-lg hover:bg-brand-blue/20 transition-colors"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          <span>{a.filename || `File ${i + 1}`}</span>
+                          <ExternalLink className="h-3 w-3 ml-0.5 opacity-60" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Grading Panel */}
+                <div className="md:w-72 shrink-0 p-4 rounded-xl border border-border-soft bg-surface-2/40 flex flex-col justify-center gap-3">
+                  <h4 className="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Evaluation</h4>
                   
-                  <div className="sm:w-64 shrink-0 p-4 rounded-xl border border-border-soft bg-surface-2/50 flex flex-col gap-3">
-                    <h4 className="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Grading</h4>
-                    {sub.status === 'GRADED' ? (
-                      <div>
-                        <div className="text-xl font-black text-brand-green">{sub.grade}</div>
-                        <p className="text-xs text-text-secondary mt-1">{sub.feedback}</p>
+                  {sub.status === "GRADED" ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-text-muted">Marks:</span>
+                        <span className="text-2xl font-black text-brand-green">{sub.grade}</span>
                       </div>
-                    ) : (
-                      <form onSubmit={(e) => {
+                      {sub.feedback && (
+                        <p className="text-xs text-text-secondary bg-white p-2.5 rounded-lg border border-border-soft">
+                          "{sub.feedback}"
+                        </p>
+                      )}
+                      <button
+                        onClick={() => {
+                          // Allow editing grade
+                          sub.status = "SUBMITTED";
+                          setAssignment({ ...assignment });
+                        }}
+                        className="text-[11px] font-bold text-brand-blue hover:underline mt-2 inline-block"
+                      >
+                        Re-evaluate
+                      </button>
+                    </div>
+                  ) : (
+                    <form
+                      onSubmit={(e) => {
                         e.preventDefault();
                         const formData = new FormData(e.currentTarget);
-                        handleGrade(sub.id, Number(formData.get('grade')), formData.get('feedback') as string);
-                      }} className="space-y-3">
-                        <input type="number" name="grade" placeholder="Marks" required className="w-full h-8 rounded border border-border-soft px-2 text-sm" />
-                        <textarea name="feedback" placeholder="Feedback (optional)" rows={2} className="w-full rounded border border-border-soft p-2 text-sm"></textarea>
-                        <button type="submit" className="w-full py-1.5 bg-text-primary text-white text-xs font-bold rounded hover:bg-black transition-colors">Submit Grade</button>
-                      </form>
-                    )}
-                  </div>
+                        handleGrade(sub.id, Number(formData.get("grade")), formData.get("feedback") as string);
+                      }}
+                      className="space-y-2.5"
+                    >
+                      <div>
+                        <input
+                          type="number"
+                          step="any"
+                          name="grade"
+                          placeholder="Marks (e.g. 20)"
+                          required
+                          defaultValue={sub.grade ?? ""}
+                          className="w-full h-8 rounded-lg border border-border-soft bg-white px-2.5 text-xs font-semibold focus:ring-2 focus:ring-brand-blue/20"
+                        />
+                      </div>
+                      <div>
+                        <textarea
+                          name="feedback"
+                          placeholder="Feedback or remarks..."
+                          rows={2}
+                          defaultValue={sub.feedback ?? ""}
+                          className="w-full rounded-lg border border-border-soft bg-white p-2 text-xs focus:ring-2 focus:ring-brand-blue/20"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={gradingSubId === sub.id}
+                        className="w-full py-1.5 bg-brand-blue hover:bg-brand-blue-dark text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        {gradingSubId === sub.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Grade"}
+                      </button>
+                    </form>
+                  )}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))
           )}
         </div>
       </div>

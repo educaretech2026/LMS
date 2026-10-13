@@ -1,10 +1,15 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SyllabusService } from '../syllabus/syllabus.service';
 
 @Injectable()
 export class AssignmentsService {
-  constructor(private prisma: PrismaService, private notificationsService: NotificationsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+    private syllabusService: SyllabusService,
+  ) {}
 
   async getAll(userId: string, role: string): Promise<any> {
     try {
@@ -24,6 +29,8 @@ export class AssignmentsService {
           include: {
             uploader: { select: { firstName: true, lastName: true } },
             subject: true,
+            chapter: true,
+            topic: true,
             batch: true,
             submissions: {
               where: { studentId: profile.id }
@@ -33,11 +40,13 @@ export class AssignmentsService {
         });
       }
 
-      // Teachers/Admins see all assignments they have access to (for simplicity, all for now)
+      // Teachers/Admins see all assignments they have access to
       return await this.prisma.assignment.findMany({
         include: {
           uploader: { select: { firstName: true, lastName: true } },
           subject: true,
+          chapter: true,
+          topic: true,
           batch: true,
           _count: { select: { submissions: true } }
         },
@@ -56,6 +65,8 @@ export class AssignmentsService {
       include: {
         uploader: { select: { firstName: true, lastName: true } },
         subject: true,
+        chapter: true,
+        topic: true,
         batch: true,
         submissions: {
           include: {
@@ -78,8 +89,17 @@ export class AssignmentsService {
           attachments: data.attachments || null,
           batchId: data.batchId,
           subjectId: data.subjectId,
+          chapterId: data.chapterId || null,
+          topicId: data.topicId || null,
           uploaderId,
           targetTrackId: data.targetTrackId || null,
+        },
+        include: {
+          uploader: { select: { firstName: true, lastName: true } },
+          subject: true,
+          chapter: true,
+          topic: true,
+          batch: true,
         }
       });
 
@@ -109,6 +129,62 @@ export class AssignmentsService {
     }
   }
 
+  async update(id: string, data: any, userId: string, role: string): Promise<any> {
+    try {
+      const existing = await this.prisma.assignment.findUnique({ where: { id } });
+      if (!existing) throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+      
+      const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(role);
+      if (!isPrivileged && existing.uploaderId !== userId) {
+        throw new HttpException('Unauthorized to edit this assignment', HttpStatus.FORBIDDEN);
+      }
+
+      return await this.prisma.assignment.update({
+        where: { id },
+        data: {
+          title: data.title,
+          description: data.description,
+          dueDate: data.dueDate ? new Date(data.dueDate) : null,
+          attachments: data.attachments !== undefined ? data.attachments : existing.attachments,
+          batchId: data.batchId,
+          subjectId: data.subjectId,
+          chapterId: data.chapterId || null,
+          topicId: data.topicId || null,
+          targetTrackId: data.targetTrackId || null,
+        },
+        include: {
+          uploader: { select: { firstName: true, lastName: true } },
+          subject: true,
+          chapter: true,
+          topic: true,
+          batch: true,
+        }
+      });
+    } catch (error) {
+      console.error(error);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException('Failed to update assignment', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  async delete(id: string, userId: string, role: string): Promise<any> {
+    try {
+      const existing = await this.prisma.assignment.findUnique({ where: { id } });
+      if (!existing) throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+
+      const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(role);
+      if (!isPrivileged && existing.uploaderId !== userId) {
+        throw new HttpException('Unauthorized to delete this assignment', HttpStatus.FORBIDDEN);
+      }
+
+      return await this.prisma.assignment.delete({ where: { id } });
+    } catch (error) {
+      console.error(error);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException('Failed to delete assignment', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   async submit(assignmentId: string, studentUserId: string, data: any): Promise<any> {
     try {
       const profile = await this.prisma.studentProfile.findUnique({
@@ -117,6 +193,12 @@ export class AssignmentsService {
       });
 
       if (!profile) throw new Error("Student profile not found");
+
+      const assignment = await this.prisma.assignment.findUnique({ where: { id: assignmentId } });
+      if (!assignment) throw new Error("Assignment not found");
+
+      const isLate = assignment.dueDate ? new Date() > new Date(assignment.dueDate) : false;
+      const submissionStatus = isLate ? 'LATE' : 'SUBMITTED';
 
       const submission = await this.prisma.assignmentSubmission.upsert({
         where: {
@@ -128,7 +210,7 @@ export class AssignmentsService {
         update: {
           attachments: data.attachments,
           notes: data.notes,
-          status: 'SUBMITTED',
+          status: submissionStatus,
           updatedAt: new Date()
         },
         create: {
@@ -136,18 +218,30 @@ export class AssignmentsService {
           studentId: profile.id,
           attachments: data.attachments,
           notes: data.notes,
+          status: submissionStatus,
         }
       });
 
+      // Synchronize with syllabus progress if assigned to a topic
+      if (assignment.topicId && assignment.batchId) {
+        try {
+          await this.syllabusService.recordStudentEvent(studentUserId, {
+            batchId: assignment.batchId,
+            topicId: assignment.topicId,
+          });
+        } catch (err) {
+          console.error("Failed to automatically update syllabus progress on assignment submit", err);
+        }
+      }
+
       // Notify the teacher who created it
       try {
-        const assignment = await this.prisma.assignment.findUnique({ where: { id: assignmentId } });
-        if (assignment && assignment.uploaderId) {
+        if (assignment.uploaderId) {
           await this.notificationsService.sendNotification({
             userId: assignment.uploaderId,
-            title: 'Assignment Submitted',
-            message: `${profile.user.firstName} submitted "${assignment.title}".`,
-            type: 'SUCCESS',
+            title: isLate ? 'Late Assignment Submitted' : 'Assignment Submitted',
+            message: `${profile.user.firstName} submitted "${assignment.title}"${isLate ? ' (Late)' : ''}.`,
+            type: isLate ? 'WARNING' : 'SUCCESS',
             link: `/assignments`,
           });
         }

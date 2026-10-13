@@ -25,13 +25,15 @@ import {
   PanelLeftClose,
   X,
   LogOut,
-  CalendarCheck
+  CalendarCheck,
+  ClipboardList
 } from "lucide-react";
 
 const mainNav = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Student", href: "/students", icon: Users },
   { label: "Attendance", href: "/attendance", icon: CalendarCheck },
+  { label: "Assignments", href: "/assignments", icon: ClipboardList },
   { label: "Live Class", href: "/live-class", icon: Video },
   { label: "Fee", href: "/fee", icon: CreditCard },
   { label: "Exam", href: "/exam", icon: FileText },
@@ -121,8 +123,8 @@ export function Sidebar({
             label="Main"
             items={(() => {
               const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
-              if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') return mainNav.filter(i => ['Dashboard', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
-              if (r === 'TEACHER') return mainNav.filter(i => ['Dashboard', 'Student', 'Attendance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
+              if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') return mainNav.filter(i => ['Dashboard', 'Assignments', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
+              if (r === 'TEACHER') return mainNav.filter(i => ['Dashboard', 'Student', 'Attendance', 'Assignments', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
               if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return mainNav;
               if (r === 'RECEPTIONIST') return mainNav.filter(i => ['Dashboard', 'Student', 'Fee'].includes(i.label));
               return mainNav.filter(i => ['Dashboard'].includes(i.label));
