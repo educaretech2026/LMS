@@ -10,7 +10,8 @@ export class AssignmentsController {
 
   @Get()
   getAll(@Req() req: any): Promise<any> {
-    return this.assignmentsService.getAll(req.user.id, req.user.role);
+    const roleName = req.user?.role?.name || req.user?.role || '';
+    return this.assignmentsService.getAll(req.user.id, roleName);
   }
 
   @Get(':id')
@@ -25,12 +26,14 @@ export class AssignmentsController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() data: any, @Req() req: any): Promise<any> {
-    return this.assignmentsService.update(id, data, req.user.id, req.user.role);
+    const roleName = req.user?.role?.name || req.user?.role || '';
+    return this.assignmentsService.update(id, data, req.user.id, roleName);
   }
 
   @Delete(':id')
   delete(@Param('id') id: string, @Req() req: any): Promise<any> {
-    return this.assignmentsService.delete(id, req.user.id, req.user.role);
+    const roleName = req.user?.role?.name || req.user?.role || '';
+    return this.assignmentsService.delete(id, req.user.id, roleName);
   }
 
   @Post(':id/submit')

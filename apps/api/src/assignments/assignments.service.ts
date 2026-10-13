@@ -11,21 +11,33 @@ export class AssignmentsService {
     private syllabusService: SyllabusService,
   ) {}
 
-  async getAll(userId: string, role: string): Promise<any> {
+  async getAll(userId: string, role: any): Promise<any> {
     try {
-      if (role === 'STUDENT') {
-        // Students see assignments for their batches
-        const profile = await this.prisma.studentProfile.findUnique({
-          where: { userId },
-          include: { enrollments: true },
-        });
+      const roleStr = typeof role === 'object' && role !== null
+        ? String(role.name || '')
+        : String(role || '');
+      const normalizedRole = roleStr.toUpperCase().replace(/\s+/g, '_');
 
-        if (!profile) return [];
+      // Check if student profile exists for this user
+      const profile = await this.prisma.studentProfile.findUnique({
+        where: { userId },
+        include: { enrollments: true },
+      });
 
-        const batchIds = profile.enrollments.map(e => e.batchId);
+      const isStudent = normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER' || !!profile;
+
+      if (isStudent && profile) {
+        // Students see assignments for their batches, or unbatched, or assignments they've already submitted to
+        const batchIds = profile.enrollments.map(e => e.batchId).filter(Boolean);
         
         return await this.prisma.assignment.findMany({
-          where: { batchId: { in: batchIds } },
+          where: {
+            OR: [
+              ...(batchIds.length > 0 ? [{ batchId: { in: batchIds } }] : []),
+              { batchId: null },
+              { submissions: { some: { studentId: profile.id } } }
+            ]
+          },
           include: {
             uploader: { select: { firstName: true, lastName: true } },
             subject: true,
@@ -296,14 +308,33 @@ export class AssignmentsService {
 
   async gradeSubmission(submissionId: string, data: any): Promise<any> {
     try {
-      return await this.prisma.assignmentSubmission.update({
+      const submission = await this.prisma.assignmentSubmission.update({
         where: { id: submissionId },
         data: {
-          grade: data.grade,
+          grade: Number(data.grade),
           feedback: data.feedback,
           status: 'GRADED'
+        },
+        include: {
+          student: { include: { user: true } },
+          assignment: true
         }
       });
+
+      // Notify the student
+      try {
+        if (submission.student?.userId) {
+          await this.notificationsService.sendNotification({
+            userId: submission.student.userId,
+            title: 'Assignment Graded',
+            message: `Your assignment "${submission.assignment?.title}" has been graded: ${data.grade} marks.`,
+            type: 'SUCCESS',
+            link: `/assignments`,
+          });
+        }
+      } catch (e) {}
+
+      return submission;
     } catch (error) {
       console.error(error);
       throw new HttpException('Failed to grade submission', HttpStatus.INTERNAL_SERVER_ERROR);

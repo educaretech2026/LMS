@@ -33,7 +33,9 @@ import { FileUploader } from "@/components/upload/file-uploader";
 
 export function AssignmentsClient({ initialAssignments }: { initialAssignments: any[] }) {
   const { role } = useAuth();
-  const isTeacherOrAdmin = role !== "STUDENT" && role !== "PUBLIC_LEARNER";
+  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, "_") : "";
+  const isStudent = normalizedRole === "STUDENT" || normalizedRole === "PUBLIC_LEARNER";
+  const isTeacherOrAdmin = Boolean(normalizedRole && !isStudent);
 
   const [assignments, setAssignments] = useState<any[]>(initialAssignments || []);
   const [searchQuery, setSearchQuery] = useState("");
@@ -59,8 +61,22 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
   const [deletingAssignment, setDeletingAssignment] = useState<any | null>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<any | null>(null);
 
-  // Live fetch all setup hierarchy data on mount
+  const refresh = () => {
+    fetchApi("/assignments")
+      .then((data: any) => {
+        const list = Array.isArray(data) ? data : [];
+        setAssignments(list);
+        if (selectedAssignment) {
+          const updated = list.find((a: any) => a.id === selectedAssignment.id);
+          if (updated) setSelectedAssignment(updated);
+        }
+      })
+      .catch(console.error);
+  };
+
+  // Live fetch all setup hierarchy data on mount + refresh assignments
   useEffect(() => {
+    refresh();
     Promise.all([
       fetchApi("/setup/boards").catch(() => []),
       fetchApi("/setup/standards").catch(() => []),
@@ -75,12 +91,6 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
       setTracks(tr || []);
     }).catch(console.error);
   }, []);
-
-  const refresh = () => {
-    fetchApi("/assignments")
-      .then((data: any) => setAssignments(data || []))
-      .catch(console.error);
-  };
 
   // Derived filtered assignments
   const filteredAssignments = useMemo(() => {
@@ -1391,10 +1401,21 @@ function DeleteConfirmationModal({ assignment, onClose, onSuccess }: { assignmen
 // STUDENT: SUBMIT ASSIGNMENT MODAL
 // -----------------------------------------------------------------------------
 function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment: any; onClose: () => void; onSuccess: () => void }) {
-  const existingSubmission = assignment.submissions?.[0];
+  const [currentAssignment, setCurrentAssignment] = useState<any>(assignment);
+  const existingSubmission = currentAssignment.submissions?.[0];
   const [notes, setNotes] = useState(existingSubmission?.notes || "");
   const [attachments, setAttachments] = useState<any[]>(existingSubmission?.attachments || []);
   const [saving, setSaving] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrentAssignment(assignment);
+    const sub = assignment.submissions?.[0];
+    if (sub) {
+      setNotes(sub.notes || "");
+      setAttachments(sub.attachments || []);
+    }
+  }, [assignment]);
 
   const isPastDue = assignment.dueDate && new Date() > new Date(assignment.dueDate);
 
@@ -1404,11 +1425,19 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
 
   const handleSubmit = async () => {
     setSaving(true);
+    setSubmissionNotice(null);
     try {
-      await fetchApi(`/assignments/${assignment.id}/submit`, {
+      const savedSub = await fetchApi(`/assignments/${assignment.id}/submit`, {
         method: "POST",
         body: JSON.stringify({ notes, attachments })
       });
+      if (savedSub) {
+        setCurrentAssignment((prev: any) => ({
+          ...prev,
+          submissions: [savedSub]
+        }));
+      }
+      setSubmissionNotice("Your assignment has been submitted successfully!");
       onSuccess();
     } catch (e: any) {
       console.error(e);
@@ -1483,23 +1512,40 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider">Your Work</h3>
 
-            {existingSubmission && existingSubmission.status === "GRADED" ? (
+            {submissionNotice && (
+              <div className="p-3 bg-brand-green/10 border border-brand-green/20 rounded-xl text-xs font-bold text-brand-green flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>{submissionNotice}</span>
+              </div>
+            )}
+
+            {existingSubmission && (existingSubmission.status === "GRADED" || typeof existingSubmission.grade === "number") ? (
               <div className="bg-brand-green/10 border border-brand-green/20 rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-brand-green">Teacher Evaluation</p>
-                  <span className="text-xs font-bold px-2 py-0.5 bg-brand-green text-white rounded-md">GRADED</span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-brand-green text-white rounded-md tracking-wider">GRADED</span>
                 </div>
-                <p className="text-3xl font-black text-brand-green mt-1">{existingSubmission.grade}</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-3xl font-black text-brand-green">{existingSubmission.grade}</span>
+                  <span className="text-xs font-semibold text-brand-green/80">Marks Awarded</span>
+                </div>
                 {existingSubmission.feedback && (
-                  <p className="text-xs text-text-secondary mt-2 italic bg-white/60 p-2.5 rounded-lg border border-brand-green/10">
+                  <p className="text-xs text-text-secondary mt-2 italic bg-white/70 p-2.5 rounded-lg border border-brand-green/15">
                     "{existingSubmission.feedback}"
                   </p>
                 )}
               </div>
             ) : existingSubmission ? (
-              <div className="bg-brand-blue/10 border border-brand-blue/20 rounded-xl p-3 text-xs text-brand-blue font-semibold flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>Submitted on {new Date(existingSubmission.updatedAt || existingSubmission.createdAt).toLocaleString()}</span>
+              <div className="bg-brand-blue/10 border border-brand-blue/20 rounded-xl p-3 text-xs text-brand-blue font-semibold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>Submitted on {new Date(existingSubmission.updatedAt || existingSubmission.createdAt).toLocaleString()}</span>
+                </div>
+                {existingSubmission.status === "LATE" && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-warning/20 text-warning border border-warning/30">
+                    Late
+                  </span>
+                )}
               </div>
             ) : null}
 
