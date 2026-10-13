@@ -44,14 +44,17 @@ interface DoubtMessageItem {
   doubtId: string;
   senderId: string;
   senderRole: string;
-  message: string;
-  attachmentUrls: string[];
+  content?: string;
+  message?: string;
+  attachments?: any;
+  attachmentUrls?: string[];
   createdAt: string;
   sender?: {
     id: string;
     firstName: string;
     lastName: string;
-    email: string;
+    email?: string;
+    avatar?: string;
     role?: { name: string };
   };
 }
@@ -59,15 +62,17 @@ interface DoubtMessageItem {
 interface DoubtItem {
   id: string;
   studentId: string;
-  assignedTeacherId: string;
+  teacherId?: string;
+  assignedTeacherId?: string;
   subjectId?: string | null;
   chapterId?: string | null;
   topicId?: string | null;
   title: string;
   description: string;
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-  status: "PENDING" | "IN_PROGRESS" | "ANSWERED" | "RESOLVED";
-  attachmentUrls: string[];
+  status: "OPEN" | "PENDING" | "IN_PROGRESS" | "ANSWERED" | "RESOLVED" | "CLOSED";
+  attachments?: any;
+  attachmentUrls?: string[];
   resolvedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -75,13 +80,22 @@ interface DoubtItem {
     id: string;
     firstName: string;
     lastName: string;
-    email: string;
+    email?: string;
+    avatar?: string;
+  };
+  teacher?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+    avatar?: string;
   };
   assignedTeacher?: {
     id: string;
     firstName: string;
     lastName: string;
-    email: string;
+    email?: string;
+    avatar?: string;
   };
   subject?: { id: string; name: string } | null;
   chapter?: { id: string; name: string } | null;
@@ -217,7 +231,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
   };
 
   // Status update (Teacher or Admin)
-  const handleStatusChange = async (newStatus: "PENDING" | "IN_PROGRESS" | "ANSWERED" | "RESOLVED") => {
+  const handleStatusChange = async (newStatus: "OPEN" | "PENDING" | "IN_PROGRESS" | "ANSWERED" | "RESOLVED") => {
     if (!selectedId) return;
     try {
       const updated = await fetchApi<DoubtItem>(`/doubts/${selectedId}/status`, {
@@ -226,7 +240,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
       });
       setActiveDoubt(updated);
       setDoubts((prev) =>
-        prev.map((d) => (d.id === selectedId ? { ...d, status: newStatus } : d))
+        prev.map((d) => (d.id === selectedId ? { ...d, status: updated.status || newStatus } : d))
       );
     } catch (err: any) {
       alert(err.message || "Failed to update status");
@@ -243,7 +257,9 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
       const newMsg = await fetchApi<DoubtMessageItem>(`/doubts/${selectedId}/messages`, {
         method: "POST",
         body: JSON.stringify({
+          content: replyText.trim(),
           message: replyText.trim(),
+          attachments: replyAttachments,
           attachmentUrls: replyAttachments,
         }),
       });
@@ -253,7 +269,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
         setActiveDoubt({
           ...activeDoubt,
           messages: [...(activeDoubt.messages || []), newMsg],
-          status: isTeacher && activeDoubt.status === "PENDING" ? "ANSWERED" : activeDoubt.status,
+          status: isTeacher && (activeDoubt.status === "PENDING" || activeDoubt.status === "OPEN") ? "ANSWERED" : activeDoubt.status,
         });
       }
       setReplyText("");
@@ -290,8 +306,10 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
         body: JSON.stringify({
           title: newTitle.trim(),
           description: newDescription.trim(),
+          teacherId: newTeacherId,
           assignedTeacherId: newTeacherId,
           priority: newPriority,
+          attachments: newAttachmentUrls,
           attachmentUrls: newAttachmentUrls,
         }),
       });
@@ -330,7 +348,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
 
       setActiveDoubt(updated);
       setDoubts((prev) =>
-        prev.map((d) => (d.id === selectedId ? { ...d, assignedTeacher: updated.assignedTeacher } : d))
+        prev.map((d) => (d.id === selectedId ? { ...d, teacher: updated.teacher, assignedTeacher: updated.teacher || updated.assignedTeacher } : d))
       );
       setIsReassignModalOpen(false);
       setReassignTeacherId("");
@@ -343,14 +361,18 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
 
   // Filtered doubts
   const filteredDoubts = doubts.filter((d) => {
-    if (statusFilter !== "ALL" && d.status !== statusFilter) return false;
+    if (statusFilter !== "ALL") {
+      if (statusFilter === "PENDING" && d.status !== "PENDING" && d.status !== "OPEN") return false;
+      if (statusFilter !== "PENDING" && d.status !== statusFilter) return false;
+    }
     if (priorityFilter !== "ALL" && d.priority !== priorityFilter) return false;
     if (!searchQuery.trim()) return true;
 
     const q = searchQuery.toLowerCase();
     const studentName = d.student ? `${d.student.firstName} ${d.student.lastName}`.toLowerCase() : "";
-    const teacherName = d.assignedTeacher
-      ? `${d.assignedTeacher.firstName} ${d.assignedTeacher.lastName}`.toLowerCase()
+    const teacherObj = d.teacher || d.assignedTeacher;
+    const teacherName = teacherObj
+      ? `${teacherObj.firstName} ${teacherObj.lastName}`.toLowerCase()
       : "";
     const title = (d.title || "").toLowerCase();
     const desc = (d.description || "").toLowerCase();
@@ -382,6 +404,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case "OPEN":
       case "PENDING":
         return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Pending</span>;
       case "IN_PROGRESS":
@@ -389,6 +412,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
       case "ANSWERED":
         return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Answered</span>;
       case "RESOLVED":
+      case "CLOSED":
         return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-300 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Resolved</span>;
       default:
         return null;
@@ -520,8 +544,9 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
               filteredDoubts.map((d) => {
                 const isSelected = selectedId === d.id;
                 const studentName = d.student ? `${d.student.firstName} ${d.student.lastName}` : "Student";
-                const teacherName = d.assignedTeacher
-                  ? `${d.assignedTeacher.firstName} ${d.assignedTeacher.lastName}`
+                const teacherObj = d.teacher || d.assignedTeacher;
+                const teacherName = teacherObj
+                  ? `${teacherObj.firstName} ${teacherObj.lastName}`
                   : "Teacher";
 
                 return (
@@ -611,7 +636,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
                       <span className="text-slate-300">•</span>
                       <span className="flex items-center gap-1 font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
                         <GraduationCap className="w-3 h-3 text-indigo-500" />
-                        Teacher: {activeDoubt.assignedTeacher?.firstName} {activeDoubt.assignedTeacher?.lastName}
+                        Teacher: {activeDoubt.teacher?.firstName || activeDoubt.assignedTeacher?.firstName} {activeDoubt.teacher?.lastName || activeDoubt.assignedTeacher?.lastName}
                       </span>
                       {activeDoubt.subject && (
                         <>
@@ -691,25 +716,33 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
                       </div>
 
                       {/* Attachments if any */}
-                      {activeDoubt.attachmentUrls && activeDoubt.attachmentUrls.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
-                          <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 w-full">
-                            <Paperclip className="w-3 h-3" /> Attachments:
-                          </span>
-                          {activeDoubt.attachmentUrls.map((url, i) => (
-                            <a
-                              key={i}
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-50 hover:bg-slate-100 text-indigo-600 border border-slate-200 rounded-lg transition-colors truncate max-w-xs"
-                            >
-                              <ExternalLink className="w-3 h-3 shrink-0" />
-                              <span className="truncate">Attachment #{i + 1}</span>
-                            </a>
-                          ))}
-                        </div>
-                      )}
+                      {(() => {
+                        const attachList = Array.isArray(activeDoubt.attachments) ? activeDoubt.attachments : Array.isArray(activeDoubt.attachmentUrls) ? activeDoubt.attachmentUrls : [];
+                        if (attachList.length === 0) return null;
+                        return (
+                          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+                            <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 w-full">
+                              <Paperclip className="w-3 h-3" /> Attachments:
+                            </span>
+                            {attachList.map((item: any, i: number) => {
+                              const url = typeof item === "string" ? item : item.url || "";
+                              const name = typeof item === "string" ? `Attachment #${i + 1}` : item.filename || item.name || `Attachment #${i + 1}`;
+                              return (
+                                <a
+                                  key={i}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-50 hover:bg-slate-100 text-indigo-600 border border-slate-200 rounded-lg transition-colors truncate max-w-xs"
+                                >
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{name}</span>
+                                </a>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Timeline Separator */}
@@ -769,27 +802,35 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
                                   : "bg-white text-slate-800 border border-slate-200 rounded-tl-sm"
                               }`}
                             >
-                              {msg.message}
+                              {msg.content || msg.message}
 
                               {/* Attachments inside message bubble */}
-                              {msg.attachmentUrls && msg.attachmentUrls.length > 0 && (
-                                <div className="mt-2.5 pt-2 border-t border-black/10 flex flex-wrap gap-1.5">
-                                  {msg.attachmentUrls.map((url, idx) => (
-                                    <a
-                                      key={idx}
-                                      href={url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] underline ${
-                                        isOwn ? "text-indigo-100 hover:text-white" : "text-brand-blue"
-                                      }`}
-                                    >
-                                      <Paperclip className="w-3 h-3" />
-                                      Attachment {idx + 1}
-                                    </a>
-                                  ))}
-                                </div>
-                              )}
+                              {(() => {
+                                const attachList = Array.isArray(msg.attachments) ? msg.attachments : Array.isArray(msg.attachmentUrls) ? msg.attachmentUrls : [];
+                                if (attachList.length === 0) return null;
+                                return (
+                                  <div className="mt-2.5 pt-2 border-t border-black/10 flex flex-wrap gap-1.5">
+                                    {attachList.map((item: any, idx: number) => {
+                                      const url = typeof item === "string" ? item : item.url || "";
+                                      const name = typeof item === "string" ? `Attachment ${idx + 1}` : item.filename || item.name || `Attachment ${idx + 1}`;
+                                      return (
+                                        <a
+                                          key={idx}
+                                          href={url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] underline ${
+                                            isOwn ? "text-indigo-100 hover:text-white" : "text-brand-blue"
+                                          }`}
+                                        >
+                                          <Paperclip className="w-3 h-3" />
+                                          {name}
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         );

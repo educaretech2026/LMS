@@ -1,12 +1,19 @@
-import { IsNotEmpty, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsBoolean } from 'class-validator';
 
 export class CreateDoubtMessageDto {
   @IsString()
-  @IsNotEmpty()
-  content: string;
+  @IsOptional()
+  content?: string;
+
+  @IsString()
+  @IsOptional()
+  message?: string;
 
   @IsOptional()
   attachments?: any;
+
+  @IsOptional()
+  attachmentUrls?: any;
 
   @IsBoolean()
   @IsOptional()

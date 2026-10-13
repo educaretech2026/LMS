@@ -17,8 +17,12 @@ export class CreateDoubtDto {
   description?: string;
 
   @IsString()
-  @IsNotEmpty()
-  teacherId: string;
+  @IsOptional()
+  teacherId?: string;
+
+  @IsString()
+  @IsOptional()
+  assignedTeacherId?: string;
 
   @IsString()
   @IsOptional()
@@ -42,4 +46,7 @@ export class CreateDoubtDto {
 
   @IsOptional()
   attachments?: any;
+
+  @IsOptional()
+  attachmentUrls?: any;
 }

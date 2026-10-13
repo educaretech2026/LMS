@@ -149,9 +149,14 @@ export class DoubtsService {
 
   async create(userId: string, role: any, dto: CreateDoubtDto): Promise<any> {
     try {
+      const targetTeacherId = dto.teacherId || dto.assignedTeacherId;
+      if (!targetTeacherId) {
+        throw new HttpException('Please select a teacher to ask your doubt.', HttpStatus.BAD_REQUEST);
+      }
+
       // 1. Strict Recipient Verification: Recipient MUST be a Teacher
       const recipient = await this.prisma.user.findUnique({
-        where: { id: dto.teacherId },
+        where: { id: targetTeacherId },
         include: { role: true, teacherProfile: true },
       });
 
@@ -173,6 +178,8 @@ export class DoubtsService {
         select: { firstName: true, lastName: true },
       });
 
+      const attachmentsData = dto.attachments || dto.attachmentUrls || null;
+
       // 3. Create Doubt Thread and initial message
       const doubt = await this.prisma.doubt.create({
         data: {
@@ -180,7 +187,7 @@ export class DoubtsService {
           description: dto.description || null,
           priority: (dto.priority as any) || 'MEDIUM',
           studentId: userId,
-          teacherId: dto.teacherId,
+          teacherId: targetTeacherId,
           subjectId: dto.subjectId || null,
           chapterId: dto.chapterId || null,
           topicId: dto.topicId || null,
@@ -191,7 +198,7 @@ export class DoubtsService {
               senderId: userId,
               senderRole: 'STUDENT',
               content: dto.description || dto.title,
-              attachments: dto.attachments || null,
+              attachments: attachmentsData,
             },
           },
         },
@@ -206,7 +213,7 @@ export class DoubtsService {
       // 4. Send in-app notification to teacher
       const studentName = student ? `${student.firstName} ${student.lastName}` : 'A student';
       this.notificationsService.sendNotification({
-        userId: dto.teacherId,
+        userId: targetTeacherId,
         title: 'New Student Doubt',
         message: `${studentName} asked: "${dto.title}"`,
         type: 'INFO',
@@ -256,14 +263,20 @@ export class DoubtsService {
         senderRole = 'TEACHER';
       }
 
+      const messageContent = dto.content || dto.message;
+      if (!messageContent || !messageContent.trim()) {
+        throw new HttpException('Message content cannot be empty', HttpStatus.BAD_REQUEST);
+      }
+      const attachmentsData = dto.attachments || dto.attachmentUrls || null;
+
       // Create message
       const message = await this.prisma.doubtMessage.create({
         data: {
           doubtId,
           senderId: userId,
           senderRole,
-          content: dto.content,
-          attachments: dto.attachments || null,
+          content: messageContent.trim(),
+          attachments: attachmentsData,
           isInternalAdminNote: Boolean(dto.isInternalAdminNote && isAdmin),
         },
         include: {
@@ -297,7 +310,7 @@ export class DoubtsService {
         this.notificationsService.sendNotification({
           userId: doubt.studentId,
           title: 'Teacher Replied to Your Doubt',
-          message: `${senderName}: "${dto.content.slice(0, 80)}"`,
+          message: `${senderName}: "${messageContent.slice(0, 80)}"`,
           type: 'INFO',
           link: `/doubts?id=${doubt.id}`,
         }).catch(err => this.logger.warn('Failed to notify student', err));
@@ -305,7 +318,7 @@ export class DoubtsService {
         this.notificationsService.sendNotification({
           userId: doubt.teacherId,
           title: 'Student Follow-up on Doubt',
-          message: `${senderName}: "${dto.content.slice(0, 80)}"`,
+          message: `${senderName}: "${messageContent.slice(0, 80)}"`,
           type: 'INFO',
           link: `/doubts?id=${doubt.id}`,
         }).catch(err => this.logger.warn('Failed to notify teacher', err));
@@ -314,7 +327,7 @@ export class DoubtsService {
         this.notificationsService.sendNotification({
           userId: doubt.studentId,
           title: 'Academic Supervisor Message',
-          message: `Supervisor: "${dto.content.slice(0, 80)}"`,
+          message: `Supervisor: "${messageContent.slice(0, 80)}"`,
           type: 'INFO',
           link: `/doubts?id=${doubt.id}`,
         }).catch(err => this.logger.warn('Failed to notify student', err));
@@ -347,8 +360,11 @@ export class DoubtsService {
         throw new ForbiddenException('Not permitted');
       }
 
+      let mappedStatus = String(status || '').toUpperCase();
+      if (mappedStatus === 'PENDING') mappedStatus = 'OPEN';
+
       const updateData: any = {
-        status,
+        status: mappedStatus,
         updatedAt: new Date(),
       };
 
