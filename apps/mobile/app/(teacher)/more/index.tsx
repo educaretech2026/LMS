@@ -109,8 +109,8 @@ export default function TeacherMoreScreen() {
             <BookOpen size={18} color="#4F46E5" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.menuTitle}>E-Study Repository</Text>
-            <Text style={styles.menuSubtitle}>Upload PDF notes, handouts & lecture videos</Text>
+            <Text style={styles.menuTitle}>E-Study Curriculum Hub</Text>
+            <Text style={styles.menuSubtitle}>Subject-wise handouts, syllabus notes & videos</Text>
           </View>
           <ChevronRight size={18} color={Colors.text.muted} />
         </TouchableOpacity>

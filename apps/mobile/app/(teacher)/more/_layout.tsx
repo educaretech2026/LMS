@@ -25,7 +25,7 @@ export default function TeacherMoreLayout() {
         name="estudy"
         options={{
           headerShown: true,
-          title: 'E-Study Materials',
+          title: 'E-Study Curriculum Hub',
           headerTintColor: Colors.brand.blue,
           headerStyle: { backgroundColor: Colors.surface.card },
           headerShadowVisible: false,

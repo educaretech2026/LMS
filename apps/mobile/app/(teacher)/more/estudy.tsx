@@ -28,29 +28,50 @@ import {
   CheckCircle2,
   UploadCloud,
   Sparkles,
+  Atom,
+  FlaskConical,
+  Calculator,
+  Dna,
+  ChevronRight,
+  FolderOpen,
 } from 'lucide-react-native';
 
-export default function TeacherEStudyScreen() {
+const DEFAULT_SUBJECTS = [
+  { id: 'all', name: 'All Subjects', icon: BookOpen, color: '#0F52BA', bg: '#EFF6FF' },
+  { id: 'physics', name: 'Physics', icon: Atom, color: '#7C3AED', bg: '#EDE9FE' },
+  { id: 'chemistry', name: 'Chemistry', icon: FlaskConical, color: '#059669', bg: '#D1FAE5' },
+  { id: 'mathematics', name: 'Mathematics', icon: Calculator, color: '#D97706', bg: '#FEF3C7' },
+  { id: 'biology', name: 'Biology', icon: Dna, color: '#DC2626', bg: '#FEE2E2' },
+];
+
+export default function TeacherEStudyCurriculumScreen() {
+  const [selectedSubject, setSelectedSubject] = useState<string>('all');
+  const [resourceType, setResourceType] = useState<'ALL' | 'VIDEOS' | 'NOTES'>('ALL');
   const [materials, setMaterials] = useState<any[]>([]);
+  const [subjectsList, setSubjectsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<'ALL' | 'VIDEOS' | 'NOTES'>('ALL');
 
   // Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [title, setTitle] = useState('');
-  const [subject, setSubject] = useState('');
-  const [type, setType] = useState<'DOCUMENT' | 'VIDEO'>('DOCUMENT');
+  const [uploadSubject, setUploadSubject] = useState('Physics');
+  const [topicName, setTopicName] = useState('');
+  const [uploadType, setUploadType] = useState<'DOCUMENT' | 'VIDEO'>('DOCUMENT');
   const [url, setUrl] = useState('');
   const [selectedFileUri, setSelectedFileUri] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const loadMaterials = async () => {
+  const loadData = async () => {
     try {
-      const data = await fetchApi<any[]>('/study-materials');
-      setMaterials(data || []);
+      const [materialsData, subjectsData] = await Promise.all([
+        fetchApi<any[]>('/study-materials').catch(() => []),
+        fetchApi<any[]>('/setup/subjects').catch(() => []),
+      ]);
+      setMaterials(materialsData || []);
+      setSubjectsList(subjectsData || []);
     } catch (e) {
       console.error('Failed to load study materials', e);
     } finally {
@@ -60,18 +81,18 @@ export default function TeacherEStudyScreen() {
   };
 
   useEffect(() => {
-    loadMaterials();
+    loadData();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadMaterials();
+    loadData();
   };
 
   const handlePickDocument = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
-        type: type === 'DOCUMENT' ? ['application/pdf', 'application/msword'] : ['video/*'],
+        type: uploadType === 'DOCUMENT' ? ['application/pdf', 'application/msword'] : ['video/*'],
         copyToCacheDirectory: true,
       });
 
@@ -95,9 +116,8 @@ export default function TeacherEStudyScreen() {
     try {
       let finalUrl = url.trim();
 
-      // If local file was picked, upload to S3/R2 presigned URL
       if (selectedFileUri && selectedFileName) {
-        const mime = type === 'DOCUMENT' ? 'application/pdf' : 'video/mp4';
+        const mime = uploadType === 'DOCUMENT' ? 'application/pdf' : 'video/mp4';
         finalUrl = await uploadMobileFile(selectedFileUri, selectedFileName, mime);
       }
 
@@ -111,20 +131,21 @@ export default function TeacherEStudyScreen() {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
-          type: type === 'DOCUMENT' ? 'PDF' : 'VIDEO',
-          subject: subject.trim() || 'General Academics',
+          type: uploadType === 'DOCUMENT' ? 'PDF' : 'VIDEO',
+          subject: uploadSubject.trim(),
+          topic: topicName.trim() || undefined,
           url: finalUrl,
         }),
       });
 
-      Alert.alert('Success', 'Study material uploaded successfully!');
+      Alert.alert('Success', 'Study material published successfully!');
       setTitle('');
-      setSubject('');
+      setTopicName('');
       setUrl('');
       setSelectedFileUri(null);
       setSelectedFileName(null);
       setShowUploadModal(false);
-      loadMaterials();
+      loadData();
     } catch (err: any) {
       Alert.alert('Upload Failed', err.message || 'Could not upload study material');
     } finally {
@@ -159,27 +180,46 @@ export default function TeacherEStudyScreen() {
     }
   };
 
+  // Filter Materials
   const filteredMaterials = materials.filter((m) => {
     const isVid = (m.type || '').toUpperCase().includes('VID');
-    if (tab === 'VIDEOS' && !isVid) return false;
-    if (tab === 'NOTES' && isVid) return false;
 
+    // Resource Type Filter
+    if (resourceType === 'VIDEOS' && !isVid) return false;
+    if (resourceType === 'NOTES' && isVid) return false;
+
+    // Subject Filter
+    if (selectedSubject !== 'all') {
+      const sName = (m.subject?.name || m.subject || '').toLowerCase();
+      if (!sName.includes(selectedSubject.toLowerCase())) return false;
+    }
+
+    // Keyword Search
     if (search.trim()) {
       const q = search.toLowerCase();
       const t = (m.title || '').toLowerCase();
-      const s = (m.subject || m.subject?.name || '').toLowerCase();
-      return t.includes(q) || s.includes(q);
+      const s = (m.subject?.name || m.subject || '').toLowerCase();
+      const c = (m.chapter?.name || m.chapter || '').toLowerCase();
+      return t.includes(q) || s.includes(q) || c.includes(q);
     }
     return true;
   });
 
+  const getSubjectMaterialCount = (subjectKeyword: string) => {
+    if (subjectKeyword === 'all') return materials.length;
+    return materials.filter((m) => {
+      const s = (m.subject?.name || m.subject || '').toLowerCase();
+      return s.includes(subjectKeyword.toLowerCase());
+    }).length;
+  };
+
   return (
     <View style={styles.container}>
-      {/* Top Action Header */}
-      <View style={styles.topHeader}>
+      {/* Top Header */}
+      <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>E-Study Repository</Text>
-          <Text style={styles.headerSub}>Manage lecture videos & course notes for your batches</Text>
+          <Text style={styles.headerTitle}>E-Study Curriculum Hub</Text>
+          <Text style={styles.headerSub}>Structured syllabus materials, handouts & video lessons</Text>
         </View>
 
         <TouchableOpacity
@@ -192,34 +232,70 @@ export default function TeacherEStudyScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchBar}>
+      {/* Search Input */}
+      <View style={styles.searchContainer}>
         <Search size={18} color={Colors.text.muted} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search materials by title or topic..."
+          placeholder="Search by topic, chapter, or handout title..."
           placeholderTextColor={Colors.text.muted}
           value={search}
           onChangeText={setSearch}
         />
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsRow}>
+      {/* Horizontal Subject Carousel */}
+      <View style={styles.subjectSection}>
+        <Text style={styles.sectionHeading}>SELECT SUBJECT</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.subjectScroll}
+        >
+          {DEFAULT_SUBJECTS.map((sub) => {
+            const IconComponent = sub.icon;
+            const count = getSubjectMaterialCount(sub.id);
+            const isSelected = selectedSubject === sub.id;
+
+            return (
+              <TouchableOpacity
+                key={sub.id}
+                style={[
+                  styles.subjectCard,
+                  isSelected && styles.subjectCardSelected,
+                ]}
+                onPress={() => setSelectedSubject(sub.id)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.subjectIconCircle, { backgroundColor: sub.bg }]}>
+                  <IconComponent size={20} color={sub.color} />
+                </View>
+                <Text style={[styles.subjectName, isSelected && styles.subjectNameSelected]}>
+                  {sub.name}
+                </Text>
+                <Text style={styles.subjectCount}>{count} items</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Format Category Filter Pills */}
+      <View style={styles.formatFilterRow}>
         {(['ALL', 'VIDEOS', 'NOTES'] as const).map((t) => (
           <TouchableOpacity
             key={t}
-            style={[styles.tabChip, tab === t && styles.tabChipActive]}
-            onPress={() => setTab(t)}
+            style={[styles.formatChip, resourceType === t && styles.formatChipActive]}
+            onPress={() => setResourceType(t)}
           >
-            <Text style={[styles.tabChipText, tab === t && styles.tabChipTextActive]}>
-              {t === 'ALL' ? `All (${materials.length})` : t === 'VIDEOS' ? 'Video Lectures' : 'PDF Notes'}
+            <Text style={[styles.formatChipText, resourceType === t && styles.formatChipTextActive]}>
+              {t === 'ALL' ? 'All Formats' : t === 'VIDEOS' ? '🎬 Video Lectures' : '📄 PDF Handouts'}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Material List */}
+      {/* Materials List */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.brand.blue]} />}
@@ -227,18 +303,33 @@ export default function TeacherEStudyScreen() {
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.brand.blue} />
-            <Text style={styles.loadingText}>Loading study materials...</Text>
+            <Text style={styles.loadingText}>Fetching curriculum materials...</Text>
           </View>
         ) : filteredMaterials.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <BookOpen size={48} color={Colors.text.muted} />
+            <FolderOpen size={48} color={Colors.text.muted} />
             <Text style={styles.emptyTitle}>No Materials Found</Text>
-            <Text style={styles.emptySubtitle}>Upload lecture notes or videos to share with your students.</Text>
+            <Text style={styles.emptySubtitle}>
+              {selectedSubject !== 'all'
+                ? `No items uploaded for ${selectedSubject} yet.`
+                : 'Upload lecture notes or recorded classes to share with students.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.uploadPromptBtn}
+              onPress={() => {
+                setUploadSubject(selectedSubject !== 'all' ? selectedSubject : 'Physics');
+                setShowUploadModal(true);
+              }}
+            >
+              <Plus size={14} color="#FFFFFF" />
+              <Text style={styles.uploadPromptBtnText}>Upload to this Subject</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           filteredMaterials.map((item) => {
             const isVid = (item.type || '').toUpperCase().includes('VID');
-            const subj = item.subject?.name || item.subject || 'Course Notes';
+            const subj = item.subject?.name || item.subject || 'General Academics';
+            const chapter = item.chapter?.name || item.topic || 'Lesson Resource';
 
             return (
               <View key={item.id} style={styles.materialCard}>
@@ -252,12 +343,15 @@ export default function TeacherEStudyScreen() {
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.subjectTag}>{subj}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.subjectTag}>{subj}</Text>
+                    <Text style={styles.topicTag}>• {chapter}</Text>
+                  </View>
                   <Text style={styles.materialTitle} numberOfLines={2}>
                     {item.title}
                   </Text>
                   <Text style={styles.materialMeta}>
-                    {isVid ? 'Video Lecture' : 'PDF Document'} •{' '}
+                    {isVid ? 'High-Def Video' : 'PDF Document'} •{' '}
                     {new Date(item.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                   </Text>
                 </View>
@@ -291,8 +385,8 @@ export default function TeacherEStudyScreen() {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Upload Study Material</Text>
-                <Text style={styles.modalSubtitle}>Share documents or lectures with learners</Text>
+                <Text style={styles.modalTitle}>Upload Curriculum Material</Text>
+                <Text style={styles.modalSubtitle}>Map handouts directly to subjects & topics</Text>
               </View>
               <TouchableOpacity onPress={() => setShowUploadModal(false)}>
                 <X size={20} color={Colors.text.primary} />
@@ -301,61 +395,86 @@ export default function TeacherEStudyScreen() {
 
             <ScrollView contentContainerStyle={styles.modalBody}>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Title *</Text>
+                <Text style={styles.inputLabel}>Subject *</Text>
+                <View style={styles.subjectChipsSelector}>
+                  {['Physics', 'Chemistry', 'Mathematics', 'Biology'].map((sName) => (
+                    <TouchableOpacity
+                      key={sName}
+                      style={[
+                        styles.chipOption,
+                        uploadSubject.toLowerCase() === sName.toLowerCase() && styles.chipOptionActive,
+                      ]}
+                      onPress={() => setUploadSubject(sName)}
+                    >
+                      <Text
+                        style={[
+                          styles.chipOptionText,
+                          uploadSubject.toLowerCase() === sName.toLowerCase() && styles.chipOptionTextActive,
+                        ]}
+                      >
+                        {sName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Chapter / Topic Name</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. Unit 4 Electrostatics Handout"
+                  placeholder="e.g. Kinematics in 2D / Thermodynamics"
+                  placeholderTextColor={Colors.text.muted}
+                  value={topicName}
+                  onChangeText={setTopicName}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Resource Title *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="e.g. Unit 3 Handwritten Formula Sheet"
                   placeholderTextColor={Colors.text.muted}
                   value={title}
                   onChangeText={setTitle}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Subject / Topic</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. Physics / Electromagnetism"
-                  placeholderTextColor={Colors.text.muted}
-                  value={subject}
-                  onChangeText={setSubject}
-                />
-              </View>
-
               {/* Type Selector */}
               <View style={styles.typeSelectorRow}>
                 <TouchableOpacity
-                  style={[styles.typeOption, type === 'DOCUMENT' && styles.typeOptionActive]}
-                  onPress={() => setType('DOCUMENT')}
+                  style={[styles.typeOption, uploadType === 'DOCUMENT' && styles.typeOptionActive]}
+                  onPress={() => setUploadType('DOCUMENT')}
                 >
-                  <FileText size={16} color={type === 'DOCUMENT' ? Colors.brand.blue : Colors.text.muted} />
-                  <Text style={[styles.typeText, type === 'DOCUMENT' && styles.typeTextActive]}>
+                  <FileText size={16} color={uploadType === 'DOCUMENT' ? Colors.brand.blue : Colors.text.muted} />
+                  <Text style={[styles.typeText, uploadType === 'DOCUMENT' && styles.typeTextActive]}>
                     PDF Document
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.typeOption, type === 'VIDEO' && styles.typeOptionActive]}
-                  onPress={() => setType('VIDEO')}
+                  style={[styles.typeOption, uploadType === 'VIDEO' && styles.typeOptionActive]}
+                  onPress={() => setUploadType('VIDEO')}
                 >
-                  <Video size={16} color={type === 'VIDEO' ? '#7C3AED' : Colors.text.muted} />
-                  <Text style={[styles.typeText, type === 'VIDEO' && { color: '#7C3AED', fontWeight: '700' }]}>
-                    Video Lecture
+                  <Video size={16} color={uploadType === 'VIDEO' ? '#7C3AED' : Colors.text.muted} />
+                  <Text style={[styles.typeText, uploadType === 'VIDEO' && { color: '#7C3AED', fontWeight: '700' }]}>
+                    Video Lesson
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {/* File Picker or URL */}
               <TouchableOpacity style={styles.filePickerBox} onPress={handlePickDocument}>
-                <UploadCloud size={28} color={Colors.brand.blue} />
+                <UploadCloud size={26} color={Colors.brand.blue} />
                 <Text style={styles.filePickerPrompt}>
-                  {selectedFileName ? selectedFileName : 'Tap to pick PDF / Media from device'}
+                  {selectedFileName ? selectedFileName : 'Pick File from Mobile Device'}
                 </Text>
-                <Text style={styles.filePickerSub}>Files are stored securely in cloud storage</Text>
+                <Text style={styles.filePickerSub}>Files upload directly to cloud storage</Text>
               </TouchableOpacity>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Or enter direct URL / YouTube link</Text>
+                <Text style={styles.inputLabel}>Or Enter Video / Resource Link</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="https://..."
@@ -375,7 +494,7 @@ export default function TeacherEStudyScreen() {
                 ) : (
                   <>
                     <CheckCircle2 size={18} color="#FFFFFF" />
-                    <Text style={styles.submitUploadBtnText}>Publish Material</Text>
+                    <Text style={styles.submitUploadBtnText}>Publish to Curriculum</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -392,7 +511,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.surface.background,
   },
-  topHeader: {
+  header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: Colors.surface.card,
@@ -427,7 +546,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  searchBar: {
+  searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface.card,
@@ -445,30 +564,83 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.primary,
   },
-  tabsRow: {
+  subjectSection: {
+    marginTop: 14,
+  },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.text.muted,
+    letterSpacing: 0.8,
+    marginLeft: 16,
+    marginBottom: 8,
+  },
+  subjectScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  subjectCard: {
+    width: 110,
+    backgroundColor: Colors.surface.card,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    ...Shadows.sm,
+  },
+  subjectCardSelected: {
+    borderColor: Colors.brand.blue,
+    borderWidth: 2,
+    backgroundColor: '#FAFCFF',
+  },
+  subjectIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  subjectName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    textAlign: 'center',
+  },
+  subjectNameSelected: {
+    color: Colors.brand.blue,
+    fontWeight: '800',
+  },
+  subjectCount: {
+    fontSize: 10,
+    color: Colors.text.muted,
+    marginTop: 2,
+  },
+  formatFilterRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    marginTop: 10,
+    marginTop: 14,
     gap: 8,
   },
-  tabChip: {
-    paddingHorizontal: 14,
+  formatChip: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: Colors.surface.card,
     borderWidth: 1,
     borderColor: Colors.border.default,
   },
-  tabChipActive: {
+  formatChipActive: {
     backgroundColor: Colors.brand.blue,
     borderColor: Colors.brand.blue,
   },
-  tabChipText: {
+  formatChipText: {
     fontSize: 12,
     fontWeight: '600',
     color: Colors.text.secondary,
   },
-  tabChipTextActive: {
+  formatChipTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
   },
@@ -486,21 +658,36 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
   },
   emptyContainer: {
-    paddingVertical: 64,
+    paddingVertical: 48,
     alignItems: 'center',
     paddingHorizontal: 32,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: Colors.text.primary,
     marginTop: 12,
   },
   emptySubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.text.muted,
     textAlign: 'center',
     marginTop: 4,
+  },
+  uploadPromptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.brand.blue,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 14,
+  },
+  uploadPromptBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   materialCard: {
     flexDirection: 'row',
@@ -522,9 +709,14 @@ const styles = StyleSheet.create({
   },
   subjectTag: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.brand.blue,
     textTransform: 'uppercase',
+  },
+  topicTag: {
+    fontSize: 10,
+    color: Colors.text.muted,
+    fontWeight: '600',
   },
   materialTitle: {
     fontSize: 14,
@@ -594,6 +786,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text.secondary,
   },
+  subjectChipsSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  chipOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+  },
+  chipOptionActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: Colors.brand.blue,
+  },
+  chipOptionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  chipOptionTextActive: {
+    color: Colors.brand.blue,
+    fontWeight: '700',
+  },
   textInput: {
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
@@ -638,7 +857,7 @@ const styles = StyleSheet.create({
     borderColor: '#BFDBFE',
     borderStyle: 'dashed',
     borderRadius: 14,
-    padding: 20,
+    padding: 18,
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     gap: 6,
