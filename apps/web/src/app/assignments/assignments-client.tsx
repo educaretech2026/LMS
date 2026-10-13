@@ -92,6 +92,17 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
     }).catch(console.error);
   }, []);
 
+  // Distinct subjects available in the student's assigned assignments
+  const studentSubjects = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    assignments.forEach((a) => {
+      if (a.subject?.id && a.subject?.name) {
+        map.set(a.subject.id, { id: a.subject.id, name: a.subject.name });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [assignments]);
+
   // Derived filtered assignments
   const filteredAssignments = useMemo(() => {
     return assignments.filter((a) => {
@@ -103,33 +114,36 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
         a.subject?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         a.chapter?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         a.topic?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.batch?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        (isTeacherOrAdmin && a.batch?.name?.toLowerCase().includes(searchQuery.toLowerCase()));
 
       if (!matchesSearch) return false;
 
-      // Board
-      if (filterBoard !== "ALL") {
-        const boardId = a.batch?.boardId || a.batch?.board?.id;
-        if (boardId !== filterBoard) return false;
+      // Administrative hierarchy filters ONLY apply to teachers / admins
+      if (isTeacherOrAdmin) {
+        // Board
+        if (filterBoard !== "ALL") {
+          const boardId = a.batch?.boardId || a.batch?.board?.id;
+          if (boardId !== filterBoard) return false;
+        }
+
+        // Standard / Class
+        if (filterStandard !== "ALL") {
+          const standardId = a.batch?.standardId || a.batch?.standard?.id;
+          if (standardId !== filterStandard) return false;
+        }
+
+        // Batch
+        if (filterBatch !== "ALL" && a.batchId !== filterBatch) return false;
+
+        // Track (live comparison by TargetTrack.id)
+        if (filterTrack !== "ALL") {
+          const trId = a.targetTrackId || a.targetTrack?.id || a.batch?.trackId || a.batch?.track?.id;
+          if (trId !== filterTrack) return false;
+        }
       }
 
-      // Standard / Class
-      if (filterStandard !== "ALL") {
-        const standardId = a.batch?.standardId || a.batch?.standard?.id;
-        if (standardId !== filterStandard) return false;
-      }
-
-      // Batch
-      if (filterBatch !== "ALL" && a.batchId !== filterBatch) return false;
-
-      // Subject
+      // Subject (both teachers and students can filter by subject)
       if (filterSubject !== "ALL" && a.subjectId !== filterSubject) return false;
-
-      // Track (live comparison by TargetTrack.id)
-      if (filterTrack !== "ALL") {
-        const trId = a.targetTrackId || a.targetTrack?.id || a.batch?.trackId || a.batch?.track?.id;
-        if (trId !== filterTrack) return false;
-      }
 
       // Tab Filtering
       const sub = a.submissions?.[0];
@@ -174,13 +188,14 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
     }
   }, [assignments, isTeacherOrAdmin]);
 
-  const hasActiveFilters =
-    filterBoard !== "ALL" ||
-    filterStandard !== "ALL" ||
-    filterBatch !== "ALL" ||
-    filterSubject !== "ALL" ||
-    filterTrack !== "ALL" ||
-    !!searchQuery;
+  const hasActiveFilters = isTeacherOrAdmin
+    ? filterBoard !== "ALL" ||
+      filterStandard !== "ALL" ||
+      filterBatch !== "ALL" ||
+      filterSubject !== "ALL" ||
+      filterTrack !== "ALL" ||
+      !!searchQuery
+    : filterSubject !== "ALL" || !!searchQuery;
 
   return (
     <DashboardLayout title="Assignments">
@@ -273,122 +288,155 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
               )}
             </div>
 
-            {/* Search Input */}
-            <div className="relative w-full lg:w-72 shrink-0">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search assignments or topics..."
-                className="w-full h-9.5 pl-9 pr-3 rounded-xl border border-border-soft bg-surface-2 text-xs text-text-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
-                  <X className="h-3.5 w-3.5" />
+            {/* Right Controls: Subject Filter (for students) + Search Input */}
+            <div className="flex items-center gap-2.5 w-full lg:w-auto">
+              {!isTeacherOrAdmin && studentSubjects.length > 0 && (
+                <div className="relative shrink-0">
+                  <select
+                    value={filterSubject}
+                    onChange={(e) => setFilterSubject(e.target.value)}
+                    className="h-9.5 pl-3 pr-7 rounded-xl border border-border-soft bg-surface-2 text-xs font-semibold text-text-primary focus:outline-none focus:bg-white"
+                  >
+                    <option value="ALL">All Subjects</option>
+                    {studentSubjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="h-3 w-3 absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+                </div>
+              )}
+
+              {/* Search Input */}
+              <div className="relative w-full lg:w-72 shrink-0">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={!isTeacherOrAdmin ? "Search assignments or topics..." : "Search assignments or topics..."}
+                  className="w-full h-9.5 pl-9 pr-3 rounded-xl border border-border-soft bg-surface-2 text-xs text-text-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {!isTeacherOrAdmin && hasActiveFilters && (
+                <button
+                  onClick={() => {
+                    setFilterSubject("ALL");
+                    setSearchQuery("");
+                  }}
+                  className="text-xs font-bold text-brand-red hover:underline whitespace-nowrap px-1"
+                >
+                  Reset
                 </button>
               )}
             </div>
           </div>
 
-          {/* e-Study Academic Hierarchy Dropdown Strip (Live-Fetched) */}
-          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border-soft text-xs">
-            <div className="flex items-center gap-1.5 text-text-secondary font-semibold">
-              <Filter className="h-3.5 w-3.5 text-text-muted" />
-              <span>Hierarchy:</span>
-            </div>
+          {/* e-Study Academic Hierarchy Dropdown Strip (Live-Fetched) - ONLY for teachers & admins */}
+          {isTeacherOrAdmin && (
+            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border-soft text-xs">
+              <div className="flex items-center gap-1.5 text-text-secondary font-semibold">
+                <Filter className="h-3.5 w-3.5 text-text-muted" />
+                <span>Hierarchy:</span>
+              </div>
 
-            {/* Live Board Filter */}
-            <div className="relative">
-              <select
-                value={filterBoard}
-                onChange={(e) => setFilterBoard(e.target.value)}
-                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
-              >
-                <option value="ALL">All Boards</option>
-                {boards.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-            </div>
+              {/* Live Board Filter */}
+              <div className="relative">
+                <select
+                  value={filterBoard}
+                  onChange={(e) => setFilterBoard(e.target.value)}
+                  className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+                >
+                  <option value="ALL">All Boards</option>
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+              </div>
 
-            {/* Live Class/Standard Filter */}
-            <div className="relative">
-              <select
-                value={filterStandard}
-                onChange={(e) => setFilterStandard(e.target.value)}
-                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
-              >
-                <option value="ALL">All Classes</option>
-                {standards.map((st) => (
-                  <option key={st.id} value={st.id}>{st.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-            </div>
+              {/* Live Class/Standard Filter */}
+              <div className="relative">
+                <select
+                  value={filterStandard}
+                  onChange={(e) => setFilterStandard(e.target.value)}
+                  className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+                >
+                  <option value="ALL">All Classes</option>
+                  {standards.map((st) => (
+                    <option key={st.id} value={st.id}>{st.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+              </div>
 
-            {/* Live Batch Filter */}
-            <div className="relative">
-              <select
-                value={filterBatch}
-                onChange={(e) => setFilterBatch(e.target.value)}
-                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
-              >
-                <option value="ALL">All Batches</option>
-                {batches.map((ba) => (
-                  <option key={ba.id} value={ba.id}>{ba.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-            </div>
+              {/* Live Batch Filter */}
+              <div className="relative">
+                <select
+                  value={filterBatch}
+                  onChange={(e) => setFilterBatch(e.target.value)}
+                  className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+                >
+                  <option value="ALL">All Batches</option>
+                  {batches.map((ba) => (
+                    <option key={ba.id} value={ba.id}>{ba.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+              </div>
 
-            {/* Live Subject Filter */}
-            <div className="relative">
-              <select
-                value={filterSubject}
-                onChange={(e) => setFilterSubject(e.target.value)}
-                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
-              >
-                <option value="ALL">All Subjects</option>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-            </div>
+              {/* Live Subject Filter */}
+              <div className="relative">
+                <select
+                  value={filterSubject}
+                  onChange={(e) => setFilterSubject(e.target.value)}
+                  className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+                >
+                  <option value="ALL">All Subjects</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+              </div>
 
-            {/* Live Target Track Filter */}
-            <div className="relative">
-              <select
-                value={filterTrack}
-                onChange={(e) => setFilterTrack(e.target.value)}
-                className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
-              >
-                <option value="ALL">All Tracks</option>
-                {tracks.map((tr) => (
-                  <option key={tr.id} value={tr.id}>{tr.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-            </div>
+              {/* Live Target Track Filter */}
+              <div className="relative">
+                <select
+                  value={filterTrack}
+                  onChange={(e) => setFilterTrack(e.target.value)}
+                  className="h-8 pl-3 pr-7 rounded-lg border border-border-soft bg-surface-2 text-xs font-medium text-text-primary focus:outline-none focus:bg-white"
+                >
+                  <option value="ALL">All Tracks</option>
+                  {tracks.map((tr) => (
+                    <option key={tr.id} value={tr.id}>{tr.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+              </div>
 
-            {hasActiveFilters && (
-              <button
-                onClick={() => {
-                  setFilterBoard("ALL");
-                  setFilterStandard("ALL");
-                  setFilterBatch("ALL");
-                  setFilterSubject("ALL");
-                  setFilterTrack("ALL");
-                  setSearchQuery("");
-                }}
-                className="text-xs font-bold text-brand-red hover:underline ml-auto"
-              >
-                Reset Filters
-              </button>
-            )}
-          </div>
+              {hasActiveFilters && (
+                <button
+                  onClick={() => {
+                    setFilterBoard("ALL");
+                    setFilterStandard("ALL");
+                    setFilterBatch("ALL");
+                    setFilterSubject("ALL");
+                    setFilterTrack("ALL");
+                    setSearchQuery("");
+                  }}
+                  className="text-xs font-bold text-brand-red hover:underline ml-auto"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Assignments Grid */}
@@ -398,7 +446,9 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
               <FolderOpen className="h-12 w-12 text-text-muted mx-auto mb-3 opacity-60" />
               <h3 className="text-base font-bold text-text-primary">No assignments found</h3>
               <p className="text-xs text-text-secondary mt-1 max-w-sm mx-auto">
-                No assignments match the selected hierarchy criteria or none have been assigned yet.
+                {!isTeacherOrAdmin
+                  ? "You have no assignments assigned to your batch at this time."
+                  : "No assignments match the selected hierarchy criteria or none have been assigned yet."}
               </p>
             </div>
           ) : (
@@ -422,7 +472,7 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
                       <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-blue/10 text-brand-blue border border-brand-blue/20">
                         {assignment.subject?.name || "General"}
                       </span>
-                      {trackName && (
+                      {isTeacherOrAdmin && trackName && (
                         <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase bg-surface-2 text-text-secondary border border-border-soft">
                           {trackName}
                         </span>
@@ -449,9 +499,9 @@ export function AssignmentsClient({ initialAssignments }: { initialAssignments: 
                       {assignment.title}
                     </h3>
                     
-                    {/* e-Study style academic hierarchy breadcrumb */}
+                    {/* Academic hierarchy breadcrumb - only show administrative class/batch for teachers */}
                     <div className="text-[11px] font-medium text-text-muted mt-1 space-y-0.5">
-                      {(boardName || standardName || assignment.batch?.name) && (
+                      {isTeacherOrAdmin && (boardName || standardName || assignment.batch?.name) && (
                         <p className="line-clamp-1 text-text-secondary font-semibold">
                           {boardName ? `${boardName} • ` : ""}{standardName ? `${standardName} • ` : ""}{assignment.batch?.name || "All Batches"}
                         </p>
@@ -1452,7 +1502,9 @@ function SubmitAssignmentModal({ assignment, onClose, onSuccess }: { assignment:
           <div>
             <h2 className="text-base font-bold text-text-primary">{assignment.title}</h2>
             <p className="text-xs text-text-secondary">
-              {assignment.subject?.name} • {assignment.batch?.name}
+              {assignment.subject?.name || "General"}
+              {assignment.chapter?.name ? ` • ${assignment.chapter.name}` : ""}
+              {assignment.topic?.name ? ` › ${assignment.topic.name}` : ""}
             </p>
           </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-surface-2 flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">

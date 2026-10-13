@@ -26,18 +26,36 @@ export class AssignmentsService {
 
       const isStudent = normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER' || !!profile;
 
-      if (isStudent && profile) {
-        // Students see assignments for their batches, or unbatched, or assignments they've already submitted to
+      if (isStudent) {
+        if (!profile) {
+          return [];
+        }
+
+        // Students ONLY see assignments directly assigned to their enrolled batches
         const batchIds = profile.enrollments.map(e => e.batchId).filter(Boolean);
-        
+        const trackIds = profile.enrollments.map(e => e.trackId).filter(Boolean);
+
+        const conditions: any[] = [];
+        if (batchIds.length > 0) {
+          conditions.push({
+            batchId: { in: batchIds },
+            ...(trackIds.length > 0
+              ? {
+                  OR: [
+                    { targetTrackId: null },
+                    { targetTrackId: { in: trackIds } },
+                  ],
+                }
+              : {}),
+          });
+        }
+        // Also include any assignments where the student already has a submission
+        conditions.push({
+          submissions: { some: { studentId: profile.id } },
+        });
+
         return await this.prisma.assignment.findMany({
-          where: {
-            OR: [
-              ...(batchIds.length > 0 ? [{ batchId: { in: batchIds } }] : []),
-              { batchId: null },
-              { submissions: { some: { studentId: profile.id } } }
-            ]
-          },
+          where: conditions.length > 1 ? { OR: conditions } : (conditions[0] || { id: 'impossible_id' }),
           include: {
             uploader: { select: { firstName: true, lastName: true } },
             subject: true,
