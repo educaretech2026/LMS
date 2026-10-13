@@ -25,8 +25,204 @@ import {
   ExternalLink,
   MessageCircle,
   Sparkles,
-  Info
+  Info,
+  ImageIcon,
+  FileText,
+  UploadCloud,
+  Loader2,
+  ZoomIn,
+  Download,
 } from "lucide-react";
+
+export interface AttachmentItem {
+  url: string;
+  name: string;
+  type?: "image" | "pdf" | "file";
+  size?: number;
+}
+
+function isImageUrl(url: string, name?: string): boolean {
+  const target = (name || url).toLowerCase();
+  return /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?.*)?$/i.test(target);
+}
+
+function isPdfUrl(url: string, name?: string): boolean {
+  const target = (name || url).toLowerCase();
+  return /\.pdf(\?.*)?$/i.test(target);
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalizeAttachments(attachments: any, attachmentUrls: any): AttachmentItem[] {
+  let rawList: any[] = [];
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    rawList = attachments;
+  } else if (Array.isArray(attachmentUrls) && attachmentUrls.length > 0) {
+    rawList = attachmentUrls;
+  }
+
+  return rawList
+    .map((item, idx) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        const isImg = isImageUrl(item);
+        const isPdf = isPdfUrl(item);
+        let displayName = `Attachment ${idx + 1}`;
+        try {
+          const path = item.split("?")[0];
+          const filename = path.substring(path.lastIndexOf("/") + 1);
+          if (filename && filename.length > 0) {
+            displayName = decodeURIComponent(filename);
+          }
+        } catch {
+          // ignore
+        }
+        return {
+          url: item,
+          name: displayName,
+          type: isImg ? "image" : isPdf ? "pdf" : "file",
+        } as AttachmentItem;
+      }
+      const url = item.url || "";
+      const isImg = item.type === "image" || isImageUrl(url, item.filename || item.name);
+      const isPdf = item.type === "pdf" || isPdfUrl(url, item.filename || item.name);
+      return {
+        url,
+        name: item.filename || item.name || (isImg ? `Image ${idx + 1}` : isPdf ? `Document ${idx + 1}.pdf` : `Attachment ${idx + 1}`),
+        type: isImg ? "image" : isPdf ? "pdf" : item.type || "file",
+        size: item.size,
+      } as AttachmentItem;
+    })
+    .filter((x): x is AttachmentItem => Boolean(x && x.url));
+}
+
+function AttachmentGallery({
+  attachments,
+  attachmentUrls,
+  onPreviewImage,
+  isOwnMessage,
+}: {
+  attachments: any;
+  attachmentUrls: any;
+  onPreviewImage: (item: { url: string; title: string }) => void;
+  isOwnMessage?: boolean;
+}) {
+  const list = normalizeAttachments(attachments, attachmentUrls);
+  if (list.length === 0) return null;
+
+  return (
+    <div className="mt-2.5 pt-2 border-t border-black/10 flex flex-col gap-2">
+      {/* Images Grid */}
+      {list.some((a) => a.type === "image") && (
+        <div className="flex flex-wrap gap-2">
+          {list
+            .filter((a) => a.type === "image")
+            .map((img, idx) => (
+              <div
+                key={idx}
+                onClick={() => onPreviewImage({ url: img.url, title: img.name })}
+                className="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 shadow-xs hover:shadow-md transition-all w-28 h-28 sm:w-36 sm:h-36 flex items-center justify-center shrink-0"
+                title="Click to view full image"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.url}
+                  alt={img.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <span className="p-1.5 rounded-full bg-white/90 text-slate-900 shadow">
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 text-[10px] text-white truncate font-medium">
+                  {img.name}
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* PDFs and Other Documents */}
+      {list.some((a) => a.type !== "image") && (
+        <div className="flex flex-col gap-1.5">
+          {list
+            .filter((a) => a.type !== "image")
+            .map((doc, idx) => {
+              const isPdf = doc.type === "pdf";
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border text-xs transition-colors ${
+                    isOwnMessage
+                      ? "bg-white/15 border-white/20 text-white hover:bg-white/20"
+                      : isPdf
+                      ? "bg-red-50/90 border-red-200/90 text-red-950 hover:bg-red-100/70"
+                      : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isPdf ? (
+                      <div className="p-1.5 bg-red-100 text-red-600 rounded-lg shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                    ) : (
+                      <div className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg shrink-0">
+                        <Paperclip className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate text-[11px] sm:text-xs">
+                        {doc.name}
+                      </div>
+                      <div className="text-[10px] opacity-70">
+                        {isPdf ? "PDF Document" : "File Attachment"}
+                        {doc.size ? ` • ${formatFileSize(doc.size)}` : ""}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={doc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors ${
+                        isOwnMessage
+                          ? "bg-white/20 hover:bg-white/30 text-white"
+                          : "bg-white border border-slate-200 text-slate-700 hover:text-indigo-600 hover:border-indigo-200 shadow-2xs"
+                      }`}
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>View</span>
+                    </a>
+                    <a
+                      href={doc.url}
+                      download={doc.name}
+                      className={`p-1 rounded-md transition-colors ${
+                        isOwnMessage
+                          ? "hover:bg-white/20 text-white"
+                          : "hover:bg-slate-200 text-slate-500 hover:text-slate-800"
+                      }`}
+                      title="Download file"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface TeacherOption {
   id: string;
@@ -140,9 +336,12 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
 
   // Reply state
   const [replyText, setReplyText] = useState("");
-  const [replyAttachments, setReplyAttachments] = useState<string[]>([]);
+  const [replyAttachments, setReplyAttachments] = useState<AttachmentItem[]>([]);
   const [newAttachmentInput, setNewAttachmentInput] = useState("");
   const [isSendingReply, setIsSendingReply] = useState(false);
+  const [isUploadingReplyFile, setIsUploadingReplyFile] = useState(false);
+  const [replyUploadStatus, setReplyUploadStatus] = useState("");
+  const replyFileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Ask Doubt Modal state (for Students)
@@ -151,15 +350,96 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
   const [newDescription, setNewDescription] = useState("");
   const [newTeacherId, setNewTeacherId] = useState("");
   const [newPriority, setNewPriority] = useState<"LOW" | "MEDIUM" | "HIGH" | "URGENT">("MEDIUM");
-  const [newAttachmentUrls, setNewAttachmentUrls] = useState<string[]>([]);
+  const [newAttachments, setNewAttachments] = useState<AttachmentItem[]>([]);
   const [newModalAttachmentInput, setNewModalAttachmentInput] = useState("");
   const [isSubmittingNewDoubt, setIsSubmittingNewDoubt] = useState(false);
+  const [isUploadingModalFiles, setIsUploadingModalFiles] = useState(false);
+  const [modalUploadStatus, setModalUploadStatus] = useState("");
+  const [isDragOverModal, setIsDragOverModal] = useState(false);
+  const modalFileInputRef = useRef<HTMLInputElement>(null);
   const [modalError, setModalError] = useState<string | null>(null);
+
+  // Lightbox modal state for full-screen image preview
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
 
   // Reassign Modal state (for Admin)
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [reassignTeacherId, setReassignTeacherId] = useState("");
   const [isSubmittingReassign, setIsSubmittingReassign] = useState(false);
+
+  // Helper to upload files to Cloudflare R2
+  const uploadFileToR2 = async (file: File): Promise<AttachmentItem> => {
+    const isImg = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+    const { uploadUrl, finalUrl } = (await fetchApi(
+      `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "application/octet-stream")}`
+    )) as { uploadUrl: string; finalUrl: string };
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`Failed to upload ${file.name}`);
+    }
+
+    return {
+      url: finalUrl,
+      name: file.name,
+      type: isImg ? "image" : isPdf ? "pdf" : "file",
+      size: file.size,
+    };
+  };
+
+  // Upload handler for reply composer (Teacher, Student, Admin)
+  const handleReplyFileUpload = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingReplyFile(true);
+    try {
+      const list = Array.from(files);
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        setReplyUploadStatus(`Uploading ${file.name} (${i + 1}/${list.length})...`);
+        const item = await uploadFileToR2(file);
+        setReplyAttachments((prev) => [...prev, item]);
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to upload file");
+    } finally {
+      setIsUploadingReplyFile(false);
+      setReplyUploadStatus("");
+      if (replyFileInputRef.current) {
+        replyFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  // Upload handler for Ask Doubt modal (Student)
+  const handleModalFileUpload = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingModalFiles(true);
+    setModalError(null);
+    try {
+      const list = Array.from(files);
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        setModalUploadStatus(`Uploading ${file.name} (${i + 1}/${list.length})...`);
+        const item = await uploadFileToR2(file);
+        setNewAttachments((prev) => [...prev, item]);
+      }
+    } catch (err: any) {
+      setModalError(err.message || "Failed to upload file");
+    } finally {
+      setIsUploadingModalFiles(false);
+      setModalUploadStatus("");
+      if (modalFileInputRef.current) {
+        modalFileInputRef.current.value = "";
+      }
+    }
+  };
 
   // Fetch full details of active thread
   const loadActiveThread = async (id: string, silent = false) => {
@@ -248,20 +528,23 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
     }
   };
 
-  // Send message reply
+  // Send message reply (Student, Teacher, Admin)
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedId || !replyText.trim() || isSendingReply) return;
+    if (!selectedId || (!replyText.trim() && replyAttachments.length === 0) || isSendingReply || isUploadingReplyFile) return;
 
     setIsSendingReply(true);
     try {
+      const text = replyText.trim() || (replyAttachments.length > 0 ? "Shared attachment(s)" : "");
+      const attachmentUrls = replyAttachments.map((a) => a.url);
+
       const newMsg = await fetchApi<DoubtMessageItem>(`/doubts/${selectedId}/messages`, {
         method: "POST",
         body: JSON.stringify({
-          content: replyText.trim(),
-          message: replyText.trim(),
+          content: text,
+          message: text,
           attachments: replyAttachments,
-          attachmentUrls: replyAttachments,
+          attachmentUrls: attachmentUrls,
         }),
       });
 
@@ -302,6 +585,8 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
 
     setIsSubmittingNewDoubt(true);
     try {
+      const attachmentUrls = newAttachments.map((a) => a.url);
+
       const created = await fetchApi<DoubtItem>("/doubts", {
         method: "POST",
         body: JSON.stringify({
@@ -310,8 +595,8 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
           teacherId: newTeacherId,
           assignedTeacherId: newTeacherId,
           priority: newPriority,
-          attachments: newAttachmentUrls,
-          attachmentUrls: newAttachmentUrls,
+          attachments: newAttachments,
+          attachmentUrls: attachmentUrls,
         }),
       });
 
@@ -326,7 +611,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
       setNewDescription("");
       setNewTeacherId("");
       setNewPriority("MEDIUM");
-      setNewAttachmentUrls([]);
+      setNewAttachments([]);
       setNewModalAttachmentInput("");
     } catch (err: any) {
       setModalError(err.message || "Failed to submit doubt");
@@ -717,33 +1002,11 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                       </div>
 
                       {/* Attachments if any */}
-                      {(() => {
-                        const attachList = Array.isArray(activeDoubt.attachments) ? activeDoubt.attachments : Array.isArray(activeDoubt.attachmentUrls) ? activeDoubt.attachmentUrls : [];
-                        if (attachList.length === 0) return null;
-                        return (
-                          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
-                            <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 w-full">
-                              <Paperclip className="w-3 h-3" /> Attachments:
-                            </span>
-                            {attachList.map((item: any, i: number) => {
-                              const url = typeof item === "string" ? item : item.url || "";
-                              const name = typeof item === "string" ? `Attachment #${i + 1}` : item.filename || item.name || `Attachment #${i + 1}`;
-                              return (
-                                <a
-                                  key={i}
-                                  href={url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-50 hover:bg-slate-100 text-indigo-600 border border-slate-200 rounded-lg transition-colors truncate max-w-xs"
-                                >
-                                  <ExternalLink className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">{name}</span>
-                                </a>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
+                      <AttachmentGallery
+                        attachments={activeDoubt.attachments}
+                        attachmentUrls={activeDoubt.attachmentUrls}
+                        onPreviewImage={(item) => setPreviewImage(item)}
+                      />
                     </div>
 
                     {/* Timeline Separator */}
@@ -758,7 +1021,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                     {/* Replies Feed */}
                     {activeDoubt.messages && activeDoubt.messages.length > 0 ? (
                       activeDoubt.messages.map((msg) => {
-                        const isOwn = userId && msg.senderId === userId;
+                        const isOwn = Boolean(userId && msg.senderId === userId);
                         const isTeacherMsg = msg.senderRole === "TEACHER";
                         const isAdminMsg = ["ADMIN", "SUPER_ADMIN", "CENTRE_ADMIN"].includes(msg.senderRole);
 
@@ -806,32 +1069,12 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                               {msg.content || msg.message}
 
                               {/* Attachments inside message bubble */}
-                              {(() => {
-                                const attachList = Array.isArray(msg.attachments) ? msg.attachments : Array.isArray(msg.attachmentUrls) ? msg.attachmentUrls : [];
-                                if (attachList.length === 0) return null;
-                                return (
-                                  <div className="mt-2.5 pt-2 border-t border-black/10 flex flex-wrap gap-1.5">
-                                    {attachList.map((item: any, idx: number) => {
-                                      const url = typeof item === "string" ? item : item.url || "";
-                                      const name = typeof item === "string" ? `Attachment ${idx + 1}` : item.filename || item.name || `Attachment ${idx + 1}`;
-                                      return (
-                                        <a
-                                          key={idx}
-                                          href={url}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] underline ${
-                                            isOwn ? "text-indigo-100 hover:text-white" : "text-brand-blue"
-                                          }`}
-                                        >
-                                          <Paperclip className="w-3 h-3" />
-                                          {name}
-                                        </a>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              })()}
+                              <AttachmentGallery
+                                attachments={msg.attachments}
+                                attachmentUrls={msg.attachmentUrls}
+                                onPreviewImage={(item) => setPreviewImage(item)}
+                                isOwnMessage={isOwn}
+                              />
                             </div>
                           </div>
                         );
@@ -857,22 +1100,61 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                 onSubmit={handleSendMessage}
                 className="bg-white border-t border-slate-200 p-3 shrink-0"
               >
+                {/* Hidden File Input for Image/PDF Upload */}
+                <input
+                  ref={replyFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) handleReplyFileUpload(e.target.files);
+                  }}
+                />
+
+                {/* Upload Status Banner */}
+                {isUploadingReplyFile && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 mb-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-700 animate-pulse">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-indigo-600" />
+                    <span>{replyUploadStatus || "Uploading attachment to cloud storage..."}</span>
+                  </div>
+                )}
+
                 {/* Active attachments pills */}
                 {replyAttachments.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {replyAttachments.map((url, i) => (
+                    {replyAttachments.map((item, i) => (
                       <span
                         key={i}
-                        className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 text-xs rounded-md border border-slate-200"
+                        className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border shadow-2xs ${
+                          item.type === "pdf"
+                            ? "bg-red-50 text-red-800 border-red-200"
+                            : item.type === "image"
+                            ? "bg-indigo-50 text-indigo-800 border-indigo-200"
+                            : "bg-slate-100 text-slate-700 border-slate-200"
+                        }`}
                       >
-                        <Paperclip className="w-3 h-3 text-slate-400" />
-                        <span className="truncate max-w-[140px]">{url}</span>
+                        {item.type === "image" ? (
+                          <div className="w-4 h-4 rounded overflow-hidden shrink-0 border border-indigo-300 bg-white">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+                          </div>
+                        ) : item.type === "pdf" ? (
+                          <FileText className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                        ) : (
+                          <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        )}
+                        <span className="truncate max-w-[150px] font-medium">{item.name}</span>
+                        {item.size ? (
+                          <span className="text-[10px] opacity-60">({formatFileSize(item.size)})</span>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setReplyAttachments(replyAttachments.filter((_, idx) => idx !== i))}
-                          className="text-slate-400 hover:text-red-500"
+                          className="text-slate-400 hover:text-red-500 ml-0.5"
+                          title="Remove attachment"
                         >
-                          <X className="w-3 h-3" />
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       </span>
                     ))}
@@ -887,56 +1169,87 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                       onChange={(e) => setReplyText(e.target.value)}
                       placeholder={
                         isTeacher
-                          ? "Write an academic explanation, solution steps, or guidance..."
+                          ? "Write an academic explanation, solution steps, or upload handwritten solution/PDF..."
                           : isAdmin
                           ? "Intervene as Academic Supervisor (visible to student & teacher)..."
-                          : "Reply to your teacher or ask for clarification..."
+                          : "Reply to your teacher, ask clarification, or upload problem screenshots..."
                       }
                       className="w-full bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-hidden resize-none"
                     />
 
-                    {/* Attachment quick adder */}
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 mt-1">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          placeholder="Paste image/resource URL..."
-                          value={newAttachmentInput}
-                          onChange={(e) => setNewAttachmentInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && newAttachmentInput.trim()) {
-                              e.preventDefault();
-                              setReplyAttachments([...replyAttachments, newAttachmentInput.trim()]);
-                              setNewAttachmentInput("");
-                            }
-                          }}
-                          className="text-[11px] bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600 placeholder:text-slate-400 focus:outline-hidden w-48 sm:w-64"
-                        />
-                        {newAttachmentInput.trim() && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReplyAttachments([...replyAttachments, newAttachmentInput.trim()]);
-                              setNewAttachmentInput("");
+                    {/* Attachment toolbar (Upload Image/PDF + Quick URL adder) */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 mt-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Direct File Upload Button */}
+                        <button
+                          type="button"
+                          onClick={() => replyFileInputRef.current?.click()}
+                          disabled={isUploadingReplyFile}
+                          className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md transition-colors shadow-2xs hover:text-indigo-600 hover:border-indigo-200 disabled:opacity-50"
+                          title="Upload Image (PNG, JPG, WEBP) or PDF"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Upload Image / PDF</span>
+                        </button>
+
+                        {/* Optional Web Link Adder */}
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder="Or paste web link..."
+                            value={newAttachmentInput}
+                            onChange={(e) => setNewAttachmentInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && newAttachmentInput.trim()) {
+                                e.preventDefault();
+                                const url = newAttachmentInput.trim();
+                                setReplyAttachments([
+                                  ...replyAttachments,
+                                  {
+                                    url,
+                                    name: isImageUrl(url) ? "Image Link" : isPdfUrl(url) ? "PDF Document" : "Web Resource",
+                                    type: isImageUrl(url) ? "image" : isPdfUrl(url) ? "pdf" : "file",
+                                  },
+                                ]);
+                                setNewAttachmentInput("");
+                              }
                             }}
-                            className="text-[11px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium"
-                          >
-                            Add
-                          </button>
-                        )}
+                            className="text-[11px] bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600 placeholder:text-slate-400 focus:outline-hidden w-36 sm:w-48"
+                          />
+                          {newAttachmentInput.trim() && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = newAttachmentInput.trim();
+                                setReplyAttachments([
+                                  ...replyAttachments,
+                                  {
+                                    url,
+                                    name: isImageUrl(url) ? "Image Link" : isPdfUrl(url) ? "PDF Document" : "Web Resource",
+                                    type: isImageUrl(url) ? "image" : isPdfUrl(url) ? "pdf" : "file",
+                                  },
+                                ]);
+                                setNewAttachmentInput("");
+                              }}
+                              className="text-[11px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium"
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <span className="text-[10px] text-slate-400 hidden sm:inline">
-                        Press Enter to send (Shift+Enter for newline)
+                        Shift+Enter for newline
                       </span>
                     </div>
                   </div>
 
                   <button
                     type="submit"
-                    disabled={!replyText.trim() || isSendingReply}
-                    className="p-3 bg-brand-blue hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-colors disabled:opacity-40 disabled:hover:bg-brand-blue flex items-center justify-center"
-                    title="Send Reply"
+                    disabled={(!replyText.trim() && replyAttachments.length === 0) || isSendingReply || isUploadingReplyFile}
+                    className="p-3 bg-brand-blue hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-colors disabled:opacity-40 disabled:hover:bg-brand-blue flex items-center justify-center shrink-0"
+                    title="Send Message"
                   >
                     <Send className={`w-4 h-4 ${isSendingReply ? "animate-pulse" : ""}`} />
                   </button>
@@ -1078,52 +1391,136 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                 </div>
               </div>
 
-              {/* Attachments */}
+              {/* Attachments (Images & PDFs) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Attachments / Resource URLs (Optional)
+                  Attachments (Upload Problem Screenshots, Diagrams, or PDF Notes)
                 </label>
-                <div className="flex gap-2">
+
+                {/* Hidden File Input */}
+                <input
+                  ref={modalFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) handleModalFileUpload(e.target.files);
+                  }}
+                />
+
+                {/* Drag and Drop Zone */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragOverModal(true);
+                  }}
+                  onDragLeave={() => setIsDragOverModal(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragOverModal(false);
+                    if (e.dataTransfer.files) handleModalFileUpload(e.dataTransfer.files);
+                  }}
+                  onClick={() => modalFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
+                    isDragOverModal
+                      ? "border-brand-blue bg-indigo-50/80 scale-[1.01]"
+                      : "border-slate-300 hover:border-brand-blue bg-slate-50 hover:bg-indigo-50/40"
+                  }`}
+                >
+                  {isUploadingModalFiles ? (
+                    <div className="py-2 flex flex-col items-center gap-1.5 text-indigo-700">
+                      <Loader2 className="w-6 h-6 animate-spin text-brand-blue" />
+                      <span className="text-xs font-medium">
+                        {modalUploadStatus || "Uploading files to cloud storage..."}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="p-2 bg-indigo-100 text-brand-blue rounded-full mb-0.5">
+                        <UploadCloud className="w-5 h-5" />
+                      </div>
+                      <p className="text-xs font-semibold text-slate-800">
+                        Click or drag images & PDFs here
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        PNG, JPG, WEBP, or PDF files (assignment photos, exercise pages, formula sheets)
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Uploaded attachments preview list */}
+                {newAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2.5">
+                    {newAttachments.map((item, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs shadow-2xs ${
+                          item.type === "pdf"
+                            ? "bg-red-50 text-red-900 border-red-200"
+                            : item.type === "image"
+                            ? "bg-indigo-50 text-indigo-900 border-indigo-200"
+                            : "bg-slate-50 text-slate-800 border-slate-200"
+                        }`}
+                      >
+                        {item.type === "image" ? (
+                          <div className="w-5 h-5 rounded overflow-hidden shrink-0 border border-indigo-300 bg-white">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+                          </div>
+                        ) : item.type === "pdf" ? (
+                          <FileText className="w-4 h-4 text-red-500 shrink-0" />
+                        ) : (
+                          <Paperclip className="w-4 h-4 text-slate-400 shrink-0" />
+                        )}
+                        <span className="truncate max-w-[170px] font-medium">{item.name}</span>
+                        {item.size ? (
+                          <span className="text-[10px] opacity-60">({formatFileSize(item.size)})</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setNewAttachments(newAttachments.filter((_, idx) => idx !== i))}
+                          className="text-slate-400 hover:text-red-500 ml-1"
+                          title="Remove attachment"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Optional Web Link Input */}
+                <div className="flex gap-2 mt-2.5">
                   <input
                     type="text"
-                    placeholder="Paste image URL, drive link, or screenshot URL..."
+                    placeholder="Or paste external drive link / image URL..."
                     value={newModalAttachmentInput}
                     onChange={(e) => setNewModalAttachmentInput(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue"
+                    className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue"
                   />
                   <button
                     type="button"
                     onClick={() => {
                       if (newModalAttachmentInput.trim()) {
-                        setNewAttachmentUrls([...newAttachmentUrls, newModalAttachmentInput.trim()]);
+                        const url = newModalAttachmentInput.trim();
+                        setNewAttachments([
+                          ...newAttachments,
+                          {
+                            url,
+                            name: isImageUrl(url) ? "Image Link" : isPdfUrl(url) ? "PDF Document" : "Web Resource",
+                            type: isImageUrl(url) ? "image" : isPdfUrl(url) ? "pdf" : "file",
+                          },
+                        ]);
                         setNewModalAttachmentInput("");
                       }
                     }}
-                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-lg"
+                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-lg transition-colors"
                   >
-                    Add
+                    Add Link
                   </button>
                 </div>
-                {newAttachmentUrls.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {newAttachmentUrls.map((url, i) => (
-                      <span
-                        key={i}
-                        className="flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs rounded border border-indigo-200"
-                      >
-                        <Paperclip className="w-3 h-3" />
-                        <span className="truncate max-w-[200px]">{url}</span>
-                        <button
-                          type="button"
-                          onClick={() => setNewAttachmentUrls(newAttachmentUrls.filter((_, idx) => idx !== i))}
-                          className="hover:text-red-500"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {/* Form Buttons */}
@@ -1210,6 +1607,64 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, init
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Image Lightbox Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Lightbox Header */}
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800 text-white text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <ImageIcon className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="font-semibold truncate max-w-md">{previewImage.title}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewImage.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Full Size</span>
+                </a>
+                <a
+                  href={previewImage.url}
+                  download={previewImage.title}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors"
+                  title="Download Image"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                  title="Close Preview"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Lightbox Image Stage */}
+            <div className="p-3 sm:p-6 flex items-center justify-center bg-slate-950/60 overflow-auto max-h-[80vh]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewImage.url}
+                alt={previewImage.title}
+                className="max-h-[75vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
+              />
+            </div>
           </div>
         </div>
       )}

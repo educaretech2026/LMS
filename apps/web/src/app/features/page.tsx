@@ -36,6 +36,8 @@ import {
   Code2,
   Menu,
   X,
+  MessagesSquare,
+  FileCheck,
 } from "lucide-react";
 
 // ── Particle Canvas ────────────────────────────────────────────────
@@ -293,17 +295,19 @@ function StaggerCard({ children, delay = 0 }: { children: React.ReactNode; delay
 
 // ── Module Data ────────────────────────────────────────────────────
 const modules = [
-  { icon: Brain, title: "Examination & Assessment Engine", description: "Full-featured MCQ examinations with custom positive/negative marking, image-enriched questions, timed attempts, real-time grading, and detailed scorecard analytics.", tags: ["MCQ Tests", "Auto Grading", "Live Timers", "Grade Analytics"], accentColor: "#7c3aed", glow: "rgba(124,58,237,0.3)" },
+  { icon: MessagesSquare, title: "Doubt Clearance & Academic Chat", description: "Direct 1-on-1 academic mentorship between students and verified faculty. Strict structural boundaries preventing student-to-student private chat, administrative oversight with supervisor badges, and rich image & PDF problem uploads.", tags: ["1-on-1 Mentorship", "Image & PDF Uploads", "Admin Supervision", "Faculty Reassignment"], accentColor: "#6366f1", glow: "rgba(99,102,241,0.3)" },
+  { icon: ClipboardList, title: "Hierarchical Assignment Engine", description: "Full e-Study hierarchy integration (Board › Standard › Batch › Subject › Chapter › Topic › Target Track). Digital student submissions, deadline enforcement, faculty scorecard grading with feedback, and embedded in-page video players.", tags: ["e-Study Hierarchy", "Submissions & Grading", "Embedded Video Player", "Live Setup Data"], accentColor: "#ec4899", glow: "rgba(236,72,153,0.3)" },
+  { icon: Bell, title: "In-App Notification Hub & Real-Time Sync", description: "Segmented real-time notification drawer with category streams (Doubts, Assignments, System Alerts), contextual icon badges, one-click mark read & dismiss actions, deep-linking directly to specific doubt threads, and 15s synchronization.", tags: ["Category Streams", "Deep-Linking", "15s Live Sync", "Action Controls"], accentColor: "#7c3aed", glow: "rgba(124,58,237,0.3)" },
+  { icon: Brain, title: "Examination & Assessment Engine", description: "Full-featured MCQ examinations with custom positive/negative marking, image-enriched questions, timed attempts, real-time grading, and detailed scorecard analytics.", tags: ["MCQ Tests", "Auto Grading", "Live Timers", "Grade Analytics"], accentColor: "#a855f7", glow: "rgba(168,85,247,0.3)" },
   { icon: Users, title: "User, Role & Identity Management", description: "Strict RBAC across Super Admin, Centre Admin, Teacher, and Student roles. JWT authentication with Redis-backed session enforcement and active session invalidation.", tags: ["RBAC", "JWT Auth", "Redis Sessions", "Multi-Role"], accentColor: "#0162b1", glow: "rgba(1,98,177,0.3)" },
   { icon: Building2, title: "Academic Hierarchy & Setup", description: "Complete multi-tier institutional configuration: Academic Years, Multi-Campus Centres, Boards, Classes, Batches, Subjects, Chapters, Topics, and Competitive Tracks.", tags: ["Multi-Campus", "Hierarchical", "Boards & Batches", "Track System"], accentColor: "#059669", glow: "rgba(5,150,105,0.3)" },
   { icon: BookOpen, title: "E-Study & Content Management", description: "Digital study material distribution mapped to chapters and topics, video lecture embedding with dedicated player, progress tracking, and topic-level quiz assessments.", tags: ["PDF Materials", "Video Lectures", "Progress Tracking", "Topic Quizzes"], accentColor: "#d97706", glow: "rgba(217,119,6,0.3)" },
   { icon: CalendarCheck, title: "Attendance Management", description: "Batch-wise daily attendance recording (Present, Absent, Late, Excused) for students and staff. Percentage reporting, historical logs, and at-risk student detection.", tags: ["Daily Records", "Staff Attendance", "At-Risk Alerts", "History Logs"], accentColor: "#0891b2", glow: "rgba(8,145,178,0.3)" },
   { icon: IndianRupee, title: "Fee & Financial Management", description: "Customizable fee structures, scholarship allocations, installment scheduling, payment collection recording, outstanding dues tracking, and automated receipt generation.", tags: ["Fee Engine", "Scholarships", "Installments", "Receipt Gen"], accentColor: "#16a34a", glow: "rgba(22,163,74,0.3)" },
-  { icon: ClipboardList, title: "Dynamic Form Builder & Admissions", description: "No-code drag-and-drop form builder, public form sharing URLs, lead tracking, counselor assignment, follow-up management, and seamless enrollment conversion pipeline.", tags: ["Form Builder", "CRM", "Lead Tracking", "Admissions"], accentColor: "#dc2626", glow: "rgba(220,38,38,0.3)" },
-  { icon: Bell, title: "Communications & Notifications", description: "Real-time in-app notification drawer, campus-wide notice board with scheduling, and bulk SMS gateway with parent alert logs and reusable message templates.", tags: ["Real-Time Alerts", "Notice Board", "Bulk SMS", "SMS Templates"], accentColor: "#7c3aed", glow: "rgba(124,58,237,0.3)" },
-  { icon: Video, title: "Live Classes & Virtual Classroom", description: "WebRTC/LiveKit-powered live class scheduling per batch and subject, real-time video, audio, screen sharing, and automated room access token issuance.", tags: ["LiveKit", "WebRTC", "Screen Share", "Batch Scheduling"], accentColor: "#0162b1", glow: "rgba(1,98,177,0.3)" },
+  { icon: FileCheck, title: "Dynamic Form Builder & Admissions", description: "No-code drag-and-drop form builder, public form sharing URLs, lead tracking, counselor assignment, follow-up management, and seamless enrollment conversion pipeline.", tags: ["Form Builder", "CRM", "Lead Tracking", "Admissions"], accentColor: "#dc2626", glow: "rgba(220,38,38,0.3)" },
+  { icon: Video, title: "Live Classes & Virtual Classroom", description: "WebRTC/LiveKit-powered live class scheduling per batch and subject, real-time video, audio, screen sharing, and automated room access token issuance.", tags: ["LiveKit", "WebRTC", "Screen Share", "Batch Scheduling"], accentColor: "#0284c7", glow: "rgba(2,132,199,0.3)" },
   { icon: Award, title: "Certificates & Achievement Records", description: "Templated certificate generation for course completions and student milestones, with digital ID card generation and QR code verification for every student.", tags: ["Cert Generator", "Digital ID Card", "QR Codes", "Achievement"], accentColor: "#f59e0b", glow: "rgba(245,158,11,0.3)" },
-  { icon: BarChart3, title: "Reports & Analytics Dashboard", description: "Executive analytics dashboard with financial ledgers, academic hierarchy exam reports, attendance registers, CRM pipeline funnels, and student performance dossiers.", tags: ["KPI Dashboard", "Finance Analytics", "Hierarchy Reports", "CSV Export"], accentColor: "#0891b2", glow: "rgba(8,145,178,0.3)" },
+  { icon: BarChart3, title: "Reports & Analytics Dashboard", description: "Executive analytics dashboard with financial ledgers, academic hierarchy exam reports, attendance registers, CRM pipeline funnels, and student performance dossiers.", tags: ["KPI Dashboard", "Finance Analytics", "Hierarchy Reports", "CSV Export"], accentColor: "#0d9488", glow: "rgba(13,148,136,0.3)" },
   { icon: FileText, title: "Support Help Desk", description: "Internal ticketing system for students, teachers, and administrators. Track, assign, and resolve support queries with full audit trails.", tags: ["Ticketing", "Internal Support", "Audit Trail", "Assignment"], accentColor: "#64748b", glow: "rgba(100,116,139,0.3)" },
 ];
 
@@ -312,12 +316,12 @@ const techStack = [
   { icon: Cpu, label: "NestJS", sub: "TypeScript + Guards", color: "#e0234e" },
   { icon: Database, label: "PostgreSQL", sub: "Prisma ORM", color: "#336791" },
   { icon: Zap, label: "Redis", sub: "Session & Cache", color: "#d82c20" },
-  { icon: Cloud, label: "S3 Storage", sub: "MinIO / AWS S3", color: "#ff9900" },
+  { icon: Cloud, label: "Cloudflare R2", sub: "Presigned Storage", color: "#f38020" },
   { icon: Lock, label: "JWT + RBAC", sub: "Strict Auth Guards", color: "#34d399" },
 ];
 
 const stats = [
-  { value: 11, suffix: "+", label: "Core Modules", icon: Layers, color: "#60a5fa" },
+  { value: 14, suffix: "+", label: "Core Modules", icon: Layers, color: "#60a5fa" },
   { value: 4, suffix: "", label: "Role Levels", icon: Shield, color: "#a78bfa" },
   { value: 7, suffix: "", label: "Hierarchy Tiers", icon: Building2, color: "#34d399" },
   { value: 99, suffix: "%", label: "Uptime SLA", icon: Rocket, color: "#fb923c" },
