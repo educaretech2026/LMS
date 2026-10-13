@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
+import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { fetchApi } from "@/lib/api";
 import {
   MessagesSquare,
@@ -94,11 +95,13 @@ interface DoubtItem {
 interface DoubtsClientProps {
   initialDoubts: DoubtItem[];
   initialTeachers: TeacherOption[];
+  initialRole?: string | null;
 }
 
-export function DoubtsClient({ initialDoubts, initialTeachers }: DoubtsClientProps) {
-  const { role, userId } = useAuth();
-  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, "_") : "";
+export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: DoubtsClientProps) {
+  const { role: authRole, userId } = useAuth();
+  const effectiveRole = initialRole || authRole;
+  const normalizedRole = effectiveRole ? effectiveRole.toUpperCase().replace(/\s+/g, "_") : "";
   const isStudent = normalizedRole === "STUDENT" || normalizedRole === "PUBLIC_LEARNER";
   const isTeacher = normalizedRole === "TEACHER";
   const isAdmin = ["SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN"].includes(normalizedRole);
@@ -393,9 +396,10 @@ export function DoubtsClient({ initialDoubts, initialTeachers }: DoubtsClientPro
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4.5rem)] bg-slate-50 text-slate-800">
-      {/* Top Header Banner */}
-      <header className="bg-white border-b border-slate-200 px-4 py-3 shrink-0 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+    <DashboardLayout title="Doubt Clearance" role={effectiveRole || undefined}>
+      <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800">
+        {/* Top Header Banner */}
+        <header className="bg-white border-b border-slate-200 px-4 py-3 shrink-0 flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-blue to-indigo-600 flex items-center justify-center text-white shadow-sm shadow-indigo-200">
             <MessagesSquare className="w-5 h-5" />
@@ -1168,5 +1172,6 @@ export function DoubtsClient({ initialDoubts, initialTeachers }: DoubtsClientPro
         </div>
       )}
     </div>
+    </DashboardLayout>
   );
 }
