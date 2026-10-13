@@ -107,8 +107,12 @@ A comprehensive overview of all features, modules, sub-systems, and technical in
 ---
 
 ## 9. 🔔 Communications & Notifications (`/notices`, `/sms`)
-* **In-App Notification Centre**:
-  * Real-time notification drawer with unread counts and read-state synchronization.
+* **In-App Notification Centre & Communication Hub**:
+  * Real-time notification drawer with category tabs (`All`, `Unread`, `Doubts & Chat`, `Assignments`, `System Alerts`).
+  * Context-aware iconography and badges (`MessagesSquare` for Academic Q&A, `ClipboardList` for Assignments, `Award` for published grades, `Shield` for supervisor interventions, `AlertTriangle` for deadlines).
+  * Quick management actions: inline single-item mark as read, hover dismissal/delete, bulk "Mark all read", and "Clear read".
+  * Deep-linking: Direct navigation with automatic thread selection for doubts (`/doubts?id=...`) and instant page routing.
+  * Fast polling synchronization (15-second intervals + immediate re-fetch on window focus).
 * **Notice Board & Announcements (`/notices`)**:
   * Campus-wide and batch-specific announcements with automated scheduling.
 * **SMS Gateway Integration (`/sms`)**:

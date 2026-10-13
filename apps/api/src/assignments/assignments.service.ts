@@ -177,7 +177,7 @@ export class AssignmentsService {
               userId: enr.studentProfile.userId,
               title: 'New Assignment',
               message: `A new assignment "${data.title}" was posted in your batch.`,
-              type: 'INFO',
+              type: 'ASSIGNMENT',
               link: `/assignments`,
             });
           }
@@ -311,7 +311,7 @@ export class AssignmentsService {
             userId: assignment.uploaderId,
             title: isLate ? 'Late Assignment Submitted' : 'Assignment Submitted',
             message: `${profile.user.firstName} submitted "${assignment.title}"${isLate ? ' (Late)' : ''}.`,
-            type: isLate ? 'WARNING' : 'SUCCESS',
+            type: isLate ? 'WARNING' : 'SUBMISSION',
             link: `/assignments`,
           });
         }
@@ -346,7 +346,7 @@ export class AssignmentsService {
             userId: submission.student.userId,
             title: 'Assignment Graded',
             message: `Your assignment "${submission.assignment?.title}" has been graded: ${data.grade} marks.`,
-            type: 'SUCCESS',
+            type: 'GRADE',
             link: `/assignments`,
           });
         }

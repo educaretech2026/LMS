@@ -110,9 +110,10 @@ interface DoubtsClientProps {
   initialDoubts: DoubtItem[];
   initialTeachers: TeacherOption[];
   initialRole?: string | null;
+  initialSelectedId?: string;
 }
 
-export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: DoubtsClientProps) {
+export function DoubtsClient({ initialDoubts, initialTeachers, initialRole, initialSelectedId }: DoubtsClientProps) {
   const { role: authRole, userId } = useAuth();
   const effectiveRole = initialRole || authRole;
   const normalizedRole = effectiveRole ? effectiveRole.toUpperCase().replace(/\s+/g, "_") : "";
@@ -123,7 +124,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
   const [doubts, setDoubts] = useState<DoubtItem[]>(initialDoubts);
   const [teachers, setTeachers] = useState<TeacherOption[]>(initialTeachers);
   const [selectedId, setSelectedId] = useState<string | null>(
-    initialDoubts.length > 0 ? initialDoubts[0].id : null
+    initialSelectedId || (initialDoubts.length > 0 ? initialDoubts[0].id : null)
   );
   const [activeDoubt, setActiveDoubt] = useState<DoubtItem | null>(null);
   const [isLoadingActive, setIsLoadingActive] = useState<boolean>(false);
@@ -135,7 +136,7 @@ export function DoubtsClient({ initialDoubts, initialTeachers, initialRole }: Do
   const [priorityFilter, setPriorityFilter] = useState<string>("ALL");
 
   // Mobile navigation
-  const [showMobileChat, setShowMobileChat] = useState<boolean>(false);
+  const [showMobileChat, setShowMobileChat] = useState<boolean>(Boolean(initialSelectedId));
 
   // Reply state
   const [replyText, setReplyText] = useState("");

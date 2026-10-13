@@ -4,7 +4,12 @@ import { DoubtsClient } from "./doubts-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function DoubtsPage() {
+export default async function DoubtsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ id?: string }>;
+}) {
+  const resolvedParams = await searchParams;
   const [initialDoubts, initialTeachers, user] = await Promise.all([
     fetchApiServer<any[]>("/doubts").catch(() => []),
     fetchApiServer<any[]>("/doubts/teachers/available").catch(() => []),
@@ -16,6 +21,7 @@ export default async function DoubtsPage() {
       initialDoubts={initialDoubts || []}
       initialTeachers={initialTeachers || []}
       initialRole={user?.role}
+      initialSelectedId={resolvedParams?.id}
     />
   );
 }

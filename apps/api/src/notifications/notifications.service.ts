@@ -44,4 +44,22 @@ export class NotificationsService {
       this.logger.error(`Failed to send notification to user ${data.userId}`, error);
     }
   }
+
+  async deleteNotification(id: string, userId: string): Promise<any> {
+    return this.prisma.notification.deleteMany({
+      where: { id, userId },
+    });
+  }
+
+  async clearReadNotifications(userId: string): Promise<any> {
+    return this.prisma.notification.deleteMany({
+      where: { userId, isRead: true },
+    });
+  }
+
+  async clearAllNotifications(userId: string): Promise<any> {
+    return this.prisma.notification.deleteMany({
+      where: { userId },
+    });
+  }
 }

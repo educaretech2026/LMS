@@ -216,7 +216,7 @@ export class DoubtsService {
         userId: targetTeacherId,
         title: 'New Student Doubt',
         message: `${studentName} asked: "${dto.title}"`,
-        type: 'INFO',
+        type: 'DOUBT',
         link: `/doubts?id=${doubt.id}`,
       }).catch(err => this.logger.warn('Failed to notify teacher', err));
 
@@ -311,7 +311,7 @@ export class DoubtsService {
           userId: doubt.studentId,
           title: 'Teacher Replied to Your Doubt',
           message: `${senderName}: "${messageContent.slice(0, 80)}"`,
-          type: 'INFO',
+          type: 'DOUBT',
           link: `/doubts?id=${doubt.id}`,
         }).catch(err => this.logger.warn('Failed to notify student', err));
       } else if (senderRole === 'STUDENT') {
@@ -319,7 +319,7 @@ export class DoubtsService {
           userId: doubt.teacherId,
           title: 'Student Follow-up on Doubt',
           message: `${senderName}: "${messageContent.slice(0, 80)}"`,
-          type: 'INFO',
+          type: 'DOUBT',
           link: `/doubts?id=${doubt.id}`,
         }).catch(err => this.logger.warn('Failed to notify teacher', err));
       } else if (senderRole === 'ADMIN') {
@@ -328,7 +328,7 @@ export class DoubtsService {
           userId: doubt.studentId,
           title: 'Academic Supervisor Message',
           message: `Supervisor: "${messageContent.slice(0, 80)}"`,
-          type: 'INFO',
+          type: 'SUPERVISOR',
           link: `/doubts?id=${doubt.id}`,
         }).catch(err => this.logger.warn('Failed to notify student', err));
       }
@@ -428,7 +428,7 @@ export class DoubtsService {
         userId: newTeacherId,
         title: 'Doubt Reassigned to You',
         message: `Academic Supervisor reassigned doubt "${doubt.title}" to you.`,
-        type: 'INFO',
+        type: 'DOUBT',
         link: `/doubts?id=${doubt.id}`,
       }).catch(err => this.logger.warn('Failed to notify new teacher', err));
 
