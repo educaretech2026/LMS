@@ -1,10 +1,12 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { LayoutDashboard, CalendarCheck, ClipboardList, MessagesSquare, Menu } from 'lucide-react-native';
 import { Colors } from '../../lib/theme';
 import { Platform } from 'react-native';
 
 export default function TeacherTabsLayout() {
+  const router = useRouter();
+
   return (
     <Tabs
       screenOptions={{
@@ -58,11 +60,12 @@ export default function TeacherTabsLayout() {
           title: 'More',
           tabBarIcon: ({ color, size }) => <Menu size={size} color={color} />,
         }}
-        listeners={({ navigation }) => ({
-          tabPress: () => {
-            navigation.navigate('more', { screen: 'index' });
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            router.navigate('/(teacher)/more');
           },
-        })}
+        }}
       />
     </Tabs>
   );

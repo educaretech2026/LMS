@@ -1,10 +1,12 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Home, FileText, ClipboardList, MessagesSquare, User } from 'lucide-react-native';
 import { Colors } from '../../lib/theme';
 import { Platform } from 'react-native';
 
 export default function StudentTabsLayout() {
+  const router = useRouter();
+
   return (
     <Tabs
       screenOptions={{
@@ -58,11 +60,12 @@ export default function StudentTabsLayout() {
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}
-        listeners={({ navigation }) => ({
-          tabPress: () => {
-            navigation.navigate('profile', { screen: 'index' });
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            router.navigate('/(student)/profile');
           },
-        })}
+        }}
       />
     </Tabs>
   );
