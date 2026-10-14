@@ -35,10 +35,12 @@ import {
   Check,
 } from 'lucide-react-native';
 import { useAuth } from '../../hooks/useAuth';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -116,7 +118,13 @@ export default function LoginScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: Math.max(insets.top + 36, Platform.OS === 'ios' ? 96 : 56),
+              paddingBottom: Math.max(insets.bottom + 24, 36),
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
@@ -627,7 +635,7 @@ const styles = StyleSheet.create({
   // Footer
   footer: {
     alignItems: 'center',
-    marginTop: 225,
+    marginTop: 24,
   },
   footerText: {
     fontSize: 10.5,
