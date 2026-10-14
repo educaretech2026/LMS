@@ -36,8 +36,10 @@ export default function TeacherDoubtsQueue() {
     try {
       const data = await fetchApi<any[]>('/doubts');
       setDoubts(data || []);
-    } catch (e) {
-      console.error('Failed to load doubts queue', e);
+    } catch (e: any) {
+      if (e?.status !== 401) {
+        console.warn('Failed to load doubts queue', e?.message || e);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

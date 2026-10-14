@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Storage } from '../lib/storage';
-import { fetchApi } from '../lib/api';
+import { fetchApi, registerUnauthorizedHandler } from '../lib/api';
 
 export interface UserProfile {
   id: string;
@@ -44,6 +44,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // When API returns 401 Unauthorized, automatically sync AuthProvider state
+    registerUnauthorizedHandler(() => {
+      setToken(null);
+      setUser(null);
+    });
+
+    return () => {
+      registerUnauthorizedHandler(null);
+    };
+  }, []);
+
+  useEffect(() => {
     async function loadStoredAuth() {
       try {
         const storedToken = await Storage.getToken();
@@ -53,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(storedUser);
         }
       } catch (err) {
-        console.error('Failed to load initial auth state', err);
+        console.warn('Failed to load initial auth state', err);
       } finally {
         setIsLoading(false);
       }

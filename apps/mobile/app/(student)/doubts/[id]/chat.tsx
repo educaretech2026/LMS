@@ -20,6 +20,7 @@ import { Send, CheckCircle2, Shield, Image as ImageIcon } from 'lucide-react-nat
 
 export default function DoubtChatScreen() {
   const { id } = useLocalSearchParams();
+  const doubtId = Array.isArray(id) ? id[0] : id;
   const { user } = useAuth();
   const router = useRouter();
 
@@ -28,38 +29,65 @@ export default function DoubtChatScreen() {
   const [inputContent, setInputContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
+  const isMountedRef = useRef(true);
 
   const loadThread = async () => {
+    if (!doubtId || doubtId === 'undefined') return;
     try {
-      const data = await fetchApi<any>(`/doubts/${id}`);
-      setDoubt(data);
-      setMessages(data.messages || []);
-    } catch (e) {
-      console.error('Failed to load doubt thread', e);
+      const data = await fetchApi<any>(`/doubts/${doubtId}`);
+      if (isMountedRef.current) {
+        setDoubt(data);
+        setMessages(data.messages || []);
+        setError(null);
+      }
+    } catch (e: any) {
+      if (e?.status === 401) {
+        // Auth expired; navigation guard handles redirection
+        return;
+      }
+      console.warn('Failed to load doubt thread:', e?.message || e);
+      if (isMountedRef.current) {
+        setError(e?.message || 'Failed to load doubt thread');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
+    if (!doubtId || doubtId === 'undefined') {
+      setLoading(false);
+      return;
+    }
+
     loadThread();
 
     // Fast polling every 5 seconds for new faculty responses
-    const interval = setInterval(loadThread, 5000);
-    return () => clearInterval(interval);
-  }, [id]);
+    const interval = setInterval(() => {
+      loadThread();
+    }, 5000);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [doubtId]);
 
   const handleSendMessage = async () => {
-    if (!inputContent.trim() || sending) return;
+    if (!inputContent.trim() || sending || !doubtId) return;
 
     const optimisticText = inputContent.trim();
     setInputContent('');
     setSending(true);
 
     try {
-      await fetchApi(`/doubts/${id}/messages`, {
+      await fetchApi(`/doubts/${doubtId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
           content: optimisticText,
@@ -76,6 +104,7 @@ export default function DoubtChatScreen() {
   };
 
   const handleResolveDoubt = async () => {
+    if (!doubtId) return;
     Alert.alert(
       'Resolve Doubt',
       'Are you satisfied with the faculty explanation? This will mark the question as resolved.',
@@ -86,7 +115,7 @@ export default function DoubtChatScreen() {
           style: 'default',
           onPress: async () => {
             try {
-              await fetchApi(`/doubts/${id}/status`, {
+              await fetchApi(`/doubts/${doubtId}/status`, {
                 method: 'PATCH',
                 body: JSON.stringify({ status: 'RESOLVED' }),
               });
@@ -104,6 +133,30 @@ export default function DoubtChatScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.brand.blue} />
+      </View>
+    );
+  }
+
+  if (error && !doubt) {
+    return (
+      <View style={styles.errorStateContainer}>
+        <Text style={styles.errorStateTitle}>Unable to Load Doubt</Text>
+        <Text style={styles.errorStateSubtitle}>{error}</Text>
+        <View style={styles.errorBtnRow}>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              setError(null);
+              loadThread();
+            }}
+          >
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.goBackBtn} onPress={() => router.back()}>
+            <Text style={styles.goBackBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -404,5 +457,52 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.muted,
     fontWeight: '600',
+  },
+  errorStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: Colors.surface.background,
+  },
+  errorStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 8,
+  },
+  errorStateSubtitle: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  retryBtn: {
+    backgroundColor: Colors.brand.blue,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  goBackBtn: {
+    backgroundColor: Colors.surface.card,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  goBackBtnText: {
+    color: Colors.text.primary,
+    fontWeight: '600',
+    fontSize: 13,
   },
 });

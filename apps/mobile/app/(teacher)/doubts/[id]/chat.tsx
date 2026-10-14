@@ -33,6 +33,7 @@ import {
 
 export default function TeacherDoubtChatScreen() {
   const { id } = useLocalSearchParams();
+  const doubtId = Array.isArray(id) ? id[0] : id;
   const { user } = useAuth();
   const router = useRouter();
 
@@ -53,24 +54,45 @@ export default function TeacherDoubtChatScreen() {
   const [reassigning, setReassigning] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
+  const isMountedRef = useRef(true);
 
   const loadThread = async () => {
+    if (!doubtId || doubtId === 'undefined') return;
     try {
-      const data = await fetchApi<any>(`/doubts/${id}`);
-      setDoubt(data);
-      setMessages(data.messages || []);
-    } catch (e) {
-      console.error('Failed to load doubt thread', e);
+      const data = await fetchApi<any>(`/doubts/${doubtId}`);
+      if (isMountedRef.current) {
+        setDoubt(data);
+        setMessages(data.messages || []);
+      }
+    } catch (e: any) {
+      if (e?.status === 401) {
+        return;
+      }
+      console.warn('Failed to load doubt thread:', e?.message || e);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
+    if (!doubtId || doubtId === 'undefined') {
+      setLoading(false);
+      return;
+    }
+
     loadThread();
-    const interval = setInterval(loadThread, 5000);
-    return () => clearInterval(interval);
-  }, [id]);
+    const interval = setInterval(() => {
+      loadThread();
+    }, 5000);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [doubtId]);
 
   const handlePickAttachment = async () => {
     try {
@@ -97,7 +119,7 @@ export default function TeacherDoubtChatScreen() {
     setSending(true);
 
     try {
-      await fetchApi(`/doubts/${id}/messages`, {
+      await fetchApi(`/doubts/${doubtId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
           content: messageText,
@@ -110,7 +132,7 @@ export default function TeacherDoubtChatScreen() {
       // Automatically flip doubt status to ANSWERED if it was OPEN
       if (doubt?.status === 'OPEN') {
         try {
-          await fetchApi(`/doubts/${id}/status`, {
+          await fetchApi(`/doubts/${doubtId}/status`, {
             method: 'PATCH',
             body: JSON.stringify({ status: 'ANSWERED' }),
           });
@@ -131,8 +153,9 @@ export default function TeacherDoubtChatScreen() {
   };
 
   const handleUpdateStatus = async (newStatus: 'ANSWERED' | 'RESOLVED' | 'OPEN') => {
+    if (!doubtId) return;
     try {
-      await fetchApi(`/doubts/${id}/status`, {
+      await fetchApi(`/doubts/${doubtId}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: newStatus }),
       });
@@ -172,7 +195,7 @@ export default function TeacherDoubtChatScreen() {
 
     setReassigning(true);
     try {
-      await fetchApi(`/doubts/${id}/reassign`, {
+      await fetchApi(`/doubts/${doubtId}/reassign`, {
         method: 'PATCH',
         body: JSON.stringify({ teacherId: selectedTeacherId }),
       });

@@ -16,6 +16,13 @@ export class ApiError extends Error {
   }
 }
 
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function registerUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler;
+}
+
 export async function fetchApi<T = any>(
   endpoint: string,
   options: RequestInit = {}
@@ -38,6 +45,13 @@ export async function fetchApi<T = any>(
   if (response.status === 401) {
     // If unauthorized, clear auth so navigation guard can prompt login
     await Storage.clearAuth();
+    if (unauthorizedHandler) {
+      try {
+        unauthorizedHandler();
+      } catch {
+        // Ignore callback error
+      }
+    }
   }
 
   if (!response.ok) {

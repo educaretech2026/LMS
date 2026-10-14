@@ -27,8 +27,10 @@ export default function StudentDoubtsList() {
     try {
       const data = await fetchApi<any[]>('/doubts');
       setDoubts(data || []);
-    } catch (e) {
-      console.error('Failed to load doubts', e);
+    } catch (e: any) {
+      if (e?.status !== 401) {
+        console.warn('Failed to load doubts', e?.message || e);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
