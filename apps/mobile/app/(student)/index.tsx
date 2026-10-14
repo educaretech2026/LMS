@@ -85,6 +85,14 @@ export default function StudentHomeScreen() {
             </View>
           </View>
           <View style={styles.bannerRight}>
+            <TouchableOpacity
+              style={styles.idCardBannerBtn}
+              onPress={() => router.push('/(student)/profile/id-card' as any)}
+              activeOpacity={0.8}
+            >
+              <CreditCard size={11} color="#FFFFFF" />
+              <Text style={styles.idCardBannerBtnText}>ID CARD</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.bellButton} onPress={() => router.push('/notifications' as any)}>
               <Bell size={18} color="#FFFFFF" />
               {unreadCount > 0 && (
@@ -290,6 +298,23 @@ const styles = StyleSheet.create({
   },
   rolePill: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
   rolePillText: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.2 },
+  idCardBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 100,
+  },
+  idCardBannerBtnText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+  },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 32 },
   // Live banner

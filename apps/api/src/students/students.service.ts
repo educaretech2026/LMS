@@ -133,7 +133,7 @@ export class StudentsService {
   }
 
   async getStudentById(id: string) {
-    const student = await this.prisma.studentProfile.findUnique({
+    let student = await this.prisma.studentProfile.findUnique({
       where: { id },
       include: {
         user: true,
@@ -153,8 +153,36 @@ export class StudentsService {
         }
       }
     });
+
+    if (!student) {
+      student = await this.prisma.studentProfile.findUnique({
+        where: { userId: id },
+        include: {
+          user: true,
+          enrollments: {
+            include: {
+              batch: {
+                include: {
+                  academicYear: true,
+                  board: true,
+                  standard: true,
+                  centre: true,
+                }
+              },
+              subjects: true,
+              track: true
+            }
+          }
+        }
+      });
+    }
+
     if (!student) throw new NotFoundException('Student not found');
     return student;
+  }
+
+  async getStudentByUserId(userId: string) {
+    return this.getStudentById(userId);
   }
 
   async getStudents() {

@@ -22,3 +22,23 @@ export class UsersController {
     return this.usersService.updateProfile(req.user.id, data);
   }
 }
+
+@ApiTags('profile')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('profile')
+export class ProfileController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Get current user profile' })
+  getProfile(@Req() req: any) {
+    return this.usersService.getProfile(req.user.id);
+  }
+
+  @Put()
+  @ApiOperation({ summary: 'Update current user profile' })
+  updateProfile(@Req() req: any, @Body() data: any) {
+    return this.usersService.updateProfile(req.user.id, data);
+  }
+}

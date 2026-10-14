@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { StudentsService } from './students.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('students')
 export class StudentsController {
@@ -15,6 +16,23 @@ export class StudentsController {
     return this.studentsService.getTodayBirthdays();
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  getMyStudentProfile(@Req() req: any) {
+    return this.studentsService.getStudentByUserId(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('my-id-card')
+  getMyIdCard(@Req() req: any) {
+    return this.studentsService.getStudentByUserId(req.user.id);
+  }
+
+  @Get('search')
+  searchStudents(@Query('q') query: string) {
+    return this.studentsService.searchStudents(query);
+  }
+
   @Get()
   getStudents() {
     return this.studentsService.getStudents();
@@ -23,11 +41,6 @@ export class StudentsController {
   @Get(':id')
   getStudent(@Param('id') id: string) {
     return this.studentsService.getStudentById(id);
-  }
-
-  @Get('search')
-  searchStudents(@Query('q') query: string) {
-    return this.studentsService.searchStudents(query);
   }
 
   @Put(':id')
