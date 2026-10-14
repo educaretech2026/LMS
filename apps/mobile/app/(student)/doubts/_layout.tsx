@@ -13,6 +13,7 @@ export default function DoubtsLayout() {
     >
       <Stack.Screen name="index" options={{ title: 'Doubt Clearance', headerShown: false }} />
       <Stack.Screen name="ask" options={{ title: 'Ask a Doubt', presentation: 'modal' }} />
+      <Stack.Screen name="[id]/index" options={{ title: 'Academic Discussion' }} />
       <Stack.Screen name="[id]/chat" options={{ title: 'Academic Discussion' }} />
     </Stack>
   );

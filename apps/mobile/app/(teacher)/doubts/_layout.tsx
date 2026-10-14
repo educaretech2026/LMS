@@ -12,6 +12,16 @@ export default function TeacherDoubtsLayout() {
     >
       <Stack.Screen name="index" />
       <Stack.Screen
+        name="[id]/index"
+        options={{
+          headerShown: true,
+          title: 'Resolve Doubt',
+          headerTintColor: Colors.brand.blue,
+          headerStyle: { backgroundColor: Colors.surface.card },
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
         name="[id]/chat"
         options={{
           headerShown: true,

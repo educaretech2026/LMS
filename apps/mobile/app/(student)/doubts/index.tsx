@@ -152,7 +152,7 @@ export default function StudentDoubtsList() {
               <TouchableOpacity
                 key={doubt.id}
                 style={[styles.card, isUrgent && { borderColor: `${Colors.brand.red}40` }]}
-                onPress={() => router.push(`/(student)/doubts/${doubt.id}` as any)}
+                onPress={() => router.push(`/(student)/doubts/${doubt.id}/chat` as any)}
                 activeOpacity={0.85}
               >
                 <View
