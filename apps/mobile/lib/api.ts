@@ -1,7 +1,8 @@
 import { Storage } from './storage';
 
-export const API_BASE_URL =
+const RAW_API_URL =
   process.env.EXPO_PUBLIC_API_URL || 'https://api.educarelearning.in/api';
+export const API_BASE_URL = RAW_API_URL.replace(/\/+$/, '');
 
 export class ApiError extends Error {
   status: number;

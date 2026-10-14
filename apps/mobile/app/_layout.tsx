@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ActivityIndicator, View, StyleSheet, Text, Image } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { Colors } from '../lib/theme';
+import { SplashScreen } from '../components/SplashScreen';
 
 function NavigationGuard({ children }: { children: React.ReactNode }) {
   const { user, token, role, isLoading } = useAuth();
@@ -43,25 +44,19 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   }, [user, token, role, isLoading, segments]);
 
   if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <View style={styles.logoBadge}>
-          <Image source={require('../assets/logo.png')} style={styles.logoImage} resizeMode="contain" />
-        </View>
-        <Text style={styles.appName}>Educare LMS</Text>
-        <ActivityIndicator size="small" color={Colors.brand.blue} style={{ marginTop: 16 }} />
-      </View>
-    );
+    return <View style={styles.darkBackground} />;
   }
 
   return <>{children}</>;
 }
 
 export default function RootLayout() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar style="dark" />
+        <StatusBar style={showSplash ? 'light' : 'dark'} />
         <NavigationGuard>
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.surface.background } }}>
             <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -78,40 +73,15 @@ export default function RootLayout() {
             />
           </Stack>
         </NavigationGuard>
+        {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       </AuthProvider>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  darkBackground: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.surface.background,
-  },
-  logoBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  logoImage: {
-    width: 56,
-    height: 56,
-  },
-  appName: {
-    marginTop: 16,
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.text.primary,
+    backgroundColor: '#07122e',
   },
 });
