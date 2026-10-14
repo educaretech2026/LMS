@@ -9,6 +9,12 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
+  @Roles('STUDENT', 'SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Get('student')
+  getStudentAttendance(@Req() req: any) {
+    return this.attendanceService.getStudentAttendance(req.user.id);
+  }
+
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   @Get('students/filter')
   getStudentsByFilter(

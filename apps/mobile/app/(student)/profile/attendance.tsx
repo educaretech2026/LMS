@@ -19,9 +19,10 @@ export default function StudentAttendanceScreen() {
     async function load() {
       try {
         const data = await fetchApi<any[]>('/attendance/student');
-        setRecords(data || []);
-      } catch (e) {
-        console.error('Failed to load attendance', e);
+        setRecords(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        console.warn('Attendance unavailable:', e?.message || e);
+        setRecords([]);
       } finally {
         setLoading(false);
       }

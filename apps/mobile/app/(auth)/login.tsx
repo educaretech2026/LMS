@@ -15,11 +15,6 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { Colors, Shadows, Radii } from '../../lib/theme';
 
-const DEMO_ACCOUNTS = [
-  { label: 'Faculty', email: 'akshaid@educarelearning.in', password: 'password123' },
-  { label: 'Student', email: 'akshai@educarelearning.in', password: 'password123' },
-];
-
 export default function LoginScreen() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
@@ -123,27 +118,6 @@ export default function LoginScreen() {
               <Text style={styles.loginBtnText}>Sign In</Text>
             )}
           </TouchableOpacity>
-
-          {/* Demo Accounts */}
-          <View style={styles.demoSection}>
-            <View style={styles.dividerRow}>
-              <View style={styles.divider} />
-              <Text style={styles.dividerText}>Quick Demo</Text>
-              <View style={styles.divider} />
-            </View>
-            <View style={styles.demoRow}>
-              {DEMO_ACCOUNTS.map((acc) => (
-                <TouchableOpacity
-                  key={acc.label}
-                  style={styles.demoChip}
-                  onPress={() => { setEmail(acc.email); setPassword(acc.password); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.demoChipText}>{acc.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </View>
 
         <Text style={styles.footer}>Educare Learning System © 2026</Text>
@@ -300,47 +274,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
-  },
-  // Demo
-  demoSection: {
-    marginTop: 24,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border.default,
-  },
-  dividerText: {
-    fontSize: 11,
-    color: Colors.text.muted,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  demoRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  demoChip: {
-    flex: 1,
-    height: 38,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface.subtle,
-  },
-  demoChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.text.secondary,
   },
   footer: {
     textAlign: 'center',

@@ -38,6 +38,39 @@ export class AttendanceService {
     }));
   }
 
+  async getStudentAttendance(userId: string) {
+    const studentProfile = await this.prisma.studentProfile.findFirst({
+      where: { userId }
+    });
+    if (!studentProfile) {
+      return [];
+    }
+
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { studentId: studentProfile.id },
+      include: {
+        attendance: {
+          include: {
+            batch: { select: { name: true } },
+            subject: { select: { name: true } }
+          }
+        }
+      },
+      orderBy: {
+        attendance: { date: 'desc' }
+      }
+    });
+
+    return records.map(r => ({
+      id: r.id,
+      status: r.status,
+      remarks: r.remarks,
+      date: r.attendance?.date,
+      batch: r.attendance?.batch,
+      subject: r.attendance?.subject,
+    }));
+  }
+
   async getAttendanceForBatchAndDate(batchId: string | undefined, date: string, subjectId?: string) {
     const targetDate = new Date(date);
     
