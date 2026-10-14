@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { fetchApi } from '../../lib/api';
 import { Colors, Shadows, Radii } from '../../lib/theme';
+import { useNotifications } from '../../context/NotificationContext';
 import {
   Bell, BookOpen, Video, FileText, CreditCard, ClipboardList,
   MessagesSquare, ChevronRight, ArrowRight, Radio,
@@ -14,6 +15,7 @@ import {
 
 export default function StudentHomeScreen() {
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const router = useRouter();
 
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -85,6 +87,11 @@ export default function StudentHomeScreen() {
           <View style={styles.bannerRight}>
             <TouchableOpacity style={styles.bellButton} onPress={() => router.push('/notifications' as any)}>
               <Bell size={18} color="#FFFFFF" />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
             <View style={styles.rolePill}><Text style={styles.rolePillText}>STUDENT</Text></View>
           </View>
@@ -261,7 +268,26 @@ const styles = StyleSheet.create({
   bannerSub: { fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 },
   bannerDate: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 10, fontWeight: '500' },
   bannerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bellButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  bellButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#EF4444',
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#0f172a',
+  },
+  bellBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   rolePill: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
   rolePillText: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.2 },
   scroll: { flex: 1 },

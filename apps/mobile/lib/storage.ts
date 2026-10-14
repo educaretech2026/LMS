@@ -72,4 +72,28 @@ export const Storage = {
     await deleteItem(TOKEN_KEY);
     await deleteItem(USER_KEY);
   },
+
+  async getCachedNotifications(): Promise<any[]> {
+    const raw = await getItem('educare_cached_notifications');
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  },
+
+  async saveCachedNotifications(notifications: any[]): Promise<void> {
+    await setItem('educare_cached_notifications', JSON.stringify(notifications));
+  },
+
+  async getCachedUnreadCount(): Promise<number> {
+    const raw = await getItem('educare_unread_notifications_count');
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  },
+
+  async saveCachedUnreadCount(count: number): Promise<void> {
+    await setItem('educare_unread_notifications_count', count.toString());
+  },
 };
+

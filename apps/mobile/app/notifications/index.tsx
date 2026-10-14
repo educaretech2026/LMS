@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { fetchApi } from '../../lib/api';
 import { Colors, Shadows } from '../../lib/theme';
+import { useNotifications } from '../../context/NotificationContext';
 import {
   Bell,
   CheckCheck,
@@ -23,44 +24,40 @@ import {
   Info,
   CalendarCheck,
   ChevronRight,
+  Sparkles,
+  AlarmClock,
 } from 'lucide-react-native';
 
 export default function NotificationsScreen() {
   const router = useRouter();
   const { role } = useAuth();
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    notifications,
+    unreadCount,
+    refreshNotifications,
+    markAsRead,
+    markAllAsRead,
+    clearAll,
+    showBanner,
+    scheduleLocalNotification,
+  } = useNotifications();
+
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filterTab, setFilterTab] = useState<'ALL' | 'DOUBTS' | 'ASSIGNMENTS' | 'OTHER'>('ALL');
 
-  const loadNotifications = async () => {
-    try {
-      const data = await fetchApi<any[]>('/notifications');
-      setNotifications(data || []);
-    } catch (e) {
-      console.error('Failed to load notifications', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
   useEffect(() => {
-    loadNotifications();
+    refreshNotifications();
   }, []);
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    loadNotifications();
+    await refreshNotifications();
+    setRefreshing(false);
   };
 
   const handleMarkAllRead = async () => {
-    try {
-      await fetchApi('/notifications/mark-all-read', { method: 'POST' });
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not mark notifications as read');
-    }
+    await markAllAsRead();
   };
 
   const handleClearAll = () => {
@@ -73,27 +70,39 @@ export default function NotificationsScreen() {
           text: 'Clear All',
           style: 'destructive',
           onPress: async () => {
-            try {
-              await fetchApi('/notifications/clear-all', { method: 'DELETE' });
-              setNotifications([]);
-            } catch (err: any) {
-              Alert.alert('Error', err.message || 'Could not clear notifications');
-            }
+            await clearAll();
           },
         },
       ]
     );
   };
 
+  const handleTestBanner = () => {
+    showBanner({
+      title: 'Academic Alert: Physics Quiz',
+      message: 'New Physics Weekly Quiz has been published for Batch A.',
+      type: 'academic',
+      link: role === 'TEACHER' ? '/(teacher)/assignments' : '/(student)/assignments',
+    });
+  };
+
+  const handleTestOfflineNotification = async () => {
+    await scheduleLocalNotification({
+      title: '🔔 Class Reminder (Offline)',
+      body: 'Mathematics live class starts in 10 minutes. Tap to open app.',
+      secondsFromNow: 5,
+      channelId: 'academic-alerts',
+      data: { link: role === 'TEACHER' ? '/(teacher)' : '/(student)' },
+    });
+    Alert.alert(
+      'Alert Scheduled (5s)!',
+      'Lock your screen or minimize the app to see the Android system notification alert drop into your notification tray in 5 seconds.'
+    );
+  };
+
   const handleNotificationPress = async (item: any) => {
-    // Mark as read immediately
     if (!item.isRead) {
-      try {
-        await fetchApi(`/notifications/${item.id}/read`, { method: 'PATCH' });
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
-        );
-      } catch (_) {}
+      await markAsRead(item.id);
     }
 
     // Deep link routing based on notification link or type
@@ -162,8 +171,6 @@ export default function NotificationsScreen() {
     }
     return true;
   });
-
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
     <View style={styles.container}>
@@ -250,7 +257,7 @@ export default function NotificationsScreen() {
           </View>
         ) : (
           filteredNotifications.map((item) => {
-            const iconConfig = getNotificationIcon(item.type, item.link);
+            const iconConfig = getNotificationIcon(item.type || '', item.link || '');
             const isUnread = !item.isRead;
 
             return (
@@ -277,7 +284,7 @@ export default function NotificationsScreen() {
                   </Text>
 
                   <Text style={styles.timeText}>
-                    {new Date(item.createdAt).toLocaleDateString([], {
+                    {new Date(item.createdAt || Date.now()).toLocaleDateString([], {
                       month: 'short',
                       day: 'numeric',
                       hour: '2-digit',
@@ -291,6 +298,32 @@ export default function NotificationsScreen() {
             );
           })
         )}
+
+        {/* Interactive Notification Testing Tools */}
+        <View style={styles.testCard}>
+          <View style={styles.testCardHeader}>
+            <Sparkles size={16} color={Colors.brand.blue} />
+            <Text style={styles.testCardTitle}>Notification Live Preview & Diagnostics</Text>
+          </View>
+          <Text style={styles.testCardSub}>
+            Test offline background alerts and interactive popup banners directly on this device.
+          </Text>
+          <View style={styles.testBtnRow}>
+            <TouchableOpacity style={styles.testBtn} onPress={handleTestBanner} activeOpacity={0.8}>
+              <Sparkles size={14} color="#FFFFFF" />
+              <Text style={styles.testBtnText}>In-App Popup</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.testBtn, styles.testBtnSecondary]}
+              onPress={handleTestOfflineNotification}
+              activeOpacity={0.8}
+            >
+              <AlarmClock size={14} color={Colors.brand.blue} />
+              <Text style={[styles.testBtnText, { color: Colors.brand.blue }]}>Offline Alert (5s)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -448,5 +481,57 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 11,
     color: Colors.text.muted,
+  },
+  testCard: {
+    marginTop: 16,
+    marginBottom: 24,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+  },
+  testCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  testCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text.primary,
+  },
+  testCardSub: {
+    fontSize: 12,
+    color: Colors.text.muted,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  testBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  testBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.brand.blue,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  testBtnSecondary: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  testBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

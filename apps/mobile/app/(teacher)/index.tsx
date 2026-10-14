@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { fetchApi } from '../../lib/api';
 import { Colors, Shadows, Radii } from '../../lib/theme';
+import { useNotifications } from '../../context/NotificationContext';
 import {
   Bell, Users, CalendarCheck, ClipboardList, MessagesSquare,
   GraduationCap, BookOpen, Video, ArrowRight, AlertCircle, ChevronRight,
@@ -14,6 +15,7 @@ import {
 
 export default function TeacherHomeScreen() {
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const router = useRouter();
 
   const [batches, setBatches] = useState<any[]>([]);
@@ -102,7 +104,13 @@ export default function TeacherHomeScreen() {
               onPress={() => router.push('/notifications' as any)}
             >
               <Bell size={18} color="#FFFFFF" />
-              {pendingDoubts.length > 0 && <View style={styles.bellDot} />}
+              {unreadCount > 0 ? (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                </View>
+              ) : pendingDoubts.length > 0 ? (
+                <View style={styles.bellDot} />
+              ) : null}
             </TouchableOpacity>
             <View style={styles.rolePill}>
               <Text style={styles.rolePillText}>TEACHER</Text>
@@ -292,8 +300,27 @@ const styles = StyleSheet.create({
   bannerSub: { fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 },
   bannerDate: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 10, fontWeight: '500' },
   bannerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bellButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  bellButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
   bellDot: { position: 'absolute', top: 4, right: 4, width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.brand.red, borderWidth: 1.5, borderColor: Colors.brand.blue },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#EF4444',
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#0f172a',
+  },
+  bellBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   rolePill: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
   rolePillText: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.2 },
   // Scroll
