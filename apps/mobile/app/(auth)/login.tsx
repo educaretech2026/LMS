@@ -149,7 +149,7 @@ export default function LoginScreen() {
                 </View>
                 <View style={styles.securityPill}>
                   <ShieldCheck size={13} color="#22c55e" />
-                  <Text style={styles.securityPillText}>SSL 256-bit</Text>
+                  {/* <Text style={styles.securityPillText}>SSL 256-bit</Text> */}
                 </View>
               </View>
 
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
   // Footer
   footer: {
     alignItems: 'center',
-    marginTop: 14,
+    marginTop: 225,
   },
   footerText: {
     fontSize: 10.5,

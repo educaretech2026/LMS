@@ -22,7 +22,7 @@
   align-items: center;
   gap: 0.75rem;
   padding: 1.25rem 1rem;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   min-height: 64px;
 }
 
@@ -62,18 +62,24 @@
   overflow-x: hidden;
   padding: 1rem 0.75rem;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.08) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
-.nav::-webkit-scrollbar { width: 3px; }
-.nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+.nav::-webkit-scrollbar {
+  width: 3px;
+}
+
+.nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
 
 .navLabel {
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(165,180,252,0.4);
+  color: rgba(165, 180, 252, 0.4);
   padding: 0.75rem 0.75rem 0.35rem;
   white-space: nowrap;
   overflow: hidden;
@@ -93,7 +99,7 @@
   margin-bottom: 0.5rem;
 }
 
-.navItem { }
+.navItem {}
 
 .navLink {
   display: flex;
@@ -146,7 +152,7 @@
 /* ─── Toggle ─── */
 .footer {
   padding: 0.75rem;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .toggleBtn {
