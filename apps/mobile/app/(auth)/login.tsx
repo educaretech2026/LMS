@@ -31,7 +31,6 @@ import {
   ShieldCheck,
   ArrowRight,
   GraduationCap,
-  Briefcase,
   HelpCircle,
   Check,
 } from 'lucide-react-native';
@@ -41,7 +40,6 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const { login } = useAuth();
-  const [roleTab, setRoleTab] = useState<'STUDENT' | 'FACULTY'>('STUDENT');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,13 +50,12 @@ export default function LoginScreen() {
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
 
-  // Clean fade entrance animation (avoiding continuous transform hit-test shifts)
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
-      duration: 500,
+      duration: 400,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
@@ -95,13 +92,13 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* ── Background Cosmic Canvas (Strictly pointerEvents="none" so touches never get blocked) ── */}
+      {/* ── Background Cosmic Canvas (pointerEvents="none") ── */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT}>
           <Defs>
-            <RadialGradient id="bgGrad" cx="50%" cy="25%" rx="90%" ry="90%">
+            <RadialGradient id="bgGrad" cx="50%" cy="20%" rx="90%" ry="90%">
               <Stop offset="0%" stopColor="#0d235c" stopOpacity="1" />
-              <Stop offset="55%" stopColor="#07122e" stopOpacity="1" />
+              <Stop offset="50%" stopColor="#07122e" stopOpacity="1" />
               <Stop offset="100%" stopColor="#020817" stopOpacity="1" />
             </RadialGradient>
           </Defs>
@@ -116,7 +113,7 @@ export default function LoginScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardRoot}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -125,7 +122,7 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Animated.View style={{ opacity: fadeAnim, width: '100%' }}>
-            {/* ── Hero Brand Crest & Header ── */}
+            {/* ── Hero Brand Crest & Header with Bigger Logo & Compact Spacing ── */}
             <View style={styles.headerSection}>
               <View style={styles.crestWrapper}>
                 <View style={styles.crestGlowRing} />
@@ -152,56 +149,21 @@ export default function LoginScreen() {
                 </View>
                 <View style={styles.securityPill}>
                   <ShieldCheck size={13} color="#22c55e" />
-                  {/* <Text style={styles.securityPillText}>SSL 256-bit</Text> */}
+                  <Text style={styles.securityPillText}>SSL 256-bit</Text>
                 </View>
               </View>
 
-              {/* Role Tab Selector (Student vs Faculty) */}
+              {/* Edu-Care Institutional Badge */}
               <View style={styles.tabContainer}>
-                <TouchableOpacity
-                  style={[styles.tabButton, roleTab === 'STUDENT' && styles.tabButtonActive]}
-                  onPress={() => setRoleTab('STUDENT')}
-                  activeOpacity={0.8}
-                >
-                  <GraduationCap
-                    size={16}
-                    color={roleTab === 'STUDENT' ? '#FFFFFF' : 'rgba(255,255,255,0.5)'}
-                  />
-                  <Text
-                    style={[
-                      styles.tabButtonText,
-                      roleTab === 'STUDENT' && styles.tabButtonTextActive,
-                    ]}
-                  >
-                    Student
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.tabButton, roleTab === 'FACULTY' && styles.tabButtonActive]}
-                  onPress={() => setRoleTab('FACULTY')}
-                  activeOpacity={0.8}
-                >
-                  <Briefcase
-                    size={15}
-                    color={roleTab === 'FACULTY' ? '#FFFFFF' : 'rgba(255,255,255,0.5)'}
-                  />
-                  <Text
-                    style={[
-                      styles.tabButtonText,
-                      roleTab === 'FACULTY' && styles.tabButtonTextActive,
-                    ]}
-                  >
-                    Faculty & Staff
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.tabButtonActive}>
+                  <GraduationCap size={15} color="#FFFFFF" />
+                  <Text style={styles.tabButtonTextActive}>Edu-Care</Text>
+                </View>
               </View>
 
               {/* Email Field with Full Tap Delegation */}
               <View style={styles.fieldContainer}>
-                <Text style={styles.fieldLabel}>
-                  {roleTab === 'STUDENT' ? 'Student Email' : 'Institutional Email'}
-                </Text>
+                <Text style={styles.fieldLabel}>Registered mail</Text>
                 <Pressable
                   style={[
                     styles.inputWrapper,
@@ -220,11 +182,7 @@ export default function LoginScreen() {
                     value={email}
                     onChangeText={setEmail}
                     selectionColor="#38bdf8"
-                    placeholder={
-                      roleTab === 'STUDENT'
-                        ? 'student@educarelearning.in'
-                        : 'faculty@educarelearning.in'
-                    }
+                    placeholder="example@example.com"
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -366,69 +324,69 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 44,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'ios' ? 36 : 24,
+    paddingBottom: 28,
   },
 
   // Ambient Orbs
   ambientOrbBlue: {
     position: 'absolute',
-    top: -50,
+    top: -40,
     left: -40,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
     backgroundColor: 'rgba(37, 99, 235, 0.18)',
   },
   ambientOrbRed: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 30,
     right: -40,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     backgroundColor: 'rgba(220, 38, 38, 0.12)',
   },
 
-  // Header / Logo Crest
+  // Header / Logo Crest — Much Bigger Logo with Minimal White Margin
   headerSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   crestWrapper: {
-    width: 80,
-    height: 80,
+    width: 120,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   crestGlowRing: {
     position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(56, 189, 248, 0.14)',
     borderWidth: 1.5,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    borderColor: 'rgba(56, 189, 248, 0.4)',
   },
   logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 106,
+    height: 106,
+    borderRadius: 53,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 6,
+    padding: 3,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
   },
   logoImage: {
-    width: 48,
-    height: 48,
+    width: 100,
+    height: 100,
   },
   brandTitle: {
     fontSize: 24,
@@ -436,43 +394,44 @@ const styles = StyleSheet.create({
     letterSpacing: 6,
     color: '#FFFFFF',
     textAlign: 'center',
+    marginTop: 2,
   },
   brandSubtitle: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 2,
     color: 'rgba(255, 255, 255, 0.65)',
     textTransform: 'uppercase',
-    marginTop: 6,
+    marginTop: 4,
   },
 
-  // Main Login Card
+  // Main Login Card — Tightened White Space
   card: {
     backgroundColor: 'rgba(11, 25, 56, 0.92)',
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
-    shadowRadius: 16,
+    shadowRadius: 14,
     elevation: 8,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.3,
   },
   cardSubtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: 'rgba(255, 255, 255, 0.55)',
     marginTop: 2,
   },
@@ -494,64 +453,58 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // Role Tab Switcher
+  // Edu-Care Badge
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 3,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  tabButton: {
+  tabButtonActive: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 9,
-    borderRadius: 10,
-    gap: 7,
-  },
-  tabButtonActive: {
+    paddingVertical: 7,
+    borderRadius: 9,
     backgroundColor: '#0162B1',
+    gap: 6,
     shadowColor: '#0162B1',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
     elevation: 3,
   },
-  tabButtonText: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
   tabButtonTextActive: {
     color: '#FFFFFF',
+    fontSize: 12.5,
     fontWeight: '700',
   },
 
   // Input Fields
   fieldContainer: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   fieldLabel: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '700',
     color: 'rgba(255, 255, 255, 0.75)',
     letterSpacing: 0.4,
-    marginBottom: 7,
+    marginBottom: 6,
     textTransform: 'uppercase',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 50,
+    height: 48,
     borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.07)',
     borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
   },
   inputWrapperFocused: {
     borderColor: '#38bdf8',
@@ -562,11 +515,11 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   fieldIcon: {
-    marginRight: 10,
+    marginRight: 9,
   },
   textInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13.5,
     color: '#FFFFFF',
     height: '100%',
     paddingVertical: 0,
@@ -582,16 +535,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 2,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   rememberMeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   checkbox: {
-    width: 17,
-    height: 17,
+    width: 16,
+    height: 16,
     borderRadius: 4,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.3)',
@@ -621,16 +574,16 @@ const styles = StyleSheet.create({
 
   // CTA Sign In button
   loginBtn: {
-    height: 50,
+    height: 48,
     backgroundColor: '#0162B1',
-    borderRadius: 14,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0162B1',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.45,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
@@ -640,18 +593,18 @@ const styles = StyleSheet.create({
   btnTextRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   btnLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   loginBtnText: {
     color: '#FFFFFF',
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
   // Security Note
@@ -659,14 +612,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 18,
-    paddingTop: 14,
+    gap: 5,
+    marginTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.07)',
   },
   securityNoteText: {
-    fontSize: 10.5,
+    fontSize: 10,
     color: 'rgba(255, 255, 255, 0.45)',
     fontWeight: '500',
   },
@@ -674,18 +627,18 @@ const styles = StyleSheet.create({
   // Footer
   footer: {
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 14,
   },
   footerText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: 'rgba(255, 255, 255, 0.4)',
     fontWeight: '500',
     textAlign: 'center',
   },
   footerSubtext: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: 'rgba(255, 255, 255, 0.25)',
-    marginTop: 3,
+    marginTop: 2,
     textAlign: 'center',
   },
 });
