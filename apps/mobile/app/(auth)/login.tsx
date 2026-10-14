@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   KeyboardAvoidingView,
@@ -19,10 +20,8 @@ import {
 import Svg, {
   Defs,
   RadialGradient,
-  LinearGradient,
   Stop,
   Rect,
-  Circle,
 } from 'react-native-svg';
 import {
   Mail,
@@ -35,10 +34,8 @@ import {
   Briefcase,
   HelpCircle,
   Check,
-  Sparkles,
 } from 'lucide-react-native';
 import { useAuth } from '../../hooks/useAuth';
-import { Colors } from '../../lib/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -52,52 +49,19 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
 
-  // Animation controllers
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
+
+  // Clean fade entrance animation (avoiding continuous transform hit-test shifts)
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(24)).current;
-  const logoScale = useRef(new Animated.Value(0.85)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 750,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 750,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.spring(logoScale, {
-        toValue: 1,
-        tension: 40,
-        friction: 6,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Gentle ambient orb breathing
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.15,
-          duration: 3500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 3500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   }, []);
 
   const handleLogin = async () => {
@@ -131,287 +95,260 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* ── Background Cosmic Canvas with SVG Radial Gradients ── */}
-      <View style={StyleSheet.absoluteFill}>
+      {/* ── Background Cosmic Canvas (Strictly pointerEvents="none" so touches never get blocked) ── */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT}>
           <Defs>
-            <RadialGradient id="bgGrad" cx="50%" cy="30%" rx="90%" ry="90%">
+            <RadialGradient id="bgGrad" cx="50%" cy="25%" rx="90%" ry="90%">
               <Stop offset="0%" stopColor="#0d235c" stopOpacity="1" />
-              <Stop offset="50%" stopColor="#07122e" stopOpacity="1" />
+              <Stop offset="55%" stopColor="#07122e" stopOpacity="1" />
               <Stop offset="100%" stopColor="#020817" stopOpacity="1" />
             </RadialGradient>
-            <LinearGradient id="accentLine" x1="0%" y1="0%" x2="100%" y2="0%">
-              <Stop offset="0%" stopColor="#2563eb" stopOpacity="0" />
-              <Stop offset="50%" stopColor="#38bdf8" stopOpacity="0.8" />
-              <Stop offset="100%" stopColor="#dc2626" stopOpacity="0" />
-            </LinearGradient>
           </Defs>
           <Rect width={SCREEN_WIDTH} height={SCREEN_HEIGHT} fill="url(#bgGrad)" />
         </Svg>
       </View>
 
-      {/* ── Glowing Luminous Ambient Orbs ── */}
-      <Animated.View
-        style={[
-          styles.ambientOrbBlue,
-          {
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-        pointerEvents="none"
-      />
-      <Animated.View
-        style={[
-          styles.ambientOrbRed,
-          {
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-        pointerEvents="none"
-      />
+      {/* ── Ambient Orbs (pointerEvents="none") ── */}
+      <View style={styles.ambientOrbBlue} pointerEvents="none" />
+      <View style={styles.ambientOrbRed} pointerEvents="none" />
 
       <KeyboardAvoidingView
         style={styles.keyboardRoot}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
-          bounces={false}
         >
-          {/* ── Hero Brand Crest & Header ── */}
-          <Animated.View
-            style={[
-              styles.headerSection,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }, { scale: logoScale }],
-              },
-            ]}
-          >
-            {/* Logo Crest with Concentric Luminous Glow */}
-            <View style={styles.crestWrapper}>
-              <View style={styles.crestGlowRing} />
-              <View style={styles.logoBadge}>
-                <Image
-                  source={require('../../assets/logo.png')}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
+          <Animated.View style={{ opacity: fadeAnim, width: '100%' }}>
+            {/* ── Hero Brand Crest & Header ── */}
+            <View style={styles.headerSection}>
+              <View style={styles.crestWrapper}>
+                <View style={styles.crestGlowRing} />
+                <View style={styles.logoBadge}>
+                  <Image
+                    source={require('../../assets/logo.png')}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
+                </View>
               </View>
-            </View>
 
-            {/* Brand Title & Tagline */}
-            <Text style={styles.brandTitle}>EDUCARE</Text>
-            <View style={styles.brandSubtitleRow}>
-              <Sparkles size={11} color="#38bdf8" />
+              <Text style={styles.brandTitle}>EDUCARE</Text>
               <Text style={styles.brandSubtitle}>INSTITUTIONAL MANAGEMENT SUITE</Text>
-              <Sparkles size={11} color="#38bdf8" />
             </View>
-          </Animated.View>
 
-          {/* ── Main Glassmorphic Login Card ── */}
-          <Animated.View
-            style={[
-              styles.card,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            {/* Card Header */}
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.cardTitle}>Sign In</Text>
-                <Text style={styles.cardSubtitle}>Access your academic ecosystem</Text>
+            {/* ── Main Glassmorphic Login Card ── */}
+            <View style={styles.card}>
+              {/* Card Header */}
+              <View style={styles.cardHeader}>
+                <View>
+                  <Text style={styles.cardTitle}>Sign In</Text>
+                  <Text style={styles.cardSubtitle}>Access your academic dashboard</Text>
+                </View>
+                <View style={styles.securityPill}>
+                  <ShieldCheck size={13} color="#22c55e" />
+                  {/* <Text style={styles.securityPillText}>SSL 256-bit</Text> */}
+                </View>
               </View>
-              <View style={styles.securityPill}>
-                <ShieldCheck size={13} color="#22c55e" />
-                <Text style={styles.securityPillText}>SSL 256-bit</Text>
-              </View>
-            </View>
 
-            {/* Role Tab Selector (Student vs Faculty) */}
-            <View style={styles.tabContainer}>
-              <TouchableOpacity
-                style={[styles.tabButton, roleTab === 'STUDENT' && styles.tabButtonActive]}
-                onPress={() => setRoleTab('STUDENT')}
-                activeOpacity={0.8}
-              >
-                <GraduationCap
-                  size={15}
-                  color={roleTab === 'STUDENT' ? '#FFFFFF' : 'rgba(255,255,255,0.45)'}
-                />
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    roleTab === 'STUDENT' && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Student
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tabButton, roleTab === 'FACULTY' && styles.tabButtonActive]}
-                onPress={() => setRoleTab('FACULTY')}
-                activeOpacity={0.8}
-              >
-                <Briefcase
-                  size={14}
-                  color={roleTab === 'FACULTY' ? '#FFFFFF' : 'rgba(255,255,255,0.45)'}
-                />
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    roleTab === 'FACULTY' && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Faculty & Staff
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Email Field */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.fieldLabel}>
-                {roleTab === 'STUDENT' ? 'Student Email' : 'Institutional Email'}
-              </Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  focusedField === 'email' && styles.inputWrapperFocused,
-                ]}
-              >
-                <Mail
-                  size={18}
-                  color={focusedField === 'email' ? '#38bdf8' : 'rgba(255,255,255,0.35)'}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  style={styles.textInput}
-                  value={email}
-                  onChangeText={setEmail}
-                  selectionColor="#38bdf8"
-                  placeholder={
-                    roleTab === 'STUDENT'
-                      ? 'student@educarelearning.in'
-                      : 'faculty@educarelearning.in'
-                  }
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField(null)}
-                />
-              </View>
-            </View>
-
-            {/* Password Field */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.fieldLabel}>Password</Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  focusedField === 'password' && styles.inputWrapperFocused,
-                ]}
-              >
-                <Lock
-                  size={18}
-                  color={focusedField === 'password' ? '#38bdf8' : 'rgba(255,255,255,0.35)'}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  style={styles.textInput}
-                  value={password}
-                  onChangeText={setPassword}
-                  selectionColor="#38bdf8"
-                  placeholder="Enter your security password"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  secureTextEntry={!showPassword}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
-                  onSubmitEditing={handleLogin}
-                  returnKeyType="go"
-                />
+              {/* Role Tab Selector (Student vs Faculty) */}
+              <View style={styles.tabContainer}>
                 <TouchableOpacity
-                  style={styles.eyeIconBtn}
-                  onPress={() => setShowPassword(!showPassword)}
-                  activeOpacity={0.7}
+                  style={[styles.tabButton, roleTab === 'STUDENT' && styles.tabButtonActive]}
+                  onPress={() => setRoleTab('STUDENT')}
+                  activeOpacity={0.8}
                 >
-                  {showPassword ? (
-                    <EyeOff size={18} color="rgba(255,255,255,0.5)" />
-                  ) : (
-                    <Eye size={18} color="rgba(255,255,255,0.5)" />
-                  )}
+                  <GraduationCap
+                    size={16}
+                    color={roleTab === 'STUDENT' ? '#FFFFFF' : 'rgba(255,255,255,0.5)'}
+                  />
+                  <Text
+                    style={[
+                      styles.tabButtonText,
+                      roleTab === 'STUDENT' && styles.tabButtonTextActive,
+                    ]}
+                  >
+                    Student
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.tabButton, roleTab === 'FACULTY' && styles.tabButtonActive]}
+                  onPress={() => setRoleTab('FACULTY')}
+                  activeOpacity={0.8}
+                >
+                  <Briefcase
+                    size={15}
+                    color={roleTab === 'FACULTY' ? '#FFFFFF' : 'rgba(255,255,255,0.5)'}
+                  />
+                  <Text
+                    style={[
+                      styles.tabButtonText,
+                      roleTab === 'FACULTY' && styles.tabButtonTextActive,
+                    ]}
+                  >
+                    Faculty & Staff
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </View>
 
-            {/* Options Row: Remember Me & Need Help */}
-            <View style={styles.optionsRow}>
+              {/* Email Field with Full Tap Delegation */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>
+                  {roleTab === 'STUDENT' ? 'Student Email' : 'Institutional Email'}
+                </Text>
+                <Pressable
+                  style={[
+                    styles.inputWrapper,
+                    focusedField === 'email' && styles.inputWrapperFocused,
+                  ]}
+                  onPress={() => emailInputRef.current?.focus()}
+                >
+                  <Mail
+                    size={18}
+                    color={focusedField === 'email' ? '#38bdf8' : 'rgba(255,255,255,0.45)'}
+                    style={styles.fieldIcon}
+                  />
+                  <TextInput
+                    ref={emailInputRef}
+                    style={styles.textInput}
+                    value={email}
+                    onChangeText={setEmail}
+                    selectionColor="#38bdf8"
+                    placeholder={
+                      roleTab === 'STUDENT'
+                        ? 'student@educarelearning.in'
+                        : 'faculty@educarelearning.in'
+                    }
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="email"
+                    textContentType="emailAddress"
+                    editable={!loading}
+                    onFocus={() => setFocusedField('email')}
+                    onBlur={() => setFocusedField(null)}
+                  />
+                </Pressable>
+              </View>
+
+              {/* Password Field with Full Tap Delegation */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>Password</Text>
+                <Pressable
+                  style={[
+                    styles.inputWrapper,
+                    focusedField === 'password' && styles.inputWrapperFocused,
+                  ]}
+                  onPress={() => passwordInputRef.current?.focus()}
+                >
+                  <Lock
+                    size={18}
+                    color={focusedField === 'password' ? '#38bdf8' : 'rgba(255,255,255,0.45)'}
+                    style={styles.fieldIcon}
+                  />
+                  <TextInput
+                    ref={passwordInputRef}
+                    style={styles.textInput}
+                    value={password}
+                    onChangeText={setPassword}
+                    selectionColor="#38bdf8"
+                    placeholder="Enter account password"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    secureTextEntry={!showPassword}
+                    editable={!loading}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="password"
+                    textContentType="password"
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
+                    onSubmitEditing={handleLogin}
+                    returnKeyType="go"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIconBtn}
+                    onPress={() => setShowPassword(!showPassword)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={18} color="rgba(255,255,255,0.6)" />
+                    ) : (
+                      <Eye size={18} color="rgba(255,255,255,0.6)" />
+                    )}
+                  </TouchableOpacity>
+                </Pressable>
+              </View>
+
+              {/* Options Row: Remember Me & Need Help */}
+              <View style={styles.optionsRow}>
+                <TouchableOpacity
+                  style={styles.rememberMeRow}
+                  onPress={() => setRememberMe(!rememberMe)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                    {rememberMe && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                  </View>
+                  <Text style={styles.rememberMeText}>Remember Session</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.helpLink}
+                  onPress={handleHelpDesk}
+                  activeOpacity={0.7}
+                >
+                  <HelpCircle size={13} color="#38bdf8" />
+                  <Text style={styles.helpLinkText}>Need Help?</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Sign In CTA Button */}
               <TouchableOpacity
-                style={styles.rememberMeRow}
-                onPress={() => setRememberMe(!rememberMe)}
-                activeOpacity={0.8}
+                style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+                activeOpacity={0.85}
               >
-                <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
-                  {rememberMe && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
-                </View>
-                <Text style={styles.rememberMeText}>Remember Session</Text>
+                {loading ? (
+                  <View style={styles.btnLoadingRow}>
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <Text style={styles.loginBtnText}>Authenticating...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.btnTextRow}>
+                    <Text style={styles.loginBtnText}>Sign In to Dashboard</Text>
+                    <ArrowRight size={17} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.helpLink}
-                onPress={handleHelpDesk}
-                activeOpacity={0.7}
-              >
-                <HelpCircle size={13} color="#38bdf8" />
-                <Text style={styles.helpLinkText}>Need Help?</Text>
-              </TouchableOpacity>
+              {/* Bottom Security Note */}
+              <View style={styles.securityNote}>
+                <ShieldCheck size={13} color="rgba(255,255,255,0.4)" />
+                <Text style={styles.securityNoteText}>
+                  Encrypted authentication for accredited institutions
+                </Text>
+              </View>
             </View>
 
-            {/* Sign In CTA Button */}
-            <TouchableOpacity
-              style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-              activeOpacity={0.88}
-            >
-              {loading ? (
-                <View style={styles.btnLoadingRow}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                  <Text style={styles.loginBtnText}>Authenticating...</Text>
-                </View>
-              ) : (
-                <View style={styles.btnTextRow}>
-                  <Text style={styles.loginBtnText}>Sign In to Dashboard</Text>
-                  <ArrowRight size={17} color="#FFFFFF" strokeWidth={2.5} />
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {/* Bottom Security Note */}
-            <View style={styles.securityNote}>
-              <ShieldCheck size={13} color="rgba(255,255,255,0.4)" />
-              <Text style={styles.securityNoteText}>
-                Encrypted authentication for accredited institutions
+            {/* ── Footer ── */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>
+                Educare Learning Systems • Institutional Edition v2.4
+              </Text>
+              <Text style={styles.footerSubtext}>
+                All Rights Reserved © {new Date().getFullYear()}
               </Text>
             </View>
           </Animated.View>
-
-          {/* ── Footer ── */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Educare Learning Systems • Institutional Edition v2.4
-            </Text>
-            <Text style={styles.footerSubtext}>
-              All Rights Reserved © {new Date().getFullYear()}
-            </Text>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -429,70 +366,69 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingBottom: 32,
-    justifyContent: 'center',
+    paddingTop: Platform.OS === 'ios' ? 60 : 44,
+    paddingBottom: 40,
   },
 
-  // Ambient orbs in background
+  // Ambient Orbs
   ambientOrbBlue: {
     position: 'absolute',
-    top: -60,
+    top: -50,
     left: -40,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: 'rgba(37, 99, 235, 0.22)',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(37, 99, 235, 0.18)',
   },
   ambientOrbRed: {
     position: 'absolute',
-    bottom: 60,
-    right: -50,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(220, 38, 38, 0.16)',
+    bottom: 40,
+    right: -40,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(220, 38, 38, 0.12)',
   },
 
-  // Header / Logo crest
+  // Header / Logo Crest
   headerSection: {
     alignItems: 'center',
-    marginBottom: 26,
+    marginBottom: 24,
   },
   crestWrapper: {
-    width: 86,
-    height: 86,
+    width: 80,
+    height: 80,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   crestGlowRing: {
     position: 'absolute',
-    width: 86,
-    height: 86,
-    borderRadius: 43,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: 'rgba(56, 189, 248, 0.12)',
     borderWidth: 1.5,
     borderColor: 'rgba(56, 189, 248, 0.35)',
   },
   logoBadge: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   logoImage: {
-    width: 50,
-    height: 50,
+    width: 48,
+    height: 48,
   },
   brandTitle: {
     fontSize: 24,
@@ -501,32 +437,27 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
   },
-  brandSubtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-  },
   brandSubtitle: {
     fontSize: 9.5,
     fontWeight: '700',
-    letterSpacing: 2.2,
+    letterSpacing: 2,
     color: 'rgba(255, 255, 255, 0.65)',
     textTransform: 'uppercase',
+    marginTop: 6,
   },
 
-  // Main Login Card (Glassmorphic)
+  // Main Login Card
   card: {
-    backgroundColor: 'rgba(11, 25, 56, 0.85)',
+    backgroundColor: 'rgba(11, 25, 56, 0.92)',
     borderRadius: 24,
-    padding: 24,
+    padding: 22,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -569,7 +500,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderRadius: 14,
     padding: 4,
-    marginBottom: 20,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
@@ -615,16 +546,16 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
+    height: 50,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
     borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: 13,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 14,
   },
   inputWrapperFocused: {
     borderColor: '#38bdf8',
-    backgroundColor: 'rgba(56, 189, 248, 0.07)',
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
     shadowColor: '#38bdf8',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.25,
@@ -635,12 +566,14 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 13.5,
+    fontSize: 14,
     color: '#FFFFFF',
     height: '100%',
+    paddingVertical: 0,
   },
   eyeIconBtn: {
     padding: 6,
+    marginLeft: 4,
   },
 
   // Options row
@@ -696,7 +629,7 @@ const styles = StyleSheet.create({
     shadowColor: '#0162B1',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.45,
-    shadowRadius: 12,
+    shadowRadius: 10,
     elevation: 6,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
