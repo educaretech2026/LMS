@@ -25,7 +25,6 @@ export async function setupNotificationChannels(): Promise<boolean> {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#2563EB',
-        sound: 'default',
         enableVibrate: true,
       });
 
@@ -34,7 +33,6 @@ export async function setupNotificationChannels(): Promise<boolean> {
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#7C3AED',
-        sound: 'default',
         enableVibrate: true,
       });
 

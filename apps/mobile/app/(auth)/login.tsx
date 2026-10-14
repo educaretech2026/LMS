@@ -292,7 +292,7 @@ export default function LoginScreen() {
               <View style={styles.securityNote}>
                 <ShieldCheck size={13} color="rgba(255,255,255,0.4)" />
                 <Text style={styles.securityNoteText}>
-                  Encrypted authentication for accredited institutions
+                  Encrypted authentication for Educare institution
                 </Text>
               </View>
             </View>

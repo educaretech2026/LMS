@@ -232,7 +232,7 @@ export default function StudentIdCardScreen() {
         <View style={styles.statusPill}>
           <View style={styles.livePulseDot} />
           <ShieldCheck size={14} color={Colors.brand.emerald} />
-          <Text style={styles.statusPillText}>INSTITUTIONALLY VERIFIED • ACTIVE</Text>
+          <Text style={styles.statusPillText}> VERIFIED • ACTIVE</Text>
         </View>
 
         {/* 3D Flip Card Container */}
