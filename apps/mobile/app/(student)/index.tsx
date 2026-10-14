@@ -46,7 +46,7 @@ export default function StudentHomeScreen() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const pending = assignments.filter(a => a.status === 'PENDING' || !a.submitted);
-  const upcoming = exams.filter(e => e.status !== 'ENDED');
+  const pendingExams = exams.filter(e => (!e.results || e.results.length === 0) && e.status !== 'ENDED');
   const openDoubts = doubts.filter(d => d.status === 'OPEN');
   const liveNow = liveClasses.filter(c => c.status === 'LIVE');
   const upcomingClasses = liveClasses.filter(c => c.status !== 'ENDED').slice(0, 3);
@@ -75,9 +75,12 @@ export default function StudentHomeScreen() {
         <View style={styles.redLine} />
         <View style={styles.bannerTop}>
           <View style={styles.bannerLeft}>
-            <View style={styles.avatarCircle}>
+            <TouchableOpacity
+              style={styles.avatarCircle}
+              onPress={() => router.push('/(student)/profile/id-card' as any)}>
+
               <Text style={styles.avatarText}>{initials}</Text>
-            </View>
+            </TouchableOpacity>
             <View>
               <Text style={styles.bannerGreeting}>Welcome back</Text>
               <Text style={styles.bannerName}>{fullName}</Text>
@@ -85,14 +88,14 @@ export default function StudentHomeScreen() {
             </View>
           </View>
           <View style={styles.bannerRight}>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.idCardBannerBtn}
               onPress={() => router.push('/(student)/profile/id-card' as any)}
               activeOpacity={0.8}
             >
               <CreditCard size={11} color="#FFFFFF" />
               <Text style={styles.idCardBannerBtnText}>ID CARD</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             <TouchableOpacity style={styles.bellButton} onPress={() => router.push('/notifications' as any)}>
               <Bell size={18} color="#FFFFFF" />
               {unreadCount > 0 && (
@@ -134,15 +137,15 @@ export default function StudentHomeScreen() {
         {/* Metrics */}
         <View style={styles.metricsRow}>
           {[
-            { label: 'Pending', value: pending.length, color: Colors.brand.amber, route: '/(student)/assignments' },
-            { label: 'Exams', value: upcoming.length, color: Colors.brand.indigo, route: '/(student)/exams' },
+            { label: 'Pending HW', value: pending.length, color: Colors.brand.amber, route: '/(student)/assignments' },
+            { label: 'Pending Exams', value: pendingExams.length, color: Colors.brand.indigo, route: '/(student)/exams' },
             { label: 'Doubts', value: openDoubts.length, color: Colors.brand.blue, route: '/(student)/doubts' },
-            { label: 'Live', value: liveNow.length, color: Colors.brand.red, route: '/(student)/profile/live-classes' },
+            { label: 'Live Now', value: liveNow.length, color: Colors.brand.red, route: '/(student)/profile/live-classes' },
           ].map(m => (
             <TouchableOpacity key={m.label} style={styles.metricCard} onPress={() => router.push(m.route as any)} activeOpacity={0.8}>
               <View style={[styles.metricTopBar, { backgroundColor: m.color }]} />
               <Text style={[styles.metricValue, { color: m.color }]}>{m.value}</Text>
-              <Text style={styles.metricLabel}>{m.label}</Text>
+              <Text style={styles.metricLabel} numberOfLines={2}>{m.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -202,6 +205,51 @@ export default function StudentHomeScreen() {
                     ) : (
                       <ChevronRight size={14} color={Colors.text.muted} />
                     )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Pending Exams */}
+        {pendingExams.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>PENDING EXAMS</Text>
+                <View style={styles.pendingExamsCountBadge}>
+                  <Text style={styles.pendingExamsCountText}>{pendingExams.length} DUE</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/(student)/exams' as any)}>
+                <Text style={styles.sectionLink}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.card}>
+              {pendingExams.slice(0, 3).map((exam: any, i: number) => {
+                const qCount = exam.mcqQuestions?.length || exam.questions || 10;
+                const dur = exam.duration || 60;
+                return (
+                  <TouchableOpacity
+                    key={exam.id}
+                    style={[styles.listRow, i < Math.min(pendingExams.length, 3) - 1 && styles.listRowBorder]}
+                    onPress={() => router.push(`/(student)/exams/${exam.id}/take` as any)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[styles.classIndicator, { backgroundColor: Colors.brand.indigoLight }]}>
+                      <FileText size={14} color={Colors.brand.indigo} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{exam.title}</Text>
+                      <Text style={styles.rowSub}>
+                        {exam.subject?.name ? `${exam.subject.name} · ` : ''}{dur} mins · {qCount} Qs
+                      </Text>
+                    </View>
+                    <View style={styles.takeTestPill}>
+                      <Text style={styles.takeTestPillText}>Take Test</Text>
+                      <ChevronRight size={12} color="#FFFFFF" />
+                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -361,4 +409,21 @@ const styles = StyleSheet.create({
   livePillText: { fontSize: 9, fontWeight: '800', color: Colors.brand.red, letterSpacing: 0.5 },
   overduePill: { backgroundColor: Colors.brand.redLight, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 100 },
   overduePillText: { fontSize: 9, fontWeight: '800', color: Colors.brand.red, letterSpacing: 0.5 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  pendingExamsCountBadge: { backgroundColor: Colors.brand.indigoLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  pendingExamsCountText: { fontSize: 9, fontWeight: '800', color: Colors.brand.indigo, letterSpacing: 0.5 },
+  takeTestPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.brand.indigo,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  takeTestPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 });

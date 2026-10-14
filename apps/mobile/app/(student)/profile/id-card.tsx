@@ -646,8 +646,13 @@ const styles = StyleSheet.create({
     ...Shadows.sm,
   },
   frontLogoImage: {
-    width: 140,
-    height: 30,
+
+    width: 250,
+    height: 250,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    alignSelf: 'center',
   },
   frontHeaderSubtitle: {
     color: '#FFFFFF',
@@ -816,14 +821,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    width: 140,
-    height: 32,
+    width: 170,
+    height: 50,
     justifyContent: 'center',
     alignItems: 'center',
   },
   backLogoImage: {
-    width: 110,
-    height: 22,
+    width: 250,
+    height: 250,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 15,
+    alignSelf: 'center',
   },
   termsSection: {
     marginTop: 6,
