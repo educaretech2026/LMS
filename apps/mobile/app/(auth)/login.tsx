@@ -294,6 +294,7 @@ export default function LoginScreen() {
                   style={styles.textInput}
                   value={email}
                   onChangeText={setEmail}
+                  selectionColor="#38bdf8"
                   placeholder={
                     roleTab === 'STUDENT'
                       ? 'student@educarelearning.in'
@@ -327,6 +328,7 @@ export default function LoginScreen() {
                   style={styles.textInput}
                   value={password}
                   onChangeText={setPassword}
+                  selectionColor="#38bdf8"
                   placeholder="Enter your security password"
                   placeholderTextColor="rgba(255,255,255,0.25)"
                   secureTextEntry={!showPassword}
