@@ -324,14 +324,14 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 36 : 24,
-    paddingBottom: 28,
+    paddingTop: Platform.OS === 'ios' ? 76 : 56,
+    paddingBottom: 36,
   },
 
   // Ambient Orbs
   ambientOrbBlue: {
     position: 'absolute',
-    top: -40,
+    top: -20,
     left: -40,
     width: 240,
     height: 240,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   // Header / Logo Crest — Much Bigger Logo with Minimal White Margin
   headerSection: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   crestWrapper: {
     width: 120,
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   crestGlowRing: {
     position: 'absolute',
