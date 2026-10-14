@@ -12,6 +12,7 @@ export default function AssignmentsLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: 'Homework & Assignments', headerShown: false }} />
+      <Stack.Screen name="[id]/index" options={{ title: 'Homework Details' }} />
       <Stack.Screen name="[id]/submit" options={{ title: 'Submit Homework' }} />
     </Stack>
   );

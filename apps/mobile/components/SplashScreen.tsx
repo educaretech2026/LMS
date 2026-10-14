@@ -7,6 +7,7 @@ import {
   Animated,
   Easing,
   Image,
+  Platform,
 } from 'react-native';
 import Svg, {
   Defs,
@@ -47,7 +48,8 @@ const STARS = [
   { x: 15, y: 62, s: 2, o: 0.6 },
 ];
 
-const RADIUS = 88;
+const STAGE_SIZE = 260;
+const RADIUS = 78;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 // Wrap Circle for animated strokeDashoffset
@@ -65,7 +67,7 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
   // Animation values
   const progressAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
-  const logoScale = useRef(new Animated.Value(0.3)).current;
+  const logoScale = useRef(new Animated.Value(0.4)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(0)).current;
   const breatheAnim = useRef(new Animated.Value(1)).current;
@@ -78,14 +80,14 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
     Animated.loop(
       Animated.sequence([
         Animated.timing(breatheAnim, {
-          toValue: 1.18,
-          duration: 1500,
+          toValue: 1.15,
+          duration: 1600,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(breatheAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 1600,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -96,7 +98,7 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
     Animated.loop(
       Animated.timing(orbitAnim1, {
         toValue: 1,
-        duration: 7000,
+        duration: 7500,
         easing: Easing.linear,
         useNativeDriver: true,
       })
@@ -105,7 +107,7 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
     Animated.loop(
       Animated.timing(orbitAnim2, {
         toValue: 1,
-        duration: 10000,
+        duration: 11000,
         easing: Easing.linear,
         useNativeDriver: true,
       })
@@ -115,14 +117,14 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
     Animated.loop(
       Animated.sequence([
         Animated.timing(twinkleAnim, {
-          toValue: 1,
-          duration: 1200,
+          toValue: 0.95,
+          duration: 1300,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(twinkleAnim, {
           toValue: 0.35,
-          duration: 1200,
+          duration: 1300,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -133,7 +135,7 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
     Animated.parallel([
       Animated.spring(logoScale, {
         toValue: 1,
-        tension: 50,
+        tension: 55,
         friction: 7,
         useNativeDriver: true,
       }),
@@ -163,11 +165,10 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start(() => {
-      // Small pause at 100% then fade out smoothly
       setTimeout(() => {
         Animated.timing(fadeAnim, {
           toValue: 0,
-          duration: 550,
+          duration: 500,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }).start(() => {
@@ -241,121 +242,126 @@ export function SplashScreen({ onFinish, minDuration = 2400 }: SplashScreenProps
         ))}
       </Animated.View>
 
-      {/* ── Ambient Glow Orbs ── */}
-      <Animated.View
-        style={[
-          styles.glowBlue,
-          {
-            transform: [{ scale: breatheAnim }],
-          },
-        ]}
-        pointerEvents="none"
-      />
-      <Animated.View
-        style={[
-          styles.glowRed,
-          {
-            transform: [{ scale: breatheAnim }],
-          },
-        ]}
-        pointerEvents="none"
-      />
-
-      {/* ── Orbital Rings ── */}
-      <Animated.View
-        style={[
-          styles.orbitRingOuter,
-          {
-            transform: [{ rotateZ: spin1 }],
-          },
-        ]}
-        pointerEvents="none"
-      >
-        <View style={styles.satelliteRed} />
-      </Animated.View>
-
-      <Animated.View
-        style={[
-          styles.orbitRingInner,
-          {
-            transform: [{ rotateZ: spin2 }],
-          },
-        ]}
-        pointerEvents="none"
-      >
-        <View style={styles.satelliteWhite} />
-      </Animated.View>
-
-      {/* ── Center SVG Ring & Logo Badge ── */}
-      <View style={styles.centerStage}>
-        <Svg width={210} height={210} viewBox="0 0 210 210" style={styles.svgRing}>
-          <Defs>
-            <LinearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor="#1d4ed8" />
-              <Stop offset="100%" stopColor="#dc2626" />
-            </LinearGradient>
-          </Defs>
-          {/* Subtle Track */}
-          <Circle
-            cx="105"
-            cy="105"
-            r={RADIUS}
-            fill="none"
-            stroke="rgba(255,255,255,0.08)"
-            strokeWidth="3.5"
-          />
-          {/* Animated Gradient Fill Ring */}
-          <AnimatedCircle
-            cx="105"
-            cy="105"
-            r={RADIUS}
-            fill="none"
-            stroke="url(#ringGrad)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeDasharray={`${CIRCUMFERENCE} ${CIRCUMFERENCE}`}
-            strokeDashoffset={strokeDashoffset}
-          />
-        </Svg>
-
-        {/* Circular Logo Card */}
-        <Animated.View
-          style={[
-            styles.logoCard,
-            {
-              transform: [{ scale: logoScale }],
-              opacity: logoOpacity,
-            },
-          ]}
-        >
-          <Image
-            source={require('../assets/logo.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-        </Animated.View>
-      </View>
-
-      {/* ── Brand Typography ── */}
-      <Animated.View style={[styles.brandBlock, { opacity: contentFade }]}>
-        <Text style={styles.brandTitle}>EDUCARE</Text>
-        <Text style={styles.brandSubtitle}>GROUP OF INSTITUTIONS</Text>
-      </Animated.View>
-
-      {/* ── Progress Bar & Numeric Indicator ── */}
-      <Animated.View style={[styles.progressSection, { opacity: contentFade }]}>
-        <View style={styles.progressBarTrack}>
+      {/* ── Centered Layout Stack (Everything mathematically aligned on one center axis) ── */}
+      <View style={styles.centerContainer}>
+        {/* ── Concentric Cosmic Stage (Glows, Orbits, Ring, and Logo share identical center) ── */}
+        <View style={styles.heroStage}>
+          {/* Ambient Glows */}
           <Animated.View
             style={[
-              styles.progressBarFill,
+              styles.glowBlue,
               {
-                width: progressBarWidth,
+                transform: [{ scale: breatheAnim }],
               },
             ]}
+            pointerEvents="none"
           />
+          <Animated.View
+            style={[
+              styles.glowRed,
+              {
+                transform: [{ scale: breatheAnim }],
+              },
+            ]}
+            pointerEvents="none"
+          />
+
+          {/* 3D Tilted Orbital Ring 1 with Red Satellite */}
+          <Animated.View
+            style={[
+              styles.orbitRingOuter,
+              {
+                transform: [{ rotateX: '72deg' }, { rotateZ: spin1 }],
+              },
+            ]}
+            pointerEvents="none"
+          >
+            <View style={styles.satelliteRed} />
+          </Animated.View>
+
+          {/* 3D Tilted Orbital Ring 2 with White Satellite */}
+          <Animated.View
+            style={[
+              styles.orbitRingInner,
+              {
+                transform: [{ rotateX: '72deg' }, { rotateZ: spin2 }],
+              },
+            ]}
+            pointerEvents="none"
+          >
+            <View style={styles.satelliteWhite} />
+          </Animated.View>
+
+          {/* Center SVG Ring */}
+          <Svg width={180} height={180} viewBox="0 0 180 180" style={styles.svgRing}>
+            <Defs>
+              <LinearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor="#1d4ed8" />
+                <Stop offset="100%" stopColor="#dc2626" />
+              </LinearGradient>
+            </Defs>
+            {/* Subtle Track */}
+            <Circle
+              cx="90"
+              cy="90"
+              r={RADIUS}
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="3.5"
+            />
+            {/* Animated Gradient Fill Ring */}
+            <AnimatedCircle
+              cx="90"
+              cy="90"
+              r={RADIUS}
+              fill="none"
+              stroke="url(#ringGrad)"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeDasharray={`${CIRCUMFERENCE} ${CIRCUMFERENCE}`}
+              strokeDashoffset={strokeDashoffset}
+            />
+          </Svg>
+
+          {/* Circular Logo Card */}
+          <Animated.View
+            style={[
+              styles.logoCard,
+              {
+                transform: [{ scale: logoScale }],
+                opacity: logoOpacity,
+              },
+            ]}
+          >
+            <Image
+              source={require('../assets/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
-        <Text style={styles.percentText}>{percent}%</Text>
-      </Animated.View>
+
+        {/* ── Brand Typography ── */}
+        <Animated.View style={[styles.brandBlock, { opacity: contentFade }]}>
+          <Text style={styles.brandTitle}>EDUCARE</Text>
+          <Text style={styles.brandSubtitle}>GROUP OF INSTITUTIONS</Text>
+        </Animated.View>
+
+        {/* ── Progress Bar & Numeric Indicator ── */}
+        <Animated.View style={[styles.progressSection, { opacity: contentFade }]}>
+          <View style={styles.progressBarTrack}>
+            <Animated.View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: progressBarWidth,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.percentText}>{percent}%</Text>
+        </Animated.View>
+      </View>
     </Animated.View>
   );
 }
@@ -372,29 +378,41 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#FFFFFF',
   },
+  centerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  heroStage: {
+    width: STAGE_SIZE,
+    height: STAGE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
   glowBlue: {
     position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(37, 99, 235, 0.16)',
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(37, 99, 235, 0.18)',
   },
   glowRed: {
     position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(220, 38, 38, 0.12)',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: 'rgba(220, 38, 38, 0.14)',
   },
   orbitRingOuter: {
     position: 'absolute',
-    width: 310,
-    height: 310,
-    borderRadius: 155,
-    borderWidth: 1,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    justifyContent: 'flex-start',
     alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   satelliteRed: {
     width: 8,
@@ -404,19 +422,19 @@ const styles = StyleSheet.create({
     marginTop: -4,
     shadowColor: '#dc2626',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
+    shadowOpacity: 1,
     shadowRadius: 8,
     elevation: 4,
   },
   orbitRingInner: {
     position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
+    width: 210,
+    height: 210,
+    borderRadius: 105,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-    justifyContent: 'flex-start',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
     alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   satelliteWhite: {
     width: 6,
@@ -426,47 +444,44 @@ const styles = StyleSheet.create({
     marginTop: -3,
     shadowColor: '#FFFFFF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.9,
     shadowRadius: 6,
     elevation: 3,
-  },
-  centerStage: {
-    width: 210,
-    height: 210,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   svgRing: {
     position: 'absolute',
     transform: [{ rotate: '-90deg' }],
   },
   logoCard: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+    position: 'absolute',
+    width: 136,
+    height: 136,
+    borderRadius: 68,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#1d4ed8',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 20,
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
     elevation: 10,
-    padding: 12,
+    padding: 10,
   },
   logoImage: {
     width: 96,
     height: 96,
   },
   brandBlock: {
-    marginTop: 28,
+    marginTop: 22,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   brandTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
     letterSpacing: 8,
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   brandSubtitle: {
     marginTop: 6,
@@ -475,16 +490,18 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     color: 'rgba(255, 255, 255, 0.42)',
     textTransform: 'uppercase',
+    textAlign: 'center',
   },
   progressSection: {
-    marginTop: 28,
+    marginTop: 26,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   progressBarTrack: {
-    width: 170,
-    height: 2.5,
+    width: 180,
+    height: 3,
     borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.09)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     overflow: 'hidden',
   },
   progressBarFill: {
@@ -493,10 +510,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#dc2626',
   },
   percentText: {
-    marginTop: 8,
-    fontSize: 10,
+    marginTop: 9,
+    fontSize: 11,
     letterSpacing: 3,
-    fontFamily: 'monospace',
-    color: 'rgba(255, 255, 255, 0.35)',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: 'rgba(255, 255, 255, 0.38)',
+    textAlign: 'center',
   },
 });
