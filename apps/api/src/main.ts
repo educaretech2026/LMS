@@ -19,6 +19,11 @@ async function bootstrap() {
 
   // SEC-06: Strict CORS allowlist with credentials - exclude localhost in production
   const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isProduction && !process.env.REDIS_URL) {
+    throw new Error('FATAL: REDIS_URL is mandatory in production for secure session enforcement and distributed rate limiting.');
+  }
+
   const configuredOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
     : [];

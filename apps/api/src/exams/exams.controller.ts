@@ -72,26 +72,26 @@ export class ExamsController {
 
   @Get('mcq')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  getMcqQuestions(): Promise<any> {
-    return this.examsService.getMcqQuestions();
+  getMcqQuestions(@Req() req: any): Promise<any> {
+    return this.examsService.getMcqQuestions(req.user);
   }
 
   @Post('mcq')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  createMcqQuestion(@Body() data: any): Promise<any> {
-    return this.examsService.createMcqQuestion(data);
+  createMcqQuestion(@Body() data: any, @Req() req: any): Promise<any> {
+    return this.examsService.createMcqQuestion(data, req.user);
   }
 
   @Put('mcq/:questionId')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  updateMcqQuestion(@Param('questionId') questionId: string, @Body() data: any): Promise<any> {
-    return this.examsService.updateMcqQuestion(questionId, data);
+  updateMcqQuestion(@Param('questionId') questionId: string, @Body() data: any, @Req() req: any): Promise<any> {
+    return this.examsService.updateMcqQuestion(questionId, data, req.user);
   }
 
   @Delete('mcq/:questionId')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  deleteMcqQuestion(@Param('questionId') questionId: string): Promise<any> {
-    return this.examsService.deleteMcqQuestion(questionId);
+  deleteMcqQuestion(@Param('questionId') questionId: string, @Req() req: any): Promise<any> {
+    return this.examsService.deleteMcqQuestion(questionId, req.user);
   }
 
   @Get('upload-url')
@@ -101,6 +101,22 @@ export class ExamsController {
     @Query('contentType') contentType: string,
   ) {
     return this.storageService.getPresignedUploadUrl(filename, contentType);
+  }
+
+  @Get(':examId/review')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  getExamReview(@Param('examId') examId: string, @Req() req: any): Promise<any> {
+    return this.examsService.getExamReview(examId, req.user);
+  }
+
+  @Post(':examId/release-answers')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  releaseAnswers(
+    @Param('examId') examId: string,
+    @Body('released') released: boolean,
+    @Req() req: any
+  ): Promise<any> {
+    return this.examsService.releaseExamAnswers(examId, released !== false, req.user);
   }
 
   @Get(':examId')

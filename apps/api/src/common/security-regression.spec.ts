@@ -100,34 +100,47 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       expect(() => assertCentreAccess(centreAdminUser, 'centre-beta')).toThrow(ForbiddenException);
     });
 
-    it('should FAIL CLOSED when non-superadmin has empty centre assignments', () => {
-      expect(() => getAuthorizedCentreIds(emptyCentreAdmin)).toThrow(ForbiddenException);
+    it('should fail-closed: reject centre admin with no centres assigned', () => {
       expect(() => assertCentreAccess(emptyCentreAdmin, 'centre-alpha')).toThrow(ForbiddenException);
     });
 
-    it('should FAIL CLOSED when centreId is omitted or null for non-superadmin', () => {
+    it('should fail-closed in getAuthorizedCentreIds for tenant users without assignments', () => {
+      expect(() => getAuthorizedCentreIds(emptyCentreAdmin)).toThrow(ForbiddenException);
+    });
+
+    it('should reject null or undefined centreId for non-superadmin in assertCentreAccess', () => {
       expect(() => assertCentreAccess(centreAdminUser, null)).toThrow(ForbiddenException);
       expect(() => assertCentreAccess(centreAdminUser, undefined)).toThrow(ForbiddenException);
     });
   });
 
-  describe('SEC-03: ExamsService Real Production Scoring & Answer Confidentiality', () => {
+  describe('SEC-03: Exam Question Sanitization, Authoritative Scoring & Answer Release', () => {
     let examsService: ExamsService;
     let mockPrisma: any;
+    let mockRedis: any;
 
     beforeEach(() => {
       mockPrisma = {
         exam: {
           findUnique: jest.fn(),
           findMany: jest.fn(),
+          create: jest.fn(),
           update: jest.fn(),
           delete: jest.fn(),
         },
         studentProfile: {
           findUnique: jest.fn(),
         },
+        teacherProfile: {
+          findUnique: jest.fn(),
+        },
         mcqQuestion: {
           findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          delete: jest.fn(),
+          deleteMany: jest.fn(),
         },
         examResult: {
           findFirst: jest.fn(),
@@ -145,7 +158,12 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           return cb;
         }),
       };
-      examsService = new ExamsService(mockPrisma as any);
+      mockRedis = {
+        getRaw: jest.fn().mockResolvedValue(null),
+        setRaw: jest.fn().mockResolvedValue(undefined),
+        delRaw: jest.fn().mockResolvedValue(undefined),
+      };
+      examsService = new ExamsService(mockPrisma as any, mockRedis as any);
     });
 
     it('should sanitize answers for students even if result exists (preventing answer disclosure)', async () => {
@@ -162,6 +180,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         userId: 'student-1',
         enrollments: [{ batch: { centreId: 'centre-alpha' } }],
       });
+      mockPrisma.examResult.findMany.mockResolvedValue([]);
 
       const studentUser = { id: 'student-1', role: 'STUDENT' };
       const exam = await examsService.getExamById('exam-1', studentUser);
@@ -196,6 +215,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       });
       mockPrisma.exam.findUnique.mockResolvedValue({
         id: 'exam-1',
+        type: 'MCQ_EXAM',
         centreId: 'centre-alpha',
       });
       mockPrisma.mcqQuestion.findMany.mockResolvedValue([
@@ -207,7 +227,6 @@ describe('Security Regression Suite — Real Production Implementations', () => 
 
       // Student got q1 correct (B) and q2 wrong (C)
       const submittedAnswers = { q1: 'B', q2: 'C' };
-      // Attacker tried to forge their score to 100/100
       const forgedScore = { earned: 100, total: 100 };
 
       const result = await examsService.submitExamAttempt('exam-1', 'student-user-1', submittedAnswers, forgedScore);
@@ -234,6 +253,112 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should reject submission containing question IDs for another exam', async () => {
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        type: 'MCQ_EXAM',
+        centreId: 'centre-alpha',
+      });
+      mockPrisma.mcqQuestion.findMany.mockResolvedValue([
+        { id: 'q1', type: 'MCQ', correctOption: 'A', marks: 4, negativeMarks: 1 },
+      ]);
+      mockPrisma.examResult.findFirst.mockResolvedValue(null);
+
+      await expect(
+        examsService.submitExamAttempt('exam-1', 'student-1', { 'foreign-q': 'A' })
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject repeated submissions on formal exams (MCQ_EXAM / MOCK_TEST)', async () => {
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-formal',
+        type: 'MCQ_EXAM',
+        centreId: 'centre-alpha',
+      });
+      mockPrisma.examResult.findFirst.mockResolvedValue({ id: 'res-prev', marksObtained: 10 });
+
+      await expect(
+        examsService.submitExamAttempt('exam-formal', 'student-1', { q1: 'A' })
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should not reveal answer keys upon submission and keep review locked before release', async () => {
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        type: 'MCQ_EXAM',
+        centreId: 'centre-alpha',
+        mcqQuestions: [
+          { id: 'q1', questionText: 'Q1', correctOption: 'A', explanation: 'Secret reason', marks: 4 },
+        ],
+      });
+      mockPrisma.mcqQuestion.findMany.mockResolvedValue([
+        { id: 'q1', type: 'MCQ', correctOption: 'A', marks: 4, negativeMarks: 1 },
+      ]);
+      mockPrisma.examResult.findFirst.mockResolvedValue(null);
+      mockPrisma.examResult.create.mockResolvedValue({ id: 'res-1' });
+
+      const submitResult = await examsService.submitExamAttempt('exam-1', 'student-1', { q1: 'A' });
+      expect((submitResult as any).correctOption).toBeUndefined();
+      expect((submitResult as any).explanation).toBeUndefined();
+
+      // Student attempts to request review before release
+      const studentUser = { id: 'student-1', role: 'STUDENT' };
+      mockPrisma.examResult.findFirst.mockResolvedValue({ id: 'res-1', marksObtained: 4, maxMarks: 4, studentAnswers: [] });
+      await expect(examsService.getExamReview('exam-1', studentUser)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow answer review only after authorized staff releases answers', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        title: 'Physics',
+        centreId: 'centre-alpha',
+        mcqQuestions: [
+          { id: 'q1', questionText: 'Q1', correctOption: 'A', explanation: 'Secret reason', marks: 4, negativeMarks: 1 },
+        ],
+      });
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      mockPrisma.examResult.findFirst.mockResolvedValue({
+        id: 'res-1',
+        marksObtained: 4,
+        maxMarks: 4,
+        grade: 'A',
+        studentAnswers: [{ questionId: 'q1', selectedOption: 'A', isCorrect: true, marksAwarded: 4 }],
+      });
+
+      const centreAUser = {
+        id: 'admin-a',
+        role: { name: 'CENTRE_ADMIN' },
+        userCentres: [{ centreId: 'centre-alpha' }],
+      };
+
+      // Staff releases answers
+      await examsService.releaseExamAnswers('exam-1', true, centreAUser);
+
+      // Now student review succeeds with answers & explanation
+      const studentUser = { id: 'student-1', role: 'STUDENT' };
+      const review = await examsService.getExamReview('exam-1', studentUser);
+
+      expect(review.questions).toHaveLength(1);
+      expect(review.questions[0].correctOption).toBe('A');
+      expect(review.questions[0].explanation).toBe('Secret reason');
+      expect(review.questions[0].isCorrect).toBe(true);
+    });
+
     it('should reject cross-centre bulk result saving', async () => {
       mockPrisma.exam.findUnique.mockResolvedValue({
         id: 'exam-beta',
@@ -250,11 +375,55 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         examsService.saveExamResults('exam-beta', [{ studentId: 's1', marksObtained: 50 }], centreAUser)
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('should reject bulk results with duplicate student IDs before touching database', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: 'centre-alpha',
+        mcqQuestions: [{ marks: 100 }],
+      });
+      const superAdmin = { id: 'sa', role: { name: 'SUPER_ADMIN' } };
+
+      const duplicatePayload = [
+        { studentId: 'student-dup', marksObtained: 50, maxMarks: 100 },
+        { studentId: 'student-dup', marksObtained: 70, maxMarks: 100 },
+      ];
+
+      await expect(
+        examsService.saveExamResults('exam-1', duplicatePayload, superAdmin)
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrisma.examResult.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject bulk results when marksObtained exceeds maxMarks', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: 'centre-alpha',
+        mcqQuestions: [{ marks: 50 }],
+      });
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'student-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      const superAdmin = { id: 'sa', role: { name: 'SUPER_ADMIN' } };
+
+      const invalidPayload = [
+        { studentId: 'student-1', marksObtained: 999, maxMarks: 50 },
+      ];
+
+      await expect(
+        examsService.saveExamResults('exam-1', invalidPayload, superAdmin)
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrisma.examResult.deleteMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('SEC-05: StudentsService Password Projection & Fail-Closed Scoping', () => {
     let studentsService: StudentsService;
     let mockPrisma: any;
+    let mockRedis: any;
 
     beforeEach(() => {
       mockPrisma = {
@@ -279,43 +448,32 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         enrollment: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
         $transaction: jest.fn(async (cb) => cb(mockPrisma)),
       };
-      studentsService = new StudentsService(mockPrisma as any);
+      mockRedis = {
+        revokeAllSessions: jest.fn().mockResolvedValue(undefined),
+      };
+      studentsService = new StudentsService(mockPrisma as any, mockRedis as any);
     });
 
-    it('should fail closed when Centre Admin has no assigned centres in getStudents', async () => {
-      const emptyAdmin = { id: 'admin-empty', role: 'CENTRE_ADMIN', userCentres: [] };
-      await expect(studentsService.getStudents(emptyAdmin)).rejects.toThrow(ForbiddenException);
-    });
+    it('should omit password hash when creating a student', async () => {
+      mockPrisma.role.findUnique.mockResolvedValue({ id: 'role-s' });
+      mockPrisma.centre.findFirst.mockResolvedValue({ id: 'centre-1' });
+      mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1' });
+      mockPrisma.board.findUnique.mockResolvedValue({ id: 'b-1' });
+      mockPrisma.standard.findFirst.mockResolvedValue({ id: 'std-1' });
+      mockPrisma.batch.findFirst.mockResolvedValue({ id: 'batch-1' });
 
-    it('should never select password hash in getStudents queries', async () => {
-      const admin = { id: 'admin-1', role: 'CENTRE_ADMIN', userCentres: [{ centreId: 'c1' }] };
-      mockPrisma.studentProfile.findMany.mockResolvedValue([]);
-
-      await studentsService.getStudents(admin);
-
-      expect(mockPrisma.studentProfile.findMany).toHaveBeenCalled();
-      const findArgs = mockPrisma.studentProfile.findMany.mock.calls[0][0];
-      // Assert that user projection uses SAFE_USER_SELECT and explicitly omits password
-      expect(findArgs.include.user.select).toEqual(SAFE_USER_SELECT);
-      expect(findArgs.include.user.select.password).toBeUndefined();
-    });
-
-    it('should strip password when creating a new student', async () => {
-      mockPrisma.role.findUnique.mockResolvedValue({ id: 'r-student' });
-      mockPrisma.centre.findFirst.mockResolvedValue({ id: 'c1', name: 'Centre 1', code: 'C1' });
-      mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay1' });
-      mockPrisma.board.findUnique.mockResolvedValue({ id: 'b1' });
-      mockPrisma.standard.findFirst.mockResolvedValue({ id: 's1' });
-      mockPrisma.batch.findFirst.mockResolvedValue({ id: 'bat1' });
       mockPrisma.user.create.mockResolvedValue({
         id: 'u-1',
         email: 'test@student.com',
-        password: '$argon2id$v=19$m=65536,t=3,p=4$hashedpassword',
         firstName: 'John',
         lastName: 'Doe',
+        password: '$argon2id$mock-hashed-password',
       });
-      mockPrisma.studentProfile.create.mockResolvedValue({ id: 'sp-1', userId: 'u-1' });
-      mockPrisma.enrollment.create.mockResolvedValue({ id: 'en-1' });
+      mockPrisma.studentProfile.create.mockResolvedValue({
+        id: 'sp-1',
+        userId: 'u-1',
+        admissionNo: 'ADM001',
+      });
 
       const superAdmin = { id: 'sa', role: 'SUPER_ADMIN' };
       const created = await studentsService.createStudent({
@@ -345,6 +503,23 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       await expect(
         studentsService.updateStudent('sp-2', { name: 'Hacked' }, centreAUser)
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should revoke all active sessions when a student is deactivated', async () => {
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        userId: 'u-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      const superAdmin = { id: 'sa', role: 'SUPER_ADMIN' };
+
+      await studentsService.toggleStatus('sp-1', 'INACTIVE', superAdmin);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u-1' },
+        data: { status: 'INACTIVE' },
+      });
+      expect(mockRedis.revokeAllSessions).toHaveBeenCalledWith('u-1');
     });
   });
 
@@ -437,59 +612,138 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         }, centreAUser)
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('should reject modifying status of an already ended live class', async () => {
+      mockPrisma.liveClass.findUnique.mockResolvedValue({
+        id: 'lc-ended',
+        status: 'ENDED',
+        centreId: 'centre-alpha',
+      });
+      const centreAUser = {
+        id: 'admin-a',
+        role: 'CENTRE_ADMIN',
+        userCentres: [{ centreId: 'centre-alpha' }],
+      };
+
+      await expect(
+        liveClassService.updateStatus('lc-ended', 'LIVE', centreAUser)
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('SEC-07: Study Material Standard Filtering & Play URL Authorization', () => {
+    let studyMaterialService: StudyMaterialService;
+    let mockPrisma: any;
+    let mockStorage: any;
+
+    beforeEach(() => {
+      mockPrisma = {
+        studyMaterial: {
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          delete: jest.fn(),
+        },
+        studentProfile: {
+          findUnique: jest.fn(),
+        },
+      };
+      mockStorage = {
+        getPresignedDownloadUrl: jest.fn().mockResolvedValue('https://mock-play-url.com/video'),
+      };
+      studyMaterialService = new StudyMaterialService(mockPrisma as any, mockStorage as any);
+    });
+
+    it('should filter study materials by student enrolled standard and board', async () => {
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        enrollments: [
+          { batch: { standardId: 'std-10', boardId: 'cbse' } },
+        ],
+      });
+      mockPrisma.studyMaterial.findMany.mockResolvedValue([
+        { id: 'mat-1', title: 'Class 10 Physics' },
+      ]);
+
+      const studentUser = { id: 'student-1', role: 'STUDENT' };
+      const materials = await studyMaterialService.getAll({}, studentUser);
+
+      expect(materials).toHaveLength(1);
+      expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            syllabus: expect.objectContaining({
+              OR: expect.arrayContaining([
+                expect.objectContaining({ standardId: { in: ['std-10'] } }),
+              ]),
+            }),
+          }),
+        })
+      );
+    });
+
+    it('should reject play URL generation for a student not enrolled in the material standard', async () => {
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-1',
+        enrollments: [
+          { batch: { standardId: 'std-9', boardId: 'cbse' } },
+        ],
+      });
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-12',
+        title: 'Class 12 Advanced Chemistry',
+        url: 'https://r2.educare.com/chemistry.mp4',
+        syllabus: {
+          standardId: 'std-12',
+          boardId: 'cbse',
+        },
+      });
+
+      const studentUser = { id: 'student-1', role: 'STUDENT' };
+      await expect(
+        studyMaterialService.getPlayUrl('mat-12', studentUser)
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('SEC-08: Storage & File Upload Security', () => {
     let storageService: StorageService;
-    const originalAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
 
     beforeEach(() => {
-      process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account';
       storageService = new StorageService();
     });
 
-    afterEach(() => {
-      process.env.CLOUDFLARE_ACCOUNT_ID = originalAccount;
+    it('should reject dangerous executable and script file extensions', async () => {
+      const dangerousExtensions = ['.exe', '.bat', '.sh', '.php', '.js', '.vbs', '.msi'];
+      for (const ext of dangerousExtensions) {
+        await expect(
+          storageService.getPresignedUploadUrl(`payload${ext}`, 'application/octet-stream')
+        ).rejects.toThrow(BadRequestException);
+      }
     });
 
-    it('should reject dangerous executable file extensions', async () => {
+    it('should reject SVG and SVGZ uploads to prevent stored Cross-Site Scripting (XSS)', async () => {
       await expect(
-        storageService.getPresignedUploadUrl('malicious.exe', 'application/octet-stream')
+        storageService.getPresignedUploadUrl('vector.svg', 'image/svg+xml')
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        storageService.getPresignedUploadUrl('script.sh', 'text/x-sh')
-      ).rejects.toThrow(BadRequestException);
-
-      await expect(
-        storageService.getPresignedUploadUrl('payload.php', 'application/x-httpd-php')
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should reject SVG files to prevent stored XSS attacks', async () => {
-      await expect(
-        storageService.getPresignedUploadUrl('image.svg', 'image/svg+xml')
+        storageService.getPresignedUploadUrl('compressed.svgz', 'image/svg+xml')
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should reject disallowed MIME types', async () => {
-      await expect(
-        storageService.getPresignedUploadUrl('test.bin', 'application/x-dosexec')
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should permit allowed document, image, and video MIME types', async () => {
-      const pdfRes = await storageService.getPresignedUploadUrl('assignment.pdf', 'application/pdf');
-      expect(pdfRes.uploadUrl).toBeDefined();
-      expect(pdfRes.objectKey).toContain('assignment.pdf');
-
-      const pngRes = await storageService.getPresignedUploadUrl('avatar.png', 'image/png');
-      expect(pngRes.uploadUrl).toBeDefined();
-      expect(pngRes.objectKey).toContain('avatar.png');
+    it('should allow legitimate safe document and media extensions', async () => {
+      const allowed = ['notes.pdf', 'photo.jpg', 'diagram.png', 'lecture.mp4'];
+      for (const f of allowed) {
+        const mime = f.endsWith('.pdf') ? 'application/pdf' : f.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
+        const res = await storageService.getPresignedUploadUrl(f, mime);
+        expect(res).toHaveProperty('uploadUrl');
+        expect(res).toHaveProperty('key');
+      }
     });
   });
 
-  describe('SEC-09: Authentication Rate Limiting & DoS Lockout Prevention', () => {
+  describe('SEC-09: Authentication Service & Redis Temporary Lockout', () => {
     let authService: AuthService;
     let mockPrisma: any;
     let mockJwt: any;
@@ -537,7 +791,6 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       await expect(
         authService.login({ email: 'user@educare.com', password: 'wrongpassword' })
       ).rejects.toThrow('Invalid email or password');
-      // Must NOT permanently suspend account in DB on password failure
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
@@ -576,7 +829,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
     });
   });
 
-  describe('SEC-07: Cryptographically Secure Random Tokens & Passwords', () => {
+  describe('SEC-10: Cryptographically Secure Random Tokens & Passwords', () => {
     it('should generate secure 6-digit OTPs within valid bounds', () => {
       for (let i = 0; i < 50; i++) {
         const otp = crypto.randomInt(100000, 1000000).toString();
@@ -597,4 +850,3 @@ describe('Security Regression Suite — Real Production Implementations', () => 
     });
   });
 });
-

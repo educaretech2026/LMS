@@ -99,18 +99,26 @@ export default function QuizPage() {
     
     setPhase("loading");
     try {
-      await fetchApi(`/exams/${examId}/submit`, {
+      const res = await fetchApi<{ marksObtained: number; maxMarks: number; grade: string }>(`/exams/${examId}/submit`, {
         method: 'POST',
         body: JSON.stringify({
           answers,
-          score: finalScore
         })
       });
+      if (res && typeof res.marksObtained === 'number') {
+        setScore({
+          earned: res.marksObtained,
+          total: res.maxMarks,
+          correct,
+          wrong,
+          skipped,
+        });
+      }
       setPhase("results");
     } catch (error) {
       console.error(error);
       alert("Failed to submit exam results.");
-      setPhase("results"); // Show results anyway
+      setPhase("results");
     }
   }, [questions, answers, examId]);
 

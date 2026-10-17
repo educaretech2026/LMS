@@ -17,6 +17,7 @@ export default function TakeExamPage() {
   const [timeLeft, setTimeLeft] = useState(60 * 60);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [serverResult, setServerResult] = useState<{ marksObtained: number; maxMarks: number; grade: string } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -49,32 +50,25 @@ export default function TakeExamPage() {
       const answerPayload: Record<string, string> = {};
 
       questions.forEach((q: any, i: number) => {
-        const marks = Number(q.marks || 4);
-        const neg = Number(q.negativeMarks || 1);
-        total += marks;
-
         const ansIdx = answers[i];
         const rawOptions = Array.isArray(q.options) ? q.options : [];
         const selectedText = ansIdx !== null && ansIdx !== undefined ? (typeof rawOptions[ansIdx] === 'string' ? rawOptions[ansIdx] : rawOptions[ansIdx]?.text) : null;
 
         if (selectedText) {
           answerPayload[q.id] = selectedText;
-          if (selectedText === q.correctOption) {
-            earned += marks;
-          } else {
-            earned = Math.max(0, earned - neg);
-          }
         }
       });
 
       if (id) {
-        await fetchApi(`/exams/${id}/submit`, {
+        const res = await fetchApi<any>(`/exams/${id}/submit`, {
           method: 'POST',
           body: JSON.stringify({
             answers: answerPayload,
-            score: { earned, total }
           })
-        }).catch(console.error);
+        });
+        if (res && typeof res.marksObtained === 'number') {
+          setServerResult(res);
+        }
       }
     } catch (e) {
       console.error("Error submitting attempt", e);
@@ -147,18 +141,8 @@ export default function TakeExamPage() {
 
   /* ── Results ── */
   if (submitted) {
-    let earned = 0;
-    let totalMarks = 0;
-    questions.forEach((q: any, i: number) => {
-      const marks = Number(q.marks || 4);
-      totalMarks += marks;
-      const ansIdx = answers[i];
-      const rawOptions = Array.isArray(q.options) ? q.options : [];
-      const selectedText = ansIdx !== null && ansIdx !== undefined ? (typeof rawOptions[ansIdx] === 'string' ? rawOptions[ansIdx] : rawOptions[ansIdx]?.text) : null;
-      if (selectedText === q.correctOption) {
-        earned += marks;
-      }
-    });
+    const earned = serverResult?.marksObtained ?? 0;
+    const totalMarks = serverResult?.maxMarks ?? (questions.length ? questions.length * 4 : 40);
     const pct = totalMarks > 0 ? Math.round((earned / totalMarks) * 100) : 0;
     const passed = pct >= 40;
 
@@ -180,15 +164,13 @@ export default function TakeExamPage() {
               const ansIdx = answers[i];
               const rawOptions = Array.isArray(q.options) ? q.options : [];
               const selectedText = ansIdx !== null && ansIdx !== undefined ? (typeof rawOptions[ansIdx] === 'string' ? rawOptions[ansIdx] : rawOptions[ansIdx]?.text) : null;
-              const correct = selectedText === q.correctOption;
               return (
-                <div key={q.id || i} className={`rounded-lg p-3 border ${correct ? "border-success/20 bg-success/5" : "border-brand-red/20 bg-brand-red/5"}`}>
+                <div key={q.id || i} className="rounded-lg p-3 border border-border-soft bg-surface-2">
                   <p className="text-xs font-medium text-text-primary mb-1.5">{i + 1}. {q.questionText || q.text}</p>
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className={correct ? "text-success font-semibold" : "text-brand-red font-medium"}>
+                    <span className="text-text-muted font-medium">
                       Your answer: {selectedText || "Not answered"}
                     </span>
-                    {!correct && <span className="text-success font-semibold">Correct: {q.correctOption}</span>}
                   </div>
                 </div>
               );

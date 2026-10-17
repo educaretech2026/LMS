@@ -49,6 +49,16 @@ export class LiveClassController {
     return this.liveClassService.create(data, req.user);
   }
 
+  @Patch(':id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  update(
+    @Param('id') id: string,
+    @Body() data: any,
+    @Req() req: any
+  ) {
+    return this.liveClassService.update(id, data, req.user);
+  }
+
   @Patch(':id/status')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   updateStatus(

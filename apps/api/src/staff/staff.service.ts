@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StaffService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redisService: RedisService,
+  ) {}
 
   async createStaff(data: any, currentUser?: any) {
     try {
@@ -276,6 +280,9 @@ export class StaffService {
       }
 
       const { password: _pwd, ...safeUpdatedUser } = updatedUser;
+      if (data.status === 'Inactive') {
+        await this.redisService.revokeAllSessions(userId);
+      }
       return safeUpdatedUser;
     });
   }
@@ -295,11 +302,14 @@ export class StaffService {
       }
     }
     
-    return this.prisma.$transaction(async (prisma) => {
+    const result = await this.prisma.$transaction(async (prisma) => {
       await prisma.userCentre.deleteMany({ where: { userId } });
       await prisma.teacherProfile.deleteMany({ where: { userId } });
       await prisma.user.delete({ where: { id: userId } });
       return { success: true };
     });
+
+    await this.redisService.revokeAllSessions(userId);
+    return result;
   }
 }

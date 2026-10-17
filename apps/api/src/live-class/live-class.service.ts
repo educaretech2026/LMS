@@ -27,14 +27,13 @@ export class LiveClassService {
       const standardIds = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
       const boardIds = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
 
-      const orConditions: any[] = [];
-      if (centreIds.length > 0) orConditions.push({ centreId: { in: centreIds } });
-      if (standardIds.length > 0) orConditions.push({ standardId: { in: standardIds } });
-      if (boardIds.length > 0) orConditions.push({ boardId: { in: boardIds } });
-      orConditions.push({ centreId: null, standardId: null, boardId: null });
+      const andConditions: any[] = [];
+      andConditions.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
+      andConditions.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
+      andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
 
       const classes = await this.prisma.liveClass.findMany({
-        where: { OR: orConditions },
+        where: { AND: andConditions },
         include: {
           board: { select: { id: true, name: true } },
           standard: { select: { id: true, name: true } },
@@ -105,7 +104,7 @@ export class LiveClassService {
       const matchesStandard = !cls.standardId || standardIds.includes(cls.standardId);
       const matchesBoard = !cls.boardId || boardIds.includes(cls.boardId);
 
-      if (!matchesCentre && !matchesStandard && !matchesBoard) {
+      if (!matchesCentre || !matchesStandard || !matchesBoard) {
         throw new ForbiddenException('Access denied: You are not eligible for this live class.');
       }
 
@@ -181,12 +180,46 @@ export class LiveClassService {
     });
   }
 
+  async update(id: string, data: any, user?: any) {
+    const cls = await this.prisma.liveClass.findUnique({ where: { id } });
+    if (!cls) throw new NotFoundException('Live class not found');
+
+    if (user && !isSuperAdmin(user)) {
+      if (cls.centreId) {
+        assertCentreAccess(user, cls.centreId);
+      } else {
+        throw new ForbiddenException('Cannot modify a global live class');
+      }
+    }
+
+    const updateData: any = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.subject !== undefined) updateData.subject = data.subject;
+    if (data.teacherName !== undefined) updateData.teacherName = data.teacherName;
+    if (data.duration !== undefined) updateData.duration = Number(data.duration);
+    if (data.zoomLink !== undefined) updateData.roomId = data.zoomLink;
+    if (data.scheduledAt !== undefined) {
+      const d = new Date(data.scheduledAt);
+      if (isNaN(d.getTime())) throw new BadRequestException('Invalid scheduledAt date');
+      updateData.scheduledAt = d;
+    }
+
+    return this.prisma.liveClass.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
   async updateStatus(id: string, status: 'SCHEDULED' | 'LIVE' | 'ENDED', user?: any) {
     const cls = await this.prisma.liveClass.findUnique({ where: { id } });
     if (!cls) throw new NotFoundException('Live class not found');
 
-    if (user && !isSuperAdmin(user) && cls.centreId) {
-      assertCentreAccess(user, cls.centreId);
+    if (user && !isSuperAdmin(user)) {
+      if (cls.centreId) {
+        assertCentreAccess(user, cls.centreId);
+      } else {
+        throw new ForbiddenException('Cannot alter status of a global live class');
+      }
     }
 
     if (!['SCHEDULED', 'LIVE', 'ENDED'].includes(status)) {
@@ -207,8 +240,12 @@ export class LiveClassService {
     const cls = await this.prisma.liveClass.findUnique({ where: { id } });
     if (!cls) throw new NotFoundException('Live class not found');
 
-    if (user && !isSuperAdmin(user) && cls.centreId) {
-      assertCentreAccess(user, cls.centreId);
+    if (user && !isSuperAdmin(user)) {
+      if (cls.centreId) {
+        assertCentreAccess(user, cls.centreId);
+      } else {
+        throw new ForbiddenException('Cannot delete a global live class');
+      }
     }
 
     return this.prisma.liveClass.delete({ where: { id } });
@@ -228,4 +265,3 @@ export class LiveClassService {
     return { total, live };
   }
 }
-

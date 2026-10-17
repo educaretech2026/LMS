@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StudentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redisService: RedisService,
+  ) {}
 
   async createStudent(data: any, currentUser?: any) {
     try {
@@ -394,6 +398,7 @@ export class StudentsService {
       where: { id: profile.userId },
       data: { status: 'INACTIVE' }
     });
+    await this.redisService.revokeAllSessions(profile.userId);
     return { success: true };
   }
 
@@ -416,6 +421,9 @@ export class StudentsService {
       where: { id: profile.userId },
       data: { status }
     });
+    if (status === 'INACTIVE') {
+      await this.redisService.revokeAllSessions(profile.userId);
+    }
     return { success: true, status };
   }
 

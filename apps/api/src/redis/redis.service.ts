@@ -9,6 +9,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     const redisUrl = process.env.REDIS_URL;
     if (!redisUrl) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('FATAL: REDIS_URL is mandatory in production for secure session enforcement.');
+      }
       console.warn('REDIS_URL not configured. Redis features running in fallback mode.');
       return;
     }
@@ -180,6 +183,39 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     if (!this.client || !this.isAvailable) return;
     try {
       const key = `login_attempts:${email.toLowerCase().trim()}`;
+      await this.client.del(key);
+    } catch {
+      // Graceful degradation
+    }
+  }
+
+  // --- Raw Key/Value Operations ---
+
+  async getRaw(key: string): Promise<string | null> {
+    if (!this.client || !this.isAvailable) return null;
+    try {
+      return await this.client.get(key);
+    } catch {
+      return null;
+    }
+  }
+
+  async setRaw(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    if (!this.client || !this.isAvailable) return;
+    try {
+      if (ttlSeconds && ttlSeconds > 0) {
+        await this.client.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.client.set(key, value);
+      }
+    } catch {
+      // Graceful degradation
+    }
+  }
+
+  async delRaw(key: string): Promise<void> {
+    if (!this.client || !this.isAvailable) return;
+    try {
       await this.client.del(key);
     } catch {
       // Graceful degradation
