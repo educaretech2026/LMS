@@ -1,8 +1,8 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SyllabusService } from '../syllabus/syllabus.service';
-import { SAFE_USER_SELECT } from '../common/utils/tenant.util';
+import { SAFE_USER_SELECT, isSuperAdmin, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class AssignmentsService {
@@ -134,8 +134,15 @@ export class AssignmentsService {
     });
   }
 
-  async create(data: any, uploaderId: string): Promise<any> {
+  async create(data: any, uploaderId: string, user?: any): Promise<any> {
     try {
+      if (data.batchId && user && !isSuperAdmin(user)) {
+        const batch = await this.prisma.batch.findUnique({ where: { id: data.batchId } });
+        if (batch?.centreId) {
+          assertCentreAccess(user, batch.centreId);
+        }
+      }
+
       const assignment = await this.prisma.assignment.create({
         data: {
           title: data.title,
@@ -187,6 +194,7 @@ export class AssignmentsService {
 
       return assignment;
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error(error);
       throw new HttpException('Failed to create assignment', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -325,13 +333,39 @@ export class AssignmentsService {
     }
   }
 
-  async gradeSubmission(submissionId: string, data: any): Promise<any> {
+  async gradeSubmission(submissionId: string, data: any, user?: any): Promise<any> {
     try {
+      const existing = await this.prisma.assignmentSubmission.findUnique({
+        where: { id: submissionId },
+        include: {
+          assignment: {
+            include: {
+              batch: { select: { centreId: true } }
+            }
+          }
+        }
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Assignment submission not found');
+      }
+
+      if (user && !isSuperAdmin(user)) {
+        const centreId = existing.assignment?.batch?.centreId;
+        if (centreId) {
+          assertCentreAccess(user, centreId);
+        }
+      }
+
+      if (data.grade === undefined || isNaN(Number(data.grade)) || Number(data.grade) < 0) {
+        throw new BadRequestException('A valid non-negative numeric grade is required');
+      }
+
       const submission = await this.prisma.assignmentSubmission.update({
         where: { id: submissionId },
         data: {
           grade: Number(data.grade),
-          feedback: data.feedback,
+          feedback: data.feedback || null,
           status: 'GRADED'
         },
         include: {
@@ -355,6 +389,7 @@ export class AssignmentsService {
 
       return submission;
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error(error);
       throw new HttpException('Failed to grade submission', HttpStatus.INTERNAL_SERVER_ERROR);
     }

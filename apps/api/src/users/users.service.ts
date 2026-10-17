@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redisService: RedisService,
+  ) {}
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -68,6 +72,10 @@ export class UsersService {
       where: { id: userId },
       data: updateData,
     });
+
+    if (data.password) {
+      await this.redisService.revokeAllSessions(userId);
+    }
 
     const { password, ...userWithoutPassword } = updated;
     return userWithoutPassword;

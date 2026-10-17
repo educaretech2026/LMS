@@ -29,16 +29,19 @@ export class SetupController {
   }
 
   @Post('roles')
+  @Roles('SUPER_ADMIN')
   createRole(@Body() data: { name: string }) {
     return this.setupService.createRole(data);
   }
 
   @Delete('roles/:id')
+  @Roles('SUPER_ADMIN')
   deleteRole(@Param('id') id: string) {
     return this.setupService.deleteRole(id);
   }
 
   @Post('roles/:id/permissions')
+  @Roles('SUPER_ADMIN')
   toggleRolePermission(@Param('id') id: string, @Body() data: { module: string, active: boolean }) {
     return this.setupService.toggleRolePermission(id, data.module, data.active);
   }
@@ -50,11 +53,13 @@ export class SetupController {
   }
 
   @Post('centres')
+  @Roles('SUPER_ADMIN')
   createCentre(@Body() data: any) {
     return this.setupService.createCentre(data);
   }
 
   @Put('centres/:id')
+  @Roles('SUPER_ADMIN')
   updateCentre(@Param('id') id: string, @Body() data: any) {
     return this.setupService.updateCentre(id, data);
   }
@@ -194,6 +199,7 @@ export class SetupController {
   }
 
   @Delete('centres/:id')
+  @Roles('SUPER_ADMIN')
   deleteCentre(@Param('id') id: string) {
     return this.setupService.deleteCentre(id);
   }

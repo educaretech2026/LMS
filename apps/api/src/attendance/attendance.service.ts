@@ -1,14 +1,22 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AttendanceStatus } from '@educare/database';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class AttendanceService {
   constructor(private prisma: PrismaService) {}
 
-  async getBatchStudents(batchId?: string, subjectId?: string) {
-    let students;
+  async getBatchStudents(batchId?: string, subjectId?: string, user?: any) {
+    let students: any[];
     if (batchId && batchId !== 'ALL') {
+      if (user && !isSuperAdmin(user)) {
+        const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+        if (batch?.centreId) {
+          assertCentreAccess(user, batch.centreId);
+        }
+      }
+
       const enrollments = await this.prisma.enrollment.findMany({
         where: { 
           batchId,
@@ -24,11 +32,31 @@ export class AttendanceService {
       });
       students = enrollments.map(e => e.studentProfile);
     } else {
-      students = await this.prisma.studentProfile.findMany({
-        include: {
-          user: { select: { firstName: true, lastName: true, id: true } }
-        }
-      });
+      if (user && !isSuperAdmin(user)) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
+        const enrollments = await this.prisma.enrollment.findMany({
+          where: {
+            batch: {
+              centreId: { in: authorizedCentres }
+            },
+            ...(subjectId && { subjects: { some: { id: subjectId } } })
+          },
+          include: {
+            studentProfile: {
+              include: {
+                user: { select: { firstName: true, lastName: true, id: true } }
+              }
+            }
+          }
+        });
+        students = enrollments.map(e => e.studentProfile);
+      } else {
+        students = await this.prisma.studentProfile.findMany({
+          include: {
+            user: { select: { firstName: true, lastName: true, id: true } }
+          }
+        });
+      }
     }
 
     return students.map(s => ({
@@ -71,7 +99,14 @@ export class AttendanceService {
     }));
   }
 
-  async getAttendanceForBatchAndDate(batchId: string | undefined, date: string, subjectId?: string) {
+  async getAttendanceForBatchAndDate(batchId: string | undefined, date: string, subjectId?: string, user?: any) {
+    if (batchId && batchId !== 'ALL' && user && !isSuperAdmin(user)) {
+      const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+      if (batch?.centreId) {
+        assertCentreAccess(user, batch.centreId);
+      }
+    }
+
     const targetDate = new Date(date);
     
     return this.prisma.attendance.findFirst({
@@ -111,13 +146,19 @@ export class AttendanceService {
     return batch.id;
   }
 
-  async getBatches(centreId: string, boardId: string, standardId: string, trackId: string) {
+  async getBatches(centreId: string, boardId: string, standardId: string, trackId: string, user?: any) {
+    if (user && !isSuperAdmin(user)) {
+      assertCentreAccess(user, centreId);
+    }
     return this.prisma.batch.findMany({
       where: { centreId, boardId, standardId, trackId }
     });
   }
 
-  async getStudentsByFilter(centreId: string, boardId: string, standardId: string, trackId: string) {
+  async getStudentsByFilter(centreId: string, boardId: string, standardId: string, trackId: string, user?: any) {
+    if (user && !isSuperAdmin(user)) {
+      assertCentreAccess(user, centreId);
+    }
     const enrollments = await this.prisma.enrollment.findMany({
       where: {
         batch: { centreId, boardId, standardId, trackId }
@@ -136,7 +177,10 @@ export class AttendanceService {
     }));
   }
 
-  async getAttendanceByFilter(centreId: string, boardId: string, standardId: string, trackId: string, date: string) {
+  async getAttendanceByFilter(centreId: string, boardId: string, standardId: string, trackId: string, date: string, user?: any) {
+    if (user && !isSuperAdmin(user)) {
+      assertCentreAccess(user, centreId);
+    }
     const targetDate = new Date(date);
     const batch = await this.prisma.batch.findFirst({
       where: { centreId, boardId, standardId, trackId }
@@ -153,9 +197,22 @@ export class AttendanceService {
     });
   }
 
-  async markAttendance(data: any, userId: string) {
+  async markAttendance(data: any, user: any) {
+    const userId = typeof user === 'string' ? user : user?.id;
     const { batchId, date, records, centreId, boardId, standardId, trackId, subjectId } = data;
     const targetDate = new Date(date);
+
+    if (user && typeof user !== 'string' && !isSuperAdmin(user)) {
+      if (centreId) {
+        assertCentreAccess(user, centreId);
+      }
+      if (batchId && batchId !== 'ALL') {
+        const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+        if (batch?.centreId) {
+          assertCentreAccess(user, batch.centreId);
+        }
+      }
+    }
     
     let resolvedBatchId = batchId;
     if (batchId === 'ALL') {

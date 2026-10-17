@@ -21,9 +21,10 @@ export class AttendanceController {
     @Query('centreId') centreId: string,
     @Query('boardId') boardId: string,
     @Query('standardId') standardId: string,
-    @Query('trackId') trackId: string
+    @Query('trackId') trackId: string,
+    @Req() req: any
   ) {
-    return this.attendanceService.getStudentsByFilter(centreId, boardId, standardId, trackId);
+    return this.attendanceService.getStudentsByFilter(centreId, boardId, standardId, trackId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -32,15 +33,20 @@ export class AttendanceController {
     @Query('centreId') centreId: string,
     @Query('boardId') boardId: string,
     @Query('standardId') standardId: string,
-    @Query('trackId') trackId: string
+    @Query('trackId') trackId: string,
+    @Req() req: any
   ) {
-    return this.attendanceService.getBatches(centreId, boardId, standardId, trackId);
+    return this.attendanceService.getBatches(centreId, boardId, standardId, trackId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   @Get('students/:batchId')
-  getStudents(@Param('batchId') batchId: string, @Query('subjectId') subjectId: string) {
-    return this.attendanceService.getBatchStudents(batchId, subjectId);
+  getStudents(
+    @Param('batchId') batchId: string,
+    @Query('subjectId') subjectId: string,
+    @Req() req: any
+  ) {
+    return this.attendanceService.getBatchStudents(batchId, subjectId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -50,9 +56,10 @@ export class AttendanceController {
     @Query('boardId') boardId: string,
     @Query('standardId') standardId: string,
     @Query('trackId') trackId: string,
-    @Query('date') date: string
+    @Query('date') date: string,
+    @Req() req: any
   ) {
-    return this.attendanceService.getAttendanceByFilter(centreId, boardId, standardId, trackId, date);
+    return this.attendanceService.getAttendanceByFilter(centreId, boardId, standardId, trackId, date, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -60,14 +67,15 @@ export class AttendanceController {
   getAttendance(
     @Param('batchId') batchId: string, 
     @Query('date') date: string,
-    @Query('subjectId') subjectId: string
+    @Query('subjectId') subjectId: string,
+    @Req() req: any
   ) {
-    return this.attendanceService.getAttendanceForBatchAndDate(batchId, date, subjectId);
+    return this.attendanceService.getAttendanceForBatchAndDate(batchId, date, subjectId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   @Post()
   markAttendance(@Body() data: any, @Req() req: any) {
-    return this.attendanceService.markAttendance(data, req.user.id);
+    return this.attendanceService.markAttendance(data, req.user);
   }
 }

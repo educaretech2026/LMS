@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
@@ -111,12 +111,16 @@ export class StudyMaterialService {
     try {
       let { academicYearId, syllabusId } = data;
 
-      // Handle dummy values for testing
+      // Resolve academic year
       if (academicYearId === "dummy-academic-year" || !academicYearId) {
-        const year = await this.prisma.academicYear.findFirst();
-        academicYearId = year?.id;
+        const year = await this.prisma.academicYear.findFirst({ where: { isActive: true } }) || await this.prisma.academicYear.findFirst();
+        if (!year) {
+          throw new BadRequestException('An active academic year must be configured before creating study materials');
+        }
+        academicYearId = year.id;
       }
       
+      // Resolve syllabus
       if (syllabusId === "dummy-syllabus-id" || !syllabusId) {
         let syllabus = null;
         if (data.boardId && data.standardId && data.subjectId) {
@@ -134,10 +138,7 @@ export class StudyMaterialService {
         }
         
         if (!syllabus) {
-           const board = await this.prisma.board.findFirst() || await this.prisma.board.create({ data: { name: 'Dummy Board' } });
-           const standard = await this.prisma.standard.findFirst() || await this.prisma.standard.create({ data: { name: 'Dummy Standard', boardId: board.id } });
-           const subject = await this.prisma.subject.findFirst() || await this.prisma.subject.create({ data: { name: 'Dummy Subject' } });
-           syllabus = await this.prisma.syllabus.create({ data: { boardId: board.id, standardId: standard.id, subjectId: subject.id } });
+          throw new BadRequestException('A valid syllabus must be configured before creating study materials');
         }
         syllabusId = syllabus.id;
       }

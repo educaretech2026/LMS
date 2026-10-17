@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateDoubtDto } from './dto/create-doubt.dto';
 import { CreateDoubtMessageDto } from './dto/create-message.dto';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class DoubtsService {
@@ -20,7 +21,7 @@ export class DoubtsService {
     return roleStr.toUpperCase().replace(/\s+/g, '_');
   }
 
-  async getAll(userId: string, role: any, query: any = {}): Promise<any> {
+  async getAll(userId: string, role: any, query: any = {}, user?: any): Promise<any> {
     try {
       const normalizedRole = this.normalizeRole(role);
       const isStudent = normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER';
@@ -40,6 +41,10 @@ export class DoubtsService {
         }
         if (query.studentId && query.studentId !== 'ALL') {
           where.studentId = query.studentId;
+        }
+        if (user && !isSuperAdmin(user)) {
+          const authorizedCentres = getAuthorizedCentreIds(user);
+          where.centreId = { in: authorizedCentres };
         }
       }
 
@@ -96,7 +101,7 @@ export class DoubtsService {
     }
   }
 
-  async getById(id: string, userId: string, role: any): Promise<any> {
+  async getById(id: string, userId: string, role: any, user?: any): Promise<any> {
     try {
       const normalizedRole = this.normalizeRole(role);
       const isStudent = normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER';
@@ -139,6 +144,10 @@ export class DoubtsService {
         throw new ForbiddenException('You are not assigned to this doubt thread');
       }
 
+      if (isAdmin && user && !isSuperAdmin(user) && doubt.centreId) {
+        assertCentreAccess(user, doubt.centreId);
+      }
+
       return doubt;
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -147,8 +156,9 @@ export class DoubtsService {
     }
   }
 
-  async create(userId: string, role: any, dto: CreateDoubtDto): Promise<any> {
+  async create(userId: string, role: any, dto: CreateDoubtDto, user?: any): Promise<any> {
     try {
+      const normalizedRole = this.normalizeRole(role);
       const targetTeacherId = dto.teacherId || dto.assignedTeacherId;
       if (!targetTeacherId) {
         throw new HttpException('Please select a teacher to ask your doubt.', HttpStatus.BAD_REQUEST);
@@ -172,11 +182,23 @@ export class DoubtsService {
         );
       }
 
-      // 2. Fetch student details for notification
+      // 2. Fetch student details for notification and resolve centre
       const student = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { firstName: true, lastName: true },
       });
+
+      let resolvedCentreId = dto.centreId || null;
+      if (!resolvedCentreId) {
+        const studentProfile = await this.prisma.studentProfile.findUnique({
+          where: { userId },
+          include: { enrollments: { include: { batch: true } } }
+        });
+        resolvedCentreId = studentProfile?.enrollments?.[0]?.batch?.centreId || null;
+      }
+      if (resolvedCentreId && user && !isSuperAdmin(user) && ['CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole)) {
+        assertCentreAccess(user, resolvedCentreId);
+      }
 
       const attachmentsData = dto.attachments || dto.attachmentUrls || null;
 
@@ -191,7 +213,7 @@ export class DoubtsService {
           subjectId: dto.subjectId || null,
           chapterId: dto.chapterId || null,
           topicId: dto.topicId || null,
-          centreId: dto.centreId || null,
+          centreId: resolvedCentreId,
           status: 'OPEN',
           messages: {
             create: {
@@ -341,7 +363,7 @@ export class DoubtsService {
     }
   }
 
-  async updateStatus(doubtId: string, userId: string, role: any, status: any): Promise<any> {
+  async updateStatus(doubtId: string, userId: string, role: any, status: any, user?: any): Promise<any> {
     try {
       const normalizedRole = this.normalizeRole(role);
       const isStudent = normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER';
@@ -358,6 +380,9 @@ export class DoubtsService {
       }
       if (isTeacher && doubt.teacherId !== userId && !isAdmin) {
         throw new ForbiddenException('Not permitted');
+      }
+      if (isAdmin && user && !isSuperAdmin(user) && doubt.centreId) {
+        assertCentreAccess(user, doubt.centreId);
       }
 
       let mappedStatus = String(status || '').toUpperCase();
@@ -382,7 +407,7 @@ export class DoubtsService {
     }
   }
 
-  async reassign(doubtId: string, userId: string, role: any, newTeacherId: string): Promise<any> {
+  async reassign(doubtId: string, userId: string, role: any, newTeacherId: string, user?: any): Promise<any> {
     try {
       const normalizedRole = this.normalizeRole(role);
       const isAdmin = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole);
@@ -400,6 +425,10 @@ export class DoubtsService {
       const isAssignedTeacher = isTeacher && existingDoubt.teacherId === userId;
       if (!isAdmin && !isAssignedTeacher) {
         throw new ForbiddenException('Only administrators or the assigned faculty can reassign this doubt');
+      }
+
+      if (isAdmin && user && !isSuperAdmin(user) && existingDoubt.centreId) {
+        assertCentreAccess(user, existingDoubt.centreId);
       }
 
       const newTeacher = await this.prisma.user.findUnique({

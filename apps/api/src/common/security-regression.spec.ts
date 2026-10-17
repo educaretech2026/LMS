@@ -1,7 +1,7 @@
 import { getJwtSecret } from './config/jwt.config';
 import { StorageService } from '../storage/storage.service';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from './utils/tenant.util';
-import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException, ServiceUnavailableException, NotFoundException } from '@nestjs/common';
 import { ExamsService } from '../exams/exams.service';
 import { StudentsService } from '../students/students.service';
 import { LiveClassService } from '../live-class/live-class.service';
@@ -9,6 +9,14 @@ import { StudyMaterialService } from '../study-materials/study-materials.service
 import { AuthService } from '../auth/auth.service';
 import { AuthController } from '../auth/auth.controller';
 import { RedisService } from '../redis/redis.service';
+import { FinanceService } from '../finance/finance.service';
+import { AttendanceService } from '../attendance/attendance.service';
+import { ReportService } from '../report/report.service';
+import { AssignmentsService } from '../assignments/assignments.service';
+import { DoubtsService } from '../doubts/doubts.service';
+import { FormsService } from '../forms/forms.service';
+import { UsersService } from '../users/users.service';
+import { EstudyService } from '../estudy/estudy.service';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 
@@ -2019,4 +2027,457 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       });
     });
   });
+
+  describe('SEC-13: Multi-Centre Tenant Isolation, Role Enforcement, IDOR Protection, and Session Revocation', () => {
+    const superAdmin = {
+      id: 'super-admin-1',
+      role: { name: 'SUPER_ADMIN' },
+      userCentres: []
+    };
+
+    const centreAAdmin = {
+      id: 'admin-a',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    const centreBAdmin = {
+      id: 'admin-b',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-beta' }]
+    };
+
+    const studentUser = {
+      id: 'student-user-1',
+      role: { name: 'STUDENT' },
+      userCentres: []
+    };
+
+    describe('1. Finance Multi-Centre Isolation', () => {
+      let financeService: FinanceService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          transaction: {
+            findMany: jest.fn(),
+            create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'tx-1', ...args.data })),
+          },
+          feeRecord: {
+            findMany: jest.fn(),
+          },
+        };
+        financeService = new FinanceService(mockPrisma as any);
+      });
+
+      it('should scope getTransactions to authorized centre for centre admin', async () => {
+        mockPrisma.transaction.findMany.mockResolvedValue([]);
+        mockPrisma.feeRecord.findMany.mockResolvedValue([]);
+
+        await financeService.getTransactions(centreAAdmin);
+
+        expect(mockPrisma.transaction.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: { centreId: { in: ['centre-alpha'] } },
+        }));
+        expect(mockPrisma.feeRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'PAID',
+            student: {
+              enrollments: {
+                some: { batch: { centreId: { in: ['centre-alpha'] } } }
+              }
+            }
+          }),
+        }));
+      });
+
+      it('should allow superadmin to view all transactions and fees', async () => {
+        mockPrisma.transaction.findMany.mockResolvedValue([]);
+        mockPrisma.feeRecord.findMany.mockResolvedValue([]);
+
+        await financeService.getTransactions(superAdmin);
+
+        expect(mockPrisma.transaction.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: {},
+        }));
+      });
+
+      it('should reject transaction creation for unauthorized centre', async () => {
+        await expect(
+          financeService.createTransaction({
+            category: 'Supplies',
+            amount: 500,
+            centreId: 'centre-beta',
+          }, centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('2. Attendance Multi-Centre Isolation', () => {
+      let attendanceService: AttendanceService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          batch: {
+            findUnique: jest.fn(),
+            findMany: jest.fn(),
+            findFirst: jest.fn(),
+          },
+          enrollment: {
+            findMany: jest.fn(),
+          },
+          studentProfile: {
+            findMany: jest.fn(),
+          },
+          attendance: {
+            findFirst: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
+          },
+          attendanceRecord: {
+            deleteMany: jest.fn(),
+            createMany: jest.fn(),
+          },
+        };
+        attendanceService = new AttendanceService(mockPrisma as any);
+      });
+
+      it('should filter batch students to authorized centre when ALL is specified', async () => {
+        mockPrisma.enrollment.findMany.mockResolvedValue([]);
+
+        await attendanceService.getBatchStudents('ALL', undefined, centreAAdmin);
+
+        expect(mockPrisma.enrollment.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: expect.objectContaining({
+            batch: { centreId: { in: ['centre-alpha'] } }
+          })
+        }));
+        expect(mockPrisma.studentProfile.findMany).not.toHaveBeenCalled();
+      });
+
+      it('should reject filtering attendance by unauthorized centre', async () => {
+        await expect(
+          attendanceService.getAttendanceByFilter('centre-beta', 'b1', 's1', 't1', '2026-10-18', centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject marking attendance for unauthorized batch', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({ id: 'batch-beta-1', centreId: 'centre-beta' });
+
+        await expect(
+          attendanceService.markAttendance({
+            batchId: 'batch-beta-1',
+            date: '2026-10-18',
+            records: [],
+          }, centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('3. Report IDOR Protection and Multi-Centre Scoping', () => {
+      let reportService: ReportService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          studentProfile: {
+            findUnique: jest.fn(),
+            count: jest.fn().mockResolvedValue(10),
+          },
+          enquiry: {
+            count: jest.fn().mockResolvedValue(5),
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          attendanceRecord: {
+            findMany: jest.fn().mockResolvedValue([]),
+            count: jest.fn().mockResolvedValue(0),
+          },
+          transaction: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          feeRecord: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          studyMaterial: {
+            count: jest.fn().mockResolvedValue(0),
+          },
+          examResult: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+        };
+        reportService = new ReportService(mockPrisma as any);
+      });
+
+      it('should prevent student from accessing another student performance report', async () => {
+        mockPrisma.studentProfile.findUnique.mockResolvedValue({
+          id: 'sp-victim',
+          userId: 'victim-user-id',
+          user: { firstName: 'Victim', lastName: 'Student' },
+          enrollments: [],
+        });
+
+        await expect(
+          reportService.getSingleStudentPerformance('sp-victim', studentUser)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should allow student to access their own performance report', async () => {
+        mockPrisma.studentProfile.findUnique.mockResolvedValue({
+          id: 'sp-own',
+          userId: 'student-user-1',
+          user: { firstName: 'Own', lastName: 'Student' },
+          enrollments: [],
+        });
+
+        const report = await reportService.getSingleStudentPerformance('sp-own', studentUser);
+        expect(report.studentId).toBe('sp-own');
+      });
+
+      it('should prevent centre admin from accessing student performance outside their centre', async () => {
+        mockPrisma.studentProfile.findUnique.mockResolvedValue({
+          id: 'sp-beta',
+          userId: 'user-beta',
+          user: { firstName: 'Beta', lastName: 'Student' },
+          enrollments: [{ batch: { id: 'b-beta', centreId: 'centre-beta' } }],
+        });
+
+        await expect(
+          reportService.getSingleStudentPerformance('sp-beta', centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should scope dashboard stats to authorized centre', async () => {
+        await reportService.getDashboardStats(centreAAdmin);
+
+        expect(mockPrisma.studentProfile.count).toHaveBeenCalledWith(expect.objectContaining({
+          where: { enrollments: { some: { batch: { centreId: { in: ['centre-alpha'] } } } } }
+        }));
+        expect(mockPrisma.enquiry.count).toHaveBeenCalledWith(expect.objectContaining({
+          where: { centreId: { in: ['centre-alpha'] } }
+        }));
+      });
+    });
+
+    describe('4. Assignment Grading Authorization and Scoping', () => {
+      let assignmentsService: AssignmentsService;
+      let mockPrisma: any;
+      let mockNotifications: any;
+      let mockSyllabus: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          assignment: {
+            findUnique: jest.fn(),
+            create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'assign-1', ...args.data })),
+          },
+          assignmentSubmission: {
+            findUnique: jest.fn(),
+            update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+          },
+          batch: {
+            findUnique: jest.fn(),
+          },
+          enrollment: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+        };
+        mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
+        mockSyllabus = { recordStudentEvent: jest.fn() };
+        assignmentsService = new AssignmentsService(mockPrisma as any, mockNotifications as any, mockSyllabus as any);
+      });
+
+      it('should reject grading submission from unauthorized centre', async () => {
+        mockPrisma.assignmentSubmission.findUnique.mockResolvedValue({
+          id: 'sub-beta',
+          assignment: {
+            batch: { centreId: 'centre-beta' }
+          }
+        });
+
+        await expect(
+          assignmentsService.gradeSubmission('sub-beta', { grade: 90 }, centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject negative or non-numeric grade', async () => {
+        mockPrisma.assignmentSubmission.findUnique.mockResolvedValue({
+          id: 'sub-alpha',
+          assignment: {
+            batch: { centreId: 'centre-alpha' }
+          }
+        });
+
+        await expect(
+          assignmentsService.gradeSubmission('sub-alpha', { grade: -5 }, centreAAdmin)
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject creating assignment for batch in unauthorized centre', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({ id: 'batch-beta', centreId: 'centre-beta' });
+
+        await expect(
+          assignmentsService.create({
+            title: 'Math Homework',
+            batchId: 'batch-beta',
+          }, 'admin-a', centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('5. Doubts Multi-Centre Isolation', () => {
+      let doubtsService: DoubtsService;
+      let mockPrisma: any;
+      let mockNotifications: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          doubt: {
+            findMany: jest.fn().mockResolvedValue([]),
+            findUnique: jest.fn(),
+            update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+          },
+          user: {
+            findUnique: jest.fn(),
+          },
+          studentProfile: {
+            findUnique: jest.fn(),
+          },
+        };
+        mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
+        doubtsService = new DoubtsService(mockPrisma as any, mockNotifications as any);
+      });
+
+      it('should scope getAll doubts to authorized centre for centre admin', async () => {
+        await doubtsService.getAll('admin-a', 'CENTRE_ADMIN', {}, centreAAdmin);
+
+        expect(mockPrisma.doubt.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: expect.objectContaining({
+            centreId: { in: ['centre-alpha'] }
+          })
+        }));
+      });
+
+      it('should reject centre admin accessing doubt from another centre', async () => {
+        mockPrisma.doubt.findUnique.mockResolvedValue({
+          id: 'doubt-beta',
+          studentId: 'student-2',
+          teacherId: 'teacher-2',
+          centreId: 'centre-beta',
+        });
+
+        await expect(
+          doubtsService.getById('doubt-beta', 'admin-a', 'CENTRE_ADMIN', centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('6. Forms Submission and Access Security', () => {
+      let formsService: FormsService;
+      let mockPrisma: any;
+      let mockNotifications: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          customForm: {
+            findUnique: jest.fn(),
+            findMany: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'form-1', ...args.data })),
+          },
+          customFormResponse: {
+            findMany: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'resp-1', ...args.data })),
+          },
+          user: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+        };
+        mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
+        formsService = new FormsService(mockPrisma as any, mockNotifications as any);
+      });
+
+      it('should reject submission to an inactive form with BadRequestException', async () => {
+        mockPrisma.customForm.findUnique.mockResolvedValue({ id: 'form-closed', isActive: false });
+
+        await expect(
+          formsService.submitResponse('form-closed', { answers: {} })
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject accessing responses for a form from another centre', async () => {
+        mockPrisma.customForm.findUnique.mockResolvedValue({ id: 'form-beta', centreId: 'centre-beta' });
+
+        await expect(
+          formsService.getFormResponses('form-beta', centreAAdmin)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('7. Session Revocation on Password Update', () => {
+      let usersService: UsersService;
+      let mockPrisma: any;
+      let mockRedis: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          user: {
+            update: jest.fn().mockResolvedValue({
+              id: 'user-1',
+              firstName: 'Test',
+              lastName: 'User',
+              email: 'test@example.com',
+            }),
+          },
+        };
+        mockRedis = {
+          revokeAllSessions: jest.fn().mockResolvedValue(true),
+        };
+        usersService = new UsersService(mockPrisma as any, mockRedis as any);
+      });
+
+      it('should revoke all active sessions when user updates password', async () => {
+        await usersService.updateProfile('user-1', { password: 'NewSecurePassword123!' });
+
+        expect(mockPrisma.user.update).toHaveBeenCalled();
+        expect(mockRedis.revokeAllSessions).toHaveBeenCalledWith('user-1');
+      });
+
+      it('should not revoke sessions if password is not modified', async () => {
+        await usersService.updateProfile('user-1', { firstName: 'Updated' });
+
+        expect(mockPrisma.user.update).toHaveBeenCalled();
+        expect(mockRedis.revokeAllSessions).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('8. Study Material Entity Integrity (No Dummy Entities)', () => {
+      let estudyService: EstudyService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          syllabus: {
+            findFirst: jest.fn().mockResolvedValue(null),
+          },
+          academicYear: {
+            findFirst: jest.fn().mockResolvedValue(null),
+          },
+          board: {
+            findFirst: jest.fn(),
+            create: jest.fn(),
+          },
+        };
+        estudyService = new EstudyService(mockPrisma as any);
+      });
+
+      it('should reject material creation when no syllabus is configured instead of creating dummy entities', async () => {
+        await expect(
+          estudyService.createMaterial({ title: 'Physics Lecture 1' })
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockPrisma.board.create).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
+

@@ -12,18 +12,18 @@ export class FinanceController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Post('transaction')
   createTransaction(@Body() data: any, @Req() req: any) {
-    return this.financeService.createTransaction(data, req.user.id);
+    return this.financeService.createTransaction(data, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('transactions')
-  getTransactions() {
-    return this.financeService.getTransactions();
+  getTransactions(@Req() req: any) {
+    return this.financeService.getTransactions(req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('summary')
-  getSummary() {
-    return this.financeService.getSummary();
+  getSummary(@Req() req: any) {
+    return this.financeService.getSummary(req.user);
   }
 }

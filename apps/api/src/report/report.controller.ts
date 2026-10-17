@@ -11,8 +11,12 @@ export class ReportController {
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('fees')
-  getFeeReport(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
-    return this.reportService.getFeeCollectionReport(startDate, endDate);
+  getFeeReport(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Req() req: any
+  ) {
+    return this.reportService.getFeeCollectionReport(startDate, endDate, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
@@ -20,33 +24,44 @@ export class ReportController {
   getFinanceReport(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
-    @Query('centreId') centreId?: string,
+    @Query('centreId') centreId: string,
+    @Req() req: any
   ) {
-    return this.reportService.getExpenseIncomeReport(startDate, endDate, centreId);
+    return this.reportService.getExpenseIncomeReport(startDate, endDate, centreId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('enquiries')
-  getEnquiryReport(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
-    return this.reportService.getEnquiryConversionReport(startDate, endDate);
+  getEnquiryReport(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Req() req: any
+  ) {
+    return this.reportService.getEnquiryConversionReport(startDate, endDate, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   @Get('performance')
-  getPerformanceReport(@Query('batchId') batchId: string) {
-    return this.reportService.getStudentPerformanceReport(batchId);
+  getPerformanceReport(
+    @Query('batchId') batchId: string,
+    @Req() req: any
+  ) {
+    return this.reportService.getStudentPerformanceReport(batchId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
   @Get('student-performance/:studentId')
-  getSingleStudentPerformance(@Param('studentId') studentId: string) {
-    return this.reportService.getSingleStudentPerformance(studentId);
+  getSingleStudentPerformance(
+    @Param('studentId') studentId: string,
+    @Req() req: any
+  ) {
+    return this.reportService.getSingleStudentPerformance(studentId, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('dashboard')
-  getDashboardStats() {
-    return this.reportService.getDashboardStats();
+  getDashboardStats(@Req() req: any) {
+    return this.reportService.getDashboardStats(req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
@@ -60,6 +75,7 @@ export class ReportController {
     @Query('boardId') boardId?: string,
     @Query('standardId') standardId?: string,
     @Query('subjectId') subjectId?: string,
+    @Req() req?: any
   ) {
     return this.reportService.getOverviewAnalytics(
       startDate,
@@ -70,6 +86,7 @@ export class ReportController {
       boardId,
       standardId,
       subjectId,
+      req?.user
     );
   }
 

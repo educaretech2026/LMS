@@ -1,19 +1,36 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, EnquiryStatus, AttendanceStatus } from '@educare/database';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class ReportService {
   constructor(private prisma: PrismaService) {}
 
-  async getFeeCollectionReport(startDate: string, endDate: string) {
+  async getFeeCollectionReport(startDate: string, endDate: string, user?: any) {
     const from = new Date(startDate);
     const to = new Date(endDate);
+    to.setHours(23, 59, 59, 999);
     
+    const where: any = {
+      date: { gte: from, lte: to }
+    };
+
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      where.student = {
+        enrollments: {
+          some: {
+            batch: {
+              centreId: { in: authorizedCentres }
+            }
+          }
+        }
+      };
+    }
+
     return this.prisma.feeRecord.findMany({
-      where: {
-        date: { gte: from, lte: to }
-      },
+      where,
       include: {
         student: {
           include: { user: { select: { firstName: true, lastName: true } } }
@@ -23,13 +40,28 @@ export class ReportService {
     });
   }
 
-  async getExpenseIncomeReport(startDate: string, endDate: string, centreId?: string) {
+  async getExpenseIncomeReport(startDate: string, endDate: string, centreId?: string, user?: any) {
     const from = new Date(startDate);
     const to = new Date(endDate);
     to.setHours(23, 59, 59, 999);
     
+    let effectiveCentres: string[] | null = null;
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      if (centreId) {
+        assertCentreAccess(user, centreId);
+        effectiveCentres = [centreId];
+      } else {
+        effectiveCentres = authorizedCentres;
+      }
+    } else if (centreId) {
+      effectiveCentres = [centreId];
+    }
+
     const txWhere: any = { date: { gte: from, lte: to } };
-    if (centreId) txWhere.centreId = centreId;
+    if (effectiveCentres) {
+      txWhere.centreId = { in: effectiveCentres };
+    }
 
     const transactions = await this.prisma.transaction.findMany({
       where: txWhere,
@@ -41,6 +73,18 @@ export class ReportService {
     });
 
     const feeWhere: any = { date: { gte: from, lte: to } };
+    if (effectiveCentres) {
+      feeWhere.student = {
+        enrollments: {
+          some: {
+            batch: {
+              centreId: { in: effectiveCentres }
+            }
+          }
+        }
+      };
+    }
+
     const feeRecords = await this.prisma.feeRecord.findMany({
       where: feeWhere,
       orderBy: { date: 'desc' },
@@ -63,11 +107,7 @@ export class ReportService {
       }
     });
 
-    // If centreId specified, optionally filter fee records by student enrollment centre
-    const filteredFees = centreId
-      ? feeRecords.filter(f => f.student.enrollments.some(e => e.batch.centreId === centreId))
-      : feeRecords;
-
+    const filteredFees = feeRecords;
     const paidFees = filteredFees.filter(f => f.status === 'PAID');
     const feeTotal = paidFees.reduce((sum, f) => sum + f.amount, 0);
 
@@ -90,12 +130,19 @@ export class ReportService {
     };
   }
 
-  async getEnquiryConversionReport(startDate: string, endDate: string) {
+  async getEnquiryConversionReport(startDate: string, endDate: string, user?: any) {
     const from = new Date(startDate);
     const to = new Date(endDate);
+    to.setHours(23, 59, 59, 999);
     
+    const where: any = { createdAt: { gte: from, lte: to } };
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      where.centreId = { in: authorizedCentres };
+    }
+
     const all = await this.prisma.enquiry.findMany({
-      where: { createdAt: { gte: from, lte: to } }
+      where
     });
 
     const statusCounts = {
@@ -113,7 +160,14 @@ export class ReportService {
     };
   }
 
-  async getStudentPerformanceReport(batchId?: string) {
+  async getStudentPerformanceReport(batchId?: string, user?: any) {
+    if (batchId && user && !isSuperAdmin(user)) {
+      const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+      if (batch?.centreId) {
+        assertCentreAccess(user, batch.centreId);
+      }
+    }
+
     let students;
     if (batchId) {
       const enrollments = await this.prisma.enrollment.findMany({
@@ -126,9 +180,24 @@ export class ReportService {
       });
       students = enrollments.map((e: any) => e.studentProfile);
     } else {
-      students = await this.prisma.studentProfile.findMany({
-        include: { user: { select: { firstName: true, lastName: true } } }
-      });
+      if (user && !isSuperAdmin(user)) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
+        const enrollments = await this.prisma.enrollment.findMany({
+          where: {
+            batch: { centreId: { in: authorizedCentres } }
+          },
+          include: {
+            studentProfile: {
+              include: { user: { select: { firstName: true, lastName: true } } }
+            }
+          }
+        });
+        students = enrollments.map((e: any) => e.studentProfile);
+      } else {
+        students = await this.prisma.studentProfile.findMany({
+          include: { user: { select: { firstName: true, lastName: true } } }
+        });
+      }
     }
 
     const studentIds = students.map((s: any) => s.id);
@@ -159,13 +228,35 @@ export class ReportService {
     });
   }
 
-  async getSingleStudentPerformance(studentId: string) {
+  async getSingleStudentPerformance(studentId: string, user?: any) {
     const student = await this.prisma.studentProfile.findUnique({
       where: { id: studentId },
-      include: { user: { select: { firstName: true, lastName: true } } }
+      include: {
+        user: { select: { firstName: true, lastName: true, id: true } },
+        enrollments: {
+          include: {
+            batch: { select: { id: true, centreId: true } }
+          }
+        }
+      }
     });
 
-    if (!student) throw new Error("Student not found");
+    if (!student) throw new NotFoundException("Student not found");
+
+    if (user) {
+      const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
+      if (roleName === 'STUDENT' || roleName === 'PUBLIC_LEARNER') {
+        if (student.userId !== user.id) {
+          throw new ForbiddenException("Students may only access their own performance report");
+        }
+      } else if (!isSuperAdmin(user)) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
+        const hasAccess = student.enrollments.some(e => e.batch?.centreId && authorizedCentres.includes(e.batch.centreId));
+        if (!hasAccess && authorizedCentres.length > 0) {
+          throw new ForbiddenException("Access denied to student outside your authorized centres");
+        }
+      }
+    }
 
     const records = await this.prisma.attendanceRecord.findMany({
       where: { studentId }
@@ -194,33 +285,61 @@ export class ReportService {
     };
   }
 
-  async getDashboardStats() {
+  async getDashboardStats(user?: any) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const totalStudents = await this.prisma.studentProfile.count();
-    const totalInquiry = await this.prisma.enquiry.count();
-    
-    // For simplicity, absent is total absent records today
-    const todayAbsent = await this.prisma.attendanceRecord.count({
-      where: {
-        attendance: { date: { gte: today } },
-        status: AttendanceStatus.ABSENT
-      }
-    });
+    const isSuper = isSuperAdmin(user);
+    const authorizedCentres = isSuper ? [] : getAuthorizedCentreIds(user);
+
+    const studentWhere: any = {};
+    const enquiryWhere: any = {};
+    const txWhere: any = {};
+    const feeWhere: any = {};
+    const attWhere: any = {
+      attendance: { date: { gte: today } },
+      status: AttendanceStatus.ABSENT
+    };
+
+    if (!isSuper) {
+      studentWhere.enrollments = {
+        some: {
+          batch: { centreId: { in: authorizedCentres } }
+        }
+      };
+      enquiryWhere.centreId = { in: authorizedCentres };
+      txWhere.centreId = { in: authorizedCentres };
+      feeWhere.student = {
+        enrollments: {
+          some: {
+            batch: { centreId: { in: authorizedCentres } }
+          }
+        }
+      };
+      attWhere.attendance = {
+        date: { gte: today },
+        batch: {
+          centreId: { in: authorizedCentres }
+        }
+      };
+    }
+
+    const totalStudents = await this.prisma.studentProfile.count({ where: studentWhere });
+    const totalInquiry = await this.prisma.enquiry.count({ where: enquiryWhere });
+    const todayAbsent = await this.prisma.attendanceRecord.count({ where: attWhere });
 
     const incomeTx = await this.prisma.transaction.findMany({
-      where: { type: TransactionType.INCOME }
+      where: { ...txWhere, type: TransactionType.INCOME }
     });
     const transactionIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
 
     const expenseTx = await this.prisma.transaction.findMany({
-      where: { type: TransactionType.EXPENSE }
+      where: { ...txWhere, type: TransactionType.EXPENSE }
     });
     const totalExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
 
     // Calculate Fees
-    const feeRecords = await this.prisma.feeRecord.findMany();
+    const feeRecords = await this.prisma.feeRecord.findMany({ where: feeWhere });
     const paidFees = feeRecords.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
     const totalFeeDue = feeRecords.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
     const feeOverdue = feeRecords.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
@@ -353,14 +472,30 @@ export class ReportService {
     boardId?: string,
     standardId?: string,
     subjectId?: string,
+    user?: any,
   ) {
     const from = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const to = endDate ? new Date(endDate) : new Date();
     to.setHours(23, 59, 59, 999);
 
+    let effectiveCentres: string[] | null = null;
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      if (centreId) {
+        assertCentreAccess(user, centreId);
+        effectiveCentres = [centreId];
+      } else {
+        effectiveCentres = authorizedCentres;
+      }
+    } else if (centreId) {
+      effectiveCentres = [centreId];
+    }
+
     // 1. Financial aggregates
     const txWhere: any = { date: { gte: from, lte: to } };
-    if (centreId) txWhere.centreId = centreId;
+    if (effectiveCentres) {
+      txWhere.centreId = { in: effectiveCentres };
+    }
     const transactions = await this.prisma.transaction.findMany({ where: txWhere });
 
     const income = transactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
