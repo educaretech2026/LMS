@@ -2,6 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SyllabusService } from '../syllabus/syllabus.service';
+import { SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class AssignmentsService {
@@ -259,7 +260,7 @@ export class AssignmentsService {
     try {
       const profile = await this.prisma.studentProfile.findUnique({
         where: { userId: studentUserId },
-        include: { user: true }
+        include: { user: { select: SAFE_USER_SELECT } }
       });
 
       if (!profile) throw new Error("Student profile not found");
@@ -334,7 +335,7 @@ export class AssignmentsService {
           status: 'GRADED'
         },
         include: {
-          student: { include: { user: true } },
+          student: { include: { user: { select: SAFE_USER_SELECT } } },
           assignment: true
         }
       });

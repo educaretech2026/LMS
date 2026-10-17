@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { assertCentreAccess, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
+import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 function calculateGrade(marksObtained: number, maxMarks: number): string {
   if (!maxMarks || maxMarks <= 0) return 'F';
@@ -92,29 +92,22 @@ export class ExamsService {
         orderBy: { createdAt: 'desc' }
       });
 
-      // SEC-03: Strip answers for students if they haven't submitted
+      // SEC: Students must NEVER receive un-sanitized answer keys on exam lists
       return exams.map(exam => {
-        const hasSubmitted = exam.results && exam.results.length > 0;
-        if (!hasSubmitted && exam.mcqQuestions) {
-          return {
-            ...exam,
-            mcqQuestions: sanitizeQuestions(exam.mcqQuestions),
-          };
-        }
-        return exam;
+        return {
+          ...exam,
+          mcqQuestions: exam.mcqQuestions ? sanitizeQuestions(exam.mcqQuestions) : [],
+        };
       });
     }
 
     const where: any = {};
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
-      if (userCentres.length > 0) {
-        where.OR = [
-          { centreId: { in: userCentres } },
-          { batch: { centreId: { in: userCentres } } },
-          { centreId: null, batchId: null },
-        ];
-      }
+      const userCentres = getAuthorizedCentreIds(user);
+      where.OR = [
+        { centreId: { in: userCentres } },
+        { batch: { centreId: { in: userCentres } } },
+      ];
     }
 
     return this.prisma.exam.findMany({
@@ -148,15 +141,13 @@ export class ExamsService {
         return [];
       }
     } else if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
-      if (userCentres.length > 0) {
-        where.exam = {
-          OR: [
-            { centreId: { in: userCentres } },
-            { batch: { centreId: { in: userCentres } } },
-          ]
-        };
-      }
+      const userCentres = getAuthorizedCentreIds(user);
+      where.exam = {
+        OR: [
+          { centreId: { in: userCentres } },
+          { batch: { centreId: { in: userCentres } } },
+        ]
+      };
     }
 
     return this.prisma.examResult.findMany({
@@ -171,12 +162,7 @@ export class ExamsService {
         student: {
           include: {
             user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
+              select: SAFE_USER_SELECT
             }
           }
         }
@@ -205,22 +191,34 @@ export class ExamsService {
 
     const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
     if (isStudent && user?.id) {
-      const studentProfile = await this.prisma.studentProfile.findUnique({ where: { userId: user.id } });
-      const hasResult = studentProfile
-        ? await this.prisma.examResult.findFirst({ where: { examId: id, studentId: studentProfile.id } })
-        : null;
+      const studentProfile = await this.prisma.studentProfile.findUnique({
+        where: { userId: user.id },
+        include: { enrollments: { include: { batch: true } } }
+      });
+      if (!studentProfile) throw new ForbiddenException('Student profile not found');
 
-      if (!hasResult && exam.mcqQuestions) {
-        return {
-          ...exam,
-          mcqQuestions: sanitizeQuestions(exam.mcqQuestions),
-        };
+      const studentCentres = studentProfile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      const studentStandards = studentProfile.enrollments.map(e => e.batch?.standardId).filter(Boolean);
+      const studentBoards = studentProfile.enrollments.map(e => e.batch?.boardId).filter(Boolean);
+      const studentBatches = studentProfile.enrollments.map(e => e.batchId).filter(Boolean);
+
+      const matchesCentre = !exam.centreId || studentCentres.includes(exam.centreId);
+      const matchesBatch = !exam.batchId || studentBatches.includes(exam.batchId);
+      const matchesStandard = !exam.standardId || studentStandards.includes(exam.standardId);
+      const matchesBoard = !exam.boardId || studentBoards.includes(exam.boardId);
+
+      if (!matchesCentre || !matchesBatch || !matchesStandard || !matchesBoard) {
+        throw new ForbiddenException('Access denied: You are not eligible for this exam.');
       }
+
+      // SEC: Students viewing/taking an exam must ALWAYS receive sanitized questions without answer keys
+      return {
+        ...exam,
+        mcqQuestions: exam.mcqQuestions ? sanitizeQuestions(exam.mcqQuestions) : [],
+      };
     } else if (user && !isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
-      }
+      assertCentreAccess(user, examCentreId);
     }
 
     return exam;
@@ -240,14 +238,19 @@ export class ExamsService {
         select: { centreId: true, batch: { select: { centreId: true } } }
       });
       const examCentreId = exam?.centreId || exam?.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
-      }
+      assertCentreAccess(user, examCentreId);
     }
 
     return this.prisma.examResult.findMany({
       where,
-      include: { student: { include: { user: true } }, studentAnswers: true }
+      include: {
+        student: {
+          include: {
+            user: { select: SAFE_USER_SELECT }
+          }
+        },
+        studentAnswers: true
+      }
     });
   }
 
@@ -260,9 +263,7 @@ export class ExamsService {
 
     if (user && !isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
-      }
+      assertCentreAccess(user, examCentreId);
     }
 
     const whereClause: any = {};
@@ -282,7 +283,7 @@ export class ExamsService {
 
     const enrollments = await this.prisma.enrollment.findMany({
       where: whereClause,
-      include: { studentProfile: { include: { user: true } } }
+      include: { studentProfile: { include: { user: { select: SAFE_USER_SELECT } } } }
     });
 
     const studentMap = new Map<string, any>();
@@ -299,7 +300,7 @@ export class ExamsService {
     // Also include any students who already submitted results for this exam
     const results = await this.prisma.examResult.findMany({
       where: { examId },
-      include: { student: { include: { user: true } } }
+      include: { student: { include: { user: { select: SAFE_USER_SELECT } } } }
     });
     for (const r of results) {
       if (r.student && !studentMap.has(r.studentId)) {
@@ -323,133 +324,178 @@ export class ExamsService {
 
     if (user && !isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
-      }
+      assertCentreAccess(user, examCentreId);
     }
 
-    // Delete existing to support simple upsert list
-    await this.prisma.examResult.deleteMany({ where: { examId } });
-    
-    if (results.length > 0) {
-      await this.prisma.examResult.createMany({
-        data: results.map((r: any) => {
-          const marksObtained = Number(r.marksObtained || 0);
-          const maxMarks = Number(r.maxMarks || 100);
-          const grade = r.grade || calculateGrade(marksObtained, maxMarks);
-          return {
-            examId,
-            studentId: r.studentId,
-            marksObtained,
-            maxMarks,
-            grade,
-            remarks: r.remarks || null,
-          };
-        })
-      });
-    }
-    return { success: true };
+    return this.prisma.$transaction(async (prisma) => {
+      // Delete existing to support simple upsert list atomically
+      await prisma.examResult.deleteMany({ where: { examId } });
+      
+      if (results.length > 0) {
+        await prisma.examResult.createMany({
+          data: results.map((r: any) => {
+            const marksObtained = Number(r.marksObtained || 0);
+            const maxMarks = Number(r.maxMarks || 100);
+            const grade = r.grade || calculateGrade(marksObtained, maxMarks);
+            return {
+              examId,
+              studentId: r.studentId,
+              marksObtained,
+              maxMarks,
+              grade,
+              remarks: r.remarks || null,
+            };
+          })
+        });
+      }
+      return { success: true };
+    });
   }
 
   async submitExamAttempt(examId: string, studentId: string, answers: Record<string, string>, score?: any) {
-    const profile = await this.prisma.studentProfile.findUnique({ where: { userId: studentId } });
-    const studentProfileId = profile ? profile.id : studentId;
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { userId: studentId },
+      include: { enrollments: { include: { batch: true } } }
+    });
+    if (!profile) {
+      throw new ForbiddenException('Student profile not found.');
+    }
+    const studentProfileId = profile.id;
+
+    // Verify student is eligible for the exam
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      include: { batch: true }
+    });
+    if (!exam) throw new NotFoundException('Exam not found');
+
+    const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+    const studentStandards = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean);
+    const studentBoards = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean);
+    const studentBatches = profile.enrollments.map(e => e.batchId).filter(Boolean);
+
+    const matchesCentre = !exam.centreId || studentCentres.includes(exam.centreId);
+    const matchesBatch = !exam.batchId || studentBatches.includes(exam.batchId);
+    const matchesStandard = !exam.standardId || studentStandards.includes(exam.standardId);
+    const matchesBoard = !exam.boardId || studentBoards.includes(exam.boardId);
+
+    if (!matchesCentre || !matchesBatch || !matchesStandard || !matchesBoard) {
+      throw new ForbiddenException('Access denied: You are not eligible to submit this exam.');
+    }
 
     // 1. Fetch questions to perform server-side authoritative grading (SEC-03)
     const questions = await this.prisma.mcqQuestion.findMany({
       where: { examId }
     });
 
+    if (!questions || questions.length === 0) {
+      throw new BadRequestException('Cannot submit attempt: exam has no questions configured.');
+    }
+
     let calculatedEarned = 0;
     let totalPossible = 0;
+    const answerRecords: { qId: string; studentAns: string | null; isCorrect: boolean; marksAwarded: number; isDescriptive: boolean }[] = [];
 
     for (const q of questions) {
       const qMarks = Number(q.marks ?? 4.0);
       const qNegMarks = Number(q.negativeMarks ?? 1.0);
       totalPossible += qMarks;
 
-      if (q.type !== 'DESCRIPTIVE') {
+      const isDescriptive = q.type === 'DESCRIPTIVE';
+      if (!isDescriptive) {
         const studentAns = answers ? answers[q.id] : undefined;
+        let isCorrect = false;
+        let marksAwarded = 0;
         if (studentAns !== undefined && studentAns !== null && String(studentAns).trim() !== '') {
           if (String(studentAns).trim() === String(q.correctOption).trim()) {
             calculatedEarned += qMarks;
+            isCorrect = true;
+            marksAwarded = qMarks;
           } else {
             calculatedEarned -= qNegMarks;
+            marksAwarded = -qNegMarks;
           }
         }
+        answerRecords.push({ qId: q.id, studentAns: studentAns || null, isCorrect, marksAwarded, isDescriptive: false });
+      } else {
+        const studentAns = answers ? answers[q.id] : null;
+        answerRecords.push({ qId: q.id, studentAns, isCorrect: false, marksAwarded: 0, isDescriptive: true });
       }
     }
 
+    if (totalPossible <= 0) {
+      throw new BadRequestException('Cannot submit attempt: exam questions have zero total marks.');
+    }
+
+    // SEC-03: Earned marks & maxMarks are strictly calculated by the server from trusted questions.
+    // Client-provided score total or earned values are completely ignored.
     const marksObtained = Math.max(0, calculatedEarned);
-    const maxMarks = totalPossible > 0 ? totalPossible : Number(score?.total || 100);
+    const maxMarks = totalPossible;
     const grade = calculateGrade(marksObtained, maxMarks);
 
-    // 2. Check if an existing ExamResult is there for this student
-    const existing = await this.prisma.examResult.findFirst({
-      where: { examId, studentId: studentProfileId }
-    });
-
-    let examResultId = existing?.id;
-    if (!existing) {
-      const res = await this.prisma.examResult.create({
-        data: {
-          examId,
-          studentId: studentProfileId,
-          marksObtained,
-          maxMarks,
-          grade,
-        }
+    // 2. Transactional result write & answer upsert
+    return this.prisma.$transaction(async (prisma) => {
+      const existing = await prisma.examResult.findFirst({
+        where: { examId, studentId: studentProfileId }
       });
-      examResultId = res.id;
-    } else {
-      await this.prisma.examResult.update({
-        where: { id: examResultId },
-        data: {
-          marksObtained,
-          maxMarks,
-          grade,
-        }
-      });
-    }
 
-    const qMap = new Map(questions.map(q => [q.id, q]));
-
-    // 3. Upsert answers
-    for (const [qId, ans] of Object.entries(answers || {})) {
-      if (!ans) continue;
-      const q = qMap.get(qId);
-      if (!q) continue;
-
-      const isDescriptive = q.type === 'DESCRIPTIVE';
-      
-      const updateData = {
-        selectedOption: isDescriptive ? null : ans,
-        answerFileUrl: isDescriptive ? ans : null,
-      };
-
-      await this.prisma.studentAnswer.upsert({
-        where: {
-          examResultId_questionId: {
-            examResultId: examResultId as string,
-            questionId: qId,
+      let examResultId = existing?.id;
+      if (!existing) {
+        const res = await prisma.examResult.create({
+          data: {
+            examId,
+            studentId: studentProfileId,
+            marksObtained,
+            maxMarks,
+            grade,
           }
-        },
-        create: {
-          examResultId: examResultId as string,
-          questionId: qId,
-          ...updateData
-        },
-        update: updateData,
-      });
-    }
+        });
+        examResultId = res.id;
+      } else {
+        await prisma.examResult.update({
+          where: { id: examResultId },
+          data: {
+            marksObtained,
+            maxMarks,
+            grade,
+          }
+        });
+      }
 
-    return {
-      success: true,
-      examResultId,
-      marksObtained,
-      maxMarks,
-      grade,
-    };
+      // 3. Upsert student answers
+      for (const rec of answerRecords) {
+        if (!rec.studentAns) continue;
+        const updateData = {
+          selectedOption: rec.isDescriptive ? null : rec.studentAns,
+          answerFileUrl: rec.isDescriptive ? rec.studentAns : null,
+          marksAwarded: rec.marksAwarded,
+          isCorrect: rec.isCorrect,
+        };
+
+        await prisma.studentAnswer.upsert({
+          where: {
+            examResultId_questionId: {
+              examResultId: examResultId as string,
+              questionId: rec.qId,
+            }
+          },
+          create: {
+            examResultId: examResultId as string,
+            questionId: rec.qId,
+            ...updateData
+          },
+          update: updateData,
+        });
+      }
+
+      return {
+        success: true,
+        examResultId,
+        marksObtained,
+        maxMarks,
+        grade,
+      };
+    });
   }
 
   async getExamsByTopic(topicId: string, user?: any): Promise<any> {
@@ -482,14 +528,12 @@ export class ExamsService {
     let { title, type, academicYearId, batchId, subjectId, chapterId, topicId, boardId, standardId, centreId, targetTrackId } = data;
     
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
-      if (userCentres.length > 0) {
-        if (centreId && !userCentres.includes(centreId)) {
-          throw new ForbiddenException('Cannot create exam for another centre');
-        }
-        if (!centreId) {
-          centreId = userCentres[0];
-        }
+      const userCentres = getAuthorizedCentreIds(user);
+      if (centreId && !userCentres.includes(centreId)) {
+        throw new ForbiddenException('Cannot create exam for another centre');
+      }
+      if (!centreId) {
+        centreId = userCentres[0];
       }
     }
 

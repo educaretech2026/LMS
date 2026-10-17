@@ -42,19 +42,24 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // --- Session Management (Denylist/Whitelist) ---
-
   /**
    * Whitelists a session by storing its JTI in a set for the user.
+   * Returns true on success, or false if mandatory Redis session creation fails.
    */
-  async whitelistSession(userId: string, jti: string, expiresInSeconds: number): Promise<void> {
-    if (!this.client || !this.isAvailable) return;
+  async whitelistSession(userId: string, jti: string, expiresInSeconds: number): Promise<boolean> {
+    const isMandatory = Boolean(process.env.REDIS_URL || process.env.NODE_ENV === 'production');
+    if (!this.client || !this.isAvailable) {
+      if (isMandatory) return false;
+      return true; // Standalone development without Redis
+    }
     try {
       const key = `sessions:${userId}`;
       await this.client.sadd(key, jti);
       await this.client.set(`session:${jti}`, userId, 'EX', expiresInSeconds);
+      return true;
     } catch {
-      // Graceful degradation
+      if (isMandatory) return false;
+      return true;
     }
   }
 
@@ -149,10 +154,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async incrementLoginAttempts(email: string): Promise<number> {
     if (!this.client || !this.isAvailable) return 0;
     try {
-      const key = `login_attempts:${email}`;
+      const key = `login_attempts:${email.toLowerCase().trim()}`;
       const attempts = await this.client.incr(key);
       if (attempts === 1) {
-        await this.client.expire(key, 3600); // 1 hour block window
+        await this.client.expire(key, 900); // 15 minute temporary block window
       }
       return attempts;
     } catch {
@@ -160,14 +165,26 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async isLoginLocked(email: string): Promise<boolean> {
+    if (!this.client || !this.isAvailable) return false;
+    try {
+      const key = `login_attempts:${email.toLowerCase().trim()}`;
+      const attempts = await this.client.get(key);
+      return attempts ? Number(attempts) >= 5 : false;
+    } catch {
+      return false;
+    }
+  }
+
   async resetLoginAttempts(email: string): Promise<void> {
     if (!this.client || !this.isAvailable) return;
     try {
-      const key = `login_attempts:${email}`;
+      const key = `login_attempts:${email.toLowerCase().trim()}`;
       await this.client.del(key);
     } catch {
       // Graceful degradation
     }
   }
 }
+
 

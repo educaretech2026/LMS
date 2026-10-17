@@ -18,25 +18,25 @@ export class StudyMaterialController {
   @Get()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
   getAll(@Req() req: any) {
-    return this.studyMaterialService.getAll();
+    return this.studyMaterialService.getAll(req.user);
   }
 
   @Get('by-topic/:topicId')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
-  getByTopic(@Param('topicId') topicId: string) {
-    return this.studyMaterialService.getByTopic(topicId);
+  getByTopic(@Param('topicId') topicId: string, @Req() req: any) {
+    return this.studyMaterialService.getByTopic(topicId, req.user);
   }
 
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   create(@Body() data: any, @Req() req: any) {
-    return this.studyMaterialService.create({ ...data, uploaderId: req.user.id });
+    return this.studyMaterialService.create({ ...data, uploaderId: req.user.id }, req.user);
   }
 
   @Delete(':id')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  async delete(@Param('id') id: string) {
-    const material = await this.studyMaterialService.getById(id);
+  async delete(@Param('id') id: string, @Req() req: any) {
+    const material = await this.studyMaterialService.getById(id, req.user);
     if (material) {
       if (material.url && !material.url.includes('youtube.com')) {
         await this.storageService.deleteFile(material.url);
@@ -45,7 +45,7 @@ export class StudyMaterialController {
         await this.storageService.deleteFile(material.thumbnailUrl);
       }
     }
-    return this.studyMaterialService.delete(id);
+    return this.studyMaterialService.delete(id, req.user);
   }
 
   @Post(':id/progress')
@@ -65,14 +65,13 @@ export class StudyMaterialController {
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
   ) {
-    // Both VIDEO and FILE now use R2/S3 presigned URLs
     return this.storageService.getPresignedUploadUrl(filename, contentType);
   }
 
   @Get(':id/play-url')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
-  async getPlayUrl(@Param('id') id: string) {
-    const material = await this.studyMaterialService.getById(id);
+  async getPlayUrl(@Param('id') id: string, @Req() req: any) {
+    const material = await this.studyMaterialService.getById(id, req.user);
     if (!material) {
       throw new HttpException('Material not found', HttpStatus.NOT_FOUND);
     }
@@ -82,14 +81,10 @@ export class StudyMaterialController {
       return { playUrl: material.url };
     }
     
-    // Otherwise, generate a short-lived presigned GET URL (e.g. 2 hours)
-    // material.url should contain the objectKey or the full public URL. 
-    // If it's the full public URL (from old logic), we extract the objectKey.
     let objectKey = material.url;
     if (objectKey && objectKey.startsWith('http')) {
       const parts = objectKey.split('/');
-      // e.g. https://domain.com/materials/123-abc-test.mp4
-      objectKey = parts.slice(3).join('/'); // 'materials/123-abc-test.mp4'
+      objectKey = parts.slice(3).join('/');
     }
     
     if (!objectKey) {
@@ -100,3 +95,4 @@ export class StudyMaterialController {
     return { playUrl: result.downloadUrl };
   }
 }
+

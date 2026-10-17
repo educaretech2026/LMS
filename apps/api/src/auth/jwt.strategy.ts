@@ -59,6 +59,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User is inactive or not found');
     }
 
-    return { ...user, jti: payload.jti };
+    const { password: _pwd, ...safeUser } = user;
+    return { ...safeUser, jti: payload.jti };
   }
 }

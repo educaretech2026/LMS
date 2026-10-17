@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenE
 import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
-import { assertCentreAccess, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
+import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StudentsService {
@@ -111,11 +111,15 @@ export class StudentsService {
           }
         });
 
-        return { user, profile, enrollment, batch };
+        const { password: _pwd, ...safeUser } = user;
+        return { user: safeUser, profile, enrollment, batch };
       });
 
       return newStudent;
     } catch (error: any) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
       console.error('Error creating student:', error);
       throw new InternalServerErrorException(error.message || 'Failed to create student');
     }
@@ -134,22 +138,20 @@ export class StudentsService {
     };
 
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
-      if (userCentres.length > 0) {
-        where.enrollments = {
-          some: {
-            batch: {
-              centreId: { in: userCentres }
-            }
+      const userCentres = getAuthorizedCentreIds(user);
+      where.enrollments = {
+        some: {
+          batch: {
+            centreId: { in: userCentres }
           }
-        };
-      }
+        }
+      };
     }
 
     return this.prisma.studentProfile.findMany({
       where,
       include: {
-        user: true,
+        user: { select: SAFE_USER_SELECT },
         enrollments: { 
           include: { 
             batch: true,
@@ -166,7 +168,7 @@ export class StudentsService {
     let student = await this.prisma.studentProfile.findUnique({
       where: { id },
       include: {
-        user: true,
+        user: { select: SAFE_USER_SELECT },
         enrollments: {
           include: {
             batch: {
@@ -188,7 +190,7 @@ export class StudentsService {
       student = await this.prisma.studentProfile.findUnique({
         where: { userId: id },
         include: {
-          user: true,
+          user: { select: SAFE_USER_SELECT },
           enrollments: {
             include: {
               batch: {
@@ -215,10 +217,10 @@ export class StudentsService {
         throw new ForbiddenException('Access denied');
       }
     } else if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
+      const userCentres = getAuthorizedCentreIds(user);
       const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean);
       const hasCentreOverlap = studentCentres.some(cId => userCentres.includes(cId));
-      if (userCentres.length > 0 && studentCentres.length > 0 && !hasCentreOverlap) {
+      if (!hasCentreOverlap) {
         throw new ForbiddenException('Student does not belong to your centre');
       }
     }
@@ -226,8 +228,8 @@ export class StudentsService {
     return student;
   }
 
-  async getStudentByUserId(userId: string) {
-    return this.getStudentById(userId);
+  async getStudentByUserId(userId: string, user?: any) {
+    return this.getStudentById(userId, user);
   }
 
   async getStudents(user?: any) {
@@ -236,22 +238,20 @@ export class StudentsService {
     };
 
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
-      if (userCentres.length > 0) {
-        where.enrollments = {
-          some: {
-            batch: {
-              centreId: { in: userCentres }
-            }
+      const userCentres = getAuthorizedCentreIds(user);
+      where.enrollments = {
+        some: {
+          batch: {
+            centreId: { in: userCentres }
           }
-        };
-      }
+        }
+      };
     }
 
     return this.prisma.studentProfile.findMany({
       where,
       include: {
-        user: true,
+        user: { select: SAFE_USER_SELECT },
         enrollments: {
           include: {
             batch: {
@@ -275,16 +275,16 @@ export class StudentsService {
     const profile = await this.prisma.studentProfile.findUnique({
       where: { id },
       include: {
-        user: true,
+        user: { select: SAFE_USER_SELECT },
         enrollments: { include: { batch: true } }
       }
     });
     if (!profile) throw new NotFoundException('Student not found');
 
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
+      const userCentres = getAuthorizedCentreIds(user);
       const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
-      if (userCentres.length > 0 && studentCentres.length > 0 && !studentCentres.some(cId => userCentres.includes(cId))) {
+      if (!studentCentres.some(cId => userCentres.includes(cId))) {
         throw new ForbiddenException('Cannot edit student from another centre');
       }
     }
@@ -382,9 +382,9 @@ export class StudentsService {
     if (!profile) throw new NotFoundException('Student not found');
     
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
+      const userCentres = getAuthorizedCentreIds(user);
       const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
-      if (userCentres.length > 0 && studentCentres.length > 0 && !studentCentres.some(cId => userCentres.includes(cId))) {
+      if (!studentCentres.some(cId => userCentres.includes(cId))) {
         throw new ForbiddenException('Cannot delete student from another centre');
       }
     }
@@ -405,9 +405,9 @@ export class StudentsService {
     if (!profile) throw new NotFoundException('Student not found');
     
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getUserCentreIds(user);
+      const userCentres = getAuthorizedCentreIds(user);
       const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
-      if (userCentres.length > 0 && studentCentres.length > 0 && !studentCentres.some(cId => userCentres.includes(cId))) {
+      if (!studentCentres.some(cId => userCentres.includes(cId))) {
         throw new ForbiddenException('Cannot alter student status for another centre');
       }
     }
@@ -424,7 +424,21 @@ export class StudentsService {
     const month = today.getMonth() + 1;
     const day = today.getDate();
     
-    // Using raw query for PostgreSQL date extraction
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getAuthorizedCentreIds(user);
+      return this.prisma.$queryRaw`
+        SELECT u."firstName", u."lastName", p."admissionNo", s."name" as "classLevel"
+        FROM "student_profiles" p
+        JOIN "users" u ON u.id = p."userId"
+        JOIN "enrollments" e ON e."studentProfileId" = p.id
+        JOIN "batches" b ON b.id = e."batchId"
+        JOIN "standards" s ON s.id = b."standardId"
+        WHERE EXTRACT(MONTH FROM p."dateOfBirth") = ${month}
+        AND EXTRACT(DAY FROM p."dateOfBirth") = ${day}
+        AND b."centreId" = ANY(${userCentres})
+      `;
+    }
+
     return this.prisma.$queryRaw`
       SELECT u."firstName", u."lastName", p."admissionNo", s."name" as "classLevel"
       FROM "student_profiles" p
@@ -437,3 +451,4 @@ export class StudentsService {
     `;
   }
 }
+

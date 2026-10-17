@@ -1,8 +1,7 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../database/prisma.service';
 import { LoginDto } from './dto/login.dto';
-import { BadRequestException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import { RedisService } from '../redis/redis.service';
@@ -16,15 +15,28 @@ export class AuthService {
   ) {}
 
   async login(loginDto: LoginDto) {
+    const normalizedEmail = loginDto.email ? loginDto.email.toLowerCase().trim() : '';
+
+    // 1. SEC-08: Check if email is temporarily locked due to excessive failed attempts
+    const isLocked = await this.redisService.isLoginLocked(normalizedEmail);
+    if (isLocked) {
+      throw new HttpException(
+        'Too many failed login attempts. Please try again in 15 minutes.',
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
-      where: { email: loginDto.email },
+      where: { email: normalizedEmail },
       include: {
         role: true,
       },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      await this.redisService.incrementLoginAttempts(normalizedEmail);
+      // Uniform error message to prevent user enumeration
+      throw new UnauthorizedException('Invalid email or password');
     }
 
     if (user.status !== 'ACTIVE') {
@@ -36,15 +48,18 @@ export class AuthService {
 
     const isPasswordValid = await argon2.verify(user.password, loginDto.password);
     if (!isPasswordValid) {
-      const attempts = await this.redisService.incrementLoginAttempts(user.email);
+      const attempts = await this.redisService.incrementLoginAttempts(normalizedEmail);
       if (attempts >= 5) {
-        await this.prisma.user.update({ where: { id: user.id }, data: { status: 'SUSPENDED' } });
-        throw new UnauthorizedException('Maximum login attempts reached. Your account has been suspended. Please contact an administrator.');
+        throw new HttpException(
+          'Too many failed login attempts. Please try again in 15 minutes.',
+          HttpStatus.TOO_MANY_REQUESTS
+        );
       }
-      throw new UnauthorizedException(`Invalid credentials. ${5 - attempts} attempts remaining.`);
+      // Uniform error message to prevent account enumeration
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    await this.redisService.resetLoginAttempts(user.email);
+    await this.redisService.resetLoginAttempts(normalizedEmail);
 
     let centreName = 'Educare HQ';
     if (user.role.name === 'STUDENT') {
@@ -68,8 +83,14 @@ export class AuthService {
     const jti = uuidv4();
     const payload = { email: user.email, sub: user.id, role: user.role.name, centreName, jti };
     
-    // 7 days expiration for the session in Redis to match JWT validity (assuming 7d in config, fallback to 7d)
-    await this.redisService.whitelistSession(user.id, jti, 7 * 24 * 60 * 60);
+    // SEC-04: Mandatory session registration check
+    const sessionRegistered = await this.redisService.whitelistSession(user.id, jti, 7 * 24 * 60 * 60);
+    if (!sessionRegistered) {
+      throw new HttpException(
+        'Authentication session service unavailable. Please retry shortly.',
+        HttpStatus.SERVICE_UNAVAILABLE
+      );
+    }
 
     return {
       access_token: this.jwtService.sign(payload),
@@ -83,6 +104,5 @@ export class AuthService {
       }
     };
   }
-
-
 }
+

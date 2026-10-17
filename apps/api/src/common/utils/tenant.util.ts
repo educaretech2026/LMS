@@ -1,5 +1,17 @@
 import { ForbiddenException } from '@nestjs/common';
 
+export const SAFE_USER_SELECT = {
+  id: true,
+  email: true,
+  firstName: true,
+  lastName: true,
+  avatar: true,
+  status: true,
+  roleId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export function isSuperAdmin(user: any): boolean {
   if (!user) return false;
   const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
@@ -14,11 +26,27 @@ export function getUserCentreIds(user: any): string[] {
   return [];
 }
 
-export function assertCentreAccess(user: any, centreId?: string | null): void {
-  if (!centreId) return;
-  if (isSuperAdmin(user)) return;
+/**
+ * Ensures non-superadmin users have at least one authorized centre.
+ * Fails closed if no centres are assigned.
+ */
+export function getAuthorizedCentreIds(user: any): string[] {
+  if (isSuperAdmin(user)) return [];
   const allowed = getUserCentreIds(user);
-  if (!allowed.includes(centreId)) {
+  if (!allowed || allowed.length === 0) {
+    throw new ForbiddenException('Access denied: No centre assignments found for your account.');
+  }
+  return allowed;
+}
+
+export function assertCentreAccess(user: any, centreId?: string | null): void {
+  if (isSuperAdmin(user)) return;
+  if (!centreId) {
+    throw new ForbiddenException('Access denied: Centre assignment is required.');
+  }
+  const allowed = getUserCentreIds(user);
+  if (!allowed || allowed.length === 0 || !allowed.includes(centreId)) {
     throw new ForbiddenException('Access denied: You are not authorized for this centre.');
   }
 }
+

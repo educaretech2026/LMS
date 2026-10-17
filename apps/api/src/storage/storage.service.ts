@@ -5,9 +5,16 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 
 const ALLOWED_MIME_PREFIXES = [
-  'image/',
-  'video/',
-  'audio/',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/mp4',
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument',
@@ -19,7 +26,8 @@ const ALLOWED_MIME_PREFIXES = [
 const DISALLOWED_EXTENSIONS = new Set([
   '.exe', '.bat', '.cmd', '.sh', '.php', '.phtml', '.phtm', '.phps',
   '.js', '.mjs', '.cjs', '.jsp', '.asp', '.aspx', '.cgi', '.py', '.pl',
-  '.html', '.htm', '.xhtml', '.svgz', '.vbs', '.scr', '.msi',
+  '.html', '.htm', '.xhtml', '.svg', '.svgz', '.vbs', '.scr', '.msi',
+  '.jar', '.com', '.hta', '.wsf', '.dll',
 ]);
 
 @Injectable()

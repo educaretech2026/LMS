@@ -15,19 +15,25 @@ export class LiveClassController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
-  getAll() {
-    return this.liveClassService.getAll();
+  getAll(@Req() req: any) {
+    return this.liveClassService.getAll(req.user);
   }
 
   @Get('stats')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  getStats() {
-    return this.liveClassService.getStats();
+  getStats(@Req() req: any) {
+    return this.liveClassService.getStats(req.user);
+  }
+
+  @Get(':id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  getById(@Param('id') id: string, @Req() req: any) {
+    return this.liveClassService.getById(id, req.user);
   }
 
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  async create(@Body() data: any) {
+  async create(@Body() data: any, @Req() req: any) {
     if (!data.zoomLink) {
       try {
         data.zoomLink = await this.googleMeetService.createMeetLink(
@@ -40,18 +46,23 @@ export class LiveClassController {
         console.error("Failed to create Google Meet link, falling back to empty link", e);
       }
     }
-    return this.liveClassService.create(data);
+    return this.liveClassService.create(data, req.user);
   }
 
   @Patch(':id/status')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  updateStatus(@Param('id') id: string, @Body('status') status: 'SCHEDULED' | 'LIVE' | 'ENDED') {
-    return this.liveClassService.updateStatus(id, status);
+  updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: 'SCHEDULED' | 'LIVE' | 'ENDED',
+    @Req() req: any
+  ) {
+    return this.liveClassService.updateStatus(id, status, req.user);
   }
 
   @Delete(':id')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
-  delete(@Param('id') id: string) {
-    return this.liveClassService.delete(id);
+  delete(@Param('id') id: string, @Req() req: any) {
+    return this.liveClassService.delete(id, req.user);
   }
 }
+

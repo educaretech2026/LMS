@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class SyllabusService {
@@ -303,7 +304,7 @@ export class SyllabusService {
     const studentProgress = await this.prisma.studentTopicProgress.findMany({
       where: { batchId },
       include: {
-        student: { include: { user: true } },
+        student: { include: { user: { select: SAFE_USER_SELECT } } },
         topic: true
       }
     });

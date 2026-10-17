@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { isSuperAdmin, getUserCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
+import { isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, assertCentreAccess, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class FeeService {
@@ -12,8 +12,8 @@ export class FeeService {
 
     if (roleName === 'STUDENT') {
       whereClause = { student: { userId: user.id } };
-    } else if (roleName === 'CENTRE_ADMIN') {
-      const centreIds = getUserCentreIds(user);
+    } else if (!isSuperAdmin(user)) {
+      const centreIds = getAuthorizedCentreIds(user);
       whereClause = {
         student: {
           enrollments: {
@@ -32,7 +32,7 @@ export class FeeService {
       include: {
         student: {
           include: {
-            user: true,
+            user: { select: SAFE_USER_SELECT },
             enrollments: {
               include: {
                 batch: {
@@ -63,8 +63,8 @@ export class FeeService {
       if (!student) {
         throw new NotFoundException('Student not found');
       }
-      const allowed = getUserCentreIds(user);
-      const studentCentres = student.enrollments.map(e => e.batch.centreId);
+      const allowed = getAuthorizedCentreIds(user);
+      const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean);
       const hasAccess = studentCentres.some(cId => allowed.includes(cId));
       if (!hasAccess) {
         throw new ForbiddenException('Access denied: You cannot create fees for students outside your centre.');
@@ -101,7 +101,7 @@ export class FeeService {
     }
 
     if (user && !isSuperAdmin(user)) {
-      const allowed = getUserCentreIds(user);
+      const allowed = getAuthorizedCentreIds(user);
       const studentCentres = record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
       const hasAccess = studentCentres.some(cId => allowed.includes(cId));
       if (!hasAccess) {
@@ -131,7 +131,7 @@ export class FeeService {
     }
 
     if (user && !isSuperAdmin(user)) {
-      const allowed = getUserCentreIds(user);
+      const allowed = getAuthorizedCentreIds(user);
       const studentCentres = record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
       const hasAccess = studentCentres.some(cId => allowed.includes(cId));
       if (!hasAccess) {
@@ -142,7 +142,13 @@ export class FeeService {
     const feeRecord = await this.prisma.feeRecord.update({
       where: { id },
       data: { status },
-      include: { student: true }
+      include: {
+        student: {
+          include: {
+            user: { select: SAFE_USER_SELECT }
+          }
+        }
+      }
     });
 
     if (feeRecord && feeRecord.student && feeRecord.student.userId) {
@@ -160,7 +166,7 @@ export class FeeService {
     const student = await this.prisma.studentProfile.findUnique({
       where: { id: studentId },
       include: { 
-        user: true, 
+        user: { select: SAFE_USER_SELECT }, 
         enrollments: { include: { batch: { include: { standard: true, centre: true } } } } 
       }
     });
@@ -169,9 +175,7 @@ export class FeeService {
 
     if (currentUser && !isSuperAdmin(currentUser)) {
       const studentCentreId = student.enrollments?.[0]?.batch?.centreId;
-      if (studentCentreId) {
-        assertCentreAccess(currentUser, studentCentreId);
-      }
+      assertCentreAccess(currentUser, studentCentreId);
     }
 
     const phone = student.parentPhone;

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenE
 import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
-import { assertCentreAccess, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
+import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StaffService {
@@ -104,11 +104,15 @@ export class StaffService {
           }
         });
 
-        return { user, profile };
+        const { password: _pwd, ...safeUser } = user;
+        return { user: safeUser, profile };
       });
 
       return newStaff;
     } catch (error: any) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
       console.error('Error creating staff:', error);
       throw new InternalServerErrorException(error.message || 'Failed to create staff');
     }
@@ -124,19 +128,18 @@ export class StaffService {
     };
 
     if (currentUser && !isSuperAdmin(currentUser)) {
-      const userCentres = getUserCentreIds(currentUser);
-      if (userCentres.length > 0) {
-        where.userCentres = {
-          some: {
-            centreId: { in: userCentres }
-          }
-        };
-      }
+      const userCentres = getAuthorizedCentreIds(currentUser);
+      where.userCentres = {
+        some: {
+          centreId: { in: userCentres }
+        }
+      };
     }
 
     return this.prisma.user.findMany({
       where,
-      include: {
+      select: {
+        ...SAFE_USER_SELECT,
         teacherProfile: {
           include: {
             assignments: {
@@ -168,9 +171,9 @@ export class StaffService {
     if (!user) throw new NotFoundException('Staff not found');
 
     if (currentUser && !isSuperAdmin(currentUser)) {
-      const userCentres = getUserCentreIds(currentUser);
+      const userCentres = getAuthorizedCentreIds(currentUser);
       const staffCentres = user.userCentres.map(uc => uc.centreId);
-      if (userCentres.length > 0 && staffCentres.length > 0 && !staffCentres.some(cId => userCentres.includes(cId))) {
+      if (!staffCentres.some(cId => userCentres.includes(cId))) {
         throw new ForbiddenException('Cannot edit staff from another centre');
       }
     }
@@ -272,7 +275,8 @@ export class StaffService {
         }
       }
 
-      return updatedUser;
+      const { password: _pwd, ...safeUpdatedUser } = updatedUser;
+      return safeUpdatedUser;
     });
   }
 
@@ -284,9 +288,9 @@ export class StaffService {
     if (!user) throw new NotFoundException('Staff not found');
 
     if (currentUser && !isSuperAdmin(currentUser)) {
-      const userCentres = getUserCentreIds(currentUser);
+      const userCentres = getAuthorizedCentreIds(currentUser);
       const staffCentres = user.userCentres.map(uc => uc.centreId);
-      if (userCentres.length > 0 && staffCentres.length > 0 && !staffCentres.some(cId => userCentres.includes(cId))) {
+      if (!staffCentres.some(cId => userCentres.includes(cId))) {
         throw new ForbiddenException('Cannot delete staff from another centre');
       }
     }

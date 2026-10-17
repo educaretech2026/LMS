@@ -17,27 +17,34 @@ async function bootstrap() {
     }),
   );
 
-  // SEC-06: Strict CORS allowlist with credentials
-  const defaultOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
-  ];
+  // SEC-06: Strict CORS allowlist with credentials - exclude localhost in production
+  const isProduction = process.env.NODE_ENV === 'production';
   const configuredOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
     : [];
-  const allowedOrigins = Array.from(new Set([...defaultOrigins, ...configuredOrigins]));
+
+  if (isProduction && configuredOrigins.length === 0) {
+    console.warn('⚠️ WARNING: In production, CORS_ORIGINS must be explicitly set with trusted domain names.');
+  }
+
+  const devOrigins = isProduction
+    ? []
+    : [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+      ];
+  const allowedOrigins = Array.from(new Set([...devOrigins, ...configuredOrigins]));
 
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like native mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (
-        allowedOrigins.includes(origin) ||
-        (process.env.NODE_ENV !== 'production' &&
-          (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')))
-      ) {
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      if (!isProduction && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
         return callback(null, true);
       }
       return callback(new Error('Blocked by CORS policy'), false);
