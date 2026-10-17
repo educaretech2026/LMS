@@ -699,8 +699,21 @@ describe('Security Regression Suite — Real Production Implementations', () => 
   describe('SEC-08: Storage & File Upload Security', () => {
     let storageService: StorageService;
 
+    const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    const origKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+    const origSecretKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+
     beforeEach(() => {
+      process.env.CLOUDFLARE_ACCOUNT_ID = 'mock-account';
+      process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'mock-key';
+      process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = 'mock-secret';
       storageService = new StorageService();
+    });
+
+    afterAll(() => {
+      process.env.CLOUDFLARE_ACCOUNT_ID = origAccountId;
+      process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = origKeyId;
+      process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = origSecretKey;
     });
 
     it('should reject dangerous executable and script file extensions', async () => {
@@ -728,7 +741,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         const mime = f.endsWith('.pdf') ? 'application/pdf' : f.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
         const res = await storageService.getPresignedUploadUrl(f, mime);
         expect(res).toHaveProperty('uploadUrl');
-        expect(res).toHaveProperty('key');
+        expect(res).toHaveProperty('objectKey');
       }
     });
   });

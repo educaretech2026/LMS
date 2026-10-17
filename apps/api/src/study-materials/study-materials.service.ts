@@ -93,12 +93,13 @@ export class StudyMaterialService {
       const boardIds = student.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
       const academicYearIds = student.enrollments.map(e => e.batch?.academicYearId).filter(Boolean) as string[];
 
-      const matchesSyllabus = material.syllabus && 
+      const matchesSyllabus = !material.syllabus || (
         (!material.syllabus.standardId || standardIds.includes(material.syllabus.standardId)) &&
-        (!material.syllabus.boardId || boardIds.includes(material.syllabus.boardId));
+        (!material.syllabus.boardId || boardIds.includes(material.syllabus.boardId))
+      );
       const matchesAcademicYear = !material.academicYearId || academicYearIds.includes(material.academicYearId);
 
-      if (!matchesSyllabus && !matchesAcademicYear) {
+      if (!matchesSyllabus || !matchesAcademicYear) {
         throw new ForbiddenException('Access denied: You are not enrolled in the course corresponding to this material.');
       }
     }
