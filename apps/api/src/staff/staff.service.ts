@@ -32,7 +32,7 @@ export class StaffService {
         });
 
         let profile = null;
-        if (roleName === 'TEACHER') {
+        if (roleName === 'TEACHER' || (Array.isArray(data.assignments) && data.assignments.length > 0)) {
           profile = await prisma.teacherProfile.create({
             data: {
               userId: user.id,
@@ -40,6 +40,53 @@ export class StaffService {
               experience: data.experience || 0,
             }
           });
+
+          if (Array.isArray(data.assignments) && data.assignments.length > 0) {
+            for (const a of data.assignments) {
+              const combinedClassesStr = a.combinedClasses || (Array.isArray(a.classes) ? a.classes.join(', ') : (a.classLevel || ''));
+              const isCombined = Boolean(a.isCombined || (Array.isArray(a.classes) && a.classes.length > 1) || (a.classLevel && a.classLevel.includes(',')));
+
+              let academicYearId: string | undefined;
+              if (a.academicYear) {
+                const ay = await prisma.academicYear.findFirst({ where: { name: a.academicYear } });
+                if (ay) academicYearId = ay.id;
+              }
+
+              let boardId: string | undefined;
+              if (a.board) {
+                const b = await prisma.board.findFirst({ where: { name: a.board } });
+                if (b) boardId = b.id;
+              }
+
+              let subjectId: string | undefined;
+              if (a.subject) {
+                const sub = await prisma.subject.findFirst({ where: { name: a.subject } });
+                if (sub) subjectId = sub.id;
+              }
+
+              let standardId: string | undefined;
+              if (a.classLevel && !isCombined) {
+                const std = await prisma.standard.findFirst({ where: { name: a.classLevel } });
+                if (std) standardId = std.id;
+              }
+
+              await prisma.teacherAssignment.create({
+                data: {
+                  teacherProfileId: profile.id,
+                  academicYearId,
+                  boardId,
+                  subjectId,
+                  standardId,
+                  academicYearName: a.academicYear || '',
+                  boardName: a.board || '',
+                  subjectName: a.subject || '',
+                  division: a.division || 'Division A',
+                  isCombined,
+                  combinedClasses: combinedClassesStr,
+                }
+              });
+            }
+          }
         }
 
         // Link User to Centre
@@ -70,7 +117,18 @@ export class StaffService {
         }
       },
       include: {
-        teacherProfile: true,
+        teacherProfile: {
+          include: {
+            assignments: {
+              include: {
+                board: true,
+                standard: true,
+                subject: true,
+                academicYear: true,
+              }
+            }
+          }
+        },
         userCentres: {
           include: {
             centre: true
@@ -116,6 +174,68 @@ export class StaffService {
       if (centre) {
         await prisma.userCentre.deleteMany({ where: { userId } });
         await prisma.userCentre.create({ data: { userId, centreId: centre.id } });
+      }
+
+      if (Array.isArray(data.assignments)) {
+        let profile = await prisma.teacherProfile.findUnique({ where: { userId } });
+        if (!profile) {
+          profile = await prisma.teacherProfile.create({
+            data: {
+              userId,
+              qualification: data.qualification || '',
+              experience: data.experience || 0,
+            }
+          });
+        }
+
+        await prisma.teacherAssignment.deleteMany({
+          where: { teacherProfileId: profile.id }
+        });
+
+        for (const a of data.assignments) {
+          const combinedClassesStr = a.combinedClasses || (Array.isArray(a.classes) ? a.classes.join(', ') : (a.classLevel || ''));
+          const isCombined = Boolean(a.isCombined || (Array.isArray(a.classes) && a.classes.length > 1) || (a.classLevel && a.classLevel.includes(',')));
+
+          let academicYearId: string | undefined;
+          if (a.academicYear) {
+            const ay = await prisma.academicYear.findFirst({ where: { name: a.academicYear } });
+            if (ay) academicYearId = ay.id;
+          }
+
+          let boardId: string | undefined;
+          if (a.board) {
+            const b = await prisma.board.findFirst({ where: { name: a.board } });
+            if (b) boardId = b.id;
+          }
+
+          let subjectId: string | undefined;
+          if (a.subject) {
+            const sub = await prisma.subject.findFirst({ where: { name: a.subject } });
+            if (sub) subjectId = sub.id;
+          }
+
+          let standardId: string | undefined;
+          if (a.classLevel && !isCombined) {
+            const std = await prisma.standard.findFirst({ where: { name: a.classLevel } });
+            if (std) standardId = std.id;
+          }
+
+          await prisma.teacherAssignment.create({
+            data: {
+              teacherProfileId: profile.id,
+              academicYearId,
+              boardId,
+              subjectId,
+              standardId,
+              academicYearName: a.academicYear || '',
+              boardName: a.board || '',
+              subjectName: a.subject || '',
+              division: a.division || 'Division A',
+              isCombined,
+              combinedClasses: combinedClassesStr,
+            }
+          });
+        }
       }
 
       return updatedUser;

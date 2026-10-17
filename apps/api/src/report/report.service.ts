@@ -278,8 +278,8 @@ export class ReportService {
 
     if (!teacherProfile) return { batches: [], totalStudents: 0, todayPresent: 0, todayAbsent: 0, subjects: [] };
 
-    const batchIds = [...new Set(teacherProfile.assignments.map(a => a.batchId))];
-    const subjectIds = [...new Set(teacherProfile.assignments.map(a => a.subjectId))];
+    const batchIds = [...new Set(teacherProfile.assignments.map(a => a.batchId).filter((id): id is string => Boolean(id)))];
+    const subjectIds = [...new Set(teacherProfile.assignments.map(a => a.subjectId).filter((id): id is string => Boolean(id)))];
 
     // Total students across teacher's batches
     const totalStudents = await this.prisma.enrollment.count({
@@ -314,9 +314,9 @@ export class ReportService {
     });
 
     const subjects = teacherProfile.assignments.map(a => ({
-      id: a.subjectId,
-      name: a.subject.name,
-      batchName: a.batch.name,
+      id: a.subjectId || a.id,
+      name: a.subject?.name || a.subjectName || 'General',
+      batchName: a.batch?.name || a.combinedClasses || a.division || 'General',
     }));
 
     return { batches, totalStudents, todayPresent, todayAbsent, subjects };

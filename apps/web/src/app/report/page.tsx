@@ -1225,7 +1225,7 @@ export default function ReportsPage() {
   return (
     <DashboardLayout title="Reports & Analytics">
       {/* 60% Print scale styling injected for Bug 5 */}
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
             size: auto;
@@ -1237,7 +1237,7 @@ export default function ReportsPage() {
             print-color-adjust: exact !important;
           }
         }
-      `}</style>
+      `}} />
 
       <PageShell
         title="Reports & Analytics"

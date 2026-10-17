@@ -21,9 +21,11 @@ interface Staff {
     academicYear: string;
     board: string;
     classLevel: string;
-    centre: string;
+    centre?: string;
     division: string;
     subject: string;
+    isCombined?: boolean;
+    classes?: string[];
   }[];
   password?: string;
   createdAt?: string;
@@ -236,8 +238,13 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
                           <div className="flex flex-col gap-1">
                             {s.assignments && s.assignments.length > 0 ? (
                               s.assignments.map(a => (
-                                <span key={a.id} className="inline-flex rounded-md bg-surface-2 border border-border-soft px-2 py-0.5 text-[10px] font-bold text-text-secondary w-max">
-                                  {a.classLevel} - {a.subject} ({a.board})
+                                <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md bg-surface-2 border border-border-soft px-2 py-0.5 text-[10px] font-bold text-text-secondary w-max flex-wrap">
+                                  <span>{a.classLevel} - {a.subject} ({a.board})</span>
+                                  {(a.isCombined || (a.classLevel && a.classLevel.includes(','))) && (
+                                    <span className="px-1 py-0.2 bg-purple-100 text-purple-700 rounded text-[9px] font-semibold">
+                                      Combined
+                                    </span>
+                                  )}
                                 </span>
                               ))
                             ) : (
@@ -336,14 +343,26 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
     password: ""
   });
 
-  const [newAssignment, setNewAssignment] = useState({ 
+  const [newAssignment, setNewAssignment] = useState<{
+    academicYear: string;
+    board: string;
+    selectedClasses: string[];
+    division: string;
+    subject: string;
+    customSubject: string;
+  }>({ 
     academicYear: config.academicYears[0] || "", 
     board: config.boards[0] || "", 
-    classLevel: config.classes.find((c: any) => c.board === (config.boards[0] || ""))?.name || "", 
+    selectedClasses: [], 
     division: "Division A", 
-    subject: "" 
+    subject: config.subjects?.[0] || "",
+    customSubject: "" 
   });
   const [showAddAssignment, setShowAddAssignment] = useState(false);
+
+  const availableClasses = config.classes.filter((c: any) => 
+    !newAssignment.board || c.board === newAssignment.board || (c.boards && c.boards.includes(newAssignment.board))
+  );
 
   const TABS = [
     { id: "Basic Information", icon: User },
@@ -353,18 +372,37 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
   ];
 
   const handleAddAssignment = () => {
-    if (newAssignment.subject) {
+    const finalSubject = newAssignment.subject === '__custom__' 
+      ? newAssignment.customSubject.trim() 
+      : (newAssignment.subject || newAssignment.customSubject.trim());
+
+    if (finalSubject && newAssignment.selectedClasses.length > 0) {
+      const isCombined = newAssignment.selectedClasses.length > 1;
+      const classLevel = newAssignment.selectedClasses.join(', ');
       setFormData({
         ...formData,
-        assignments: [...formData.assignments, { id: Math.random().toString(), ...newAssignment }]
+        assignments: [
+          ...formData.assignments, 
+          { 
+            id: Math.random().toString(), 
+            academicYear: newAssignment.academicYear,
+            board: newAssignment.board,
+            classLevel,
+            classes: newAssignment.selectedClasses,
+            isCombined,
+            division: newAssignment.division || "Division A",
+            subject: finalSubject
+          }
+        ]
       });
       setShowAddAssignment(false);
       setNewAssignment({ 
         academicYear: config.academicYears[0] || "", 
         board: config.boards[0] || "", 
-        classLevel: config.classes.find((c: any) => c.board === (config.boards[0] || ""))?.name || "", 
+        selectedClasses: [], 
         division: "Division A", 
-        subject: "" 
+        subject: config.subjects?.[0] || "",
+        customSubject: "" 
       });
     }
   };
@@ -474,7 +512,7 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h3 className="text-sm font-bold text-text-primary">Assigned Classes</h3>
-                  <p className="text-xs text-text-muted mt-1">Assign subjects and batches to this teacher.</p>
+                  <p className="text-xs text-text-muted mt-1">Assign subjects and batches to this teacher. Select multiple classes for combined sessions.</p>
                 </div>
                 <button onClick={() => setShowAddAssignment(!showAddAssignment)} className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue/10 px-3 py-1.5 text-xs font-bold text-brand-blue hover:bg-brand-blue/20 transition-colors">
                   <Plus className="h-3.5 w-3.5" /> Add Assignment
@@ -482,23 +520,141 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
               </div>
 
               {showAddAssignment && (
-                <div className="mb-6 bg-surface-2 p-4 rounded-lg border border-border-soft">
-                  <div className="grid grid-cols-5 gap-4">
-                     <select value={newAssignment.academicYear} onChange={e => setNewAssignment({...newAssignment, academicYear: e.target.value})} className="h-10 rounded-lg text-sm px-3">
-                       {config.academicYears.map((y: string) => <option key={y}>{y}</option>)}
-                     </select>
-                     <select value={newAssignment.board} onChange={e => {
-                         const board = e.target.value;
-                         const boardClasses = config.classes.filter((c: any) => c.board === board);
-                         setNewAssignment({...newAssignment, board, classLevel: boardClasses[0]?.name || ""});
-                       }} className="h-10 rounded-lg text-sm px-3">
-                       {config.boards.map((b: string) => <option key={b}>{b}</option>)}
-                     </select>
-                     <select value={newAssignment.classLevel} onChange={e => setNewAssignment({...newAssignment, classLevel: e.target.value})} className="h-10 rounded-lg text-sm px-3">
-                       {config.classes.filter((c: any) => c.board === newAssignment.board).map((c: any) => <option key={c.name}>{c.name}</option>)}
-                     </select>
-                     <input type="text" placeholder="Subject" value={newAssignment.subject} onChange={e => setNewAssignment({...newAssignment, subject: e.target.value})} className="h-10 rounded-lg text-sm px-3 border border-border-soft" />
-                     <button onClick={handleAddAssignment} className="h-10 bg-brand-blue text-white rounded-lg text-sm font-bold">Add</button>
+                <div className="mb-6 bg-surface-2 p-5 rounded-xl border border-border-soft space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary mb-1">Academic Year</label>
+                      <select 
+                        value={newAssignment.academicYear} 
+                        onChange={e => setNewAssignment({...newAssignment, academicYear: e.target.value})} 
+                        className="w-full h-10 rounded-lg text-sm px-3 border border-border-soft bg-white"
+                      >
+                        {config.academicYears.map((y: string) => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary mb-1">Board</label>
+                      <select 
+                        value={newAssignment.board} 
+                        onChange={e => {
+                          const board = e.target.value;
+                          setNewAssignment({
+                            ...newAssignment, 
+                            board, 
+                            selectedClasses: []
+                          });
+                        }} 
+                        className="w-full h-10 rounded-lg text-sm px-3 border border-border-soft bg-white"
+                      >
+                        {config.boards.map((b: string) => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary mb-1">Division / Section</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Division A" 
+                        value={newAssignment.division} 
+                        onChange={e => setNewAssignment({...newAssignment, division: e.target.value})} 
+                        className="w-full h-10 rounded-lg text-sm px-3 border border-border-soft bg-white" 
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-bold text-text-secondary">
+                        Assign Class / Standard <span className="text-text-muted font-normal">(Select multiple for combined classes)</span>
+                      </label>
+                      {newAssignment.selectedClasses.length > 1 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+                          <Users className="h-3 w-3" /> Combined Class ({newAssignment.selectedClasses.length} Selected)
+                        </span>
+                      )}
+                    </div>
+
+                    {availableClasses.length === 0 ? (
+                      <p className="text-xs text-text-muted italic py-2">No classes found for {newAssignment.board || "selected board"}.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2 p-2.5 bg-white rounded-lg border border-border-soft min-h-[46px] items-center">
+                        {availableClasses.map((c: any) => {
+                          const isSelected = newAssignment.selectedClasses.includes(c.name);
+                          return (
+                            <button
+                              key={c.id || c.name}
+                              type="button"
+                              onClick={() => {
+                                const next = isSelected
+                                  ? newAssignment.selectedClasses.filter((name: string) => name !== c.name)
+                                  : [...newAssignment.selectedClasses, c.name];
+                                setNewAssignment({ ...newAssignment, selectedClasses: next });
+                              }}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 ${
+                                isSelected
+                                  ? "bg-brand-blue text-white border-brand-blue shadow-sm"
+                                  : "bg-surface-2 text-text-secondary border-border-soft hover:bg-surface-3"
+                              }`}
+                            >
+                              <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] ${isSelected ? "bg-white/20 text-white" : "border border-border-soft"}`}>
+                                {isSelected ? "✓" : ""}
+                              </span>
+                              <span>{c.name}</span>
+                              {c.boards && c.boards.length > 1 && (
+                                <span className={`text-[9px] px-1 rounded ${isSelected ? "bg-white/20 text-white" : "bg-brand-blue/10 text-brand-blue"}`}>
+                                  Multi-Board
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary mb-1">Subject</label>
+                      <div className="flex gap-2">
+                        <select 
+                          value={newAssignment.subject} 
+                          onChange={e => setNewAssignment({...newAssignment, subject: e.target.value})} 
+                          className="flex-1 h-10 rounded-lg text-sm px-3 border border-border-soft bg-white"
+                        >
+                          <option value="">Select Subject</option>
+                          {(config.subjects || []).map((sub: string) => <option key={sub} value={sub}>{sub}</option>)}
+                          <option value="__custom__">+ Enter Custom Subject...</option>
+                        </select>
+                        {(newAssignment.subject === '__custom__' || (!config.subjects?.length)) && (
+                          <input 
+                            type="text" 
+                            placeholder="Enter Subject Name" 
+                            value={newAssignment.customSubject} 
+                            onChange={e => setNewAssignment({...newAssignment, customSubject: e.target.value})} 
+                            className="flex-1 h-10 rounded-lg text-sm px-3 border border-border-soft bg-white" 
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-end gap-2">
+                      <button 
+                        type="button"
+                        onClick={handleAddAssignment} 
+                        disabled={newAssignment.selectedClasses.length === 0 || (!newAssignment.subject && !newAssignment.customSubject)}
+                        className="h-10 bg-brand-blue hover:bg-brand-blue-dark text-white px-5 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Add Assignment
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setShowAddAssignment(false)} 
+                        className="h-10 px-4 text-xs font-semibold text-text-muted hover:text-text-primary rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -520,7 +676,17 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                         <tr key={a.id}>
                           <td className="px-4 py-3 font-medium">{a.academicYear}</td>
                           <td className="px-4 py-3 text-xs">{a.board}</td>
-                          <td className="px-4 py-3 text-xs">{a.classLevel} - {a.division}</td>
+                          <td className="px-4 py-3 text-xs">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-text-primary">{a.classLevel}</span>
+                              {(a.isCombined || (a.classLevel && a.classLevel.includes(','))) && (
+                                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200 rounded">
+                                  Combined
+                                </span>
+                              )}
+                              <span className="text-text-muted">({a.division})</span>
+                            </div>
+                          </td>
                           <td className="px-4 py-3 font-bold text-brand-blue">{a.subject}</td>
                           <td className="px-4 py-3 text-right">
                             <button onClick={() => setFormData({...formData, assignments: formData.assignments.filter((x: any) => x.id !== a.id)})} className="text-text-muted hover:text-brand-red">
@@ -595,41 +761,41 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
               </button>
             )}
           </div>
-          <div className="flex gap-4">
-            <button onClick={onClose} className="text-sm font-bold text-text-secondary hover:text-text-primary transition-colors">
+          <div className="flex gap-3">
+            <button onClick={onClose} className="text-sm font-bold text-text-secondary hover:text-text-primary transition-colors px-3 py-2">
               Cancel
             </button>
             <button 
               onClick={() => {
-                if (activeTab === "Documents" || staff) {
-                  // Final save
-                  const newStaffData: any = {
-                    id: staff?.id || Math.random().toString(36).substr(2, 9),
-                    empId: formData.empId || undefined,
-                    name: formData.name || undefined,
-                    email: formData.email || undefined,
-                    phone: formData.phone || undefined,
-                    role: formData.role || (config.roles[0] || "TEACHER"),
-                    centre: formData.role === 'SUPER_ADMIN' ? null : (formData.centre || (config.centres[0] || "")),
-                    status: formData.status as "Active" | "Inactive",
-                    assignments: formData.assignments,
-                    password: formData.password || undefined
-                  };
-                  onSave(newStaffData);
-                } else {
-                  // Go to next tab
-                  const idx = TABS.findIndex(t => t.id === activeTab);
-                  if (idx < TABS.length - 1) setActiveTab(TABS[idx + 1].id);
-                }
+                const newStaffData: any = {
+                  id: staff?.id || Math.random().toString(36).substr(2, 9),
+                  empId: formData.empId || undefined,
+                  name: formData.name || undefined,
+                  email: formData.email || undefined,
+                  phone: formData.phone || undefined,
+                  role: formData.role || (config.roles[0] || "TEACHER"),
+                  centre: formData.role === 'SUPER_ADMIN' ? null : (formData.centre || (config.centres[0] || "")),
+                  status: formData.status as "Active" | "Inactive",
+                  assignments: formData.assignments,
+                  password: formData.password || undefined
+                };
+                onSave(newStaffData);
               }}
               className="inline-flex items-center gap-2 rounded-lg bg-text-primary px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-black transition-colors"
             >
-              {activeTab === "Documents" || staff ? (
-                "Save Staff"
-              ) : (
-                <>Next <ChevronRight className="h-4 w-4" /></>
-              )}
+              Save Staff
             </button>
+            {activeTab !== "Documents" && !staff && (
+              <button 
+                onClick={() => {
+                  const idx = TABS.findIndex(t => t.id === activeTab);
+                  if (idx < TABS.length - 1) setActiveTab(TABS[idx + 1].id);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-surface-2 px-4 py-2.5 text-sm font-bold text-text-secondary hover:bg-surface-3 transition-colors"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 

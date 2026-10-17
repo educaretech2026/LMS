@@ -137,15 +137,50 @@ export class SetupService {
   // Standards (Classes)
   async getStandards(boardId?: string) {
     return this.prisma.standard.findMany({
-      where: boardId ? { boardId } : undefined,
+      where: boardId
+        ? {
+            OR: [
+              { boardId },
+              { boards: { some: { boardId } } }
+            ]
+          }
+        : undefined,
+      include: {
+        board: true,
+        boards: {
+          include: {
+            board: true
+          }
+        }
+      },
+      orderBy: { level: 'asc' }
     });
   }
-  async createStandard(data: { name: string; code?: string; level: number; boardId: string }) {
+
+  async createStandard(data: { name: string; code?: string; level?: number; boardId?: string; boardIds?: string[] }) {
+    const boardIds = Array.isArray(data.boardIds) && data.boardIds.length > 0 
+      ? data.boardIds 
+      : (data.boardId ? [data.boardId] : []);
+    const primaryBoardId = boardIds[0] || data.boardId || null;
+
     return this.prisma.standard.create({
       data: {
         name: data.name,
-        level: data.level,
-        boardId: data.boardId,
+        level: data.level || 1,
+        boardId: primaryBoardId,
+        ...(boardIds.length > 0 ? {
+          boards: {
+            create: boardIds.map(bId => ({ boardId: bId }))
+          }
+        } : {})
+      },
+      include: {
+        board: true,
+        boards: {
+          include: {
+            board: true
+          }
+        }
       }
     });
   }

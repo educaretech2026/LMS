@@ -137,6 +137,7 @@ model AcademicYear {
   batches   Batch[]
   exams     Exam[]
   materials StudyMaterial[]
+  teacherAssignments TeacherAssignment[]
 
   @@map("academic_years")
 }
@@ -147,11 +148,13 @@ model Board {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  batches     Batch[]
-  syllabi     Syllabus[]
-  liveClasses LiveClass[]
-  exams       Exam[]
-  standards   Standard[]
+  batches        Batch[]
+  syllabi        Syllabus[]
+  liveClasses    LiveClass[]
+  exams          Exam[]
+  standards      Standard[]
+  standardBoards StandardBoard[]
+  teacherAssignments TeacherAssignment[]
 
   @@map("boards")
 }
@@ -165,13 +168,28 @@ model Standard {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  batches     Batch[]
-  syllabi     Syllabus[]
-  liveClasses LiveClass[]
-  exams       Exam[]
+  batches            Batch[]
+  syllabi            Syllabus[]
+  liveClasses        LiveClass[]
+  exams              Exam[]
+  boards             StandardBoard[]
+  teacherAssignments TeacherAssignment[]
 
   @@unique([name, boardId])
   @@map("standards")
+}
+
+model StandardBoard {
+  id         String   @id @default(uuid())
+  standardId String
+  boardId    String
+  createdAt  DateTime @default(now())
+
+  standard Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  board    Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([standardId, boardId])
+  @@map("standard_boards")
 }
 
 model Subject {
@@ -377,16 +395,27 @@ model TeacherProfile {
 model TeacherAssignment {
   id               String   @id @default(uuid())
   teacherProfileId String
-  batchId          String
-  subjectId        String
+  batchId          String?
+  subjectId        String?
+  academicYearId   String?
+  boardId          String?
+  standardId       String?
+  academicYearName String?
+  boardName        String?
+  subjectName      String?
+  division         String?
+  isCombined       Boolean  @default(false)
+  combinedClasses  String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
-  batch          Batch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  subject        Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  batch          Batch?         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject        Subject?       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYear   AcademicYear?  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  board          Board?         @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  standard       Standard?      @relation(fields: [standardId], references: [id], onDelete: Cascade)
 
-  @@unique([teacherProfileId, batchId, subjectId])
   @@map("teacher_assignments")
 }
 
