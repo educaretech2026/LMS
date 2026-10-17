@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
@@ -32,34 +32,41 @@ export class ExamsService {
   ) {}
 
   async isAnswersReleased(examId: string): Promise<boolean> {
-    if (this.releasedExams.has(examId)) return true;
     if (process.env.REDIS_URL) {
       try {
         const val = await this.redisService.getRaw(`exam:released:${examId}`);
         return val === 'true';
       } catch {
+        // Fail closed if Redis is configured but fails
         return false;
       }
     }
-    return false;
+    return this.releasedExams.has(examId);
   }
 
-  async releaseExamAnswers(examId: string, released: boolean, user?: any): Promise<{ success: boolean; examId: string; released: boolean }> {
+  async releaseExamAnswers(examId: string, released = true, user?: any): Promise<{ success: boolean; examId: string; released: boolean }> {
+    if (!user) {
+      throw new UnauthorizedException('Authentication required to release exam answers.');
+    }
+    const isStudent = user?.role === 'STUDENT' || user?.role?.name === 'STUDENT';
+    if (isStudent) {
+      throw new ForbiddenException('Students are not authorized to release exam answers.');
+    }
+
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
-      include: { batch: { select: { centreId: true } } }
+      include: { batch: { select: { centreId: true, standardId: true, boardId: true } } }
     });
     if (!exam) throw new NotFoundException('Exam not found');
 
-    if (user && !isSuperAdmin(user)) {
+    if (!isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
       assertCentreAccess(user, examCentreId);
-    }
 
-    if (released) {
-      this.releasedExams.add(examId);
-    } else {
-      this.releasedExams.delete(examId);
+      const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+      if (isTeacher) {
+        await this.assertTeacherExamAccess(user.id, exam);
+      }
     }
 
     if (process.env.REDIS_URL) {
@@ -69,18 +76,31 @@ export class ExamsService {
         } else {
           await this.redisService.delRaw(`exam:released:${examId}`);
         }
-      } catch {
-        // Fallback to memory set
+      } catch (err) {
+        throw new ServiceUnavailableException('Failed to persist exam answer release state in Redis.');
       }
+    }
+
+    if (released) {
+      this.releasedExams.add(examId);
+    } else {
+      this.releasedExams.delete(examId);
     }
 
     return { success: true, examId, released };
   }
 
-  private async assertTeacherExamAccess(userId: string, exam: any): Promise<void> {
+  async assertTeacherExamAccess(userId: string, exam: any): Promise<void> {
     const teacherProfile = await this.prisma.teacherProfile.findUnique({
       where: { userId },
-      include: { assignments: true },
+      include: {
+        assignments: true,
+        user: {
+          include: {
+            userCentres: true,
+          }
+        }
+      },
     });
     if (!teacherProfile) {
       throw new ForbiddenException('Teacher profile not found.');
@@ -90,16 +110,50 @@ export class ExamsService {
       throw new ForbiddenException('Teacher has no active assignments.');
     }
 
+    // 1. Centre check: The exam's effective centre must be among the teacher's authorized centres
+    const effectiveExamCentreId = exam.centreId || exam.batch?.centreId;
+    if (effectiveExamCentreId) {
+      const teacherCentreIds = teacherProfile.user?.userCentres?.map(uc => uc.centreId) || [];
+      if (!teacherCentreIds.includes(effectiveExamCentreId)) {
+        throw new ForbiddenException('You are not authorized to access exams in this centre.');
+      }
+    }
+
+    // 2. Academic tuple check: subject, standard, board, and batch must match simultaneously
+    const effectiveStandardId = exam.standardId || exam.batch?.standardId;
+    const effectiveBoardId = exam.boardId || exam.batch?.boardId;
+    const effectiveSubjectId = exam.subjectId;
+
     const matches = teacherProfile.assignments.some(a => {
-      if (exam.batchId && a.batchId && a.batchId === exam.batchId) return true;
-      if (exam.subjectId && a.subjectId && a.subjectId === exam.subjectId) return true;
-      if (exam.standardId && a.standardId && a.standardId === exam.standardId) return true;
-      if (exam.boardId && a.boardId && a.boardId === exam.boardId) return true;
-      return false;
+      // Subject is mandatory and must match
+      if (!a.subjectId || a.subjectId !== effectiveSubjectId) {
+        return false;
+      }
+
+      // If standard/class is specified on either side, it must match
+      if (effectiveStandardId && a.standardId) {
+        const directMatch = a.standardId === effectiveStandardId;
+        const combinedMatch = Boolean(a.isCombined && a.combinedClasses && a.combinedClasses.includes(effectiveStandardId));
+        if (!directMatch && !combinedMatch) {
+          return false;
+        }
+      }
+
+      // If board is specified on both sides, it must match
+      if (effectiveBoardId && a.boardId && a.boardId !== effectiveBoardId) {
+        return false;
+      }
+
+      // If batch is specified on the assignment or exam, it must be compatible
+      if (exam.batchId && a.batchId && a.batchId !== exam.batchId) {
+        return false;
+      }
+
+      return true;
     });
 
     if (!matches) {
-      throw new ForbiddenException('You are not authorized to manage or view results for this exam.');
+      throw new ForbiddenException('You are not authorized to access or manage this exam. The exam subject, class, or batch does not match your active teaching assignments.');
     }
   }
 
@@ -176,6 +230,71 @@ export class ExamsService {
           ...exam,
           mcqQuestions: exam.mcqQuestions ? sanitizeQuestions(exam.mcqQuestions) : [],
         };
+      });
+    }
+
+    const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true, user: { include: { userCentres: true } } }
+      });
+      if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+        return [];
+      }
+
+      const userCentres = getAuthorizedCentreIds(user);
+      const assignmentOrConditions = teacherProfile.assignments
+        .filter(a => Boolean(a.subjectId))
+        .map(a => {
+          const cond: any = { subjectId: a.subjectId };
+          if (a.standardId) {
+            const stdList = [a.standardId];
+            if (a.isCombined && a.combinedClasses) {
+              stdList.push(...a.combinedClasses.split(',').map(s => s.trim()).filter(Boolean));
+            }
+            cond.OR = [{ standardId: null }, { standardId: { in: stdList } }];
+          }
+          if (a.boardId) {
+            cond.AND = [{ OR: [{ boardId: null }, { boardId: a.boardId }] }];
+          }
+          if (a.batchId) {
+            cond.batchId = a.batchId;
+          }
+          return cond;
+        });
+
+      if (assignmentOrConditions.length === 0) {
+        return [];
+      }
+
+      return this.prisma.exam.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { centreId: { in: userCentres } },
+                { batch: { centreId: { in: userCentres } } },
+              ]
+            },
+            {
+              OR: assignmentOrConditions
+            }
+          ]
+        },
+        include: {
+          academicYear: true,
+          batch: true,
+          subject: true,
+          chapter: true,
+          topic: true,
+          mcqQuestions: true,
+          targetTrack: true,
+          _count: {
+            select: { results: true, mcqQuestions: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
       });
     }
 
@@ -469,9 +588,9 @@ export class ExamsService {
     });
     if (!exam) throw new NotFoundException('Exam not found');
 
+    const effectiveCentreId = exam.centreId || exam.batch?.centreId;
     if (user && !isSuperAdmin(user)) {
-      const examCentreId = exam.centreId || exam.batch?.centreId;
-      assertCentreAccess(user, examCentreId);
+      assertCentreAccess(user, effectiveCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
       if (isTeacher) {
@@ -511,28 +630,41 @@ export class ExamsService {
         throw new BadRequestException(`Student profile not found for id '${r.studentId}'.`);
       }
 
-      if (exam.centreId) {
-        const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean);
-        if (studentCentres.length > 0 && !studentCentres.includes(exam.centreId)) {
-          throw new ForbiddenException(`Student '${r.studentId}' does not belong to exam centre '${exam.centreId}'.`);
+      // Check effective centre membership (direct or via batch)
+      const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      if (effectiveCentreId) {
+        if (studentCentres.length === 0 || !studentCentres.includes(effectiveCentreId)) {
+          throw new ForbiddenException(`Student '${r.studentId}' does not belong to exam centre '${effectiveCentreId}'.`);
+        }
+      }
+
+      // Check batch membership if exam is batch-specific
+      if (exam.batchId) {
+        const studentBatches = student.enrollments.map(e => e.batchId).filter(Boolean);
+        if (!studentBatches.includes(exam.batchId)) {
+          throw new ForbiddenException(`Student '${r.studentId}' is not enrolled in required exam batch '${exam.batchId}'.`);
         }
       }
 
       const marksObtained = Number(r.marksObtained);
-      if (isNaN(marksObtained) || marksObtained < 0) {
-        throw new BadRequestException(`Invalid marksObtained for student '${r.studentId}'. Must be a non-negative number.`);
+      if (isNaN(marksObtained) || !isFinite(marksObtained) || marksObtained < 0) {
+        throw new BadRequestException(`Invalid marksObtained for student '${r.studentId}'. Must be a non-negative finite number.`);
       }
 
-      const maxMarks = r.maxMarks ? Number(r.maxMarks) : defaultMaxMarks;
-      if (isNaN(maxMarks) || maxMarks <= 0) {
-        throw new BadRequestException(`Invalid maxMarks for student '${r.studentId}'. Must be greater than 0.`);
+      const maxMarks = r.maxMarks !== undefined ? Number(r.maxMarks) : defaultMaxMarks;
+      if (isNaN(maxMarks) || !isFinite(maxMarks) || maxMarks <= 0) {
+        throw new BadRequestException(`Invalid maxMarks for student '${r.studentId}'. Must be a positive finite number.`);
       }
 
       if (marksObtained > maxMarks) {
         throw new BadRequestException(`marksObtained (${marksObtained}) cannot exceed maxMarks (${maxMarks}) for student '${r.studentId}'.`);
       }
 
-      const grade = r.grade || calculateGrade(marksObtained, maxMarks);
+      const validGrades = new Set(['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'E', 'F']);
+      let grade = r.grade ? String(r.grade).trim().toUpperCase() : calculateGrade(marksObtained, maxMarks);
+      if (!validGrades.has(grade)) {
+        grade = calculateGrade(marksObtained, maxMarks);
+      }
 
       validatedRecords.push({
         studentId: r.studentId,
@@ -865,6 +997,67 @@ export class ExamsService {
       }));
     }
 
+    const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true, user: { include: { userCentres: true } } }
+      });
+      if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+        return [];
+      }
+
+      const userCentres = getAuthorizedCentreIds(user);
+      const assignmentOrConditions = teacherProfile.assignments
+        .filter(a => Boolean(a.subjectId))
+        .map(a => {
+          const cond: any = { subjectId: a.subjectId };
+          if (a.standardId) {
+            const stdList = [a.standardId];
+            if (a.isCombined && a.combinedClasses) {
+              stdList.push(...a.combinedClasses.split(',').map(s => s.trim()).filter(Boolean));
+            }
+            cond.OR = [{ standardId: null }, { standardId: { in: stdList } }];
+          }
+          if (a.boardId) {
+            cond.AND = [{ OR: [{ boardId: null }, { boardId: a.boardId }] }];
+          }
+          if (a.batchId) {
+            cond.batchId = a.batchId;
+          }
+          return cond;
+        });
+
+      if (assignmentOrConditions.length === 0) {
+        return [];
+      }
+
+      return this.prisma.exam.findMany({
+        where: {
+          topicId,
+          type: { in: ['MCQ_EXAM', 'MOCK_TEST', 'QUESTION_BANK'] },
+          AND: [
+            {
+              OR: [
+                { centreId: { in: userCentres } },
+                { batch: { centreId: { in: userCentres } } },
+              ]
+            },
+            {
+              OR: assignmentOrConditions
+            }
+          ]
+        },
+        include: {
+          subject: true,
+          chapter: true,
+          topic: true,
+          mcqQuestions: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
     const where: any = {
       topicId,
       type: { in: ['MCQ_EXAM', 'MOCK_TEST', 'QUESTION_BANK'] },
@@ -893,14 +1086,67 @@ export class ExamsService {
   async createExam(data: any, user?: any) {
     let { title, type, academicYearId, batchId, subjectId, chapterId, topicId, boardId, standardId, centreId, targetTrackId } = data;
     
+    const userCentres = user && !isSuperAdmin(user) ? getAuthorizedCentreIds(user) : [];
+
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getAuthorizedCentreIds(user);
       if (centreId && !userCentres.includes(centreId)) {
-        throw new ForbiddenException('Cannot create exam for another centre');
+        throw new ForbiddenException('Cannot create exam for an unauthorized centre.');
       }
       if (!centreId) {
         centreId = userCentres[0];
       }
+    }
+
+    // Validate destination batch
+    let batch: any = null;
+    if (batchId && batchId !== 'dummy') {
+      batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+      if (!batch) {
+        throw new BadRequestException(`Specified batch '${batchId}' does not exist.`);
+      }
+      if (user && !isSuperAdmin(user) && batch.centreId && !userCentres.includes(batch.centreId)) {
+        throw new ForbiddenException('Specified batch belongs to an unauthorized centre.');
+      }
+      if (centreId && batch.centreId && batch.centreId !== centreId) {
+        throw new BadRequestException('Exam centreId does not match the centre of the specified batch.');
+      }
+    }
+
+    // Validate destination subject
+    if (subjectId && subjectId !== 'dummy') {
+      const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
+      if (!sub) {
+        throw new BadRequestException(`Specified subject '${subjectId}' does not exist.`);
+      }
+    }
+
+    // Validate destination standard
+    if (standardId) {
+      const std = await this.prisma.standard.findUnique({ where: { id: standardId } });
+      if (!std) {
+        throw new BadRequestException(`Specified standard '${standardId}' does not exist.`);
+      }
+    }
+
+    // Validate destination board
+    if (boardId) {
+      const brd = await this.prisma.board.findUnique({ where: { id: boardId } });
+      if (!brd) {
+        throw new BadRequestException(`Specified board '${boardId}' does not exist.`);
+      }
+    }
+
+    // If teacher, enforce teacher assignment tuple check on creation
+    const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+    if (isTeacher && user?.id) {
+      await this.assertTeacherExamAccess(user.id, {
+        centreId,
+        subjectId,
+        batchId: batchId !== 'dummy' ? batchId : null,
+        standardId,
+        boardId,
+        batch,
+      });
     }
 
     // Ensure we have a valid academicYear
@@ -914,8 +1160,8 @@ export class ExamsService {
     
     // Ensure we have a valid batch if requested
     if (batchId === "dummy") {
-      let batch = await this.prisma.batch.findFirst();
-      if (batch) batchId = batch.id;
+      let b = await this.prisma.batch.findFirst();
+      if (b) batchId = b.id;
       else batchId = null;
     }
     
@@ -946,6 +1192,62 @@ export class ExamsService {
   }
 
   async getMcqQuestions(user?: any): Promise<any> {
+    const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true, user: { include: { userCentres: true } } }
+      });
+      if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+        return [];
+      }
+
+      const userCentres = getAuthorizedCentreIds(user);
+      const assignmentOrConditions = teacherProfile.assignments
+        .filter(a => Boolean(a.subjectId))
+        .map(a => {
+          const cond: any = { subjectId: a.subjectId };
+          if (a.standardId) {
+            const stdList = [a.standardId];
+            if (a.isCombined && a.combinedClasses) {
+              stdList.push(...a.combinedClasses.split(',').map(s => s.trim()).filter(Boolean));
+            }
+            cond.OR = [{ standardId: null }, { standardId: { in: stdList } }];
+          }
+          if (a.boardId) {
+            cond.AND = [{ OR: [{ boardId: null }, { boardId: a.boardId }] }];
+          }
+          if (a.batchId) {
+            cond.batchId = a.batchId;
+          }
+          return cond;
+        });
+
+      if (assignmentOrConditions.length === 0) {
+        return [];
+      }
+
+      return this.prisma.mcqQuestion.findMany({
+        where: {
+          exam: {
+            AND: [
+              {
+                OR: [
+                  { centreId: { in: userCentres } },
+                  { batch: { centreId: { in: userCentres } } },
+                ]
+              },
+              {
+                OR: assignmentOrConditions
+              }
+            ]
+          }
+        },
+        include: { exam: true },
+        orderBy: { createdAt: 'desc' }
+      });
+    }
+
     const where: any = {};
     if (user && !isSuperAdmin(user)) {
       const userCentres = getAuthorizedCentreIds(user);
@@ -968,11 +1270,16 @@ export class ExamsService {
     if (examId && user && !isSuperAdmin(user)) {
       const exam = await this.prisma.exam.findUnique({
         where: { id: examId },
-        include: { batch: { select: { centreId: true } } }
+        include: { batch: { select: { centreId: true, standardId: true, boardId: true } } }
       });
       if (!exam) throw new NotFoundException('Exam not found');
       const examCentreId = exam.centreId || exam.batch?.centreId;
       assertCentreAccess(user, examCentreId);
+
+      const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+      if (isTeacher) {
+        await this.assertTeacherExamAccess(user.id, exam);
+      }
     }
 
     return this.prisma.mcqQuestion.create({
@@ -993,14 +1300,19 @@ export class ExamsService {
   async updateExam(id: string, data: any, user?: any): Promise<any> {
     const existingExam = await this.prisma.exam.findUnique({
       where: { id },
-      include: { batch: { select: { centreId: true } } }
+      include: { batch: { select: { centreId: true, standardId: true, boardId: true } } }
     });
     if (!existingExam) throw new NotFoundException('Exam not found');
+
+    const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
 
     if (user && !isSuperAdmin(user)) {
       const examCentreId = existingExam.centreId || existingExam.batch?.centreId;
       if (examCentreId) {
         assertCentreAccess(user, examCentreId);
+      }
+      if (isTeacher) {
+        await this.assertTeacherExamAccess(user.id, existingExam);
       }
     }
 
@@ -1019,6 +1331,70 @@ export class ExamsService {
       questions,
     } = data;
 
+    const userCentres = user && !isSuperAdmin(user) ? getAuthorizedCentreIds(user) : [];
+
+    // Validate destination centreId
+    if (centreId !== undefined && centreId !== null && user && !isSuperAdmin(user)) {
+      if (!userCentres.includes(centreId)) {
+        throw new ForbiddenException(`Cannot transfer exam to unauthorized centre '${centreId}'.`);
+      }
+    }
+
+    // Validate destination batchId
+    let targetBatch = existingExam.batch;
+    if (batchId !== undefined && batchId !== null) {
+      const b = await this.prisma.batch.findUnique({ where: { id: batchId } });
+      if (!b) {
+        throw new BadRequestException(`Specified destination batch '${batchId}' does not exist.`);
+      }
+      if (user && !isSuperAdmin(user) && b.centreId && !userCentres.includes(b.centreId)) {
+        throw new ForbiddenException('Specified destination batch belongs to an unauthorized centre.');
+      }
+      targetBatch = b;
+    }
+
+    // Validate destination subjectId
+    if (subjectId !== undefined) {
+      const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
+      if (!sub) {
+        throw new BadRequestException(`Specified destination subject '${subjectId}' does not exist.`);
+      }
+    }
+
+    // Validate destination standardId
+    if (standardId !== undefined && standardId !== null) {
+      const std = await this.prisma.standard.findUnique({ where: { id: standardId } });
+      if (!std) {
+        throw new BadRequestException(`Specified destination standard '${standardId}' does not exist.`);
+      }
+    }
+
+    // Validate destination boardId
+    if (boardId !== undefined && boardId !== null) {
+      const brd = await this.prisma.board.findUnique({ where: { id: boardId } });
+      if (!brd) {
+        throw new BadRequestException(`Specified destination board '${boardId}' does not exist.`);
+      }
+    }
+
+    // Inconsistency check
+    const effectiveDestCentre = centreId !== undefined ? centreId : existingExam.centreId;
+    if (targetBatch?.centreId && effectiveDestCentre && targetBatch.centreId !== effectiveDestCentre) {
+      throw new BadRequestException('Destination exam centreId does not match the centre of the destination batch.');
+    }
+
+    // If teacher, check that new target tuple is also within teacher's assignments
+    if (isTeacher) {
+      await this.assertTeacherExamAccess(user.id, {
+        centreId: effectiveDestCentre,
+        subjectId: subjectId !== undefined ? subjectId : existingExam.subjectId,
+        batchId: batchId !== undefined ? batchId : existingExam.batchId,
+        standardId: standardId !== undefined ? standardId : existingExam.standardId,
+        boardId: boardId !== undefined ? boardId : existingExam.boardId,
+        batch: targetBatch,
+      });
+    }
+
     const updatePayload: any = {};
     if (title !== undefined) updatePayload.title = title;
     if (type !== undefined) updatePayload.type = type;
@@ -1032,64 +1408,66 @@ export class ExamsService {
     if (centreId !== undefined) updatePayload.centreId = centreId || null;
     if (targetTrackId !== undefined) updatePayload.targetTrackId = targetTrackId || null;
 
-    await this.prisma.exam.update({
-      where: { id },
-      data: updatePayload,
-    });
-
-    if (Array.isArray(questions)) {
-      const existing = await this.prisma.mcqQuestion.findMany({
-        where: { examId: id },
-        select: { id: true }
+    return this.prisma.$transaction(async (prisma) => {
+      await prisma.exam.update({
+        where: { id },
+        data: updatePayload,
       });
-      const existingIds = new Set(existing.map(q => q.id));
-      const incomingIds = new Set(questions.filter(q => q.id).map(q => q.id));
 
-      const toDelete = [...existingIds].filter(qid => !incomingIds.has(qid));
-      if (toDelete.length > 0) {
-        await this.prisma.mcqQuestion.deleteMany({
-          where: { id: { in: toDelete } }
+      if (Array.isArray(questions)) {
+        const existing = await prisma.mcqQuestion.findMany({
+          where: { examId: id },
+          select: { id: true }
         });
-      }
+        const existingIds = new Set(existing.map(q => q.id));
+        const incomingIds = new Set(questions.filter(q => q.id).map(q => q.id));
 
-      for (const q of questions) {
-        if (!q.text && !q.questionText) continue;
-        const qText = q.text || q.questionText;
-        const qType = q.type || 'MCQ';
-        const qOptions = q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : undefined;
-        let correctOption = q.correctOption;
-        if (correctOption === undefined && q.correct !== undefined && Array.isArray(qOptions)) {
-          correctOption = qOptions[q.correct]?.text ?? qOptions[q.correct];
-        }
-
-        const qData: any = {
-          questionText: qText,
-          type: qType,
-          imageUrl: q.imageUrl || null,
-          explanation: q.explanation || null,
-          options: qOptions,
-          correctOption: correctOption !== undefined ? String(correctOption) : null,
-          marks: q.marks !== undefined ? Number(q.marks) : 4.0,
-          negativeMarks: q.negativeMarks !== undefined ? Number(q.negativeMarks) : 1.0,
-        };
-
-        if (q.id && existingIds.has(q.id)) {
-          await this.prisma.mcqQuestion.update({
-            where: { id: q.id },
-            data: qData
-          });
-        } else {
-          await this.prisma.mcqQuestion.create({
-            data: {
-              ...qData,
-              examId: id
-            }
+        const toDelete = [...existingIds].filter(qid => !incomingIds.has(qid));
+        if (toDelete.length > 0) {
+          await prisma.mcqQuestion.deleteMany({
+            where: { id: { in: toDelete } }
           });
         }
-      }
-    }
 
-    return this.getExamById(id, user);
+        for (const q of questions) {
+          if (!q.text && !q.questionText) continue;
+          const qText = q.text || q.questionText;
+          const qType = q.type || 'MCQ';
+          const qOptions = q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : undefined;
+          let correctOption = q.correctOption;
+          if (correctOption === undefined && q.correct !== undefined && Array.isArray(qOptions)) {
+            correctOption = qOptions[q.correct]?.text ?? qOptions[q.correct];
+          }
+
+          const qData: any = {
+            questionText: qText,
+            type: qType,
+            imageUrl: q.imageUrl || null,
+            explanation: q.explanation || null,
+            options: qOptions,
+            correctOption: correctOption !== undefined ? String(correctOption) : null,
+            marks: q.marks !== undefined ? Number(q.marks) : 4.0,
+            negativeMarks: q.negativeMarks !== undefined ? Number(q.negativeMarks) : 1.0,
+          };
+
+          if (q.id && existingIds.has(q.id)) {
+            await prisma.mcqQuestion.update({
+              where: { id: q.id },
+              data: qData
+            });
+          } else {
+            await prisma.mcqQuestion.create({
+              data: {
+                ...qData,
+                examId: id
+              }
+            });
+          }
+        }
+      }
+
+      return this.getExamById(id, user);
+    });
   }
 
   async deleteExam(id: string, user?: any): Promise<any> {
@@ -1104,6 +1482,10 @@ export class ExamsService {
       if (examCentreId) {
         assertCentreAccess(user, examCentreId);
       }
+      const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+      if (isTeacher) {
+        await this.assertTeacherExamAccess(user.id, existingExam);
+      }
     }
 
     return this.prisma.exam.delete({
@@ -1114,13 +1496,18 @@ export class ExamsService {
   async updateMcqQuestion(id: string, data: any, user?: any): Promise<any> {
     const existing = await this.prisma.mcqQuestion.findUnique({
       where: { id },
-      include: { exam: { include: { batch: { select: { centreId: true } } } } }
+      include: { exam: { include: { batch: { select: { centreId: true, standardId: true, boardId: true } } } } }
     });
     if (!existing) throw new NotFoundException('Question not found');
 
     if (existing.exam && user && !isSuperAdmin(user)) {
       const examCentreId = existing.exam.centreId || existing.exam.batch?.centreId;
       assertCentreAccess(user, examCentreId);
+
+      const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+      if (isTeacher) {
+        await this.assertTeacherExamAccess(user.id, existing.exam);
+      }
     }
 
     const { questionText, text, imageUrl, options, correctOption, explanation, marks, negativeMarks, type } = data;
@@ -1142,13 +1529,18 @@ export class ExamsService {
   async deleteMcqQuestion(id: string, user?: any): Promise<any> {
     const existing = await this.prisma.mcqQuestion.findUnique({
       where: { id },
-      include: { exam: { include: { batch: { select: { centreId: true } } } } }
+      include: { exam: { include: { batch: { select: { centreId: true, standardId: true, boardId: true } } } } }
     });
     if (!existing) throw new NotFoundException('Question not found');
 
     if (existing.exam && user && !isSuperAdmin(user)) {
       const examCentreId = existing.exam.centreId || existing.exam.batch?.centreId;
       assertCentreAccess(user, examCentreId);
+
+      const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+      if (isTeacher) {
+        await this.assertTeacherExamAccess(user.id, existing.exam);
+      }
     }
 
     return this.prisma.mcqQuestion.delete({

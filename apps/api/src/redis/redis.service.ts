@@ -68,22 +68,35 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Revokes a specific session.
+   * Returns true on success, or false if mandatory Redis session revocation fails.
    */
-  async revokeSession(userId: string, jti: string): Promise<void> {
-    if (!this.client || !this.isAvailable) return;
+  async revokeSession(userId: string, jti: string): Promise<boolean> {
+    const isMandatory = Boolean(process.env.REDIS_URL || process.env.NODE_ENV === 'production');
+    if (!this.client || !this.isAvailable) {
+      if (isMandatory) return false;
+      return true; // Local development without Redis
+    }
     try {
       await this.client.srem(`sessions:${userId}`, jti);
       await this.client.del(`session:${jti}`);
-    } catch {
-      // Graceful degradation
+      return true;
+    } catch (err: any) {
+      console.error(`Failed to revoke Redis session for user ${userId}:`, err?.message || err);
+      if (isMandatory) return false;
+      return true;
     }
   }
 
   /**
    * Revokes all sessions for a user (Log out of all devices).
+   * Returns true on success, or false if mandatory Redis session revocation fails.
    */
-  async revokeAllSessions(userId: string): Promise<void> {
-    if (!this.client || !this.isAvailable) return;
+  async revokeAllSessions(userId: string): Promise<boolean> {
+    const isMandatory = Boolean(process.env.REDIS_URL || process.env.NODE_ENV === 'production');
+    if (!this.client || !this.isAvailable) {
+      if (isMandatory) return false;
+      return true; // Local development without Redis
+    }
     try {
       const key = `sessions:${userId}`;
       const sessions = await this.client.smembers(key);
@@ -93,8 +106,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         pipeline.del(key);
         await pipeline.exec();
       }
-    } catch {
-      // Graceful degradation
+      return true;
+    } catch (err: any) {
+      console.error(`Failed to revoke all Redis sessions for user ${userId}:`, err?.message || err);
+      if (isMandatory) return false;
+      return true;
     }
   }
 

@@ -41,9 +41,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout user and clear cookie' })
   async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    // Revoke the session in Redis
+    let sessionRevoked = true;
     if (req.user?.id && req.user?.jti) {
-      await this.redisService.revokeSession(req.user.id, req.user.jti);
+      sessionRevoked = await this.redisService.revokeSession(req.user.id, req.user.jti);
     }
     
     res.cookie('AccessToken', '', {
@@ -53,7 +53,12 @@ export class AuthController {
       path: '/',
       expires: new Date(0),
     });
-    return { message: 'Logout successful' };
+    return {
+      message: sessionRevoked
+        ? 'Logout successful'
+        : 'Logged out locally. Note: Remote session revocation was incomplete due to temporary service unavailability.',
+      sessionRevoked,
+    };
   }
 
   @Post('logout-all')
@@ -61,8 +66,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Log out of all devices' })
   async logoutAll(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    let sessionRevoked = true;
     if (req.user?.id) {
-      await this.redisService.revokeAllSessions(req.user.id);
+      sessionRevoked = await this.redisService.revokeAllSessions(req.user.id);
     }
     
     res.cookie('AccessToken', '', {
@@ -72,7 +78,12 @@ export class AuthController {
       path: '/',
       expires: new Date(0),
     });
-    return { message: 'Logged out of all devices successfully' };
+    return {
+      message: sessionRevoked
+        ? 'Logged out of all devices successfully'
+        : 'Logged out locally. Note: Remote session revocation was incomplete due to temporary service unavailability.',
+      sessionRevoked,
+    };
   }
 
 

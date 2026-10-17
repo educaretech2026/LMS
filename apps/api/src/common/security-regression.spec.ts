@@ -1,12 +1,13 @@
 import { getJwtSecret } from './config/jwt.config';
 import { StorageService } from '../storage/storage.service';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from './utils/tenant.util';
-import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { ExamsService } from '../exams/exams.service';
 import { StudentsService } from '../students/students.service';
 import { LiveClassService } from '../live-class/live-class.service';
 import { StudyMaterialService } from '../study-materials/study-materials.service';
 import { AuthService } from '../auth/auth.service';
+import { AuthController } from '../auth/auth.controller';
 import { RedisService } from '../redis/redis.service';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
@@ -48,6 +49,22 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       const strongSecret = crypto.randomBytes(32).toString('hex');
       process.env.JWT_SECRET = strongSecret;
       expect(getJwtSecret()).toBe(strongSecret);
+    });
+
+    it('should report false when revokeSession is called with mandatory Redis unavailable', async () => {
+      process.env.REDIS_URL = 'redis://localhost:6379';
+      const redisService = new RedisService();
+      const result = await redisService.revokeSession('u-1', 'jti-1');
+      expect(result).toBe(false);
+      delete process.env.REDIS_URL;
+    });
+
+    it('should report false when revokeAllSessions is called with mandatory Redis unavailable', async () => {
+      process.env.REDIS_URL = 'redis://localhost:6379';
+      const redisService = new RedisService();
+      const result = await redisService.revokeAllSessions('u-1');
+      expect(result).toBe(false);
+      delete process.env.REDIS_URL;
     });
   });
 
@@ -152,6 +169,26 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         },
         studentAnswer: {
           upsert: jest.fn(),
+        },
+        batch: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        subject: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        standard: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        board: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        academicYear: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
         },
         $transaction: jest.fn(async (cb) => {
           if (typeof cb === 'function') return cb(mockPrisma);
@@ -417,6 +454,211 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       ).rejects.toThrow(BadRequestException);
 
       expect(mockPrisma.examResult.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject teacher access when exam subject does not match teacher subject assignment', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-chem',
+        centreId: 'centre-alpha',
+        subjectId: 'sub-chem',
+        standardId: 'std-10',
+      });
+      mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+        id: 'tp-1',
+        userId: 'teacher-1',
+        assignments: [
+          { subjectId: 'sub-physics', standardId: 'std-10', boardId: null, batchId: null },
+        ],
+        user: {
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      });
+
+      const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' } };
+      await expect(examsService.getExamById('exam-chem', teacherUser)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject teacher access when exam standard does not match teacher standard assignment', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-phys-12',
+        centreId: 'centre-alpha',
+        subjectId: 'sub-physics',
+        standardId: 'std-12',
+      });
+      mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+        id: 'tp-1',
+        userId: 'teacher-1',
+        assignments: [
+          { subjectId: 'sub-physics', standardId: 'std-10', boardId: null, batchId: null },
+        ],
+        user: {
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      });
+
+      const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' } };
+      await expect(examsService.getExamById('exam-phys-12', teacherUser)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject teacher access when teacher attempts to access an exam in another centre', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-phys-beta',
+        centreId: 'centre-beta',
+        subjectId: 'sub-physics',
+        standardId: 'std-10',
+      });
+      mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+        id: 'tp-1',
+        userId: 'teacher-1',
+        assignments: [
+          { subjectId: 'sub-physics', standardId: 'std-10', boardId: null, batchId: null },
+        ],
+        user: {
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      });
+
+      const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' }, userCentres: [{ centreId: 'centre-alpha' }] };
+      await expect(examsService.getExamById('exam-phys-beta', teacherUser)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should permit teacher access when all assignment dimensions (centre, subject, standard) match together', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-phys-10',
+        centreId: 'centre-alpha',
+        subjectId: 'sub-physics',
+        standardId: 'std-10',
+      });
+      mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+        id: 'tp-1',
+        userId: 'teacher-1',
+        assignments: [
+          { subjectId: 'sub-physics', standardId: 'std-10', boardId: null, batchId: null },
+        ],
+        user: {
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      });
+
+      const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' }, userCentres: [{ centreId: 'centre-alpha' }] };
+      const exam = await examsService.getExamById('exam-phys-10', teacherUser);
+      expect(exam.id).toBe('exam-phys-10');
+    });
+
+    it('should reject exam updates that attempt to transfer an exam to an unauthorized destination centre', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: 'centre-alpha',
+        subjectId: 'sub-physics',
+      });
+      const centreAUser = {
+        id: 'admin-a',
+        role: { name: 'CENTRE_ADMIN' },
+        userCentres: [{ centreId: 'centre-alpha' }],
+      };
+
+      await expect(
+        examsService.updateExam('exam-1', { centreId: 'centre-beta' }, centreAUser)
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject exam updates that specify a destination batch belonging to another centre', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: 'centre-alpha',
+        subjectId: 'sub-physics',
+      });
+      mockPrisma.batch.findUnique.mockResolvedValue({
+        id: 'batch-beta',
+        centreId: 'centre-beta',
+      });
+      const centreAUser = {
+        id: 'admin-a',
+        role: { name: 'CENTRE_ADMIN' },
+        userCentres: [{ centreId: 'centre-alpha' }],
+      };
+
+      await expect(
+        examsService.updateExam('exam-1', { batchId: 'batch-beta' }, centreAUser)
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject answer release by an unauthorized teacher', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-chem',
+        centreId: 'centre-alpha',
+        subjectId: 'sub-chem',
+        standardId: 'std-10',
+      });
+      mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+        id: 'tp-1',
+        userId: 'teacher-1',
+        assignments: [
+          { subjectId: 'sub-physics', standardId: 'std-10', boardId: null, batchId: null },
+        ],
+        user: { userCentres: [{ centreId: 'centre-alpha' }] },
+      });
+
+      const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' }, userCentres: [{ centreId: 'centre-alpha' }] };
+      await expect(
+        examsService.releaseExamAnswers('exam-chem', true, teacherUser)
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should fail fast and throw ServiceUnavailableException if Redis persistence fails during answer release', async () => {
+      process.env.REDIS_URL = 'redis://localhost:6379';
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: 'centre-alpha',
+      });
+      mockRedis.setRaw.mockRejectedValue(new Error('Redis connection failure'));
+
+      const superAdmin = { id: 'sa', role: { name: 'SUPER_ADMIN' } };
+      await expect(
+        examsService.releaseExamAnswers('exam-1', true, superAdmin)
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      delete process.env.REDIS_URL;
+    });
+
+    it('should reject bulk result saving when student does not belong to the batch effective centre', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: null,
+        batchId: 'batch-1',
+        batch: { centreId: 'centre-alpha' },
+        mcqQuestions: [{ marks: 100 }],
+      });
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 's-other',
+        enrollments: [{ batch: { centreId: 'centre-beta' } }],
+      });
+      const superAdmin = { id: 'sa', role: { name: 'SUPER_ADMIN' } };
+
+      await expect(
+        examsService.saveExamResults('exam-1', [{ studentId: 's-other', marksObtained: 80, maxMarks: 100 }], superAdmin)
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject bulk results with negative or non-finite marks', async () => {
+      mockPrisma.exam.findUnique.mockResolvedValue({
+        id: 'exam-1',
+        centreId: 'centre-alpha',
+        mcqQuestions: [{ marks: 100 }],
+      });
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 's-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+      });
+      const superAdmin = { id: 'sa', role: { name: 'SUPER_ADMIN' } };
+
+      await expect(
+        examsService.saveExamResults('exam-1', [{ studentId: 's-1', marksObtained: -10, maxMarks: 100 }], superAdmin)
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        examsService.saveExamResults('exam-1', [{ studentId: 's-1', marksObtained: NaN, maxMarks: 100 }], superAdmin)
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
