@@ -271,6 +271,8 @@ export class ReportService {
               }
             },
             subject: true,
+            standard: true,
+            board: true,
           }
         }
       }
@@ -300,7 +302,7 @@ export class ReportService {
     const todayAbsent = todayAttendance.filter(a => a.status === AttendanceStatus.ABSENT).length;
 
     // Unique batches with student count
-    const batches = batchIds.map(bId => {
+    const batchList = batchIds.map(bId => {
       const assignment = teacherProfile.assignments.find(a => a.batchId === bId);
       const batch = assignment?.batch;
       return {
@@ -310,8 +312,28 @@ export class ReportService {
         board: batch?.board?.name,
         centre: batch?.centre?.name,
         studentCount: batch?.enrollments?.length || 0,
+        isCombined: false,
+        combinedClasses: null,
       };
     });
+
+    // Direct / Combined class assignments
+    const directAssignments = teacherProfile.assignments
+      .filter(a => !a.batchId)
+      .map(a => ({
+        id: a.id,
+        name: a.isCombined
+          ? `Combined: ${a.combinedClasses || a.division || 'Combined'}`
+          : (a.standard?.name || a.division || 'Assigned Class'),
+        standard: a.standard?.name || a.combinedClasses || 'Combined',
+        board: a.board?.name || a.boardName || 'Multi-board',
+        centre: a.division ? `Div ${a.division}` : 'Direct Class Assignment',
+        studentCount: 0,
+        isCombined: Boolean(a.isCombined),
+        combinedClasses: a.combinedClasses,
+      }));
+
+    const batches = [...batchList, ...directAssignments];
 
     const subjects = teacherProfile.assignments.map(a => ({
       id: a.subjectId || a.id,

@@ -505,7 +505,9 @@ function ScheduleModal({
             <Field label="Class">
               <select value={standardId} onChange={e => setStandardId(e.target.value)} className="input-base">
                 <option value="">All Classes</option>
-                {standards.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {standards
+                  .filter((s: any) => !boardId || s.boardId === boardId || (s.boards && s.boards.some((b: any) => b.boardId === boardId || b.board?.id === boardId)))
+                  .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </Field>
             <Field label="Centre">

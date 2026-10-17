@@ -514,7 +514,9 @@ export function CurriculumBrowser() {
                   className="w-full h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 focus:bg-white transition-colors disabled:opacity-40"
                 >
                   <option value="">Select Class</option>
-                  {standards.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {standards
+                    .filter((s: any) => !selectedBoard || s.boardId === selectedBoard || (s.boards && s.boards.some((b: any) => b.boardId === selectedBoard || b.board?.id === selectedBoard)))
+                    .map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             </>

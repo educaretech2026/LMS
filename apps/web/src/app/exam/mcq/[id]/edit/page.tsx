@@ -296,7 +296,9 @@ export default function EditExamPage() {
                     <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Class / Standard</label>
                     <select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
                       <option value="">All Classes</option>
-                      {standards.filter(s => !selectedBoard || s.boardId === selectedBoard).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {standards
+                        .filter(s => !selectedBoard || s.boardId === selectedBoard || (s.boards && s.boards.some((b: any) => b.boardId === selectedBoard || b.board?.id === selectedBoard)))
+                        .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div>

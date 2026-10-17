@@ -289,6 +289,43 @@ export function ProfileClient() {
                       <p className="text-xs text-text-muted mb-1">Experience</p>
                       <p className="text-sm font-bold text-text-primary">{profile.teacherProfile.experience} Years</p>
                     </div>
+
+                    {profile.teacherProfile.assignments && profile.teacherProfile.assignments.length > 0 && (
+                      <div className="pt-2 border-t border-border-soft">
+                        <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">
+                          Assigned Classes & Subjects
+                        </p>
+                        <div className="space-y-2">
+                          {profile.teacherProfile.assignments.map((a: any) => (
+                            <div key={a.id} className="p-2.5 rounded-lg border border-border-soft bg-surface-2 text-xs">
+                              <div className="flex items-center justify-between gap-1 flex-wrap">
+                                <span className="font-bold text-text-primary">
+                                  {a.isCombined
+                                    ? `Combined: ${a.combinedClasses || a.division}`
+                                    : (a.standard?.name || a.division || "Assigned Class")}
+                                </span>
+                                {a.isCombined && (
+                                  <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-bold">
+                                    Combined
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-text-muted text-[11px] mt-1 flex items-center gap-1.5 flex-wrap">
+                                <span className="font-medium text-brand-blue">{a.subject?.name || a.subjectName || "Subject"}</span>
+                                <span>•</span>
+                                <span>{a.board?.name || a.boardName || "Board"}</span>
+                                {a.academicYear && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{a.academicYear.name}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

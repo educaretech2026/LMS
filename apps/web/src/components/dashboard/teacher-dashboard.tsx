@@ -89,7 +89,7 @@ export function TeacherDashboard({ user, stats, notices = [] }: { user: any; sta
           <div className="px-5 py-4 border-b border-border-soft flex items-center justify-between">
             <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
               <GraduationCap className="h-4 w-4 text-brand-blue" />
-              My Assigned Batches
+              My Assigned Batches & Classes
             </h3>
             <Link href="/attendance" className="text-xs font-bold text-brand-blue hover:underline flex items-center gap-1">
               Take Attendance <ArrowRight className="h-3 w-3" />
@@ -97,20 +97,33 @@ export function TeacherDashboard({ user, stats, notices = [] }: { user: any; sta
           </div>
           <div className="divide-y divide-border-soft">
             {batches.length === 0 ? (
-              <p className="text-sm text-text-muted text-center py-8">No batches assigned yet.</p>
+              <p className="text-sm text-text-muted text-center py-8">No classes or batches assigned yet.</p>
             ) : (
               batches.map((b) => (
                 <div key={b.id} className="px-5 py-4 flex items-center justify-between hover:bg-surface-2 transition-colors">
                   <div>
-                    <p className="text-sm font-bold text-text-primary">{b.name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-bold text-text-primary">{b.name}</p>
+                      {b.isCombined && (
+                        <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-bold">
+                          Combined Class
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-text-muted mt-0.5">
                       {b.standard} · {b.board} · {b.centre}
                     </p>
                   </div>
-                  <span className="flex items-center gap-1 text-xs font-bold text-text-secondary bg-surface-2 border border-border-soft px-2.5 py-1 rounded-full">
-                    <Users className="h-3 w-3" />
-                    {b.studentCount}
-                  </span>
+                  {b.studentCount > 0 ? (
+                    <span className="flex items-center gap-1 text-xs font-bold text-text-secondary bg-surface-2 border border-border-soft px-2.5 py-1 rounded-full">
+                      <Users className="h-3 w-3" />
+                      {b.studentCount}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-text-muted bg-surface-2 border border-border-soft px-2 py-0.5 rounded-md">
+                      {b.isCombined ? "Combined Roster" : "Assigned"}
+                    </span>
+                  )}
                 </div>
               ))
             )}

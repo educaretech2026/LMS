@@ -516,7 +516,9 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                       <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Class (Optional)</label>
                       <select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
                         <option value="" disabled>Select Class</option>
-                        {standards.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {standards
+                          .filter((c: any) => !selectedBoard || c.boardId === selectedBoard || (c.boards && c.boards.some((b: any) => b.boardId === selectedBoard || b.board?.id === selectedBoard)))
+                          .map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                     <div>

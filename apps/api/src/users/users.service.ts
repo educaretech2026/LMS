@@ -29,7 +29,18 @@ export class UsersService {
             }
           }
         },
-        teacherProfile: true,
+        teacherProfile: {
+          include: {
+            assignments: {
+              include: {
+                board: true,
+                standard: true,
+                subject: true,
+                academicYear: true,
+              }
+            }
+          }
+        },
         userCentres: {
           include: {
             centre: true
