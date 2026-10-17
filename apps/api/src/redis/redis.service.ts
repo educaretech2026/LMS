@@ -104,7 +104,19 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         const pipeline = this.client.pipeline();
         sessions.forEach(jti => pipeline.del(`session:${jti}`));
         pipeline.del(key);
-        await pipeline.exec();
+        const results = await pipeline.exec();
+        if (!results) {
+          console.error(`Pipeline execution returned null when revoking sessions for user ${userId}`);
+          if (isMandatory) return false;
+          return true;
+        }
+        for (const [err] of results) {
+          if (err) {
+            console.error(`Pipeline command error when revoking sessions for user ${userId}:`, err.message || err);
+            if (isMandatory) return false;
+            return true;
+          }
+        }
       }
       return true;
     } catch (err: any) {

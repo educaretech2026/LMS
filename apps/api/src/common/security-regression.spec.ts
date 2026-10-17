@@ -1094,4 +1094,473 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       expect(p1).not.toBe('password123');
     });
   });
+
+  describe('SEC-11: Fifth-Pass Security Remediations', () => {
+    let mockPrisma: any;
+    let mockRedis: any;
+    let examsService: ExamsService;
+
+    const superAdmin = {
+      id: 'super-admin-1',
+      role: { name: 'SUPER_ADMIN' },
+      userCentres: []
+    };
+
+    const centreAAdmin = {
+      id: 'admin-a',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    const teacherAlpha = {
+      id: 'teacher-1',
+      role: { name: 'TEACHER' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    beforeEach(() => {
+      mockPrisma = {
+        exam: {
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          delete: jest.fn(),
+        },
+        examResult: {
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+          createMany: jest.fn(),
+        },
+        studentProfile: {
+          findUnique: jest.fn(),
+        },
+        teacherProfile: {
+          findUnique: jest.fn(),
+        },
+        batch: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        subject: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        standard: {
+          findUnique: jest.fn(),
+        },
+        board: {
+          findUnique: jest.fn(),
+        },
+        academicYear: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        mcqQuestion: {
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          delete: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+        $transaction: jest.fn((cb) => cb(mockPrisma)),
+      };
+
+      mockRedis = {
+        getRaw: jest.fn().mockResolvedValue(null),
+        setRaw: jest.fn().mockResolvedValue(undefined),
+        delRaw: jest.fn().mockResolvedValue(undefined),
+      };
+
+      examsService = new ExamsService(mockPrisma as any, mockRedis as any);
+    });
+
+    describe('1. Teacher Exam Analytics Scoping (getAllResults)', () => {
+      it('should scope teacher results query to assigned subjects and classes and centre', async () => {
+        mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+          id: 'tp-1',
+          userId: 'teacher-1',
+          assignments: [
+            {
+              subjectId: 'sub-phys',
+              standardId: 'std-10',
+              boardId: 'board-cbse',
+              batchId: 'batch-1',
+              isCombined: false,
+            }
+          ]
+        });
+        mockPrisma.examResult.findMany.mockResolvedValue([]);
+
+        await examsService.getAllResults(teacherAlpha);
+
+        expect(mockPrisma.examResult.findMany).toHaveBeenCalled();
+        const callArgs = mockPrisma.examResult.findMany.mock.calls[0][0];
+        expect(callArgs.where.exam).toBeDefined();
+        expect(callArgs.where.exam.AND).toHaveLength(2);
+        // First AND block: centre isolation
+        expect(callArgs.where.exam.AND[0].OR).toEqual([
+          { centreId: { in: ['centre-alpha'] } },
+          { batch: { centreId: { in: ['centre-alpha'] } } },
+        ]);
+        // Second AND block: assignment condition
+        const assignmentCond = callArgs.where.exam.AND[1].OR[0];
+        expect(assignmentCond.subjectId).toBe('sub-phys');
+        expect(assignmentCond.batchId).toBe('batch-1');
+      });
+
+      it('should return empty list immediately if teacher has no assignments', async () => {
+        mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+          id: 'tp-1',
+          userId: 'teacher-1',
+          assignments: []
+        });
+
+        const results = await examsService.getAllResults(teacherAlpha);
+        expect(results).toEqual([]);
+        expect(mockPrisma.examResult.findMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('2. Exact Teacher Class Assignment Matching', () => {
+      it('should reject substring class match (e.g. std-1 should not match std-10)', async () => {
+        mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+          id: 'tp-1',
+          userId: 'teacher-1',
+          user: { userCentres: [{ centreId: 'centre-alpha' }] },
+          assignments: [
+            {
+              subjectId: 'sub-phys',
+              standardId: 'std-10',
+              isCombined: true,
+              combinedClasses: 'std-10,std-12',
+            }
+          ]
+        });
+
+        mockPrisma.exam.findUnique.mockResolvedValue({
+          id: 'exam-1',
+          centreId: 'centre-alpha',
+          subjectId: 'sub-phys',
+          standardId: 'std-1', // 'std-1' is a substring of 'std-10', but not exact match!
+          batch: null,
+          mcqQuestions: [],
+        });
+
+        await expect(examsService.getExamById('exam-1', teacherAlpha)).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should accept exact class match in combined classes', async () => {
+        mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+          id: 'tp-1',
+          userId: 'teacher-1',
+          user: { userCentres: [{ centreId: 'centre-alpha' }] },
+          assignments: [
+            {
+              subjectId: 'sub-phys',
+              standardId: 'std-10',
+              isCombined: true,
+              combinedClasses: 'std-10,std-12',
+            }
+          ]
+        });
+
+        mockPrisma.exam.findUnique.mockResolvedValue({
+          id: 'exam-1',
+          centreId: 'centre-alpha',
+          subjectId: 'sub-phys',
+          standardId: 'std-12', // Exactly in combinedClasses
+          batch: null,
+          mcqQuestions: [],
+        });
+
+        const exam = await examsService.getExamById('exam-1', teacherAlpha);
+        expect(exam.id).toBe('exam-1');
+      });
+    });
+
+    describe('3. Deny Unauthorized Operations on Centre-Less Exams', () => {
+      const centreLessExam = {
+        id: 'centre-less-1',
+        title: 'Global Exam',
+        centreId: null,
+        batchId: null,
+        batch: null,
+        mcqQuestions: [],
+      };
+
+      it('should deny updateExam on centre-less exam for non-superadmin', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(centreLessExam);
+        await expect(
+          examsService.updateExam('centre-less-1', { title: 'Hacked' }, centreAAdmin)
+        ).rejects.toThrow('Exams without an assigned centre can only be managed by Super Administrators.');
+      });
+
+      it('should deny deleteExam on centre-less exam for non-superadmin', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(centreLessExam);
+        await expect(
+          examsService.deleteExam('centre-less-1', centreAAdmin)
+        ).rejects.toThrow('Exams without an assigned centre can only be managed by Super Administrators.');
+      });
+
+      it('should deny saveExamResults on centre-less exam for non-superadmin', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(centreLessExam);
+        await expect(
+          examsService.saveExamResults('centre-less-1', [{ studentId: 's1', marksObtained: 50 }], centreAAdmin)
+        ).rejects.toThrow('Exams without an assigned centre can only be managed by Super Administrators.');
+      });
+
+      it('should deny releaseExamAnswers on centre-less exam for non-superadmin', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(centreLessExam);
+        await expect(
+          examsService.releaseExamAnswers('centre-less-1', true, centreAAdmin)
+        ).rejects.toThrow('Exams without an assigned centre can only be managed by Super Administrators.');
+      });
+
+      it('should allow Super Admin to update centre-less exam', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(centreLessExam);
+        mockPrisma.exam.update.mockResolvedValue({ ...centreLessExam, title: 'Updated Global' });
+
+        const res = await examsService.updateExam('centre-less-1', { title: 'Updated Global' }, superAdmin);
+        expect(mockPrisma.exam.update).toHaveBeenCalled();
+      });
+    });
+
+    describe('4. Destination Validation & Transaction Consistency in updateExam', () => {
+      const existingExam = {
+        id: 'exam-alpha',
+        title: 'Alpha Exam',
+        centreId: null,
+        batchId: 'batch-alpha-1',
+        subjectId: 'sub-1',
+        standardId: 'std-1',
+        boardId: 'brd-1',
+        batch: { centreId: 'centre-alpha', standardId: 'std-1', boardId: 'brd-1' },
+        mcqQuestions: [],
+      };
+
+      it('should reject removing batchId when centreId is null (preventing stripping centre scope)', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(existingExam);
+
+        await expect(
+          examsService.updateExam('exam-alpha', { batchId: null }, centreAAdmin)
+        ).rejects.toThrow('Cannot remove centre scope from an exam. Non-superadmin exams must have an effective centre.');
+      });
+
+      it('should reject placeholder dummy batchId on updateExam', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(existingExam);
+
+        await expect(
+          examsService.updateExam('exam-alpha', { batchId: 'dummy' }, centreAAdmin)
+        ).rejects.toThrow("Invalid batchId: 'dummy' is not a valid batch identifier.");
+      });
+
+      it('should execute updates inside transaction and fetch fresh response post-commit (Option A)', async () => {
+        mockPrisma.exam.findUnique
+          .mockResolvedValueOnce(existingExam) // Initial check
+          .mockResolvedValueOnce({ ...existingExam, title: 'Fresh Title' }); // Post-commit getExamById
+
+        mockPrisma.exam.update.mockResolvedValue({ ...existingExam, title: 'Fresh Title' });
+
+        const result = await examsService.updateExam('exam-alpha', { title: 'Fresh Title' }, centreAAdmin);
+        expect(mockPrisma.$transaction).toHaveBeenCalled();
+        expect(result.title).toBe('Fresh Title');
+      });
+    });
+
+    describe('5. Removal of Arbitrary dummy Batch Fallback in createExam', () => {
+      it('should reject createExam with batchId = dummy', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1' });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-1' });
+
+        await expect(
+          examsService.createExam({
+            title: 'New Exam',
+            academicYearId: 'ay-1',
+            subjectId: 'sub-1',
+            batchId: 'dummy',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Invalid batchId: 'dummy' is not a valid batch identifier.");
+
+        expect(mockPrisma.batch.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('should reject createExam with academicYearId = dummy', async () => {
+        await expect(
+          examsService.createExam({
+            title: 'New Exam',
+            academicYearId: 'dummy',
+            subjectId: 'sub-1',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("A valid academicYearId is required. Placeholder 'dummy' is not accepted.");
+      });
+
+      it('should reject createExam with subjectId = dummy', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1' });
+
+        await expect(
+          examsService.createExam({
+            title: 'New Exam',
+            academicYearId: 'ay-1',
+            subjectId: 'dummy',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("A valid subjectId is required. Placeholder 'dummy' is not accepted.");
+      });
+
+      it('should allow creating an unassigned batch exam without invoking findFirst', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1' });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-1' });
+        mockPrisma.exam.create.mockResolvedValue({ id: 'created-exam', batchId: null });
+
+        const exam = await examsService.createExam({
+          title: 'Unassigned Exam',
+          academicYearId: 'ay-1',
+          subjectId: 'sub-1',
+          centreId: 'centre-alpha',
+        }, centreAAdmin);
+
+        expect(mockPrisma.batch.findFirst).not.toHaveBeenCalled();
+        expect(mockPrisma.exam.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              batchId: null,
+              centreId: 'centre-alpha',
+            })
+          })
+        );
+      });
+    });
+
+    describe('6. Validate Maximum Marks and Grades in saveExamResults', () => {
+      const examWithQuestions = {
+        id: 'exam-q',
+        centreId: 'centre-alpha',
+        batchId: null,
+        batch: null,
+        mcqQuestions: [
+          { id: 'q1', marks: 10 },
+          { id: 'q2', marks: 10 },
+        ], // Total = 20
+      };
+
+      const validStudent = {
+        id: 's-1',
+        enrollments: [{ batch: { centreId: 'centre-alpha' } }]
+      };
+
+      it('should reject caller-supplied maxMarks contradicting exam questions total', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(examWithQuestions);
+        mockPrisma.studentProfile.findUnique.mockResolvedValue(validStudent);
+
+        await expect(
+          examsService.saveExamResults(
+            'exam-q',
+            [{ studentId: 's-1', marksObtained: 15, maxMarks: 100 }], // Configured total is 20!
+            centreAAdmin
+          )
+        ).rejects.toThrow('Supplied maxMarks (100) does not match configured exam total marks (20)');
+      });
+
+      it('should reject inconsistent grade supplied by caller', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(examWithQuestions);
+        mockPrisma.studentProfile.findUnique.mockResolvedValue(validStudent);
+
+        // 5 out of 20 = 25% (expected grade F), but caller claims 'A+'
+        await expect(
+          examsService.saveExamResults(
+            'exam-q',
+            [{ studentId: 's-1', marksObtained: 5, maxMarks: 20, grade: 'A+' }],
+            centreAAdmin
+          )
+        ).rejects.toThrow("Inconsistent grade 'A+' for student 's-1'. Based on marks 5/20, expected grade is 'F'.");
+      });
+
+      it('should calculate grade authoritatively when omitted and persist atomically', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue(examWithQuestions);
+        mockPrisma.studentProfile.findUnique.mockResolvedValue(validStudent);
+
+        // 19 out of 20 = 95% -> A+
+        const res = await examsService.saveExamResults(
+          'exam-q',
+          [{ studentId: 's-1', marksObtained: 19 }],
+          centreAAdmin
+        );
+
+        expect(res.success).toBe(true);
+        expect(mockPrisma.$transaction).toHaveBeenCalled();
+        expect(mockPrisma.examResult.createMany).toHaveBeenCalledWith({
+          data: [
+            expect.objectContaining({
+              studentId: 's-1',
+              marksObtained: 19,
+              maxMarks: 20,
+              grade: 'A+',
+            })
+          ]
+        });
+      });
+    });
+
+    describe('7. Redis Pipeline Execution Verification in revokeAllSessions', () => {
+      it('should report false when pipeline.exec() returns null on mandatory Redis', async () => {
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        const redisService = new RedisService();
+        (redisService as any).isAvailable = true;
+        (redisService as any).client = {
+          smembers: jest.fn().mockResolvedValue(['jti-1']),
+          pipeline: jest.fn().mockReturnValue({
+            del: jest.fn().mockReturnThis(),
+            exec: jest.fn().mockResolvedValue(null), // Null return from exec!
+          }),
+        };
+
+        const result = await redisService.revokeAllSessions('u-1');
+        expect(result).toBe(false);
+        delete process.env.REDIS_URL;
+      });
+
+      it('should report false when pipeline.exec() contains a command error on mandatory Redis', async () => {
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        const redisService = new RedisService();
+        (redisService as any).isAvailable = true;
+        (redisService as any).client = {
+          smembers: jest.fn().mockResolvedValue(['jti-1']),
+          pipeline: jest.fn().mockReturnValue({
+            del: jest.fn().mockReturnThis(),
+            exec: jest.fn().mockResolvedValue([
+              [new Error('READONLY You can\'t write against a read only replica.'), null]
+            ]),
+          }),
+        };
+
+        const result = await redisService.revokeAllSessions('u-1');
+        expect(result).toBe(false);
+        delete process.env.REDIS_URL;
+      });
+
+      it('should report true when pipeline.exec() succeeds completely', async () => {
+        process.env.REDIS_URL = 'redis://localhost:6379';
+        const redisService = new RedisService();
+        (redisService as any).isAvailable = true;
+        (redisService as any).client = {
+          smembers: jest.fn().mockResolvedValue(['jti-1']),
+          pipeline: jest.fn().mockReturnValue({
+            del: jest.fn().mockReturnThis(),
+            exec: jest.fn().mockResolvedValue([
+              [null, 1],
+              [null, 1],
+            ]),
+          }),
+        };
+
+        const result = await redisService.revokeAllSessions('u-1');
+        expect(result).toBe(true);
+        delete process.env.REDIS_URL;
+      });
+    });
+  });
 });

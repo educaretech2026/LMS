@@ -61,6 +61,9 @@ export class ExamsService {
 
     if (!isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, examCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
@@ -133,7 +136,11 @@ export class ExamsService {
       // If standard/class is specified on either side, it must match
       if (effectiveStandardId && a.standardId) {
         const directMatch = a.standardId === effectiveStandardId;
-        const combinedMatch = Boolean(a.isCombined && a.combinedClasses && a.combinedClasses.includes(effectiveStandardId));
+        let combinedMatch = false;
+        if (a.isCombined && a.combinedClasses) {
+          const parsed = a.combinedClasses.split(',').map(s => s.trim()).filter(Boolean);
+          combinedMatch = parsed.includes(effectiveStandardId);
+        }
         if (!directMatch && !combinedMatch) {
           return false;
         }
@@ -328,6 +335,8 @@ export class ExamsService {
   async getAllResults(user?: any): Promise<any> {
     const where: any = {};
     const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
+
     if (isStudent && user?.id) {
       const studentProfile = await this.prisma.studentProfile.findUnique({
         where: { userId: user.id }
@@ -337,6 +346,53 @@ export class ExamsService {
       } else {
         return [];
       }
+    } else if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true, user: { include: { userCentres: true } } }
+      });
+      if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+        return [];
+      }
+
+      const userCentres = getAuthorizedCentreIds(user);
+      const assignmentOrConditions = teacherProfile.assignments
+        .filter(a => Boolean(a.subjectId))
+        .map(a => {
+          const cond: any = { subjectId: a.subjectId };
+          if (a.standardId) {
+            const stdList = [a.standardId];
+            if (a.isCombined && a.combinedClasses) {
+              stdList.push(...a.combinedClasses.split(',').map(s => s.trim()).filter(Boolean));
+            }
+            cond.OR = [{ standardId: null }, { standardId: { in: stdList } }];
+          }
+          if (a.boardId) {
+            cond.AND = [{ OR: [{ boardId: null }, { boardId: a.boardId }] }];
+          }
+          if (a.batchId) {
+            cond.batchId = a.batchId;
+          }
+          return cond;
+        });
+
+      if (assignmentOrConditions.length === 0) {
+        return [];
+      }
+
+      where.exam = {
+        AND: [
+          {
+            OR: [
+              { centreId: { in: userCentres } },
+              { batch: { centreId: { in: userCentres } } },
+            ]
+          },
+          {
+            OR: assignmentOrConditions
+          }
+        ]
+      };
     } else if (user && !isSuperAdmin(user)) {
       const userCentres = getAuthorizedCentreIds(user);
       where.exam = {
@@ -420,9 +476,10 @@ export class ExamsService {
       };
     } else if (user && !isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
       }
+      assertCentreAccess(user, examCentreId);
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
       if (isTeacher) {
         await this.assertTeacherExamAccess(user.id, exam);
@@ -488,6 +545,9 @@ export class ExamsService {
       });
       if (!exam) throw new NotFoundException('Exam not found');
       const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, examCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
@@ -518,6 +578,9 @@ export class ExamsService {
 
     if (user && !isSuperAdmin(user)) {
       const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, examCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
@@ -590,6 +653,9 @@ export class ExamsService {
 
     const effectiveCentreId = exam.centreId || exam.batch?.centreId;
     if (user && !isSuperAdmin(user)) {
+      if (!effectiveCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, effectiveCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
@@ -651,7 +717,15 @@ export class ExamsService {
         throw new BadRequestException(`Invalid marksObtained for student '${r.studentId}'. Must be a non-negative finite number.`);
       }
 
-      const maxMarks = r.maxMarks !== undefined ? Number(r.maxMarks) : defaultMaxMarks;
+      let maxMarks = defaultMaxMarks;
+      if (questionsTotalMarks > 0) {
+        if (r.maxMarks !== undefined && Number(r.maxMarks) !== questionsTotalMarks) {
+          throw new BadRequestException(`Supplied maxMarks (${r.maxMarks}) does not match configured exam total marks (${questionsTotalMarks}) for student '${r.studentId}'.`);
+        }
+        maxMarks = questionsTotalMarks;
+      } else if (r.maxMarks !== undefined) {
+        maxMarks = Number(r.maxMarks);
+      }
       if (isNaN(maxMarks) || !isFinite(maxMarks) || maxMarks <= 0) {
         throw new BadRequestException(`Invalid maxMarks for student '${r.studentId}'. Must be a positive finite number.`);
       }
@@ -660,11 +734,14 @@ export class ExamsService {
         throw new BadRequestException(`marksObtained (${marksObtained}) cannot exceed maxMarks (${maxMarks}) for student '${r.studentId}'.`);
       }
 
-      const validGrades = new Set(['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'E', 'F']);
-      let grade = r.grade ? String(r.grade).trim().toUpperCase() : calculateGrade(marksObtained, maxMarks);
-      if (!validGrades.has(grade)) {
-        grade = calculateGrade(marksObtained, maxMarks);
+      const expectedGrade = calculateGrade(marksObtained, maxMarks);
+      if (r.grade !== undefined && r.grade !== null && String(r.grade).trim() !== '') {
+        const suppliedGrade = String(r.grade).trim().toUpperCase();
+        if (suppliedGrade !== expectedGrade) {
+          throw new BadRequestException(`Inconsistent grade '${r.grade}' for student '${r.studentId}'. Based on marks ${marksObtained}/${maxMarks}, expected grade is '${expectedGrade}'.`);
+        }
       }
+      const grade = expectedGrade;
 
       validatedRecords.push({
         studentId: r.studentId,
@@ -1086,6 +1163,10 @@ export class ExamsService {
   async createExam(data: any, user?: any) {
     let { title, type, academicYearId, batchId, subjectId, chapterId, topicId, boardId, standardId, centreId, targetTrackId } = data;
     
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      throw new BadRequestException('Exam title is required.');
+    }
+
     const userCentres = user && !isSuperAdmin(user) ? getAuthorizedCentreIds(user) : [];
 
     if (user && !isSuperAdmin(user)) {
@@ -1097,9 +1178,29 @@ export class ExamsService {
       }
     }
 
-    // Validate destination batch
+    if (!academicYearId || academicYearId === 'dummy') {
+      throw new BadRequestException("A valid academicYearId is required. Placeholder 'dummy' is not accepted.");
+    }
+    const year = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
+    if (!year) {
+      throw new BadRequestException(`Specified academic year '${academicYearId}' does not exist.`);
+    }
+
+    if (!subjectId || subjectId === 'dummy') {
+      throw new BadRequestException("A valid subjectId is required. Placeholder 'dummy' is not accepted.");
+    }
+    const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
+    if (!sub) {
+      throw new BadRequestException(`Specified subject '${subjectId}' does not exist.`);
+    }
+
+    if (batchId === 'dummy') {
+      throw new BadRequestException("Invalid batchId: 'dummy' is not a valid batch identifier.");
+    }
+
+    // Validate destination batch if specified
     let batch: any = null;
-    if (batchId && batchId !== 'dummy') {
+    if (batchId) {
       batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
       if (!batch) {
         throw new BadRequestException(`Specified batch '${batchId}' does not exist.`);
@@ -1109,14 +1210,6 @@ export class ExamsService {
       }
       if (centreId && batch.centreId && batch.centreId !== centreId) {
         throw new BadRequestException('Exam centreId does not match the centre of the specified batch.');
-      }
-    }
-
-    // Validate destination subject
-    if (subjectId && subjectId !== 'dummy') {
-      const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
-      if (!sub) {
-        throw new BadRequestException(`Specified subject '${subjectId}' does not exist.`);
       }
     }
 
@@ -1142,50 +1235,25 @@ export class ExamsService {
       await this.assertTeacherExamAccess(user.id, {
         centreId,
         subjectId,
-        batchId: batchId !== 'dummy' ? batchId : null,
+        batchId: batchId || null,
         standardId,
         boardId,
         batch,
       });
     }
 
-    // Ensure we have a valid academicYear
-    if (academicYearId === "dummy") {
-      let year = await this.prisma.academicYear.findFirst();
-      if (!year) {
-        year = await this.prisma.academicYear.create({ data: { name: "2026-27 (Dummy)" } });
-      }
-      academicYearId = year.id;
-    }
-    
-    // Ensure we have a valid batch if requested
-    if (batchId === "dummy") {
-      let b = await this.prisma.batch.findFirst();
-      if (b) batchId = b.id;
-      else batchId = null;
-    }
-    
-    // Ensure we have a valid subject
-    if (subjectId === "dummy") {
-      let subject = await this.prisma.subject.findFirst();
-      if (!subject) {
-        subject = await this.prisma.subject.create({ data: { name: "Dummy Subject" } });
-      }
-      subjectId = subject.id;
-    }
-
     return this.prisma.exam.create({
       data: {
-        title,
+        title: title.trim(),
         type: type || 'QUESTION_BANK',
         academicYearId,
-        batchId: batchId || undefined,
+        batchId: batchId || null,
         subjectId,
-        chapterId: chapterId || undefined,
-        topicId: topicId || undefined,
-        boardId: boardId || undefined,
-        standardId: standardId || undefined,
-        centreId: centreId || undefined,
+        chapterId: chapterId || null,
+        topicId: topicId || null,
+        boardId: boardId || null,
+        standardId: standardId || null,
+        centreId: centreId || null,
         targetTrackId: targetTrackId || null,
       }
     });
@@ -1274,6 +1342,9 @@ export class ExamsService {
       });
       if (!exam) throw new NotFoundException('Exam not found');
       const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, examCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
@@ -1308,9 +1379,10 @@ export class ExamsService {
 
     if (user && !isSuperAdmin(user)) {
       const examCentreId = existingExam.centreId || existingExam.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
       }
+      assertCentreAccess(user, examCentreId);
       if (isTeacher) {
         await this.assertTeacherExamAccess(user.id, existingExam);
       }
@@ -1333,28 +1405,64 @@ export class ExamsService {
 
     const userCentres = user && !isSuperAdmin(user) ? getAuthorizedCentreIds(user) : [];
 
-    // Validate destination centreId
+    // Derive destination centreId
+    const destCentreId = centreId !== undefined ? centreId : existingExam.centreId;
+
+    // Validate destination centreId if explicitly provided
     if (centreId !== undefined && centreId !== null && user && !isSuperAdmin(user)) {
       if (!userCentres.includes(centreId)) {
         throw new ForbiddenException(`Cannot transfer exam to unauthorized centre '${centreId}'.`);
       }
     }
 
-    // Validate destination batchId
-    let targetBatch = existingExam.batch;
-    if (batchId !== undefined && batchId !== null) {
-      const b = await this.prisma.batch.findUnique({ where: { id: batchId } });
-      if (!b) {
-        throw new BadRequestException(`Specified destination batch '${batchId}' does not exist.`);
+    // Derive destination batchId and batch record
+    let destBatch: any = null;
+    let destBatchId: string | null = null;
+    if (batchId !== undefined) {
+      if (batchId === 'dummy') {
+        throw new BadRequestException("Invalid batchId: 'dummy' is not a valid batch identifier.");
       }
-      if (user && !isSuperAdmin(user) && b.centreId && !userCentres.includes(b.centreId)) {
-        throw new ForbiddenException('Specified destination batch belongs to an unauthorized centre.');
+      if (batchId === null || batchId === '') {
+        destBatchId = null;
+        destBatch = null;
+      } else {
+        destBatchId = batchId;
+        const b = await this.prisma.batch.findUnique({ where: { id: batchId } });
+        if (!b) {
+          throw new BadRequestException(`Specified destination batch '${batchId}' does not exist.`);
+        }
+        if (user && !isSuperAdmin(user) && b.centreId && !userCentres.includes(b.centreId)) {
+          throw new ForbiddenException('Specified destination batch belongs to an unauthorized centre.');
+        }
+        destBatch = b;
       }
-      targetBatch = b;
+    } else {
+      destBatchId = existingExam.batchId;
+      destBatch = existingExam.batch;
+    }
+
+    // Destination effective centre
+    const effectiveDestCentre = destCentreId || destBatch?.centreId;
+
+    // Ensure non-superadmin cannot remove centre scope
+    if (user && !isSuperAdmin(user)) {
+      if (!effectiveDestCentre) {
+        throw new ForbiddenException('Cannot remove centre scope from an exam. Non-superadmin exams must have an effective centre.');
+      }
+      assertCentreAccess(user, effectiveDestCentre);
+    }
+
+    // Inconsistency check between destCentreId and destBatch.centreId
+    if (destBatch?.centreId && destCentreId && destBatch.centreId !== destCentreId) {
+      throw new BadRequestException('Destination exam centreId does not match the centre of the destination batch.');
     }
 
     // Validate destination subjectId
+    const destSubjectId = subjectId !== undefined ? subjectId : existingExam.subjectId;
     if (subjectId !== undefined) {
+      if (!subjectId || subjectId === 'dummy') {
+        throw new BadRequestException('A valid subjectId is required.');
+      }
       const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
       if (!sub) {
         throw new BadRequestException(`Specified destination subject '${subjectId}' does not exist.`);
@@ -1362,6 +1470,7 @@ export class ExamsService {
     }
 
     // Validate destination standardId
+    const destStandardId = standardId !== undefined ? standardId : existingExam.standardId;
     if (standardId !== undefined && standardId !== null) {
       const std = await this.prisma.standard.findUnique({ where: { id: standardId } });
       if (!std) {
@@ -1370,6 +1479,7 @@ export class ExamsService {
     }
 
     // Validate destination boardId
+    const destBoardId = boardId !== undefined ? boardId : existingExam.boardId;
     if (boardId !== undefined && boardId !== null) {
       const brd = await this.prisma.board.findUnique({ where: { id: boardId } });
       if (!brd) {
@@ -1377,21 +1487,26 @@ export class ExamsService {
       }
     }
 
-    // Inconsistency check
-    const effectiveDestCentre = centreId !== undefined ? centreId : existingExam.centreId;
-    if (targetBatch?.centreId && effectiveDestCentre && targetBatch.centreId !== effectiveDestCentre) {
-      throw new BadRequestException('Destination exam centreId does not match the centre of the destination batch.');
+    // Validate destination academicYearId
+    if (academicYearId !== undefined) {
+      if (!academicYearId || academicYearId === 'dummy') {
+        throw new BadRequestException('A valid academicYearId is required.');
+      }
+      const yr = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
+      if (!yr) {
+        throw new BadRequestException(`Specified academic year '${academicYearId}' does not exist.`);
+      }
     }
 
     // If teacher, check that new target tuple is also within teacher's assignments
     if (isTeacher) {
       await this.assertTeacherExamAccess(user.id, {
         centreId: effectiveDestCentre,
-        subjectId: subjectId !== undefined ? subjectId : existingExam.subjectId,
-        batchId: batchId !== undefined ? batchId : existingExam.batchId,
-        standardId: standardId !== undefined ? standardId : existingExam.standardId,
-        boardId: boardId !== undefined ? boardId : existingExam.boardId,
-        batch: targetBatch,
+        subjectId: destSubjectId,
+        batchId: destBatchId,
+        standardId: destStandardId,
+        boardId: destBoardId,
+        batch: destBatch,
       });
     }
 
@@ -1399,8 +1514,8 @@ export class ExamsService {
     if (title !== undefined) updatePayload.title = title;
     if (type !== undefined) updatePayload.type = type;
     if (academicYearId !== undefined) updatePayload.academicYearId = academicYearId;
-    if (batchId !== undefined) updatePayload.batchId = batchId || null;
-    if (subjectId !== undefined) updatePayload.subjectId = subjectId;
+    if (batchId !== undefined) updatePayload.batchId = destBatchId;
+    if (subjectId !== undefined) updatePayload.subjectId = destSubjectId;
     if (chapterId !== undefined) updatePayload.chapterId = chapterId || null;
     if (topicId !== undefined) updatePayload.topicId = topicId || null;
     if (boardId !== undefined) updatePayload.boardId = boardId || null;
@@ -1408,7 +1523,7 @@ export class ExamsService {
     if (centreId !== undefined) updatePayload.centreId = centreId || null;
     if (targetTrackId !== undefined) updatePayload.targetTrackId = targetTrackId || null;
 
-    return this.prisma.$transaction(async (prisma) => {
+    await this.prisma.$transaction(async (prisma) => {
       await prisma.exam.update({
         where: { id },
         data: updatePayload,
@@ -1465,9 +1580,9 @@ export class ExamsService {
           }
         }
       }
-
-      return this.getExamById(id, user);
     });
+
+    return this.getExamById(id, user);
   }
 
   async deleteExam(id: string, user?: any): Promise<any> {
@@ -1479,9 +1594,10 @@ export class ExamsService {
 
     if (user && !isSuperAdmin(user)) {
       const examCentreId = existingExam.centreId || existingExam.batch?.centreId;
-      if (examCentreId) {
-        assertCentreAccess(user, examCentreId);
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
       }
+      assertCentreAccess(user, examCentreId);
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
       if (isTeacher) {
         await this.assertTeacherExamAccess(user.id, existingExam);
@@ -1500,12 +1616,15 @@ export class ExamsService {
     });
     if (!existing) throw new NotFoundException('Question not found');
 
-    if (existing.exam && user && !isSuperAdmin(user)) {
-      const examCentreId = existing.exam.centreId || existing.exam.batch?.centreId;
+    if (user && !isSuperAdmin(user)) {
+      const examCentreId = existing.exam?.centreId || existing.exam?.batch?.centreId;
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, examCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
-      if (isTeacher) {
+      if (isTeacher && existing.exam) {
         await this.assertTeacherExamAccess(user.id, existing.exam);
       }
     }
@@ -1533,12 +1652,15 @@ export class ExamsService {
     });
     if (!existing) throw new NotFoundException('Question not found');
 
-    if (existing.exam && user && !isSuperAdmin(user)) {
-      const examCentreId = existing.exam.centreId || existing.exam.batch?.centreId;
+    if (user && !isSuperAdmin(user)) {
+      const examCentreId = existing.exam?.centreId || existing.exam?.batch?.centreId;
+      if (!examCentreId) {
+        throw new ForbiddenException('Exams without an assigned centre can only be managed by Super Administrators.');
+      }
       assertCentreAccess(user, examCentreId);
 
       const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
-      if (isTeacher) {
+      if (isTeacher && existing.exam) {
         await this.assertTeacherExamAccess(user.id, existing.exam);
       }
     }

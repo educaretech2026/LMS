@@ -24,12 +24,23 @@ async function bootstrap() {
     throw new Error('FATAL: REDIS_URL is mandatory in production for secure session enforcement and distributed rate limiting.');
   }
 
-  const configuredOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+  const rawOrigins = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '';
+  const configuredOrigins = rawOrigins
+    ? rawOrigins
+        .split(',')
+        .map((o) => o.trim().replace(/^["']|["']$/g, '').replace(/\/+$/, ''))
+        .filter(Boolean)
     : [];
 
+  // Default production origins for Educare
+  const productionDefaults = [
+    'https://lms.educarelearning.in',
+    'https://api.educarelearning.in',
+    'https://educarelearning.in',
+  ];
+
   if (isProduction && configuredOrigins.length === 0) {
-    console.warn('⚠️ WARNING: In production, CORS_ORIGINS must be explicitly set with trusted domain names.');
+    console.warn('⚠️ WARNING: In production, CORS_ORIGINS not explicitly set. Defaulting to production domains:', productionDefaults);
   }
 
   const devOrigins = isProduction
@@ -40,26 +51,51 @@ async function bootstrap() {
         'http://127.0.0.1:3000',
         'http://127.0.0.1:3001',
       ];
-  const allowedOrigins = Array.from(new Set([...devOrigins, ...configuredOrigins]));
+  const allowedOrigins = Array.from(new Set([...devOrigins, ...productionDefaults, ...configuredOrigins]));
 
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like native mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+
+      const cleanOrigin = origin.trim().replace(/\/+$/, '');
+
+      // Check allowlist
+      if (allowedOrigins.includes(cleanOrigin)) {
         return callback(null, true);
       }
-      if (!isProduction && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+
+      // Allow any educarelearning.in subdomains
+      if (cleanOrigin.endsWith('.educarelearning.in') || cleanOrigin === 'https://educarelearning.in') {
         return callback(null, true);
       }
-      return callback(new Error('Blocked by CORS policy'), false);
+
+      // Allow local development origins
+      if (!isProduction && (cleanOrigin.startsWith('http://localhost:') || cleanOrigin.startsWith('http://127.0.0.1:'))) {
+        return callback(null, true);
+      }
+
+      // Reject cleanly without crashing the Express/NestJS preflight pipeline
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+      'Cache-Control',
+      'Pragma',
+      'Range',
+      'X-Tenant-Id',
+      'Access-Control-Request-Headers',
+      'Access-Control-Request-Method',
+    ],
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', { exclude: ['/', 'health'] });
   app.use(cookieParser());
 
   app.useGlobalPipes(
@@ -102,6 +138,8 @@ async function bootstrap() {
 
   SwaggerModule.setup('api/docs', app, document, customOptions);
 
-  await app.listen(process.env.PORT ?? 3001);
+  const port = process.env.PORT ?? 3001;
+  await app.listen(port, '0.0.0.0');
+  console.log(`Educare API listening on 0.0.0.0:${port}`);
 }
 bootstrap();
