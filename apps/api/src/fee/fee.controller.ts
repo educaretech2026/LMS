@@ -17,25 +17,22 @@ export class FeeController {
   }
 
   @Post()
-  create(@Body() data: any) {
-    return this.feeService.create(data);
+  create(@Body() data: any, @Req() req: any) {
+    return this.feeService.create(data, req.user);
   }
 
   @Post(':studentId/reminder')
-  sendReminder(@Param('studentId') studentId: string, @Body() data: any) {
-    return this.feeService.sendReminder(studentId, data);
+  sendReminder(@Param('studentId') studentId: string, @Body() data: any, @Req() req: any) {
+    return this.feeService.sendReminder(studentId, data, req.user);
   }
 
   @Post(':id/status')
-  updateStatus(@Param('id') id: string, @Body() data: { status: string }) {
-    return this.feeService.updateStatus(id, data.status);
+  updateStatus(@Param('id') id: string, @Body() data: { status: string }, @Req() req: any) {
+    return this.feeService.updateStatus(id, data.status, req.user);
   }
 
   @Delete(':id')
-  delete(@Param('id') id: string, @Body() data: { password?: string }) {
-    if (data.password !== 'delete123') {
-      throw new Error('Unauthorized');
-    }
-    return this.feeService.delete(id);
+  delete(@Param('id') id: string, @Req() req: any) {
+    return this.feeService.delete(id, req.user);
   }
 }

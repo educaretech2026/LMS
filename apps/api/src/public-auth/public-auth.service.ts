@@ -87,8 +87,15 @@ export class PublicAuthService {
   }
 
   async generateOtp(userId: string): Promise<any> {
-    // Generate a random 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // SEC-07: Invalidate any existing unused OTPs for this user
+    await this.prisma.otpToken.updateMany({
+      where: { userId, used: false },
+      data: { used: true }
+    });
+
+    // Generate cryptographically secure 6-digit OTP
+    const crypto = await import('crypto');
+    const otp = crypto.randomInt(100000, 1000000).toString();
     
     // Expires in 10 minutes
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -101,10 +108,7 @@ export class PublicAuthService {
       }
     });
 
-    // In a real scenario, this is where you'd dispatch the SMS or Email.
-    // We mock it for now as per the plan.
-    console.log(`[MOCK SMS] OTP for user ${userId} is: ${otp}`);
-
+    // Note: Do not log OTP in production logs (SEC-07)
     return { success: true, message: 'OTP sent successfully' };
   }
 
@@ -116,8 +120,6 @@ export class PublicAuthService {
         used: false,
         expiresAt: { gt: new Date() }
       },
-      // Note: order by created at descending is missing because Prisma doesn't auto add it unless specified, but schema has it?
-      // Wait, let me just grab the first valid one.
     });
 
     if (!otpRecord) {

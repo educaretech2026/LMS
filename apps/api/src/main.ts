@@ -4,26 +4,47 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as cookieParser from 'cookie-parser';
-import { execSync } from 'child_process';
-import { join } from 'path';
+import helmet from 'helmet';
 
 async function bootstrap() {
-  // Automatically push the DB schema in production environments on startup
-  if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
-    try {
-      const dbDir = join(__dirname, '..', '..', '..', 'packages', 'database');
-      console.log('Pushing database schema from:', dbDir);
-      execSync('npx prisma db push --accept-data-loss', { cwd: dbDir, stdio: 'inherit' });
-    } catch (error) {
-      console.error('Failed to push database schema automatically:', error);
-    }
-  }
-
   const app = await NestFactory.create(AppModule);
 
+  // SEC-09: HTTP security headers
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Swagger and Next.js SPA use inline assets; CSP can be tailored per domain
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+
+  // SEC-06: Strict CORS allowlist with credentials
+  const defaultOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+  ];
+  const configuredOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+    : [];
+  const allowedOrigins = Array.from(new Set([...defaultOrigins, ...configuredOrigins]));
+
   app.enableCors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like native mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        (process.env.NODE_ENV !== 'production' &&
+          (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')))
+      ) {
+        return callback(null, true);
+      }
+      return callback(new Error('Blocked by CORS policy'), false);
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   });
 
   app.setGlobalPrefix('api');

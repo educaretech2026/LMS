@@ -1,15 +1,31 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { isSuperAdmin, getUserCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class FeeService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(user?: any) {
-    const whereClause = user?.role?.name === 'STUDENT' 
-      ? { student: { userId: user.id } } 
-      : {};
+    let whereClause: any = {};
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+
+    if (roleName === 'STUDENT') {
+      whereClause = { student: { userId: user.id } };
+    } else if (roleName === 'CENTRE_ADMIN') {
+      const centreIds = getUserCentreIds(user);
+      whereClause = {
+        student: {
+          enrollments: {
+            some: {
+              batch: {
+                centreId: { in: centreIds }
+              }
+            }
+          }
+        }
+      };
+    }
 
     return this.prisma.feeRecord.findMany({
       where: whereClause,
@@ -33,7 +49,28 @@ export class FeeService {
     });
   }
 
-  async create(data: any) {
+  async create(data: any, user?: any) {
+    if (!data.studentId) {
+      throw new BadRequestException('studentId is required');
+    }
+
+    // Verify centre ownership for non-superadmin
+    if (user && !isSuperAdmin(user)) {
+      const student = await this.prisma.studentProfile.findUnique({
+        where: { id: data.studentId },
+        include: { enrollments: { include: { batch: true } } }
+      });
+      if (!student) {
+        throw new NotFoundException('Student not found');
+      }
+      const allowed = getUserCentreIds(user);
+      const studentCentres = student.enrollments.map(e => e.batch.centreId);
+      const hasAccess = studentCentres.some(cId => allowed.includes(cId));
+      if (!hasAccess) {
+        throw new ForbiddenException('Access denied: You cannot create fees for students outside your centre.');
+      }
+    }
+
     return this.prisma.feeRecord.create({
       data: {
         receiptNo: `FEE-${Date.now()}`,
@@ -47,13 +84,61 @@ export class FeeService {
     });
   }
 
-  async delete(id: string) {
+  async delete(id: string, user?: any) {
+    const record = await this.prisma.feeRecord.findUnique({
+      where: { id },
+      include: {
+        student: {
+          include: {
+            enrollments: { include: { batch: true } }
+          }
+        }
+      }
+    });
+
+    if (!record) {
+      throw new NotFoundException('Fee record not found');
+    }
+
+    if (user && !isSuperAdmin(user)) {
+      const allowed = getUserCentreIds(user);
+      const studentCentres = record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
+      const hasAccess = studentCentres.some(cId => allowed.includes(cId));
+      if (!hasAccess) {
+        throw new ForbiddenException('Access denied: You cannot delete fee records for other centres.');
+      }
+    }
+
     return this.prisma.feeRecord.delete({
       where: { id }
     });
   }
 
-  async updateStatus(id: string, status: any) {
+  async updateStatus(id: string, status: any, user?: any) {
+    const record = await this.prisma.feeRecord.findUnique({
+      where: { id },
+      include: {
+        student: {
+          include: {
+            enrollments: { include: { batch: true } }
+          }
+        }
+      }
+    });
+
+    if (!record) {
+      throw new NotFoundException('Fee record not found');
+    }
+
+    if (user && !isSuperAdmin(user)) {
+      const allowed = getUserCentreIds(user);
+      const studentCentres = record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
+      const hasAccess = studentCentres.some(cId => allowed.includes(cId));
+      if (!hasAccess) {
+        throw new ForbiddenException('Access denied: You cannot update fee records for other centres.');
+      }
+    }
+
     const feeRecord = await this.prisma.feeRecord.update({
       where: { id },
       data: { status },
@@ -71,7 +156,7 @@ export class FeeService {
     return feeRecord;
   }
 
-  async sendReminder(studentId: string, payload: any) {
+  async sendReminder(studentId: string, payload: any, currentUser?: any) {
     const student = await this.prisma.studentProfile.findUnique({
       where: { id: studentId },
       include: { 
@@ -81,6 +166,13 @@ export class FeeService {
     });
 
     if (!student) throw new HttpException('Student not found', HttpStatus.NOT_FOUND);
+
+    if (currentUser && !isSuperAdmin(currentUser)) {
+      const studentCentreId = student.enrollments?.[0]?.batch?.centreId;
+      if (studentCentreId) {
+        assertCentreAccess(currentUser, studentCentreId);
+      }
+    }
 
     const phone = student.parentPhone;
     if (!phone) throw new HttpException('No contact number found for this student', HttpStatus.BAD_REQUEST);

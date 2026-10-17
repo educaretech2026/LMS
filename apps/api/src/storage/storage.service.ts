@@ -1,6 +1,26 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, BadRequestException } from '@nestjs/common';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as crypto from 'crypto';
+import * as path from 'path';
+
+const ALLOWED_MIME_PREFIXES = [
+  'image/',
+  'video/',
+  'audio/',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument',
+  'application/vnd.ms-',
+  'text/plain',
+  'text/csv',
+];
+
+const DISALLOWED_EXTENSIONS = new Set([
+  '.exe', '.bat', '.cmd', '.sh', '.php', '.phtml', '.phtm', '.phps',
+  '.js', '.mjs', '.cjs', '.jsp', '.asp', '.aspx', '.cgi', '.py', '.pl',
+  '.html', '.htm', '.xhtml', '.svgz', '.vbs', '.scr', '.msi',
+]);
 
 @Injectable()
 export class StorageService {
@@ -37,17 +57,31 @@ export class StorageService {
 
   /**
    * Generates a pre-signed URL for client-side direct uploads.
-   * @param filename original filename
-   * @param contentType mime type of the file
-   * @returns an object with the pre-signed upload URL and the final public URL where the file will be accessible.
+   * Validates file extension and mime type.
    */
   async getPresignedUploadUrl(filename: string, contentType: string) {
+    if (!filename || !contentType) {
+      throw new BadRequestException('Filename and contentType are required.');
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    if (DISALLOWED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException(`File extension "${ext}" is not permitted.`);
+    }
+
+    const isAllowedMime = ALLOWED_MIME_PREFIXES.some(prefix =>
+      contentType.toLowerCase().startsWith(prefix)
+    );
+    if (!isAllowedMime) {
+      throw new BadRequestException(`Content-Type "${contentType}" is not permitted.`);
+    }
+
     if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
       throw new HttpException('Storage is not configured on the server.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    const uniqueId = Math.random().toString(36).substring(2, 15);
-    const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9.-]/g, '_');
     const objectKey = `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
 
     const command = new PutObjectCommand({

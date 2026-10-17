@@ -877,22 +877,15 @@ function PrintReceiptModal({ receipt, onClose }: { receipt: FeeRecord, onClose: 
 }
 
 function DeleteRecordModal({ id, onClose, onSuccess }: { id: string, onClose: () => void, onSuccess: () => void }) {
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleDelete = async () => {
-    if (password !== "delete123") {
-      setError("Incorrect password.");
-      return;
-    }
-    
     setLoading(true);
     setError("");
     try {
       await fetchApi(`/fee/${id}`, {
         method: 'DELETE',
-        body: JSON.stringify({ password })
       });
       onSuccess();
     } catch (e: any) {
@@ -914,22 +907,9 @@ function DeleteRecordModal({ id, onClose, onSuccess }: { id: string, onClose: ()
 
         <div className="p-6 bg-surface text-text-primary">
           <p className="text-sm font-medium text-text-secondary mb-4">
-            Are you sure you want to delete this fee record? This action cannot be undone. Please enter the deletion password to confirm.
+            Are you sure you want to delete this fee record? This action will permanently remove the record from financial reports.
           </p>
-          
-          <div className="mb-4">
-            <label className="block text-xs font-bold text-text-secondary mb-1.5">
-              Password <span className="text-brand-red">*</span>
-            </label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Enter password..." 
-              className="w-full h-10 rounded-lg border border-border-soft bg-white pl-3 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red" 
-            />
-            {error && <p className="text-xs font-bold text-brand-red mt-1.5">{error}</p>}
-          </div>
+          {error && <p className="text-xs font-bold text-brand-red mt-1.5">{error}</p>}
         </div>
 
         <div className="px-6 py-4 border-t border-border-soft flex items-center justify-end gap-3 shrink-0 bg-white">
@@ -938,7 +918,7 @@ function DeleteRecordModal({ id, onClose, onSuccess }: { id: string, onClose: ()
           </button>
           <button 
             onClick={handleDelete}
-            disabled={loading || !password}
+            disabled={loading}
             className="inline-flex items-center gap-2 rounded-lg bg-brand-red px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-red/90 transition-colors disabled:opacity-50"
           >
             {loading ? "Deleting..." : "Confirm Delete"}

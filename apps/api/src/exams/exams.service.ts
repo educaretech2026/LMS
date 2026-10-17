@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { assertCentreAccess, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
 
 function calculateGrade(marksObtained: number, maxMarks: number): string {
   if (!maxMarks || maxMarks <= 0) return 'F';
@@ -10,6 +11,14 @@ function calculateGrade(marksObtained: number, maxMarks: number): string {
   if (percentage >= 60) return 'B';
   if (percentage >= 50) return 'C';
   return 'F';
+}
+
+function sanitizeQuestions(questions: any[]): any[] {
+  if (!Array.isArray(questions)) return [];
+  return questions.map(q => {
+    const { correctOption, explanation, ...safeQ } = q;
+    return safeQ;
+  });
 }
 
 @Injectable()
@@ -61,7 +70,7 @@ export class ExamsService {
       }
       orConditions.push({ AND: hierarchyAnd });
 
-      return this.prisma.exam.findMany({
+      const exams = await this.prisma.exam.findMany({
         where: {
           OR: orConditions
         },
@@ -82,9 +91,34 @@ export class ExamsService {
         },
         orderBy: { createdAt: 'desc' }
       });
+
+      // SEC-03: Strip answers for students if they haven't submitted
+      return exams.map(exam => {
+        const hasSubmitted = exam.results && exam.results.length > 0;
+        if (!hasSubmitted && exam.mcqQuestions) {
+          return {
+            ...exam,
+            mcqQuestions: sanitizeQuestions(exam.mcqQuestions),
+          };
+        }
+        return exam;
+      });
+    }
+
+    const where: any = {};
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      if (userCentres.length > 0) {
+        where.OR = [
+          { centreId: { in: userCentres } },
+          { batch: { centreId: { in: userCentres } } },
+          { centreId: null, batchId: null },
+        ];
+      }
     }
 
     return this.prisma.exam.findMany({
+      where,
       include: {
         academicYear: true,
         batch: true,
@@ -110,8 +144,21 @@ export class ExamsService {
       });
       if (studentProfile) {
         where.studentId = studentProfile.id;
+      } else {
+        return [];
+      }
+    } else if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      if (userCentres.length > 0) {
+        where.exam = {
+          OR: [
+            { centreId: { in: userCentres } },
+            { batch: { centreId: { in: userCentres } } },
+          ]
+        };
       }
     }
+
     return this.prisma.examResult.findMany({
       where,
       include: {
@@ -138,7 +185,7 @@ export class ExamsService {
     });
   }
 
-  async getExamById(id: string): Promise<any> {
+  async getExamById(id: string, user?: any): Promise<any> {
     const exam = await this.prisma.exam.findUnique({
       where: { id },
       include: {
@@ -155,19 +202,68 @@ export class ExamsService {
       }
     });
     if (!exam) throw new NotFoundException('Exam not found');
+
+    const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    if (isStudent && user?.id) {
+      const studentProfile = await this.prisma.studentProfile.findUnique({ where: { userId: user.id } });
+      const hasResult = studentProfile
+        ? await this.prisma.examResult.findFirst({ where: { examId: id, studentId: studentProfile.id } })
+        : null;
+
+      if (!hasResult && exam.mcqQuestions) {
+        return {
+          ...exam,
+          mcqQuestions: sanitizeQuestions(exam.mcqQuestions),
+        };
+      }
+    } else if (user && !isSuperAdmin(user)) {
+      const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (examCentreId) {
+        assertCentreAccess(user, examCentreId);
+      }
+    }
+
     return exam;
   }
 
-  async getExamResults(examId: string): Promise<any> {
+  async getExamResults(examId: string, user?: any): Promise<any> {
+    const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    const where: any = { examId };
+
+    if (isStudent && user?.id) {
+      const studentProfile = await this.prisma.studentProfile.findUnique({ where: { userId: user.id } });
+      if (!studentProfile) return [];
+      where.studentId = studentProfile.id;
+    } else if (user && !isSuperAdmin(user)) {
+      const exam = await this.prisma.exam.findUnique({
+        where: { id: examId },
+        select: { centreId: true, batch: { select: { centreId: true } } }
+      });
+      const examCentreId = exam?.centreId || exam?.batch?.centreId;
+      if (examCentreId) {
+        assertCentreAccess(user, examCentreId);
+      }
+    }
+
     return this.prisma.examResult.findMany({
-      where: { examId },
-      include: { student: { include: { user: true } } }
+      where,
+      include: { student: { include: { user: true } }, studentAnswers: true }
     });
   }
 
-  async getExamStudents(examId: string): Promise<any> {
-    const exam = await this.prisma.exam.findUnique({ where: { id: examId } });
+  async getExamStudents(examId: string, user?: any): Promise<any> {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      include: { batch: { select: { centreId: true } } }
+    });
     if (!exam) throw new NotFoundException('Exam not found');
+
+    if (user && !isSuperAdmin(user)) {
+      const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (examCentreId) {
+        assertCentreAccess(user, examCentreId);
+      }
+    }
 
     const whereClause: any = {};
     if (exam.batchId) {
@@ -218,7 +314,20 @@ export class ExamsService {
     return Array.from(studentMap.values());
   }
 
-  async saveExamResults(examId: string, results: any[]) {
+  async saveExamResults(examId: string, results: any[], user?: any) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      include: { batch: { select: { centreId: true } } }
+    });
+    if (!exam) throw new NotFoundException('Exam not found');
+
+    if (user && !isSuperAdmin(user)) {
+      const examCentreId = exam.centreId || exam.batch?.centreId;
+      if (examCentreId) {
+        assertCentreAccess(user, examCentreId);
+      }
+    }
+
     // Delete existing to support simple upsert list
     await this.prisma.examResult.deleteMany({ where: { examId } });
     
@@ -242,15 +351,40 @@ export class ExamsService {
     return { success: true };
   }
 
-  async submitExamAttempt(examId: string, studentId: string, answers: Record<string, string>, score: any) {
+  async submitExamAttempt(examId: string, studentId: string, answers: Record<string, string>, score?: any) {
     const profile = await this.prisma.studentProfile.findUnique({ where: { userId: studentId } });
     const studentProfileId = profile ? profile.id : studentId;
 
-    const marksObtained = Number(score?.earned || 0);
-    const maxMarks = Number(score?.total || 0);
+    // 1. Fetch questions to perform server-side authoritative grading (SEC-03)
+    const questions = await this.prisma.mcqQuestion.findMany({
+      where: { examId }
+    });
+
+    let calculatedEarned = 0;
+    let totalPossible = 0;
+
+    for (const q of questions) {
+      const qMarks = Number(q.marks ?? 4.0);
+      const qNegMarks = Number(q.negativeMarks ?? 1.0);
+      totalPossible += qMarks;
+
+      if (q.type !== 'DESCRIPTIVE') {
+        const studentAns = answers ? answers[q.id] : undefined;
+        if (studentAns !== undefined && studentAns !== null && String(studentAns).trim() !== '') {
+          if (String(studentAns).trim() === String(q.correctOption).trim()) {
+            calculatedEarned += qMarks;
+          } else {
+            calculatedEarned -= qNegMarks;
+          }
+        }
+      }
+    }
+
+    const marksObtained = Math.max(0, calculatedEarned);
+    const maxMarks = totalPossible > 0 ? totalPossible : Number(score?.total || 100);
     const grade = calculateGrade(marksObtained, maxMarks);
 
-    // 1. Check if an existing ExamResult is there for this student
+    // 2. Check if an existing ExamResult is there for this student
     const existing = await this.prisma.examResult.findFirst({
       where: { examId, studentId: studentProfileId }
     });
@@ -278,15 +412,10 @@ export class ExamsService {
       });
     }
 
-    // 2. Fetch the questions to determine type
-    const questions = await this.prisma.mcqQuestion.findMany({
-      where: { examId }
-    });
-
     const qMap = new Map(questions.map(q => [q.id, q]));
 
     // 3. Upsert answers
-    for (const [qId, ans] of Object.entries(answers)) {
+    for (const [qId, ans] of Object.entries(answers || {})) {
       if (!ans) continue;
       const q = qMap.get(qId);
       if (!q) continue;
@@ -314,11 +443,17 @@ export class ExamsService {
       });
     }
 
-    return { success: true, examResultId };
+    return {
+      success: true,
+      examResultId,
+      marksObtained,
+      maxMarks,
+      grade,
+    };
   }
 
-  async getExamsByTopic(topicId: string): Promise<any> {
-    return this.prisma.exam.findMany({
+  async getExamsByTopic(topicId: string, user?: any): Promise<any> {
+    const exams = await this.prisma.exam.findMany({
       where: {
         topicId,
         type: { in: ['MCQ_EXAM', 'MOCK_TEST'] },
@@ -331,11 +466,33 @@ export class ExamsService {
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    if (isStudent) {
+      return exams.map(e => ({
+        ...e,
+        mcqQuestions: sanitizeQuestions(e.mcqQuestions),
+      }));
+    }
+
+    return exams;
   }
 
-  async createExam(data: any) {
+  async createExam(data: any, user?: any) {
     let { title, type, academicYearId, batchId, subjectId, chapterId, topicId, boardId, standardId, centreId, targetTrackId } = data;
     
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      if (userCentres.length > 0) {
+        if (centreId && !userCentres.includes(centreId)) {
+          throw new ForbiddenException('Cannot create exam for another centre');
+        }
+        if (!centreId) {
+          centreId = userCentres[0];
+        }
+      }
+    }
+
     // Ensure we have a valid academicYear
     if (academicYearId === "dummy") {
       let year = await this.prisma.academicYear.findFirst();
@@ -401,7 +558,20 @@ export class ExamsService {
     });
   }
 
-  async updateExam(id: string, data: any): Promise<any> {
+  async updateExam(id: string, data: any, user?: any): Promise<any> {
+    const existingExam = await this.prisma.exam.findUnique({
+      where: { id },
+      include: { batch: { select: { centreId: true } } }
+    });
+    if (!existingExam) throw new NotFoundException('Exam not found');
+
+    if (user && !isSuperAdmin(user)) {
+      const examCentreId = existingExam.centreId || existingExam.batch?.centreId;
+      if (examCentreId) {
+        assertCentreAccess(user, examCentreId);
+      }
+    }
+
     const {
       title,
       type,
@@ -487,10 +657,23 @@ export class ExamsService {
       }
     }
 
-    return this.getExamById(id);
+    return this.getExamById(id, user);
   }
 
-  async deleteExam(id: string): Promise<any> {
+  async deleteExam(id: string, user?: any): Promise<any> {
+    const existingExam = await this.prisma.exam.findUnique({
+      where: { id },
+      include: { batch: { select: { centreId: true } } }
+    });
+    if (!existingExam) throw new NotFoundException('Exam not found');
+
+    if (user && !isSuperAdmin(user)) {
+      const examCentreId = existingExam.centreId || existingExam.batch?.centreId;
+      if (examCentreId) {
+        assertCentreAccess(user, examCentreId);
+      }
+    }
+
     return this.prisma.exam.delete({
       where: { id }
     });

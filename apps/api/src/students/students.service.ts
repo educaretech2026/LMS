@@ -1,12 +1,14 @@
-import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
+import { assertCentreAccess, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StudentsService {
   constructor(private prisma: PrismaService) {}
 
-  async createStudent(data: any) {
+  async createStudent(data: any, currentUser?: any) {
     try {
       // 1. Fetch related entities based on provided string names
       const role = await this.prisma.role.findUnique({ where: { name: 'STUDENT' } });
@@ -14,6 +16,10 @@ export class StudentsService {
 
       const centre = await this.prisma.centre.findFirst({ where: { name: data.centre } });
       if (!centre) throw new NotFoundException(`Centre "${data.centre}" not found.`);
+
+      if (currentUser && !isSuperAdmin(currentUser)) {
+        assertCentreAccess(currentUser, centre.id);
+      }
 
       const year = await this.prisma.academicYear.findUnique({ where: { name: data.academicYear } });
       if (!year) throw new NotFoundException(`Academic Year "${data.academicYear}" not found.`);
@@ -56,9 +62,10 @@ export class StudentsService {
         });
       }
 
-      // 3. Generate credentials
+      // 3. Generate credentials (SEC-07: Cryptographically secure temporary password if not provided)
       const email = data.email || `student.${Date.now()}@educare.com`;
-      const password = await argon2.hash(data.password || 'password123');
+      const tempPassword = data.password || crypto.randomBytes(8).toString('hex');
+      const password = await argon2.hash(tempPassword);
 
       // 4. Create User, StudentProfile, and Enrollment in a transaction
       const newStudent = await this.prisma.$transaction(async (prisma) => {
@@ -114,18 +121,33 @@ export class StudentsService {
     }
   }
 
-  async searchStudents(query: string) {
+  async searchStudents(query: string, user?: any) {
     if (!query || query.length < 2) return [];
     
+    const where: any = {
+      user: { status: 'ACTIVE' },
+      OR: [
+        { admissionNo: { contains: query, mode: 'insensitive' } },
+        { user: { firstName: { contains: query, mode: 'insensitive' } } },
+        { user: { lastName: { contains: query, mode: 'insensitive' } } },
+      ]
+    };
+
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      if (userCentres.length > 0) {
+        where.enrollments = {
+          some: {
+            batch: {
+              centreId: { in: userCentres }
+            }
+          }
+        };
+      }
+    }
+
     return this.prisma.studentProfile.findMany({
-      where: {
-        user: { status: 'ACTIVE' },
-        OR: [
-          { admissionNo: { contains: query, mode: 'insensitive' } },
-          { user: { firstName: { contains: query, mode: 'insensitive' } } },
-          { user: { lastName: { contains: query, mode: 'insensitive' } } },
-        ]
-      },
+      where,
       include: {
         user: true,
         enrollments: { 
@@ -140,7 +162,7 @@ export class StudentsService {
     });
   }
 
-  async getStudentById(id: string) {
+  async getStudentById(id: string, user?: any) {
     let student = await this.prisma.studentProfile.findUnique({
       where: { id },
       include: {
@@ -186,6 +208,21 @@ export class StudentsService {
     }
 
     if (!student) throw new NotFoundException('Student not found');
+
+    const isStudent = user?.role?.name === 'STUDENT' || user?.role === 'STUDENT';
+    if (isStudent && user?.id) {
+      if (student.userId !== user.id) {
+        throw new ForbiddenException('Access denied');
+      }
+    } else if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      const hasCentreOverlap = studentCentres.some(cId => userCentres.includes(cId));
+      if (userCentres.length > 0 && studentCentres.length > 0 && !hasCentreOverlap) {
+        throw new ForbiddenException('Student does not belong to your centre');
+      }
+    }
+
     return student;
   }
 
@@ -193,11 +230,26 @@ export class StudentsService {
     return this.getStudentById(userId);
   }
 
-  async getStudents() {
+  async getStudents(user?: any) {
+    const where: any = {
+      user: { status: 'ACTIVE' }
+    };
+
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      if (userCentres.length > 0) {
+        where.enrollments = {
+          some: {
+            batch: {
+              centreId: { in: userCentres }
+            }
+          }
+        };
+      }
+    }
+
     return this.prisma.studentProfile.findMany({
-      where: {
-        user: { status: 'ACTIVE' }
-      },
+      where,
       include: {
         user: true,
         enrollments: {
@@ -219,11 +271,29 @@ export class StudentsService {
     });
   }
 
-  async updateStudent(id: string, data: any) {
-    const profile = await this.prisma.studentProfile.findUnique({ where: { id }, include: { user: true } });
+  async updateStudent(id: string, data: any, user?: any) {
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { id },
+      include: {
+        user: true,
+        enrollments: { include: { batch: true } }
+      }
+    });
     if (!profile) throw new NotFoundException('Student not found');
 
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      if (userCentres.length > 0 && studentCentres.length > 0 && !studentCentres.some(cId => userCentres.includes(cId))) {
+        throw new ForbiddenException('Cannot edit student from another centre');
+      }
+    }
+
     const centre = data.centre ? await this.prisma.centre.findFirst({ where: { name: data.centre } }) : null;
+    if (centre && user && !isSuperAdmin(user)) {
+      assertCentreAccess(user, centre.id);
+    }
+
     const year = data.academicYear ? await this.prisma.academicYear.findUnique({ where: { name: data.academicYear } }) : null;
     const board = data.board ? await this.prisma.board.findUnique({ where: { name: data.board } }) : null;
     const standard = (data.classLevel && board)
@@ -304,10 +374,21 @@ export class StudentsService {
     });
   }
 
-  async deleteStudent(id: string) {
-    const profile = await this.prisma.studentProfile.findUnique({ where: { id } });
+  async deleteStudent(id: string, user?: any) {
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { id },
+      include: { enrollments: { include: { batch: true } } }
+    });
     if (!profile) throw new NotFoundException('Student not found');
     
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      if (userCentres.length > 0 && studentCentres.length > 0 && !studentCentres.some(cId => userCentres.includes(cId))) {
+        throw new ForbiddenException('Cannot delete student from another centre');
+      }
+    }
+
     // Soft delete by marking user as inactive
     await this.prisma.user.update({
       where: { id: profile.userId },
@@ -316,20 +397,29 @@ export class StudentsService {
     return { success: true };
   }
 
-  async toggleStatus(id: string, status: 'ACTIVE' | 'INACTIVE') {
+  async toggleStatus(id: string, status: 'ACTIVE' | 'INACTIVE', user?: any) {
     const profile = await this.prisma.studentProfile.findUnique({
       where: { id },
-      select: { userId: true }
+      include: { enrollments: { include: { batch: true } } }
     });
     if (!profile) throw new NotFoundException('Student not found');
     
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getUserCentreIds(user);
+      const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      if (userCentres.length > 0 && studentCentres.length > 0 && !studentCentres.some(cId => userCentres.includes(cId))) {
+        throw new ForbiddenException('Cannot alter student status for another centre');
+      }
+    }
+
     await this.prisma.user.update({
       where: { id: profile.userId },
       data: { status }
     });
     return { success: true, status };
   }
-  async getTodayBirthdays() {
+
+  async getTodayBirthdays(user?: any) {
     const today = new Date();
     const month = today.getMonth() + 1;
     const day = today.getDate();

@@ -7,3 +7,5 @@ build
 .DS_Store
 scratch.py
 google-meet-credentials.json
+.idea
+.vscode

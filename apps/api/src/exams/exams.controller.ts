@@ -25,51 +25,53 @@ export class ExamsController {
   }
 
   @Get('by-topic/:topicId')
-  getExamsByTopic(@Param('topicId') topicId: string): Promise<any> {
-    return this.examsService.getExamsByTopic(topicId);
+  getExamsByTopic(@Param('topicId') topicId: string, @Req() req: any): Promise<any> {
+    return this.examsService.getExamsByTopic(topicId, req.user);
   }
 
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  createExam(@Body() data: any) {
-    return this.examsService.createExam(data);
+  createExam(@Body() data: any, @Req() req: any) {
+    return this.examsService.createExam(data, req.user);
   }
 
   @Put(':examId')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  updateExam(@Param('examId') examId: string, @Body() data: any) {
-    return this.examsService.updateExam(examId, data);
+  updateExam(@Param('examId') examId: string, @Body() data: any, @Req() req: any) {
+    return this.examsService.updateExam(examId, data, req.user);
   }
 
   @Delete(':examId')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  deleteExam(@Param('examId') examId: string) {
-    return this.examsService.deleteExam(examId);
+  deleteExam(@Param('examId') examId: string, @Req() req: any) {
+    return this.examsService.deleteExam(examId, req.user);
   }
 
   @Get(':examId/results')
-  getExamResults(@Param('examId') examId: string): Promise<any> {
-    return this.examsService.getExamResults(examId);
+  getExamResults(@Param('examId') examId: string, @Req() req: any): Promise<any> {
+    return this.examsService.getExamResults(examId, req.user);
   }
 
   @Get(':examId/students')
-  getExamStudents(@Param('examId') examId: string): Promise<any> {
-    return this.examsService.getExamStudents(examId);
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  getExamStudents(@Param('examId') examId: string, @Req() req: any): Promise<any> {
+    return this.examsService.getExamStudents(examId, req.user);
   }
 
   @Post(':examId/results')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  saveExamResults(@Param('examId') examId: string, @Body() data: { results: any[] }) {
-    return this.examsService.saveExamResults(examId, data.results);
+  saveExamResults(@Param('examId') examId: string, @Body() data: { results: any[] }, @Req() req: any) {
+    return this.examsService.saveExamResults(examId, data.results, req.user);
   }
 
   @Post(':examId/submit')
   @Roles('STUDENT')
-  submitExamAttempt(@Param('examId') examId: string, @Body() data: { answers: Record<string, string>, score: any }, @Req() req: any) {
+  submitExamAttempt(@Param('examId') examId: string, @Body() data: { answers: Record<string, string>, score?: any }, @Req() req: any) {
     return this.examsService.submitExamAttempt(examId, req.user.id, data.answers, data.score);
   }
 
   @Get('mcq')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   getMcqQuestions(): Promise<any> {
     return this.examsService.getMcqQuestions();
   }
@@ -93,6 +95,7 @@ export class ExamsController {
   }
 
   @Get('upload-url')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   getUploadUrl(
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
@@ -101,7 +104,7 @@ export class ExamsController {
   }
 
   @Get(':examId')
-  getExamById(@Param('examId') examId: string): Promise<any> {
-    return this.examsService.getExamById(examId);
+  getExamById(@Param('examId') examId: string, @Req() req: any): Promise<any> {
+    return this.examsService.getExamById(examId, req.user);
   }
 }

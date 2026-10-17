@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Delete, Body, Param, UsePipes, ValidationPipe, Query, UseGuards, Req, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Req, HttpException, HttpStatus } from '@nestjs/common';
 import { StudyMaterialService } from './study-materials.service';
 import { StorageService } from '../storage/storage.service';
 import { CloudflareService } from '../cloudflare/cloudflare.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
-@UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
 @Controller('study-materials')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class StudyMaterialController {
   constructor(
     private readonly studyMaterialService: StudyMaterialService,
@@ -13,26 +15,26 @@ export class StudyMaterialController {
     private readonly cloudflareService: CloudflareService,
   ) {}
 
-  @UseGuards(JwtAuthGuard)
   @Get()
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
   getAll(@Req() req: any) {
     return this.studyMaterialService.getAll();
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get('by-topic/:topicId')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
   getByTopic(@Param('topicId') topicId: string) {
     return this.studyMaterialService.getByTopic(topicId);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post()
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   create(@Body() data: any, @Req() req: any) {
     return this.studyMaterialService.create({ ...data, uploaderId: req.user.id });
   }
 
-
   @Delete(':id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   async delete(@Param('id') id: string) {
     const material = await this.studyMaterialService.getById(id);
     if (material) {
@@ -46,8 +48,8 @@ export class StudyMaterialController {
     return this.studyMaterialService.delete(id);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post(':id/progress')
+  @Roles('STUDENT', 'SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   updateProgress(
     @Param('id') id: string,
     @Body() progressData: any,
@@ -56,8 +58,8 @@ export class StudyMaterialController {
     return this.studyMaterialService.updateProgress(id, req.user.id, progressData);
   }
 
-
   @Get('upload-url')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   async getUploadUrl(
     @Query('type') type: 'VIDEO' | 'FILE',
     @Query('filename') filename: string,
@@ -67,8 +69,8 @@ export class StudyMaterialController {
     return this.storageService.getPresignedUploadUrl(filename, contentType);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get(':id/play-url')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
   async getPlayUrl(@Param('id') id: string) {
     const material = await this.studyMaterialService.getById(id);
     if (!material) {

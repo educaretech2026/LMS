@@ -1,12 +1,14 @@
-import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
+import { assertCentreAccess, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StaffService {
   constructor(private prisma: PrismaService) {}
 
-  async createStaff(data: any) {
+  async createStaff(data: any, currentUser?: any) {
     try {
       const roleName = data.role;
       const role = await this.prisma.role.findUnique({ where: { name: roleName } });
@@ -15,9 +17,14 @@ export class StaffService {
       const centre = await this.prisma.centre.findFirst({ where: { name: data.centre } });
       if (!centre) throw new NotFoundException(`Centre "${data.centre}" not found.`);
 
-      // 3. Generate credentials
+      if (currentUser && !isSuperAdmin(currentUser)) {
+        assertCentreAccess(currentUser, centre.id);
+      }
+
+      // 3. Generate credentials (SEC-07: Cryptographically secure temporary password)
       const email = data.email || `staff.${Date.now()}@educare.com`;
-      const password = await argon2.hash(data.password || 'password123');
+      const tempPassword = data.password || crypto.randomBytes(8).toString('hex');
+      const password = await argon2.hash(tempPassword);
 
       // 4. Create User, TeacherProfile, and UserCentre in a transaction
       const newStaff = await this.prisma.$transaction(async (prisma) => {
@@ -107,15 +114,28 @@ export class StaffService {
     }
   }
 
-  async getStaff() {
-    return this.prisma.user.findMany({
-      where: {
-        role: {
-          name: {
-            notIn: ['STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN']
-          }
+  async getStaff(currentUser?: any) {
+    const where: any = {
+      role: {
+        name: {
+          notIn: ['STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN']
         }
-      },
+      }
+    };
+
+    if (currentUser && !isSuperAdmin(currentUser)) {
+      const userCentres = getUserCentreIds(currentUser);
+      if (userCentres.length > 0) {
+        where.userCentres = {
+          some: {
+            centreId: { in: userCentres }
+          }
+        };
+      }
+    }
+
+    return this.prisma.user.findMany({
+      where,
       include: {
         teacherProfile: {
           include: {
@@ -140,11 +160,25 @@ export class StaffService {
     });
   }
 
-  async updateStaff(userId: string, data: any) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async updateStaff(userId: string, data: any, currentUser?: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userCentres: true }
+    });
     if (!user) throw new NotFoundException('Staff not found');
 
+    if (currentUser && !isSuperAdmin(currentUser)) {
+      const userCentres = getUserCentreIds(currentUser);
+      const staffCentres = user.userCentres.map(uc => uc.centreId);
+      if (userCentres.length > 0 && staffCentres.length > 0 && !staffCentres.some(cId => userCentres.includes(cId))) {
+        throw new ForbiddenException('Cannot edit staff from another centre');
+      }
+    }
+
     const centre = data.centre ? await this.prisma.centre.findFirst({ where: { name: data.centre } }) : null;
+    if (centre && currentUser && !isSuperAdmin(currentUser)) {
+      assertCentreAccess(currentUser, centre.id);
+    }
 
     return this.prisma.$transaction(async (prisma) => {
       let roleId = user.roleId;
@@ -242,9 +276,20 @@ export class StaffService {
     });
   }
 
-  async deleteStaff(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async deleteStaff(userId: string, currentUser?: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userCentres: true }
+    });
     if (!user) throw new NotFoundException('Staff not found');
+
+    if (currentUser && !isSuperAdmin(currentUser)) {
+      const userCentres = getUserCentreIds(currentUser);
+      const staffCentres = user.userCentres.map(uc => uc.centreId);
+      if (userCentres.length > 0 && staffCentres.length > 0 && !staffCentres.some(cId => userCentres.includes(cId))) {
+        throw new ForbiddenException('Cannot delete staff from another centre');
+      }
+    }
     
     return this.prisma.$transaction(async (prisma) => {
       await prisma.userCentre.deleteMany({ where: { userId } });
@@ -253,5 +298,4 @@ export class StaffService {
       return { success: true };
     });
   }
-
 }

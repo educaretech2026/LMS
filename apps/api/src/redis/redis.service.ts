@@ -91,18 +91,29 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Checks if a session is valid.
+   * Checks if a session is valid. Fail closed when Redis is configured.
    */
   async isSessionValid(userId: string, jti?: string): Promise<boolean> {
-    if (!this.client || !this.isAvailable || !jti) {
-      // If Redis is not available or token doesn't have a jti (legacy session), allow
+    if (!jti) {
+      // All valid issued tokens must contain a JTI
+      return false;
+    }
+
+    if (!process.env.REDIS_URL) {
+      // Standalone development without Redis configured
       return true;
     }
+
+    if (!this.client || !this.isAvailable) {
+      // Redis configured but unavailable: fail closed to prevent revoked session reuse
+      return false;
+    }
+
     try {
       const isValid = await this.client.exists(`session:${jti}`);
       return isValid === 1;
     } catch {
-      return true;
+      return false;
     }
   }
 

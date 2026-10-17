@@ -6,6 +6,8 @@ import { LoginDto } from './dto/login.dto';
 import { Response, Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
+import { Public } from '../common/decorators/public.decorator';
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -14,6 +16,7 @@ export class AuthController {
     private readonly redisService: RedisService
   ) {}
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login user and set HttpOnly cookie' })
