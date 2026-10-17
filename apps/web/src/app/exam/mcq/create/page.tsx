@@ -122,8 +122,8 @@ export default function CreateExamPage() {
         body: JSON.stringify({
           title,
           type,
-          academicYearId: years[0]?.id || "dummy",
-          subjectId: subject || "dummy",
+          academicYearId: years[0]?.id || undefined,
+          subjectId: subject || undefined,
           centreId: selectedCentre || undefined,
           boardId: selectedBoard || undefined,
           standardId: selectedStandard || undefined,

@@ -1178,22 +1178,6 @@ export class ExamsService {
       }
     }
 
-    if (!academicYearId || academicYearId === 'dummy') {
-      throw new BadRequestException("A valid academicYearId is required. Placeholder 'dummy' is not accepted.");
-    }
-    const year = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
-    if (!year) {
-      throw new BadRequestException(`Specified academic year '${academicYearId}' does not exist.`);
-    }
-
-    if (!subjectId || subjectId === 'dummy') {
-      throw new BadRequestException("A valid subjectId is required. Placeholder 'dummy' is not accepted.");
-    }
-    const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
-    if (!sub) {
-      throw new BadRequestException(`Specified subject '${subjectId}' does not exist.`);
-    }
-
     if (batchId === 'dummy') {
       throw new BadRequestException("Invalid batchId: 'dummy' is not a valid batch identifier.");
     }
@@ -1211,6 +1195,47 @@ export class ExamsService {
       if (centreId && batch.centreId && batch.centreId !== centreId) {
         throw new BadRequestException('Exam centreId does not match the centre of the specified batch.');
       }
+    }
+
+    if (academicYearId === 'dummy') {
+      throw new BadRequestException("A valid academicYearId is required. Placeholder 'dummy' is not accepted.");
+    }
+    if (!academicYearId) {
+      if (batch?.academicYearId) {
+        academicYearId = batch.academicYearId;
+      } else {
+        const activeYear = await this.prisma.academicYear.findFirst({ where: { isActive: true } })
+          || await this.prisma.academicYear.findFirst({ orderBy: { createdAt: 'desc' } });
+        if (activeYear) {
+          academicYearId = activeYear.id;
+        }
+      }
+    }
+    if (!academicYearId) {
+      throw new BadRequestException('A valid academicYearId is required to create an exam.');
+    }
+    const year = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
+    if (!year) {
+      throw new BadRequestException(`Specified academic year '${academicYearId}' does not exist.`);
+    }
+
+    if (subjectId === 'dummy') {
+      throw new BadRequestException("A valid subjectId is required. Placeholder 'dummy' is not accepted.");
+    }
+    if (!subjectId && data.subject && typeof data.subject === 'string') {
+      const subByName = await this.prisma.subject.findFirst({
+        where: { name: { equals: data.subject.trim(), mode: 'insensitive' } }
+      });
+      if (subByName) {
+        subjectId = subByName.id;
+      }
+    }
+    if (!subjectId) {
+      throw new BadRequestException('A valid subjectId is required to create an exam.');
+    }
+    const sub = await this.prisma.subject.findUnique({ where: { id: subjectId } });
+    if (!sub) {
+      throw new BadRequestException(`Specified subject '${subjectId}' does not exist.`);
     }
 
     // Validate destination standard
