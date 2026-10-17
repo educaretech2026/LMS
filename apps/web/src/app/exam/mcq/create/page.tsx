@@ -79,6 +79,9 @@ export default function CreateExamPage() {
   const [chapters, setChapters] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
 
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState("");
+  const [batches, setBatches] = useState<any[]>([]);
   const [selectedBoard, setSelectedBoard] = useState("");
   const [selectedStandard, setSelectedStandard] = useState("");
   const [selectedCentre, setSelectedCentre] = useState("");
@@ -94,15 +97,24 @@ export default function CreateExamPage() {
       fetchApi<any[]>('/setup/standards'),
       fetchApi<any[]>('/setup/centres'),
       fetchApi<any[]>('/setup/subjects'),
-      fetchApi<any[]>('/setup/tracks')
-    ]).then(([y, b, st, c, su, tr]) => {
-      setYears(y);
-      setBoards(b);
-      setStandards(st);
-      setCentres(c);
-      setSubjectsList(su);
-      setTracks(tr);
-      if (su.length > 0) setSubject(su[0].id);
+      fetchApi<any[]>('/setup/tracks'),
+      fetchApi<any[]>('/setup/batches').catch(() => [])
+    ]).then(([y, b, st, c, su, tr, bt]) => {
+      setYears(y || []);
+      setBoards(b || []);
+      setStandards(st || []);
+      setCentres(c || []);
+      setSubjectsList(su || []);
+      setTracks(tr || []);
+      setBatches(bt || []);
+      if (su && su.length > 0) setSubject(su[0].id);
+
+      const activeYear = (y || []).find((item: any) => item.isActive);
+      if (activeYear) {
+        setSelectedAcademicYear(activeYear.id);
+      } else if (y && y.length === 1) {
+        setSelectedAcademicYear(y[0].id);
+      }
     }).catch(console.error);
   }, []);
 
@@ -114,7 +126,9 @@ export default function CreateExamPage() {
   }, [subject, selectedBoard, selectedStandard]);
 
   const handleSave = async () => {
-    if (!title || !type || !subject || !selectedBoard || !selectedStandard || !targetTrack) return alert("Please fill required fields");
+    if (!title || !type || !subject || !selectedAcademicYear || !selectedBoard || !selectedStandard || !targetTrack) {
+      return alert("Please fill required fields (Title, Type, Subject, Academic Year, Board, Standard, Target Audience)");
+    }
     setSaving(true);
     try {
       const exam = await fetchApi<any>('/exams', {
@@ -122,7 +136,8 @@ export default function CreateExamPage() {
         body: JSON.stringify({
           title,
           type,
-          academicYearId: years[0]?.id || undefined,
+          academicYearId: selectedAcademicYear,
+          batchId: selectedBatch || undefined,
           subjectId: subject || undefined,
           centreId: selectedCentre || undefined,
           boardId: selectedBoard || undefined,
@@ -208,23 +223,73 @@ export default function CreateExamPage() {
               {/* Target Audience Hierarchy */}
               <div className="p-4 rounded-xl border border-border-soft bg-surface-2/30 space-y-4">
                 <h4 className="text-xs font-bold text-text-primary">Target Audience</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">
+                      Academic Year <span className="text-brand-red">*</span>
+                    </label>
+                    <select
+                      value={selectedAcademicYear}
+                      onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25"
+                      required
+                    >
+                      <option value="" disabled>Select Academic Year</option>
+                      {years.map((y) => (
+                        <option key={y.id} value={y.id}>
+                          {y.name || y.year} {y.isActive ? '(Active)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {years.length === 0 && (
+                      <p className="text-[10px] text-brand-red mt-1">No academic years available. Please configure one in setup.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">
+                      Batch (Optional)
+                    </label>
+                    <select
+                      value={selectedBatch}
+                      onChange={(e) => {
+                        const bId = e.target.value;
+                        setSelectedBatch(bId);
+                        if (bId) {
+                          const found = batches.find(b => b.id === bId);
+                          if (found) {
+                            if (found.academicYearId) setSelectedAcademicYear(found.academicYearId);
+                            if (found.centreId) setSelectedCentre(found.centreId);
+                            if (found.boardId) setSelectedBoard(found.boardId);
+                            if (found.standardId) setSelectedStandard(found.standardId);
+                          }
+                        }
+                      }}
+                      className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25"
+                    >
+                      <option value="">No Specific Batch (All Students)</option>
+                      {batches
+                        .filter(b => (!selectedCentre || b.centreId === selectedCentre) && (!selectedAcademicYear || !b.academicYearId || b.academicYearId === selectedAcademicYear))
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Centre</label>
-                    <select value={selectedCentre} onChange={(e) => setSelectedCentre(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
-                      <option value="" disabled>Select Centre</option>
+                    <select value={selectedCentre} onChange={(e) => setSelectedCentre(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
+                      <option value="">All Centres</option>
                       {centres.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Board</label>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Board <span className="text-brand-red">*</span></label>
                     <select value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
                       <option value="" disabled>Select Board</option>
                       {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Class / Standard</label>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Class / Standard <span className="text-brand-red">*</span></label>
                     <select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
                       <option value="" disabled>Select Class</option>
                       {standards
@@ -233,7 +298,7 @@ export default function CreateExamPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Target Audience <span className="text-brand-red">*</span></label>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Target Audience <span className="text-brand-red">*</span></label>
                     <div className="relative">
                       <select value={targetTrack} onChange={(e) => setTargetTrack(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
                         <option value="" disabled>Select Target Audience</option>
@@ -251,7 +316,7 @@ export default function CreateExamPage() {
                   <div>
                     <label className="block text-[11px] font-semibold text-brand-blue/70 mb-1.5">Subject</label>
                     <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
-                      {subjectsList.length === 0 ? <option value="dummy">Loading...</option> : subjectsList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {subjectsList.length === 0 ? <option value="" disabled>Loading subjects...</option> : subjectsList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>

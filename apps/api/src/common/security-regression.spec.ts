@@ -177,6 +177,13 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         subject: {
           findUnique: jest.fn(),
           findFirst: jest.fn(),
+          findMany: jest.fn(),
+        },
+        chapter: {
+          findUnique: jest.fn(),
+        },
+        topic: {
+          findUnique: jest.fn(),
         },
         standard: {
           findUnique: jest.fn(),
@@ -1145,6 +1152,13 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         subject: {
           findUnique: jest.fn(),
           findFirst: jest.fn(),
+          findMany: jest.fn(),
+        },
+        chapter: {
+          findUnique: jest.fn(),
+        },
+        topic: {
+          findUnique: jest.fn(),
         },
         standard: {
           findUnique: jest.fn(),
@@ -1560,6 +1574,448 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         const result = await redisService.revokeAllSessions('u-1');
         expect(result).toBe(true);
         delete process.env.REDIS_URL;
+      });
+    });
+  });
+
+  describe('SEC-12: Exam Creation Correctness, Batch Compatibility, and Subject Fallback', () => {
+    let examsService: ExamsService;
+    let mockPrisma: any;
+    let mockRedis: any;
+
+    const superAdmin = {
+      id: 'super-admin-1',
+      role: { name: 'SUPER_ADMIN' },
+      userCentres: []
+    };
+
+    const centreAAdmin = {
+      id: 'admin-a',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    beforeEach(() => {
+      mockPrisma = {
+        exam: {
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'created-exam-id', ...args.data })),
+          update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+          delete: jest.fn(),
+        },
+        batch: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        subject: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+          findMany: jest.fn(),
+        },
+        chapter: {
+          findUnique: jest.fn(),
+        },
+        topic: {
+          findUnique: jest.fn(),
+        },
+        standard: {
+          findUnique: jest.fn(),
+        },
+        board: {
+          findUnique: jest.fn(),
+        },
+        academicYear: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        mcqQuestion: {
+          findMany: jest.fn().mockResolvedValue([]),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          delete: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+        $transaction: jest.fn((cb) => cb(mockPrisma)),
+      };
+
+      mockRedis = {
+        getRaw: jest.fn().mockResolvedValue(null),
+        setRaw: jest.fn().mockResolvedValue(undefined),
+        delRaw: jest.fn().mockResolvedValue(undefined),
+      };
+
+      examsService = new ExamsService(mockPrisma as any, mockRedis as any);
+    });
+
+    describe('1. Academic-Year Selection and Fallback', () => {
+      it('should succeed and fall back to the active academic year (isActive: true) when academicYearId is omitted', async () => {
+        mockPrisma.academicYear.findFirst.mockImplementation(({ where }: any) => {
+          if (where?.isActive === true) {
+            return Promise.resolve({ id: 'active-ay-2026', isActive: true });
+          }
+          return Promise.resolve(null);
+        });
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'active-ay-2026', isActive: true });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+
+        const result = await examsService.createExam({
+          title: 'Midterm Exam',
+          subjectId: 'sub-math',
+          centreId: 'centre-alpha',
+        }, centreAAdmin);
+
+        expect(mockPrisma.academicYear.findFirst).toHaveBeenCalledWith({ where: { isActive: true } });
+        expect(mockPrisma.exam.create).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({
+            academicYearId: 'active-ay-2026',
+          })
+        }));
+        expect(result.academicYearId).toBe('active-ay-2026');
+      });
+
+      it('should reject exam creation when academicYearId is omitted and no active academic year exists', async () => {
+        mockPrisma.academicYear.findFirst.mockResolvedValue(null);
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+
+        await expect(
+          examsService.createExam({
+            title: 'Midterm Exam',
+            subjectId: 'sub-math',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow('A valid academicYearId is required to create an exam. No active academic year is configured.');
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject exam creation when specified academicYearId does not exist', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue(null);
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+
+        await expect(
+          examsService.createExam({
+            title: 'Midterm Exam',
+            academicYearId: 'non-existent-ay',
+            subjectId: 'sub-math',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Specified academic year 'non-existent-ay' does not exist.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('2. Batch and Academic Year / Board / Standard / Track Compatibility', () => {
+      it('should automatically derive academicYearId, boardId, and standardId from batch when omitted', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-10',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2026',
+          boardId: 'board-cbse',
+          standardId: 'std-10',
+          trackId: 'track-science',
+        });
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+        mockPrisma.board.findUnique.mockResolvedValue({ id: 'board-cbse' });
+        mockPrisma.standard.findUnique.mockResolvedValue({ id: 'std-10' });
+
+        const result = await examsService.createExam({
+          title: 'Class 10 Science Exam',
+          batchId: 'batch-alpha-10',
+          subjectId: 'sub-math',
+        }, centreAAdmin);
+
+        expect(result.academicYearId).toBe('ay-2026');
+        expect(result.boardId).toBe('board-cbse');
+        expect(result.standardId).toBe('std-10');
+        expect(result.targetTrackId).toBe('track-science');
+      });
+
+      it('should reject exam creation when batch academicYearId does not match the submitted academicYearId', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-10',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2025',
+        });
+
+        await expect(
+          examsService.createExam({
+            title: 'Mismatched Year Exam',
+            batchId: 'batch-alpha-10',
+            academicYearId: 'ay-2026',
+            subjectId: 'sub-math',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Selected batch belongs to academic year 'ay-2025', which does not match the exam academic year 'ay-2026'.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject exam creation when batch boardId does not match the submitted boardId', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-10',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2026',
+          boardId: 'board-state',
+        });
+
+        await expect(
+          examsService.createExam({
+            title: 'Mismatched Board Exam',
+            batchId: 'batch-alpha-10',
+            boardId: 'board-cbse',
+            subjectId: 'sub-math',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Selected batch belongs to board 'board-state', which does not match the exam board 'board-cbse'.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject exam creation when batch standardId does not match the submitted standardId', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-10',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2026',
+          standardId: 'std-10',
+        });
+
+        await expect(
+          examsService.createExam({
+            title: 'Mismatched Standard Exam',
+            batchId: 'batch-alpha-10',
+            standardId: 'std-12',
+            subjectId: 'sub-math',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Selected batch belongs to standard 'std-10', which does not match the exam standard 'std-12'.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject exam creation when batch trackId does not match the submitted targetTrackId', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-10',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2026',
+          trackId: 'track-engineering',
+        });
+
+        await expect(
+          examsService.createExam({
+            title: 'Mismatched Track Exam',
+            batchId: 'batch-alpha-10',
+            targetTrackId: 'track-medical',
+            subjectId: 'sub-math',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Selected batch belongs to track 'track-engineering', which does not match the exam track 'track-medical'.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject updateExam when destination batch academicYearId does not match exam academicYearId', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue({
+          id: 'exam-1',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2026',
+          subjectId: 'sub-math',
+          batchId: null,
+          batch: null,
+        });
+
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-incompatible',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2024',
+        });
+
+        await expect(
+          examsService.updateExam('exam-1', {
+            batchId: 'batch-incompatible',
+          }, centreAAdmin)
+        ).rejects.toThrow("Destination batch belongs to academic year 'ay-2024', which does not match the exam academic year 'ay-2026'.");
+
+        expect(mockPrisma.exam.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('3. Subject Resolution and Fallback', () => {
+      it('should resolve subject by unique name fallback (case-insensitive)', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findMany.mockResolvedValue([
+          { id: 'sub-phys-id', name: 'Physics' }
+        ]);
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-phys-id', name: 'Physics' });
+
+        const result = await examsService.createExam({
+          title: 'Physics Test',
+          academicYearId: 'ay-2026',
+          subject: ' physics ',
+          centreId: 'centre-alpha',
+        }, centreAAdmin);
+
+        expect(mockPrisma.subject.findMany).toHaveBeenCalledWith({
+          where: { name: { equals: 'physics', mode: 'insensitive' } }
+        });
+        expect(result.subjectId).toBe('sub-phys-id');
+      });
+
+      it('should reject ambiguous subject name fallback when multiple subjects match', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findMany.mockResolvedValue([
+          { id: 'sub-chem-1', name: 'Chemistry' },
+          { id: 'sub-chem-2', name: 'Chemistry' },
+        ]);
+
+        await expect(
+          examsService.createExam({
+            title: 'Chemistry Test',
+            academicYearId: 'ay-2026',
+            subject: 'Chemistry',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("Multiple subjects match the name 'Chemistry'. Ambiguous subject match; please specify an explicit subjectId.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject subject name fallback when no subjects match', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findMany.mockResolvedValue([]);
+
+        await expect(
+          examsService.createExam({
+            title: 'Astronomy Test',
+            academicYearId: 'ay-2026',
+            subject: 'Nonexistent Subject',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow("No subject found matching name 'Nonexistent Subject'.");
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('4. Curriculum Hierarchy Validation (Chapter & Topic)', () => {
+      it('should reject exam creation when chapter does not belong to selected subject', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+        mockPrisma.chapter.findUnique.mockResolvedValue({
+          id: 'chap-optics',
+          syllabus: {
+            subjectId: 'sub-physics',
+            boardId: 'board-cbse',
+            standardId: 'std-12',
+          }
+        });
+
+        await expect(
+          examsService.createExam({
+            title: 'Calculus Quiz',
+            academicYearId: 'ay-2026',
+            subjectId: 'sub-math',
+            chapterId: 'chap-optics',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow('Specified chapter does not belong to the selected subject.');
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject exam creation when topic does not belong to selected chapter', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+        mockPrisma.chapter.findUnique.mockResolvedValue({
+          id: 'chap-algebra',
+          syllabus: {
+            subjectId: 'sub-math',
+          }
+        });
+        mockPrisma.topic.findUnique.mockResolvedValue({
+          id: 'topic-trig',
+          chapterId: 'chap-trigonometry',
+        });
+
+        await expect(
+          examsService.createExam({
+            title: 'Algebra Exam',
+            academicYearId: 'ay-2026',
+            subjectId: 'sub-math',
+            chapterId: 'chap-algebra',
+            topicId: 'topic-trig',
+            centreId: 'centre-alpha',
+          }, centreAAdmin)
+        ).rejects.toThrow('Specified topic does not belong to the selected chapter.');
+
+        expect(mockPrisma.exam.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject updateExam when destination chapter does not belong to destination subject', async () => {
+        mockPrisma.exam.findUnique.mockResolvedValue({
+          id: 'exam-existing',
+          centreId: 'centre-alpha',
+          academicYearId: 'ay-2026',
+          subjectId: 'sub-math',
+          batchId: null,
+          batch: null,
+        });
+
+        mockPrisma.chapter.findUnique.mockResolvedValue({
+          id: 'chap-biology',
+          syllabus: {
+            subjectId: 'sub-bio',
+          }
+        });
+
+        await expect(
+          examsService.updateExam('exam-existing', {
+            chapterId: 'chap-biology',
+          }, centreAAdmin)
+        ).rejects.toThrow('Specified chapter does not belong to the destination subject.');
+
+        expect(mockPrisma.exam.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('5. Mobile Exam Creation Compatibility', () => {
+      it('should create exam and persist nested mcqQuestions when provided by mobile payload', async () => {
+        mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-2026' });
+        mockPrisma.subject.findUnique.mockResolvedValue({ id: 'sub-math' });
+
+        const result = await examsService.createExam({
+          title: 'Mobile Quiz',
+          academicYearId: 'ay-2026',
+          subjectId: 'sub-math',
+          centreId: 'centre-alpha',
+          mcqQuestions: [
+            {
+              question: 'What is 2+2?',
+              options: ['3', '4', '5'],
+              correctAnswer: '4',
+              marks: 4,
+            }
+          ]
+        }, centreAAdmin);
+
+        expect(mockPrisma.exam.create).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({
+            title: 'Mobile Quiz',
+            mcqQuestions: {
+              create: [
+                expect.objectContaining({
+                  questionText: 'What is 2+2?',
+                  correctOption: '4',
+                  marks: 4,
+                })
+              ]
+            }
+          })
+        }));
+        expect(result.id).toBe('created-exam-id');
       });
     });
   });

@@ -38,6 +38,9 @@ export default function EditExamPage() {
   const [chapters, setChapters] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
 
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState("");
+  const [batches, setBatches] = useState<any[]>([]);
   const [selectedBoard, setSelectedBoard] = useState("");
   const [selectedStandard, setSelectedStandard] = useState("");
   const [selectedCentre, setSelectedCentre] = useState("");
@@ -57,8 +60,9 @@ export default function EditExamPage() {
       fetchApi<any[]>('/setup/tracks'),
       fetchApi<any[]>('/setup/chapters'),
       fetchApi<any[]>('/setup/topics'),
+      fetchApi<any[]>('/setup/batches').catch(() => []),
       fetchApi<any>(`/exams/${examId}`)
-    ]).then(([y, b, st, c, su, tr, ch, tp, exam]) => {
+    ]).then(([y, b, st, c, su, tr, ch, tp, bt, exam]) => {
       setYears(y || []);
       setBoards(b || []);
       setStandards(st || []);
@@ -67,10 +71,13 @@ export default function EditExamPage() {
       setTracks(tr || []);
       setChapters(ch || []);
       setTopics(tp || []);
+      setBatches(bt || []);
 
       if (exam) {
         setTitle(exam.title || "");
         setType(exam.type || EXAM_TYPES[0].id);
+        setSelectedAcademicYear(exam.academicYearId || "");
+        setSelectedBatch(exam.batchId || "");
         setSubject(exam.subjectId || "");
         setSelectedBoard(exam.boardId || "");
         setSelectedStandard(exam.standardId || "");
@@ -187,7 +194,8 @@ export default function EditExamPage() {
         body: JSON.stringify({
           title,
           type,
-          academicYearId: years[0]?.id || undefined,
+          academicYearId: selectedAcademicYear || undefined,
+          batchId: selectedBatch || null,
           subjectId: subject,
           centreId: selectedCentre || undefined,
           boardId: selectedBoard || undefined,
@@ -277,7 +285,49 @@ export default function EditExamPage() {
               {/* Target Audience Hierarchy */}
               <div className="p-4 rounded-xl border border-border-soft bg-surface-2/30 space-y-4">
                 <h4 className="text-xs font-bold text-text-primary">Target Audience</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Academic Year</label>
+                    <select
+                      value={selectedAcademicYear}
+                      onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25"
+                    >
+                      <option value="">No Academic Year</option>
+                      {years.map((y) => (
+                        <option key={y.id} value={y.id}>
+                          {y.name || y.year} {y.isActive ? '(Active)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Batch (Optional)</label>
+                    <select
+                      value={selectedBatch}
+                      onChange={(e) => {
+                        const bId = e.target.value;
+                        setSelectedBatch(bId);
+                        if (bId) {
+                          const found = batches.find(b => b.id === bId);
+                          if (found) {
+                            if (found.academicYearId) setSelectedAcademicYear(found.academicYearId);
+                            if (found.centreId) setSelectedCentre(found.centreId);
+                            if (found.boardId) setSelectedBoard(found.boardId);
+                            if (found.standardId) setSelectedStandard(found.standardId);
+                          }
+                        }
+                      }}
+                      className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25"
+                    >
+                      <option value="">No Specific Batch (All Students)</option>
+                      {batches
+                        .filter(b => (!selectedCentre || b.centreId === selectedCentre) && (!selectedAcademicYear || !b.academicYearId || b.academicYearId === selectedAcademicYear))
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Centre</label>
                     <select value={selectedCentre} onChange={(e) => setSelectedCentre(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
@@ -320,7 +370,7 @@ export default function EditExamPage() {
                   <div>
                     <label className="block text-[11px] font-semibold text-brand-blue/70 mb-1.5">Subject</label>
                     <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
-                      {subjectsList.length === 0 ? <option value="dummy">Loading...</option> : subjectsList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {subjectsList.length === 0 ? <option value="" disabled>Loading subjects...</option> : subjectsList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>

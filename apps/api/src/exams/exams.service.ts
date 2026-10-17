@@ -1195,24 +1195,49 @@ export class ExamsService {
       if (centreId && batch.centreId && batch.centreId !== centreId) {
         throw new BadRequestException('Exam centreId does not match the centre of the specified batch.');
       }
+      if (!centreId && batch.centreId) {
+        centreId = batch.centreId;
+      }
+      if (batch.boardId) {
+        if (boardId && batch.boardId !== boardId) {
+          throw new BadRequestException(`Selected batch belongs to board '${batch.boardId}', which does not match the exam board '${boardId}'.`);
+        }
+        if (!boardId) boardId = batch.boardId;
+      }
+      if (batch.standardId) {
+        if (standardId && batch.standardId !== standardId) {
+          throw new BadRequestException(`Selected batch belongs to standard '${batch.standardId}', which does not match the exam standard '${standardId}'.`);
+        }
+        if (!standardId) standardId = batch.standardId;
+      }
+      if (batch.trackId) {
+        if (targetTrackId && batch.trackId !== targetTrackId) {
+          throw new BadRequestException(`Selected batch belongs to track '${batch.trackId}', which does not match the exam track '${targetTrackId}'.`);
+        }
+        if (!targetTrackId) targetTrackId = batch.trackId;
+      }
     }
 
     if (academicYearId === 'dummy') {
       throw new BadRequestException("A valid academicYearId is required. Placeholder 'dummy' is not accepted.");
     }
-    if (!academicYearId) {
-      if (batch?.academicYearId) {
+    if (batch?.academicYearId) {
+      if (academicYearId && batch.academicYearId !== academicYearId) {
+        throw new BadRequestException(`Selected batch belongs to academic year '${batch.academicYearId}', which does not match the exam academic year '${academicYearId}'.`);
+      }
+      if (!academicYearId) {
         academicYearId = batch.academicYearId;
-      } else {
-        const activeYear = await this.prisma.academicYear.findFirst({ where: { isActive: true } })
-          || await this.prisma.academicYear.findFirst({ orderBy: { createdAt: 'desc' } });
-        if (activeYear) {
-          academicYearId = activeYear.id;
-        }
+      }
+    } else if (!academicYearId) {
+      // Deterministic active year fallback: require an active academic year, no arbitrary sorting
+      const activeYear = await this.prisma.academicYear.findFirst({ where: { isActive: true } });
+      if (activeYear) {
+        academicYearId = activeYear.id;
       }
     }
+
     if (!academicYearId) {
-      throw new BadRequestException('A valid academicYearId is required to create an exam.');
+      throw new BadRequestException('A valid academicYearId is required to create an exam. No active academic year is configured.');
     }
     const year = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
     if (!year) {
@@ -1223,11 +1248,20 @@ export class ExamsService {
       throw new BadRequestException("A valid subjectId is required. Placeholder 'dummy' is not accepted.");
     }
     if (!subjectId && data.subject && typeof data.subject === 'string') {
-      const subByName = await this.prisma.subject.findFirst({
-        where: { name: { equals: data.subject.trim(), mode: 'insensitive' } }
+      const subjectName = data.subject.trim();
+      if (!subjectName) {
+        throw new BadRequestException('Subject name cannot be empty.');
+      }
+      const matchingSubjects = await this.prisma.subject.findMany({
+        where: { name: { equals: subjectName, mode: 'insensitive' } }
       });
-      if (subByName) {
-        subjectId = subByName.id;
+      if (matchingSubjects.length > 1) {
+        throw new BadRequestException(`Multiple subjects match the name '${subjectName}'. Ambiguous subject match; please specify an explicit subjectId.`);
+      }
+      if (matchingSubjects.length === 1) {
+        subjectId = matchingSubjects[0].id;
+      } else {
+        throw new BadRequestException(`No subject found matching name '${subjectName}'.`);
       }
     }
     if (!subjectId) {
@@ -1254,6 +1288,38 @@ export class ExamsService {
       }
     }
 
+    // Validate curriculum hierarchy for Chapter and Topic
+    if (chapterId) {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id: chapterId },
+        include: { syllabus: true },
+      });
+      if (!chapter) {
+        throw new BadRequestException(`Specified chapter '${chapterId}' does not exist.`);
+      }
+      if (chapter.syllabus) {
+        if (subjectId && chapter.syllabus.subjectId !== subjectId) {
+          throw new BadRequestException('Specified chapter does not belong to the selected subject.');
+        }
+        if (boardId && chapter.syllabus.boardId !== boardId) {
+          throw new BadRequestException('Specified chapter does not belong to the selected board.');
+        }
+        if (standardId && chapter.syllabus.standardId !== standardId) {
+          throw new BadRequestException('Specified chapter does not belong to the selected standard.');
+        }
+      }
+    }
+
+    if (topicId) {
+      const topic = await this.prisma.topic.findUnique({ where: { id: topicId } });
+      if (!topic) {
+        throw new BadRequestException(`Specified topic '${topicId}' does not exist.`);
+      }
+      if (chapterId && topic.chapterId !== chapterId) {
+        throw new BadRequestException('Specified topic does not belong to the selected chapter.');
+      }
+    }
+
     // If teacher, enforce teacher assignment tuple check on creation
     const isTeacher = user?.role?.name === 'TEACHER' || user?.role === 'TEACHER';
     if (isTeacher && user?.id) {
@@ -1266,6 +1332,19 @@ export class ExamsService {
         batch,
       });
     }
+
+    const mcqQuestionsCreate = Array.isArray(data.mcqQuestions) && data.mcqQuestions.length > 0
+      ? data.mcqQuestions.map((q: any) => ({
+          questionText: q.questionText || q.question || '',
+          type: q.type || 'MCQ',
+          imageUrl: q.imageUrl || null,
+          explanation: q.explanation || null,
+          options: q.options || null,
+          correctOption: q.correctOption || q.correctAnswer || null,
+          marks: typeof q.marks === 'number' ? q.marks : 4,
+          negativeMarks: typeof q.negativeMarks === 'number' ? q.negativeMarks : 1,
+        }))
+      : undefined;
 
     return this.prisma.exam.create({
       data: {
@@ -1280,6 +1359,7 @@ export class ExamsService {
         standardId: standardId || null,
         centreId: centreId || null,
         targetTrackId: targetTrackId || null,
+        ...(mcqQuestionsCreate ? { mcqQuestions: { create: mcqQuestionsCreate } } : {}),
       }
     });
   }
@@ -1396,7 +1476,7 @@ export class ExamsService {
   async updateExam(id: string, data: any, user?: any): Promise<any> {
     const existingExam = await this.prisma.exam.findUnique({
       where: { id },
-      include: { batch: { select: { centreId: true, standardId: true, boardId: true } } }
+      include: { batch: { select: { id: true, centreId: true, standardId: true, boardId: true, academicYearId: true, trackId: true } } }
     });
     if (!existingExam) throw new NotFoundException('Exam not found');
 
@@ -1513,6 +1593,7 @@ export class ExamsService {
     }
 
     // Validate destination academicYearId
+    const destAcademicYearId = academicYearId !== undefined ? academicYearId : existingExam.academicYearId;
     if (academicYearId !== undefined) {
       if (!academicYearId || academicYearId === 'dummy') {
         throw new BadRequestException('A valid academicYearId is required.');
@@ -1520,6 +1601,60 @@ export class ExamsService {
       const yr = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
       if (!yr) {
         throw new BadRequestException(`Specified academic year '${academicYearId}' does not exist.`);
+      }
+    }
+
+    // Validate destination trackId
+    const destTrackId = targetTrackId !== undefined ? targetTrackId : existingExam.targetTrackId;
+
+    // Validate batch compatibility with academicYear, board, standard, track
+    if (destBatch) {
+      if (destBatch.academicYearId && destAcademicYearId && destBatch.academicYearId !== destAcademicYearId) {
+        throw new BadRequestException(`Destination batch belongs to academic year '${destBatch.academicYearId}', which does not match the exam academic year '${destAcademicYearId}'.`);
+      }
+      if (destBatch.boardId && destBoardId && destBatch.boardId !== destBoardId) {
+        throw new BadRequestException(`Destination batch belongs to board '${destBatch.boardId}', which does not match the exam board '${destBoardId}'.`);
+      }
+      if (destBatch.standardId && destStandardId && destBatch.standardId !== destStandardId) {
+        throw new BadRequestException(`Destination batch belongs to standard '${destBatch.standardId}', which does not match the exam standard '${destStandardId}'.`);
+      }
+      if (destBatch.trackId && destTrackId && destBatch.trackId !== destTrackId) {
+        throw new BadRequestException(`Destination batch belongs to track '${destBatch.trackId}', which does not match the exam track '${destTrackId}'.`);
+      }
+    }
+
+    // Validate curriculum hierarchy for destination chapter and topic
+    const destChapterId = chapterId !== undefined ? chapterId : existingExam.chapterId;
+    const destTopicId = topicId !== undefined ? topicId : existingExam.topicId;
+
+    if (destChapterId) {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id: destChapterId },
+        include: { syllabus: true },
+      });
+      if (!chapter) {
+        throw new BadRequestException(`Specified destination chapter '${destChapterId}' does not exist.`);
+      }
+      if (chapter.syllabus) {
+        if (destSubjectId && chapter.syllabus.subjectId !== destSubjectId) {
+          throw new BadRequestException('Specified chapter does not belong to the destination subject.');
+        }
+        if (destBoardId && chapter.syllabus.boardId !== destBoardId) {
+          throw new BadRequestException('Specified chapter does not belong to the destination board.');
+        }
+        if (destStandardId && chapter.syllabus.standardId !== destStandardId) {
+          throw new BadRequestException('Specified chapter does not belong to the destination standard.');
+        }
+      }
+    }
+
+    if (destTopicId) {
+      const topic = await this.prisma.topic.findUnique({ where: { id: destTopicId } });
+      if (!topic) {
+        throw new BadRequestException(`Specified destination topic '${destTopicId}' does not exist.`);
+      }
+      if (destChapterId && topic.chapterId !== destChapterId) {
+        throw new BadRequestException('Specified topic does not belong to the destination chapter.');
       }
     }
 
