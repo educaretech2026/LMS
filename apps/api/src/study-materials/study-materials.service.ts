@@ -125,7 +125,7 @@ export class StudyMaterialService {
                   { targetTrackId: a.batch.trackId }
                 ]
               }] : [{ targetTrackId: null }]),
-              ...(assignedYearId ? [{ academicYearId: assignedYearId }] : []),
+              ...(assignedYearId ? [{ academicYearId: assignedYearId }] : [{ academicYearId: null }]),
               {
                 OR: [
                   {
@@ -360,8 +360,10 @@ export class StudyMaterialService {
           }
 
           const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
-          if (material.academicYearId && assignedYearId && assignedYearId !== material.academicYearId) {
-            return false;
+          if (material.academicYearId) {
+            if (!assignedYearId || assignedYearId !== material.academicYearId) {
+              return false;
+            }
           }
 
           if (material.targetTrackId !== null) {
@@ -461,6 +463,21 @@ export class StudyMaterialService {
         }
       }
 
+      const effectiveUploaderId = (user && !isSuperAdmin(user)) ? user.id : (user?.id || data.uploaderId);
+
+      if (data.url) {
+        await this.checkStorageOwnership(data.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
+        if (this.storageService?.validateAndEnforceObjectSize) {
+          await this.storageService.validateAndEnforceObjectSize(data.url, 100 * 1024 * 1024);
+        }
+      }
+      if (data.thumbnailUrl) {
+        await this.checkStorageOwnership(data.thumbnailUrl, 'thumbnailUrl', effectiveUploaderId, user ? isSuperAdmin(user) : false);
+        if (this.storageService?.validateAndEnforceObjectSize) {
+          await this.storageService.validateAndEnforceObjectSize(data.thumbnailUrl, 20 * 1024 * 1024);
+        }
+      }
+
       // Check teacher assignment authorization
       if (user && !isSuperAdmin(user)) {
         const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
@@ -490,9 +507,13 @@ export class StudyMaterialService {
               return false;
             }
 
-            // Must be bound to academic year if assignment or batch specifies it
+            // Must be bound to academic year if material specifies it
             const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
-            if (academicYearId && assignedYearId && assignedYearId !== academicYearId) {
+            if (data.academicYearId) {
+              if (!assignedYearId || assignedYearId !== data.academicYearId) {
+                return false;
+              }
+            } else if (academicYearId && assignedYearId && assignedYearId !== academicYearId) {
               return false;
             }
 
@@ -514,15 +535,6 @@ export class StudyMaterialService {
         if (authorizedCentres.length === 0) {
           throw new ForbiddenException('Staff must belong to an authorized centre to create study materials.');
         }
-      }
-
-      const effectiveUploaderId = (user && !isSuperAdmin(user)) ? user.id : (user?.id || data.uploaderId);
-
-      if (data.url) {
-        await this.checkStorageOwnership(data.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
-      }
-      if (data.thumbnailUrl) {
-        await this.checkStorageOwnership(data.thumbnailUrl, 'thumbnailUrl', effectiveUploaderId, user ? isSuperAdmin(user) : false);
       }
 
       return await this.prisma.studyMaterial.create({
@@ -752,7 +764,7 @@ export class StudyMaterialService {
                 { targetTrackId: a.batch.trackId }
               ]
             }] : [{ targetTrackId: null }]),
-            ...(assignedYearId ? [{ academicYearId: assignedYearId }] : []),
+            ...(assignedYearId ? [{ academicYearId: assignedYearId }] : [{ academicYearId: null }]),
             {
               OR: [
                 {
@@ -801,6 +813,10 @@ export class StudyMaterialService {
 
   async isStorageUrlInUse(url: string, excludeId?: string): Promise<boolean> {
     if (!url) return false;
+    if (this.storageService?.isStorageUrlInUse) {
+      const inUse = await this.storageService.isStorageUrlInUse(url, { model: 'StudyMaterial', id: excludeId });
+      if (inUse) return true;
+    }
     const validatedKey = this.storageService?.extractAndValidateObjectKey(url);
     const searchConditions: any[] = [
       { url },

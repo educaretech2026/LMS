@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { StorageService } from '../storage/storage.service';
 import * as argon2 from 'argon2';
 
 @Injectable()
@@ -8,6 +9,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private redisService: RedisService,
+    @Optional() private storageService?: StorageService,
   ) {}
 
   async getProfile(userId: string) {
@@ -65,7 +67,12 @@ export class UsersService {
     if (data.firstName) updateData.firstName = data.firstName;
     if (data.lastName) updateData.lastName = data.lastName;
     if (data.email) updateData.email = data.email;
-    if (data.avatar) updateData.avatar = data.avatar;
+    if (data.avatar) {
+      if (this.storageService?.validateAndEnforceObjectSize) {
+        await this.storageService.validateAndEnforceObjectSize(data.avatar, 20 * 1024 * 1024);
+      }
+      updateData.avatar = data.avatar;
+    }
     if (data.password) updateData.password = await argon2.hash(data.password);
 
     const updated = await this.prisma.user.update({

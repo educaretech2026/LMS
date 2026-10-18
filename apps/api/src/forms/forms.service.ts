@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../storage/storage.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 const ALLOWED_FIELD_TYPES = new Set([
@@ -83,7 +84,11 @@ export function validateFormFields(fields: any): void {
 
 @Injectable()
 export class FormsService {
-  constructor(private prisma: PrismaService, private notificationsService: NotificationsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+    @Optional() private storageService?: StorageService
+  ) {}
 
   async createForm(data: { title: string; description?: string; isActive?: boolean; fields: any; centreId?: string }, user?: any): Promise<any> {
     if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
@@ -239,6 +244,18 @@ export class FormsService {
     const form = await this.prisma.customForm.findUnique({ where: { id: formId } });
     if (!form || !form.isActive) {
       throw new BadRequestException('Form is not active or does not exist');
+    }
+
+    // Validate uploaded file attachments in submitted form response data
+    if (data && typeof data === 'object') {
+      const customFormLimit = (form as any).maxFileSizeBytes;
+      for (const val of Object.values(data)) {
+        if (typeof val === 'string' && (val.includes('forms/') || val.includes('/forms/'))) {
+          if (this.storageService?.validateAndEnforceObjectSize) {
+            await this.storageService.validateAndEnforceObjectSize(val, customFormLimit);
+          }
+        }
+      }
     }
 
     const response = await this.prisma.customFormResponse.create({

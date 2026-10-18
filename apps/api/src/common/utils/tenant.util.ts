@@ -50,3 +50,30 @@ export function assertCentreAccess(user: any, centreId?: string | null): void {
   }
 }
 
+/**
+ * Authoritative fee-centre isolation condition.
+ * 1. Matches records explicitly assigned to the authorized centre(s).
+ * 2. Reconciles legacy records where centreId is null ONLY if the student's enrollments
+ *    belong exclusively to the authorized centre(s). Excludes ambiguous multi-centre students.
+ */
+export function getAuthoritativeFeeWhere(centreIds: string[]) {
+  if (!centreIds || centreIds.length === 0) {
+    return { centreId: { in: [] } };
+  }
+  return {
+    OR: [
+      { centreId: { in: centreIds } },
+      {
+        centreId: null,
+        student: {
+          enrollments: {
+            some: { batch: { centreId: { in: centreIds } } },
+            none: { batch: { centreId: { notIn: centreIds } } },
+          },
+        },
+      },
+    ],
+  };
+}
+
+

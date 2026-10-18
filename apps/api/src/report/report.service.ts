@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, EnquiryStatus, AttendanceStatus } from '@educare/database';
-import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess, getUserCentreIds } from '../common/utils/tenant.util';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess, getUserCentreIds, getAuthoritativeFeeWhere } from '../common/utils/tenant.util';
 
 @Injectable()
 export class ReportService {
@@ -18,15 +18,7 @@ export class ReportService {
 
     if (user && !isSuperAdmin(user)) {
       const authorizedCentres = getAuthorizedCentreIds(user);
-      where.student = {
-        enrollments: {
-          some: {
-            batch: {
-              centreId: { in: authorizedCentres }
-            }
-          }
-        }
-      };
+      Object.assign(where, getAuthoritativeFeeWhere(authorizedCentres));
     }
 
     return this.prisma.feeRecord.findMany({
@@ -74,15 +66,7 @@ export class ReportService {
 
     const feeWhere: any = { date: { gte: from, lte: to } };
     if (effectiveCentres) {
-      feeWhere.student = {
-        enrollments: {
-          some: {
-            batch: {
-              centreId: { in: effectiveCentres }
-            }
-          }
-        }
-      };
+      Object.assign(feeWhere, getAuthoritativeFeeWhere(effectiveCentres));
     }
 
     const feeRecords = await this.prisma.feeRecord.findMany({
@@ -579,20 +563,7 @@ export class ReportService {
 
     const feeWhere: any = { date: { gte: from, lte: to } };
     if (effectiveCentres) {
-      feeWhere.OR = [
-        { centreId: { in: effectiveCentres } },
-        {
-          student: {
-            enrollments: {
-              some: {
-                batch: {
-                  centreId: { in: effectiveCentres }
-                }
-              }
-            }
-          }
-        }
-      ];
+      Object.assign(feeWhere, getAuthoritativeFeeWhere(effectiveCentres));
     }
 
     const feeRecords = await this.prisma.feeRecord.findMany({
@@ -610,9 +581,15 @@ export class ReportService {
 
     const matchingFees = feeRecords.filter(f => {
       if (effectiveCentres) {
-        const inCentreDirect = f.centreId && effectiveCentres.includes(f.centreId);
-        const inEnrollment = f.student?.enrollments?.some((e: any) => e.batch?.centreId && effectiveCentres.includes(e.batch.centreId));
-        if (!inCentreDirect && !inEnrollment) return false;
+        if (f.centreId) {
+          if (!effectiveCentres.includes(f.centreId)) return false;
+        } else {
+          const enrollments = f.student?.enrollments || [];
+          const centres = enrollments.map((e: any) => e.batch?.centreId).filter(Boolean);
+          const hasAuthorized = centres.some((c: string) => effectiveCentres.includes(c));
+          const hasOther = centres.some((c: string) => !effectiveCentres.includes(c));
+          if (!hasAuthorized || hasOther) return false;
+        }
       }
       if (batchId && !f.student?.enrollments?.some((e: any) => e.batch?.id === batchId)) return false;
       return true;

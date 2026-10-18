@@ -1,5 +1,6 @@
 import { getJwtSecret } from './config/jwt.config';
 import { StorageService } from '../storage/storage.service';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from './utils/tenant.util';
 import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException, ServiceUnavailableException, NotFoundException } from '@nestjs/common';
 import { ExamsService } from '../exams/exams.service';
@@ -2090,11 +2091,18 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         expect(mockPrisma.feeRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({
           where: expect.objectContaining({
             status: 'PAID',
-            student: {
-              enrollments: {
-                some: { batch: { centreId: { in: ['centre-alpha'] } } }
+            OR: [
+              { centreId: { in: ['centre-alpha'] } },
+              {
+                centreId: null,
+                student: {
+                  enrollments: {
+                    some: { batch: { centreId: { in: ['centre-alpha'] } } },
+                    none: { batch: { centreId: { notIn: ['centre-alpha'] } } }
+                  }
+                }
               }
-            }
+            ]
           }),
         }));
       });
@@ -5943,22 +5951,22 @@ describe('Security Regression Suite — Real Production Implementations', () => 
               prefix: 'materials',
             });
             expect(res.expiresIn).toBe(900);
-            expect(res.maxSizeBytes).toBe(50 * 1024 * 1024);
+            expect(res.maxSizeBytes).toBe(100 * 1024 * 1024);
             expect(res.uploadUrl).toBeDefined();
             expect(res.objectKey).toMatch(/^materials\/user-123\//);
           });
 
-          it('should enforce 10MB limit for forms and 5MB for thumbnails namespace', async () => {
+          it('should enforce 25MB default limit for forms and 20MB for thumbnails namespace', async () => {
             const formRes = await storageService.getPresignedUploadUrl('upload.pdf', 'application/pdf', 'user-123', {
               prefix: 'forms',
               scopeId: 'form-123',
             });
-            expect(formRes.maxSizeBytes).toBe(10 * 1024 * 1024);
+            expect(formRes.maxSizeBytes).toBe(25 * 1024 * 1024);
 
             const thumbRes = await storageService.getPresignedUploadUrl('cover.jpg', 'image/jpeg', 'user-123', {
               prefix: 'thumbnails',
             });
-            expect(thumbRes.maxSizeBytes).toBe(5 * 1024 * 1024);
+            expect(thumbRes.maxSizeBytes).toBe(20 * 1024 * 1024);
           });
         });
 
@@ -6121,6 +6129,186 @@ describe('Security Regression Suite — Real Production Implementations', () => 
 
             const inUse = await studyMaterialService.isStorageUrlInUse('materials/student-submission.pdf');
             expect(inUse).toBe(true);
+          });
+        });
+
+        describe('SEC-23: Authoritative Reference Checking, Size Limits, Teacher Academic Year, & Fee Isolation', () => {
+          let testStorageService: StorageService;
+          let mockStoragePrisma: any;
+          let mockS3Client: any;
+
+          beforeEach(() => {
+            mockStoragePrisma = {
+              studyMaterial: { findFirst: jest.fn() },
+              mcqQuestion: { findFirst: jest.fn() },
+              studentAnswer: { findFirst: jest.fn() },
+              customFormResponse: { findFirst: jest.fn() },
+              user: { findFirst: jest.fn() },
+              notice: { findFirst: jest.fn() },
+              supportTicket: { findFirst: jest.fn() },
+              $queryRawUnsafe: jest.fn(),
+            };
+            testStorageService = new StorageService(mockStoragePrisma as any);
+            mockS3Client = {
+              send: jest.fn(),
+            };
+            (testStorageService as any).s3Client = mockS3Client;
+            (testStorageService as any).publicUrl = 'https://cdn.educare.test';
+          });
+
+          it('should enforce 100MB limit for materials, 20MB for thumbnails, and custom limits for forms in getPresignedUploadUrl', async () => {
+            const matRes = await testStorageService.getPresignedUploadUrl('materials/test.pdf', 'application/pdf', 'u-1', { prefix: 'materials' });
+            expect(matRes.maxSizeBytes).toBe(100 * 1024 * 1024);
+
+            const thumbRes = await testStorageService.getPresignedUploadUrl('thumbnails/test.png', 'image/png', 'u-1', { prefix: 'thumbnails' });
+            expect(thumbRes.maxSizeBytes).toBe(20 * 1024 * 1024);
+
+            const formDefaultRes = await testStorageService.getPresignedUploadUrl('forms/f-1/test.pdf', 'application/pdf', 'u-1', { prefix: 'forms', scopeId: 'f-1' });
+            expect(formDefaultRes.maxSizeBytes).toBe(25 * 1024 * 1024);
+
+            const formCustomRes = await testStorageService.getPresignedUploadUrl('forms/f-1/test.pdf', 'application/pdf', 'u-1', { prefix: 'forms', scopeId: 'f-1', maxSizeBytes: 15 * 1024 * 1024 });
+            expect(formCustomRes.maxSizeBytes).toBe(15 * 1024 * 1024);
+          });
+
+          it('should allow valid files and purge oversized files in validateAndEnforceObjectSize', async () => {
+            // Material within 100MB
+            mockS3Client.send.mockResolvedValueOnce({ ContentLength: 50 * 1024 * 1024 });
+            const validMat = await testStorageService.validateAndEnforceObjectSize('materials/u-1/sample.pdf');
+            expect(validMat.valid).toBe(true);
+
+            // Material exceeding 100MB -> must trigger DeleteObjectCommand and throw BadRequestException
+            mockS3Client.send.mockResolvedValueOnce({ ContentLength: 105 * 1024 * 1024 });
+            mockS3Client.send.mockResolvedValueOnce({}); // DeleteObjectCommand response
+            await expect(
+              testStorageService.validateAndEnforceObjectSize('materials/u-1/oversized.pdf')
+            ).rejects.toThrow(BadRequestException);
+            expect(mockS3Client.send).toHaveBeenCalledWith(expect.any(DeleteObjectCommand));
+
+            // Thumbnail exceeding 20MB -> must trigger DeleteObjectCommand and throw BadRequestException
+            mockS3Client.send.mockResolvedValueOnce({ ContentLength: 25 * 1024 * 1024 });
+            mockS3Client.send.mockResolvedValueOnce({});
+            await expect(
+              testStorageService.validateAndEnforceObjectSize('thumbnails/u-1/large.png')
+            ).rejects.toThrow(BadRequestException);
+
+            // Custom form limit of 15MB: 16MB must fail
+            mockS3Client.send.mockResolvedValueOnce({ ContentLength: 16 * 1024 * 1024 });
+            mockS3Client.send.mockResolvedValueOnce({});
+            await expect(
+              testStorageService.validateAndEnforceObjectSize('forms/f-1/large-form-file.pdf', 15 * 1024 * 1024)
+            ).rejects.toThrow(BadRequestException);
+          });
+
+          it('should report storage URL in use if referenced by customFormResponse JSON data', async () => {
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.mcqQuestion.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.studentAnswer.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'cfr-1' }]);
+
+            const inUse = await testStorageService.isStorageUrlInUse('forms/f-1/applicant-resume.pdf');
+            expect(inUse).toBe(true);
+          });
+
+          it('should report storage URL in use if referenced by user avatar', async () => {
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.mcqQuestion.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.studentAnswer.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.$queryRawUnsafe.mockResolvedValue([]);
+            mockStoragePrisma.user.findFirst.mockResolvedValueOnce({ id: 'u-123' });
+
+            const inUse = await testStorageService.isStorageUrlInUse('thumbnails/u-1/avatar.png');
+            expect(inUse).toBe(true);
+          });
+
+          it('should refuse to delete a storage object when it is still in use by an application record', async () => {
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue({ id: 'mat-existing' });
+
+            const deleted = await testStorageService.deleteFile('materials/u-1/shared.pdf');
+            expect(deleted).toBe(false);
+            expect(mockS3Client.send).not.toHaveBeenCalled();
+          });
+
+          it('should fail closed when teacher assignment has no academic year and material has an academic year', async () => {
+            const material = {
+              id: 'mat-year-scoped',
+              title: 'Year Scoped Material',
+              type: 'PDF',
+              url: 'materials/teacher-1/scoped.pdf',
+              syllabusId: 'syl-1',
+              academicYearId: 'year-2026',
+              targetTrackId: null,
+              uploaderId: 'other-user',
+              uploader: { userCentres: [{ centreId: 'centre-alpha' }] },
+            };
+
+            const teacherWithYearlessAssignment = {
+              id: 'teacher-1',
+              role: { name: 'TEACHER' },
+              userCentres: [{ centreId: 'centre-alpha' }],
+              teacherProfile: {
+                assignments: [
+                  {
+                    id: 'assign-1',
+                    subjectId: 'sub-1',
+                    standardId: 'std-1',
+                    boardId: 'brd-1',
+                    centreId: 'centre-alpha',
+                    academicYearId: null, // Year is missing on assignment
+                    batch: { centreId: 'centre-alpha', academicYearId: null, trackId: null },
+                  },
+                ],
+              },
+            };
+
+            mockPrisma.studyMaterial.findUnique.mockResolvedValue(material);
+            mockPrisma.syllabus.findUnique.mockResolvedValue({
+              id: 'syl-1',
+              subjectId: 'sub-1',
+              standardId: 'std-1',
+              boardId: 'brd-1',
+            });
+
+            await expect(
+              studyMaterialService.getById('mat-year-scoped', teacherWithYearlessAssignment)
+            ).rejects.toThrow(ForbiddenException);
+          });
+
+          it('should scope teacher materials queries with academicYearId null when assignment lacks year', async () => {
+            const teacherWithYearlessAssignment = {
+              id: 'teacher-1',
+              role: { name: 'TEACHER' },
+              userCentres: [{ centreId: 'centre-alpha' }],
+              teacherProfile: {
+                assignments: [
+                  {
+                    id: 'assign-1',
+                    subjectId: 'sub-1',
+                    standardId: 'std-1',
+                    boardId: 'brd-1',
+                    centreId: 'centre-alpha',
+                    batch: { centreId: 'centre-alpha', academicYearId: null, trackId: null },
+                  },
+                ],
+              },
+            };
+
+            mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
+            mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+              assignments: teacherWithYearlessAssignment.teacherProfile.assignments,
+            });
+            await studyMaterialService.getAll(teacherWithYearlessAssignment);
+
+            expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(expect.objectContaining({
+              where: expect.objectContaining({
+                OR: expect.arrayContaining([
+                  expect.objectContaining({
+                    AND: expect.arrayContaining([
+                      { academicYearId: null },
+                    ]),
+                  }),
+                ]),
+              }),
+            }));
           });
         });
       });

@@ -1,7 +1,7 @@
 import { Injectable, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType } from '@educare/database';
-import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess, getUserCentreIds } from '../common/utils/tenant.util';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess, getUserCentreIds, getAuthoritativeFeeWhere } from '../common/utils/tenant.util';
 
 @Injectable()
 export class FinanceService {
@@ -71,15 +71,7 @@ export class FinanceService {
 
     const feeWhere: any = { status: 'PAID' };
     if (!isSuper) {
-      feeWhere.student = {
-        enrollments: {
-          some: {
-            batch: {
-              centreId: { in: authorizedCentres }
-            }
-          }
-        }
-      };
+      Object.assign(feeWhere, getAuthoritativeFeeWhere(authorizedCentres));
     }
 
     const paidFees = await this.prisma.feeRecord.findMany({
@@ -144,15 +136,7 @@ export class FinanceService {
     // Also factor in FeeRecords as Income
     const feeWhere: any = { status: 'PAID' };
     if (!isSuper) {
-      feeWhere.student = {
-        enrollments: {
-          some: {
-            batch: {
-              centreId: { in: authorizedCentres }
-            }
-          }
-        }
-      };
+      Object.assign(feeWhere, getAuthoritativeFeeWhere(authorizedCentres));
     }
 
     const fees = await this.prisma.feeRecord.findMany({

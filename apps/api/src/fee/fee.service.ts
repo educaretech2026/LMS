@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, assertCentreAccess, SAFE_USER_SELECT } from '../common/utils/tenant.util';
+import { isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, assertCentreAccess, SAFE_USER_SELECT, getAuthoritativeFeeWhere } from '../common/utils/tenant.util';
 
 @Injectable()
 export class FeeService {
@@ -14,28 +14,7 @@ export class FeeService {
       whereClause = { student: { userId: user.id } };
     } else if (!isSuperAdmin(user)) {
       const centreIds = getAuthorizedCentreIds(user);
-      whereClause = {
-        OR: [
-          { centreId: { in: centreIds } },
-          {
-            centreId: null,
-            student: {
-              enrollments: {
-                some: {
-                  batch: {
-                    centreId: { in: centreIds }
-                  }
-                },
-                none: {
-                  batch: {
-                    centreId: { notIn: centreIds }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      };
+      whereClause = getAuthoritativeFeeWhere(centreIds);
     }
 
     return this.prisma.feeRecord.findMany({

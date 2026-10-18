@@ -5,8 +5,10 @@ import { UsersController, ProfileController } from './users.controller';
 import { UsersService } from './users.service';
 import { RedisModule } from '../redis/redis.module';
 
+import { StorageModule } from '../storage/storage.module';
+
 @Module({
-  imports: [DatabaseModule, RedisModule],
+  imports: [DatabaseModule, RedisModule, StorageModule],
   controllers: [UsersController, ProfileController],
   providers: [UsersService],
   exports: [UsersService],

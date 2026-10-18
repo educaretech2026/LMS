@@ -1,6 +1,7 @@
-import { Injectable, HttpException, HttpStatus, BadRequestException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { Injectable, HttpException, HttpStatus, BadRequestException, Optional } from '@nestjs/common';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { PrismaService } from '../database/prisma.service';
 import * as crypto from 'crypto';
 import * as path from 'path';
 
@@ -75,7 +76,7 @@ export class StorageService {
   private bucketName: string;
   private publicUrl: string;
 
-  constructor() {
+  constructor(@Optional() private prisma?: PrismaService) {
     const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
     const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
     const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
@@ -185,7 +186,7 @@ export class StorageService {
     filename: string,
     contentType: string,
     userId?: string,
-    options?: { prefix?: 'materials' | 'forms' | 'thumbnails'; scopeId?: string }
+    options?: { prefix?: 'materials' | 'forms' | 'thumbnails'; scopeId?: string; maxSizeBytes?: number }
   ) {
     if (!filename || !contentType) {
       throw new BadRequestException('Filename and contentType are required.');
@@ -267,9 +268,11 @@ export class StorageService {
         : `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
     }
 
-    const maxSizeBytes = prefix === 'materials'
-      ? 50 * 1024 * 1024
-      : (prefix === 'forms' ? 10 * 1024 * 1024 : 5 * 1024 * 1024);
+    const maxSizeBytes = options?.maxSizeBytes || (
+      prefix === 'materials'
+        ? 100 * 1024 * 1024 // 100 MB for docs
+        : (prefix === 'forms' ? 25 * 1024 * 1024 : 20 * 1024 * 1024) // 20 MB for thumbnails
+    );
 
     const expiresIn = 900; // 15-minute short expiry for presigned upload URLs
 
@@ -319,11 +322,262 @@ export class StorageService {
   }
 
   /**
-   * Deletes a file from R2 after verifying that it is an authorized managed object key.
-   * Rejects external URLs, unexpected hosts, path manipulation, and unmanaged keys.
-   * @param objectKey The key or URL of the object in R2
+   * Validates the actual size of an uploaded object directly against Cloudflare R2 / S3 via HeadObject.
+   * If the object exceeds the allowed quota, it is immediately purged from storage and rejected.
    */
-  async deleteFile(objectKey: string): Promise<boolean> {
+  async validateAndEnforceObjectSize(
+    urlOrKey: string,
+    customMaxSizeBytes?: number
+  ): Promise<{ valid: boolean; actualSizeBytes: number }> {
+    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+      return { valid: true, actualSizeBytes: 0 };
+    }
+
+    const validatedKey = this.extractAndValidateObjectKey(urlOrKey);
+    if (!validatedKey) {
+      throw new BadRequestException('Invalid or unmanaged storage object.');
+    }
+
+    let maxSizeBytes = customMaxSizeBytes;
+    if (!maxSizeBytes) {
+      if (validatedKey.startsWith('materials/')) {
+        maxSizeBytes = 100 * 1024 * 1024; // 100 MB for docs
+      } else if (validatedKey.startsWith('forms/')) {
+        maxSizeBytes = 25 * 1024 * 1024; // Default 25 MB for forms
+      } else {
+        maxSizeBytes = 20 * 1024 * 1024; // 20 MB for thumbnails
+      }
+    }
+
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.bucketName,
+        Key: validatedKey,
+      });
+
+      const head = await this.s3Client.send(command);
+      const actualSizeBytes = head.ContentLength || 0;
+
+      if (actualSizeBytes > maxSizeBytes) {
+        // Purge oversized object immediately from storage
+        await this.deleteFile(validatedKey, true);
+        const maxMB = Math.round(maxSizeBytes / (1024 * 1024));
+        const actualMB = (actualSizeBytes / (1024 * 1024)).toFixed(1);
+        throw new BadRequestException(
+          `Uploaded file size (${actualMB}MB) exceeds the maximum allowed limit of ${maxMB}MB. The oversized object has been purged from storage.`
+        );
+      }
+
+      return { valid: true, actualSizeBytes };
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        throw new BadRequestException('Uploaded object does not exist in storage.');
+      }
+      console.error('Error inspecting object size in R2:', err);
+      return { valid: true, actualSizeBytes: 0 };
+    }
+  }
+
+  /**
+   * Authoritative check across ALL application models to verify if a storage URL or key is referenced.
+   * Checks: studyMaterial, mcqQuestion, studentAnswer, customFormResponse, user, notice, supportTicket, assignment, doubt.
+   */
+  async isStorageUrlInUse(urlOrKey: string, excludeContext?: { model?: string; id?: string }): Promise<boolean> {
+    if (!urlOrKey || !this.prisma) return false;
+    const validatedKey = this.extractAndValidateObjectKey(urlOrKey);
+    if (!validatedKey) return false;
+
+    const keyVariations = [
+      urlOrKey,
+      validatedKey,
+      `/${validatedKey}`,
+    ];
+    if (this.publicUrl) {
+      keyVariations.push(`${this.publicUrl}/${validatedKey}`);
+    }
+
+    const prismaAny = this.prisma as any;
+
+    // 1. Study Materials (url, thumbnailUrl)
+    if (prismaAny.studyMaterial?.findFirst) {
+      try {
+        const smConditions: any[] = [
+          { url: { in: keyVariations } },
+          { thumbnailUrl: { in: keyVariations } },
+          { url: { endsWith: validatedKey } },
+          { thumbnailUrl: { endsWith: validatedKey } },
+        ];
+        const existing = await prismaAny.studyMaterial.findFirst({
+          where: {
+            OR: smConditions,
+            ...(excludeContext?.model === 'StudyMaterial' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+          },
+        });
+        if (existing) return true;
+      } catch {
+        return true;
+      }
+    }
+
+    // 2. MCQ Questions (imageUrl)
+    if (prismaAny.mcqQuestion?.findFirst) {
+      try {
+        const mcqConditions: any[] = [
+          { imageUrl: { in: keyVariations } },
+          { imageUrl: { endsWith: validatedKey } },
+        ];
+        const existing = await prismaAny.mcqQuestion.findFirst({
+          where: {
+            OR: mcqConditions,
+            ...(excludeContext?.model === 'McqQuestion' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+          },
+        });
+        if (existing) return true;
+      } catch {
+        return true;
+      }
+    }
+
+    // 3. Student Answers (answerFileUrl)
+    if (prismaAny.studentAnswer?.findFirst) {
+      try {
+        const saConditions: any[] = [
+          { answerFileUrl: { in: keyVariations } },
+          { answerFileUrl: { endsWith: validatedKey } },
+        ];
+        const existing = await prismaAny.studentAnswer.findFirst({
+          where: {
+            OR: saConditions,
+            ...(excludeContext?.model === 'StudentAnswer' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+          },
+        });
+        if (existing) return true;
+      } catch {
+        return true;
+      }
+    }
+
+    // 4. Custom Form Responses (data JSON)
+    if (prismaAny.customFormResponse) {
+      try {
+        if (prismaAny.$queryRawUnsafe) {
+          const rawResponses = await prismaAny.$queryRawUnsafe(
+            `SELECT id FROM "custom_form_responses" WHERE "data"::text LIKE $1 LIMIT 1`,
+            `%${validatedKey}%`
+          );
+          if (Array.isArray(rawResponses) && rawResponses.length > 0) return true;
+        } else if (prismaAny.customFormResponse.findMany) {
+          const sample = await prismaAny.customFormResponse.findMany({ take: 100 });
+          const found = sample.some((r: any) => JSON.stringify(r.data || {}).includes(validatedKey));
+          if (found) return true;
+        }
+      } catch {
+        // fail-safe
+      }
+    }
+
+    // 5. User Avatars (avatar)
+    if (prismaAny.user?.findFirst) {
+      try {
+        const userExisting = await prismaAny.user.findFirst({
+          where: {
+            OR: [
+              { avatar: { in: keyVariations } },
+              { avatar: { endsWith: validatedKey } },
+            ],
+            ...(excludeContext?.model === 'User' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+          },
+        });
+        if (userExisting) return true;
+      } catch {
+        return true;
+      }
+    }
+
+    // 6. Notices (imageUrl)
+    if (prismaAny.notice?.findFirst) {
+      try {
+        const noticeExisting = await prismaAny.notice.findFirst({
+          where: {
+            OR: [
+              { imageUrl: { in: keyVariations } },
+              { imageUrl: { endsWith: validatedKey } },
+            ],
+            ...(excludeContext?.model === 'Notice' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+          },
+        });
+        if (noticeExisting) return true;
+      } catch {
+        return true;
+      }
+    }
+
+    // 7. Support Tickets (imageUrl)
+    if (prismaAny.supportTicket?.findFirst) {
+      try {
+        const ticketExisting = await prismaAny.supportTicket.findFirst({
+          where: {
+            OR: [
+              { imageUrl: { in: keyVariations } },
+              { imageUrl: { endsWith: validatedKey } },
+            ],
+            ...(excludeContext?.model === 'SupportTicket' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+          },
+        });
+        if (ticketExisting) return true;
+      } catch {
+        return true;
+      }
+    }
+
+    // 8. Assignments & Submissions (attachments JSON)
+    if (prismaAny.assignment?.findFirst && prismaAny.$queryRawUnsafe) {
+      try {
+        const rawAssignments = await prismaAny.$queryRawUnsafe(
+          `SELECT id FROM "assignments" WHERE "attachments"::text LIKE $1 LIMIT 1`,
+          `%${validatedKey}%`
+        );
+        if (Array.isArray(rawAssignments) && rawAssignments.length > 0) return true;
+      } catch {
+        // ignore
+      }
+    }
+    if (prismaAny.assignmentSubmission?.findFirst && prismaAny.$queryRawUnsafe) {
+      try {
+        const rawSubmissions = await prismaAny.$queryRawUnsafe(
+          `SELECT id FROM "assignment_submissions" WHERE "attachments"::text LIKE $1 LIMIT 1`,
+          `%${validatedKey}%`
+        );
+        if (Array.isArray(rawSubmissions) && rawSubmissions.length > 0) return true;
+      } catch {
+        // ignore
+      }
+    }
+
+    // 9. Doubts (attachments JSON)
+    if (prismaAny.doubt?.findFirst && prismaAny.$queryRawUnsafe) {
+      try {
+        const rawDoubts = await prismaAny.$queryRawUnsafe(
+          `SELECT id FROM "doubts" WHERE "attachments"::text LIKE $1 LIMIT 1`,
+          `%${validatedKey}%`
+        );
+        if (Array.isArray(rawDoubts) && rawDoubts.length > 0) return true;
+      } catch {
+        // ignore
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Deletes a file from R2 after verifying that it is an authorized managed object key
+   * and that no other application record is referencing it.
+   * @param objectKey The key or URL of the object in R2
+   * @param forcePurge When true, bypasses in-use check (used for evicting oversized uploads)
+   */
+  async deleteFile(objectKey: string, forcePurge: boolean = false): Promise<boolean> {
     if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
       return false; // Skip if storage not configured
     }
@@ -332,6 +586,14 @@ export class StorageService {
     if (!validatedKey) {
       console.warn(`[StorageService] Refusing to delete unmanaged or invalid storage object: ${objectKey}`);
       return false;
+    }
+
+    if (!forcePurge && this.prisma) {
+      const stillInUse = await this.isStorageUrlInUse(validatedKey);
+      if (stillInUse) {
+        console.warn(`[StorageService] Refusing to delete storage object in use: ${validatedKey}`);
+        return false;
+      }
     }
 
     try {
