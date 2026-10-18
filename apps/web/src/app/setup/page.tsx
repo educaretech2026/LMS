@@ -25,7 +25,8 @@ import {
   Layers,
   AlertTriangle,
   Target,
-  Users
+  Users,
+  X
 } from "lucide-react";
 
 function isStandardInBoard(s: any, bId: string) {
@@ -844,11 +845,76 @@ function AcademicStructureTab({ onError }: { onError: (msg: string) => void }) {
   );
 }
 function FeeStructureTab() {
-  const feeHeads = [
-    { id: 1, name: "Tuition Fee", type: "Recurring (Monthly)", defaultAmount: "₹2,500" },
-    { id: 2, name: "Admission Fee", type: "One-time", defaultAmount: "₹5,000" },
-    { id: 3, name: "Study Material Fee", type: "Annual", defaultAmount: "₹1,500" },
-  ];
+  const [feeHeads, setFeeHeads] = useState<Array<{ id: string | number; name: string; type: string; defaultAmount: string }>>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("educare_fee_heads");
+      if (saved) {
+        try { return JSON.parse(saved); } catch {}
+      }
+    }
+    return [
+      { id: 1, name: "Tuition Fee", type: "Recurring (Monthly)", defaultAmount: "₹2,500" },
+      { id: 2, name: "Admission Fee", type: "One-time", defaultAmount: "₹5,000" },
+      { id: 3, name: "Study Material Fee", type: "Annual", defaultAmount: "₹1,500" },
+    ];
+  });
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | number | null>(null);
+  const [formData, setFormData] = useState({
+    name: "",
+    type: "Recurring (Monthly)",
+    defaultAmount: "₹1,000"
+  });
+
+  const saveToStorage = (items: typeof feeHeads) => {
+    setFeeHeads(items);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("educare_fee_heads", JSON.stringify(items));
+    }
+  };
+
+  const handleOpenAdd = () => {
+    setEditingId(null);
+    setFormData({ name: "", type: "Recurring (Monthly)", defaultAmount: "₹1,000" });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (fee: typeof feeHeads[0]) => {
+    setEditingId(fee.id);
+    setFormData({ name: fee.name, type: fee.type, defaultAmount: fee.defaultAmount });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (id: string | number) => {
+    if (!confirm("Are you sure you want to delete this fee head?")) return;
+    const updated = feeHeads.filter(f => f.id !== id);
+    saveToStorage(updated);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim()) return alert("Please enter a fee head name.");
+    
+    let formattedAmount = formData.defaultAmount.trim();
+    if (formattedAmount && !formattedAmount.startsWith("₹") && !isNaN(Number(formattedAmount))) {
+      formattedAmount = `₹${Number(formattedAmount).toLocaleString('en-IN')}`;
+    }
+
+    if (editingId !== null) {
+      const updated = feeHeads.map(f => f.id === editingId ? { ...f, name: formData.name.trim(), type: formData.type, defaultAmount: formattedAmount } : f);
+      saveToStorage(updated);
+    } else {
+      const newHead = {
+        id: Date.now(),
+        name: formData.name.trim(),
+        type: formData.type,
+        defaultAmount: formattedAmount || "₹0"
+      };
+      saveToStorage([...feeHeads, newHead]);
+    }
+    setIsModalOpen(false);
+  };
 
   return (
     <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden flex flex-col">
@@ -857,7 +923,10 @@ function FeeStructureTab() {
           <h3 className="text-sm font-bold text-text-primary">Fee Heads</h3>
           <p className="text-xs text-text-muted mt-1">Define the standard fee types applicable in your institute.</p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors">
+        <button 
+          onClick={handleOpenAdd}
+          className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
+        >
           <Plus className="h-3.5 w-3.5" /> Add Fee Head
         </button>
       </div>
@@ -872,26 +941,117 @@ function FeeStructureTab() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border-soft">
-            {feeHeads.map(fee => (
-              <tr key={fee.id} className="hover:bg-surface-2/30">
-                <td className="px-6 py-4 font-bold text-text-primary text-sm">{fee.name}</td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex rounded-full bg-surface-2 border border-border-soft px-2.5 py-1 text-[10px] font-bold text-text-secondary">
-                    {fee.type}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-semibold text-text-primary">{fee.defaultAmount}</td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-3">
-                    <button className="text-text-muted hover:text-brand-blue transition-colors"><Edit2 className="h-4 w-4" /></button>
-                    <button className="text-text-muted hover:text-brand-red transition-colors"><Trash2 className="h-4 w-4" /></button>
-                  </div>
+            {feeHeads.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-6 py-8 text-center text-text-muted text-xs">
+                  No fee heads configured. Click &quot;Add Fee Head&quot; above to create one.
                 </td>
               </tr>
-            ))}
+            ) : (
+              feeHeads.map(fee => (
+                <tr key={fee.id} className="hover:bg-surface-2/30">
+                  <td className="px-6 py-4 font-bold text-text-primary text-sm">{fee.name}</td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex rounded-full bg-surface-2 border border-border-soft px-2.5 py-1 text-[10px] font-bold text-text-secondary">
+                      {fee.type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 font-semibold text-text-primary">{fee.defaultAmount}</td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <button 
+                        onClick={() => handleOpenEdit(fee)}
+                        className="text-text-muted hover:text-brand-blue transition-colors"
+                        title="Edit Fee Head"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(fee.id)}
+                        className="text-text-muted hover:text-brand-red transition-colors"
+                        title="Delete Fee Head"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl border border-border-soft animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-4 border-b border-border-soft mb-4">
+              <h3 className="text-base font-bold text-text-primary">
+                {editingId !== null ? "Edit Fee Head" : "Add New Fee Head"}
+              </h3>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="text-text-muted hover:text-text-primary"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1">Fee Head Name</label>
+                <input 
+                  type="text" 
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Tuition Fee, Sports Fee"
+                  required
+                  className="w-full h-10 px-3 rounded-lg border border-border-soft bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1">Frequency</label>
+                <select
+                  value={formData.type}
+                  onChange={e => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-border-soft bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                >
+                  <option value="Recurring (Monthly)">Recurring (Monthly)</option>
+                  <option value="One-time">One-time</option>
+                  <option value="Annual">Annual</option>
+                  <option value="Term-wise">Term-wise</option>
+                  <option value="Quarterly">Quarterly</option>
+                  <option value="Semester">Semester</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1">Default Amount (₹)</label>
+                <input 
+                  type="text" 
+                  value={formData.defaultAmount}
+                  onChange={e => setFormData({ ...formData, defaultAmount: e.target.value })}
+                  placeholder="e.g. ₹2,500"
+                  className="w-full h-10 px-3 rounded-lg border border-border-soft bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-border-soft">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 rounded-lg border border-border-soft text-xs font-semibold text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-brand-blue text-xs font-semibold text-white hover:bg-brand-blue-dark transition-colors"
+                >
+                  {editingId !== null ? "Save Changes" : "Create Fee Head"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -949,7 +1109,7 @@ function SmsTemplatesTab() {
 }
 
 function ExamConfigTab() {
-  const grades = [
+  const DEFAULT_GRADES = [
     { grade: "A+", min: 90, max: 100, gpa: 10.0 },
     { grade: "A", min: 80, max: 89, gpa: 9.0 },
     { grade: "B+", min: 70, max: 79, gpa: 8.0 },
@@ -958,22 +1118,136 @@ function ExamConfigTab() {
     { grade: "F", min: 0, max: 49, gpa: 0.0 },
   ];
 
+  const [grades, setGrades] = useState(DEFAULT_GRADES);
+  const [passPercentage, setPassPercentage] = useState(50);
+  const [showRank, setShowRank] = useState("Yes");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [settingsFeedback, setSettingsFeedback] = useState<string | null>(null);
+
+  const [newGrade, setNewGrade] = useState({
+    grade: "",
+    min: 0,
+    max: 100,
+    gpa: 0.0,
+  });
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("educare_exam_grades");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setGrades(parsed);
+        }
+      }
+      const storedSettings = localStorage.getItem("educare_exam_settings");
+      if (storedSettings) {
+        const parsed = JSON.parse(storedSettings);
+        if (typeof parsed.passPercentage === "number") setPassPercentage(parsed.passPercentage);
+        if (typeof parsed.showRank === "string") setShowRank(parsed.showRank);
+      }
+    } catch {
+      // ignore JSON errors
+    }
+  }, []);
+
+  const saveGradesToStorage = (updated: typeof grades) => {
+    setGrades(updated);
+    try {
+      localStorage.setItem("educare_exam_grades", JSON.stringify(updated));
+    } catch {
+      // storage unavailable
+    }
+  };
+
+  const handleDeleteGrade = (index: number) => {
+    const target = grades[index];
+    if (!target) return;
+    if (confirm(`Are you sure you want to delete grade ${target.grade}?`)) {
+      const updated = grades.filter((_, i) => i !== index);
+      saveGradesToStorage(updated);
+    }
+  };
+
+  const handleAddGrade = (e: React.FormEvent) => {
+    e.preventDefault();
+    const gradeLetter = newGrade.grade.trim().toUpperCase();
+    if (!gradeLetter) return;
+
+    const min = Number(newGrade.min);
+    const max = Number(newGrade.max);
+    const gpa = Number(newGrade.gpa);
+
+    if (isNaN(min) || isNaN(max) || min < 0 || max > 100 || min > max) {
+      alert("Please provide valid Min % and Max % where Min is between 0 and 100 and Min <= Max.");
+      return;
+    }
+
+    const updated = [...grades, { grade: gradeLetter, min, max, gpa: isNaN(gpa) ? 0 : gpa }];
+    // Sort descending by min %
+    updated.sort((a, b) => b.min - a.min);
+    saveGradesToStorage(updated);
+    setIsModalOpen(false);
+    setNewGrade({ grade: "", min: 0, max: 100, gpa: 0.0 });
+  };
+
+  const handleSaveSettings = () => {
+    try {
+      localStorage.setItem(
+        "educare_exam_settings",
+        JSON.stringify({ passPercentage, showRank })
+      );
+      setSettingsFeedback("Exam settings saved successfully.");
+      setTimeout(() => setSettingsFeedback(null), 3000);
+    } catch {
+      setSettingsFeedback("Failed to save settings to local storage.");
+      setTimeout(() => setSettingsFeedback(null), 3000);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-border-soft p-6 shadow-sm">
-        <h3 className="text-sm font-bold text-text-primary mb-6">General Exam Settings</h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-sm font-bold text-text-primary">General Exam Settings</h3>
+          {settingsFeedback && (
+            <span className="text-xs font-semibold text-brand-emerald bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+              {settingsFeedback}
+            </span>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-xs font-bold text-text-secondary mb-1.5">Default Pass Percentage (%)</label>
-            <input type="number" defaultValue={50} className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+            <input 
+              type="number" 
+              value={passPercentage}
+              onChange={(e) => setPassPercentage(Number(e.target.value))}
+              min={0}
+              max={100}
+              className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
+            />
           </div>
           <div>
             <label className="block text-xs font-bold text-text-secondary mb-1.5">Show Rank in Results?</label>
-            <select className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 appearance-none">
-              <option>Yes</option>
-              <option>No</option>
+            <select 
+              value={showRank}
+              onChange={(e) => setShowRank(e.target.value)}
+              className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 appearance-none"
+            >
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
             </select>
           </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={handleSaveSettings}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
+          >
+            <Save className="h-3.5 w-3.5" /> Save Settings
+          </button>
         </div>
       </div>
 
@@ -983,7 +1257,11 @@ function ExamConfigTab() {
             <h3 className="text-sm font-bold text-text-primary">Grading System</h3>
             <p className="text-xs text-text-muted mt-1">Configure grade letters and percentage thresholds.</p>
           </div>
-          <button className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors">
+          <button 
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors"
+          >
             <Plus className="h-3.5 w-3.5" /> Add Grade
           </button>
         </div>
@@ -1000,20 +1278,129 @@ function ExamConfigTab() {
             </thead>
             <tbody className="divide-y divide-border-soft">
               {grades.map((g, i) => (
-                <tr key={i} className="hover:bg-surface-2/30">
+                <tr key={`${g.grade}-${i}`} className="hover:bg-surface-2/30">
                   <td className="px-6 py-4 font-bold text-brand-blue text-sm">{g.grade}</td>
                   <td className="px-6 py-4 font-semibold text-text-primary">{g.min}%</td>
                   <td className="px-6 py-4 font-semibold text-text-primary">{g.max}%</td>
-                  <td className="px-6 py-4 font-semibold text-text-primary">{g.gpa.toFixed(1)}</td>
+                  <td className="px-6 py-4 font-semibold text-text-primary">{Number(g.gpa).toFixed(1)}</td>
                   <td className="px-6 py-4 text-right">
-                    <button className="text-text-muted hover:text-brand-red transition-colors"><Trash2 className="h-4 w-4" /></button>
+                    <button 
+                      type="button"
+                      onClick={() => handleDeleteGrade(i)}
+                      className="text-text-muted hover:text-brand-red transition-colors p-1"
+                      title="Delete grade"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
+              {grades.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-xs text-text-muted">
+                    No grades configured. Click &quot;Add Grade&quot; to configure grade thresholds.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Add Grade Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-4 border-b border-border-soft mb-5">
+              <h3 className="text-base font-bold text-text-primary">Add New Grade</h3>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="text-text-muted hover:text-text-primary p-1 rounded-lg"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddGrade} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                  Grade Label <span className="text-brand-red">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. A+, A, B+, B, C, F"
+                  value={newGrade.grade}
+                  onChange={(e) => setNewGrade({ ...newGrade, grade: e.target.value })}
+                  className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Min Percentage (%) <span className="text-brand-red">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    required
+                    value={newGrade.min}
+                    onChange={(e) => setNewGrade({ ...newGrade, min: Number(e.target.value) })}
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Max Percentage (%) <span className="text-brand-red">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    required
+                    value={newGrade.max}
+                    onChange={(e) => setNewGrade({ ...newGrade, max: Number(e.target.value) })}
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                  GPA / Points (e.g. 10.0, 9.0, 4.0)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  value={newGrade.gpa}
+                  onChange={(e) => setNewGrade({ ...newGrade, gpa: Number(e.target.value) })}
+                  className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-border-soft">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 rounded-lg border border-border-soft text-xs font-semibold text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-brand-blue text-xs font-semibold text-white hover:bg-brand-blue-dark transition-colors"
+                >
+                  Add Grade
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

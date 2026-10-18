@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, EnquiryStatus, AttendanceStatus } from '@educare/database';
-import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess, getUserCentreIds } from '../common/utils/tenant.util';
 
 @Injectable()
 export class ReportService {
@@ -539,13 +539,24 @@ export class ReportService {
     subjectId?: string,
     user?: any,
   ) {
-    const from = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const to = endDate ? new Date(endDate) : new Date();
+    let from = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    if (isNaN(from.getTime())) from = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    let to = endDate ? new Date(endDate) : new Date();
+    if (isNaN(to.getTime())) to = new Date();
     to.setHours(23, 59, 59, 999);
 
     let effectiveCentres: string[] | null = null;
     if (user && !isSuperAdmin(user)) {
-      const authorizedCentres = getAuthorizedCentreIds(user);
+      const authorizedCentres = getUserCentreIds(user);
+      if (authorizedCentres.length === 0) {
+        return {
+          financials: { totalRevenue: 0, feeTotal: 0, adhocIncome: 0, expenses: 0, netProfit: 0, pendingFees: 0, overdueFees: 0 },
+          attendance: { totalRecords: 0, presentRecords: 0, rate: 0 },
+          academics: { totalAttempts: 0, avgScore: 0, passRate: 0 },
+          crm: { totalEnquiries: 0, converted: 0, conversionRate: 0 },
+          totalStudents: 0,
+        };
+      }
       if (centreId) {
         assertCentreAccess(user, centreId);
         effectiveCentres = [centreId];
@@ -563,20 +574,25 @@ export class ReportService {
     }
     const transactions = await this.prisma.transaction.findMany({ where: txWhere });
 
-    const income = transactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
-    const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);
+    const income = transactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
     const feeWhere: any = { date: { gte: from, lte: to } };
     if (effectiveCentres) {
-      feeWhere.student = {
-        enrollments: {
-          some: {
-            batch: {
-              centreId: { in: effectiveCentres }
+      feeWhere.OR = [
+        { centreId: { in: effectiveCentres } },
+        {
+          student: {
+            enrollments: {
+              some: {
+                batch: {
+                  centreId: { in: effectiveCentres }
+                }
+              }
             }
           }
         }
-      };
+      ];
     }
 
     const feeRecords = await this.prisma.feeRecord.findMany({
@@ -594,16 +610,17 @@ export class ReportService {
 
     const matchingFees = feeRecords.filter(f => {
       if (effectiveCentres) {
-        const inEffective = f.student.enrollments.some(e => effectiveCentres.includes(e.batch?.centreId));
-        if (!inEffective) return false;
+        const inCentreDirect = f.centreId && effectiveCentres.includes(f.centreId);
+        const inEnrollment = f.student?.enrollments?.some((e: any) => e.batch?.centreId && effectiveCentres.includes(e.batch.centreId));
+        if (!inCentreDirect && !inEnrollment) return false;
       }
-      if (batchId && !f.student.enrollments.some(e => e.batch?.id === batchId)) return false;
+      if (batchId && !f.student?.enrollments?.some((e: any) => e.batch?.id === batchId)) return false;
       return true;
     });
 
-    const paidFees = matchingFees.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
-    const pendingFees = matchingFees.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
-    const overdueFees = matchingFees.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
+    const paidFees = matchingFees.filter(f => f.status === 'PAID').reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
+    const pendingFees = matchingFees.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
+    const overdueFees = matchingFees.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
 
     const totalRevenue = income + paidFees;
     const netProfit = totalRevenue - expenses;

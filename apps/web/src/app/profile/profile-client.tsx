@@ -9,6 +9,7 @@ export function ProfileClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [revoking, setRevoking] = useState(false);
   
   const [formData, setFormData] = useState({
     firstName: "",
@@ -90,6 +91,19 @@ export function ProfileClient() {
     }
   };
 
+  const handleRevokeOtherSessions = async () => {
+    if (!confirm("Are you sure you want to sign out of all other devices?")) return;
+    setRevoking(true);
+    try {
+      await fetchApi("/auth/logout-all", { method: "POST" });
+      setMessage({ type: "success", text: "Signed out of all other devices successfully." });
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Failed to sign out of other devices." });
+    } finally {
+      setRevoking(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
@@ -156,8 +170,8 @@ export function ProfileClient() {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 text-green-700 border border-green-100 text-xs font-bold">
               <CheckCircle2 className="h-3.5 w-3.5" /> Active Account
             </span>
-            {profile.userCentres?.map((uc: any) => (
-              <span key={uc.centreId} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-2 text-text-secondary border border-border-soft text-xs font-medium">
+            {profile.userCentres?.map((uc: any, idx: number) => (
+              <span key={uc.centreId || uc.id || idx} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-2 text-text-secondary border border-border-soft text-xs font-medium">
                 {uc.centre?.name}
               </span>
             ))}
@@ -348,9 +362,13 @@ export function ProfileClient() {
               </div>
             </div>
             
-            <button className="w-full flex items-center justify-center gap-2 text-brand-red text-sm font-bold p-2.5 rounded-lg border border-brand-red/20 bg-brand-red/5 hover:bg-brand-red/10 transition-colors mt-2">
+            <button 
+              onClick={handleRevokeOtherSessions}
+              disabled={revoking}
+              className="w-full flex items-center justify-center gap-2 text-brand-red text-sm font-bold p-2.5 rounded-lg border border-brand-red/20 bg-brand-red/5 hover:bg-brand-red/10 transition-colors mt-2 disabled:opacity-50"
+            >
               <LogOut className="h-4 w-4" />
-              Sign out other devices
+              {revoking ? "Signing out..." : "Sign out other devices"}
             </button>
           </div>
         </div>

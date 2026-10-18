@@ -7,6 +7,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import * as path from 'path';
 
+import { CreateFormDto } from './dto/create-form.dto';
+import { UpdateFormDto } from './dto/update-form.dto';
+
 const ALLOWED_FORM_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -37,7 +40,7 @@ export class FormsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'CENTRE_HEAD', 'ADMIN')
   @Post()
-  createForm(@Body() createFormData: any, @Req() req: any): Promise<any> {
+  createForm(@Body() createFormData: CreateFormDto, @Req() req: any): Promise<any> {
     return this.formsService.createForm(createFormData, req.user);
   }
 
@@ -107,7 +110,7 @@ export class FormsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'CENTRE_HEAD', 'ADMIN')
   @Put(':id')
-  updateForm(@Param('id') id: string, @Body() updateData: any, @Req() req: any): Promise<any> {
+  updateForm(@Param('id') id: string, @Body() updateData: UpdateFormDto, @Req() req: any): Promise<any> {
     return this.formsService.updateForm(id, updateData, req.user);
   }
 

@@ -267,6 +267,12 @@ export class StorageService {
         : `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
     }
 
+    const maxSizeBytes = prefix === 'materials'
+      ? 50 * 1024 * 1024
+      : (prefix === 'forms' ? 10 * 1024 * 1024 : 5 * 1024 * 1024);
+
+    const expiresIn = 900; // 15-minute short expiry for presigned upload URLs
+
     const command = new PutObjectCommand({
       Bucket: this.bucketName,
       Key: objectKey,
@@ -274,9 +280,9 @@ export class StorageService {
     });
 
     try {
-      const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
+      const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
       const finalUrl = `${this.publicUrl}/${objectKey}`;
-      return { uploadUrl, finalUrl, objectKey };
+      return { uploadUrl, finalUrl, objectKey, maxSizeBytes, expiresIn };
     } catch (error: any) {
       console.error('Error generating pre-signed URL:', error);
       throw new HttpException('Failed to generate upload URL', HttpStatus.INTERNAL_SERVER_ERROR);

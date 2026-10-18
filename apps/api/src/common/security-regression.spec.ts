@@ -5935,6 +5935,195 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           expect(updated.untrustedRole).toBeUndefined();
         });
       });
+
+      describe('SEC-22: Final Production-Readiness Remediation Suite', () => {
+        describe('1. Storage Upload Limits, Roles, and Expiry', () => {
+          it('should configure presigned upload URLs with 900s expiry and namespace maxSizeBytes', async () => {
+            const res = await storageService.getPresignedUploadUrl('doc.pdf', 'application/pdf', 'user-123', {
+              prefix: 'materials',
+            });
+            expect(res.expiresIn).toBe(900);
+            expect(res.maxSizeBytes).toBe(50 * 1024 * 1024);
+            expect(res.uploadUrl).toBeDefined();
+            expect(res.objectKey).toMatch(/^materials\/user-123\//);
+          });
+
+          it('should enforce 10MB limit for forms and 5MB for thumbnails namespace', async () => {
+            const formRes = await storageService.getPresignedUploadUrl('upload.pdf', 'application/pdf', 'user-123', {
+              prefix: 'forms',
+              scopeId: 'form-123',
+            });
+            expect(formRes.maxSizeBytes).toBe(10 * 1024 * 1024);
+
+            const thumbRes = await storageService.getPresignedUploadUrl('cover.jpg', 'image/jpeg', 'user-123', {
+              prefix: 'thumbnails',
+            });
+            expect(thumbRes.maxSizeBytes).toBe(5 * 1024 * 1024);
+          });
+        });
+
+        describe('2. Strict Academic Year Authorization', () => {
+          const teacherAssignedYear1 = {
+            id: 'teacher-year1',
+            role: 'TEACHER',
+            userCentres: [{ centreId: 'centre-1' }],
+            teacherAssignments: [
+              {
+                id: 'asgn-1',
+                academicYearId: 'year-2025',
+                batchId: 'batch-1',
+                subjectId: 'sub-1',
+                standardId: 'std-1',
+                boardId: 'board-1',
+                centreId: 'centre-1',
+                academicYear: { id: 'year-2025', isActive: false },
+                batch: { id: 'batch-1', centreId: 'centre-1', academicYearId: 'year-2025' },
+              },
+            ],
+          };
+
+          it('should strictly query materials for assigned academicYearId without active-year fallback', async () => {
+            mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+              assignments: teacherAssignedYear1.teacherAssignments,
+            });
+            mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
+
+            await studyMaterialService.getAll(teacherAssignedYear1);
+
+            const callArgs = mockPrisma.studyMaterial.findMany.mock.calls[mockPrisma.studyMaterial.findMany.mock.calls.length - 1][0];
+            expect(JSON.stringify(callArgs.where)).toContain('"academicYearId":"year-2025"');
+            expect(JSON.stringify(callArgs.where)).not.toContain('"isActive":true');
+          });
+
+          it('should deny teacher access in getById when material is in a different academic year even if active', async () => {
+            mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+              assignments: teacherAssignedYear1.teacherAssignments,
+            });
+            mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+              id: 'mat-active-year',
+              academicYearId: 'year-2026-active',
+              subjectId: 'sub-1',
+              standardId: 'std-1',
+              boardId: 'board-1',
+              targetTrackId: null,
+              uploaderId: 'other-uploader',
+              academicYear: { id: 'year-2026-active', isActive: true },
+              uploader: { userCentres: [{ centreId: 'centre-1' }] },
+              targetTrack: null,
+            });
+
+            await expect(
+              studyMaterialService.getById('mat-active-year', teacherAssignedYear1)
+            ).rejects.toThrow(ForbiddenException);
+          });
+        });
+
+        describe('3. Form Validation, Boolean Coercion, and Field Rules', () => {
+          const superAdmin = { id: 'super-admin', role: { name: 'SUPER_ADMIN' } };
+          const centreAdmin = {
+            id: 'centre-admin',
+            role: { name: 'CENTRE_ADMIN' },
+            userCentres: [{ centreId: 'centre-allowed' }],
+          };
+
+          it('should reject string booleans like "false" for isActive in createForm', async () => {
+            await expect(
+              formsService.createForm({
+                title: 'Test Form',
+                isActive: 'false' as any,
+                fields: [{ id: 'f1', label: 'Name', type: 'text' }],
+                centreId: 'centre-allowed',
+              }, superAdmin)
+            ).rejects.toThrow(BadRequestException);
+          });
+
+          it('should reject string booleans like "true" for isActive in updateForm', async () => {
+            mockPrisma.customForm.findUnique.mockResolvedValue({
+              id: 'form-1',
+              title: 'Form',
+              centreId: 'centre-allowed',
+            });
+            await expect(
+              formsService.updateForm('form-1', {
+                isActive: 'true' as any,
+              }, superAdmin)
+            ).rejects.toThrow(BadRequestException);
+          });
+
+          it('should reject malformed fields: missing label or invalid type', async () => {
+            await expect(
+              formsService.createForm({
+                title: 'Test Form',
+                fields: [{ id: 'f1', type: 'malicious-executable' }],
+              }, superAdmin)
+            ).rejects.toThrow(BadRequestException);
+
+            await expect(
+              formsService.createForm({
+                title: 'Test Form',
+                fields: [{ id: '', label: 'Valid Label', type: 'text' }],
+              }, superAdmin)
+            ).rejects.toThrow(BadRequestException);
+          });
+
+          it('should reject unauthorized centre change in updateForm', async () => {
+            mockPrisma.customForm.findUnique.mockResolvedValue({
+              id: 'form-1',
+              title: 'Form',
+              centreId: 'centre-allowed',
+            });
+            await expect(
+              formsService.updateForm('form-1', {
+                centreId: 'centre-unauthorized',
+              }, centreAdmin)
+            ).rejects.toThrow(ForbiddenException);
+          });
+
+          it('should accept valid form update with boolean isActive and valid fields', async () => {
+            mockPrisma.customForm.findUnique.mockResolvedValue({
+              id: 'form-1',
+              title: 'Form',
+              centreId: 'centre-allowed',
+            });
+            mockPrisma.customForm.update.mockImplementation((args: any) => Promise.resolve(args.data));
+
+            const updated = await formsService.updateForm('form-1', {
+              title: 'Updated Title',
+              isActive: false,
+              fields: [{ id: 'field_1', label: 'Student Name', type: 'text', required: true }],
+            }, superAdmin);
+
+            expect(updated.title).toBe('Updated Title');
+            expect(updated.isActive).toBe(false);
+            expect(updated.fields).toHaveLength(1);
+          });
+        });
+
+        describe('4. Multi-Resource Safe Deletion Checking', () => {
+          it('should report storage URL in use if referenced by mcqQuestion imageUrl', async () => {
+            mockPrisma.studyMaterial.findFirst.mockResolvedValue(null);
+            (mockPrisma as any).mcqQuestion = {
+              findFirst: jest.fn().mockResolvedValue({ id: 'mcq-1' }),
+            };
+
+            const inUse = await studyMaterialService.isStorageUrlInUse('materials/shared-diagram.png');
+            expect(inUse).toBe(true);
+          });
+
+          it('should report storage URL in use if referenced by studentAnswer answerFileUrl', async () => {
+            mockPrisma.studyMaterial.findFirst.mockResolvedValue(null);
+            (mockPrisma as any).mcqQuestion = {
+              findFirst: jest.fn().mockResolvedValue(null),
+            };
+            (mockPrisma as any).studentAnswer = {
+              findFirst: jest.fn().mockResolvedValue({ id: 'ans-1' }),
+            };
+
+            const inUse = await studyMaterialService.isStorageUrlInUse('materials/student-submission.pdf');
+            expect(inUse).toBe(true);
+          });
+        });
+      });
     });
   });
 });

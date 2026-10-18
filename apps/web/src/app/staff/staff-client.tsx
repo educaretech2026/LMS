@@ -41,16 +41,22 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
   const [filterBoard, setFilterBoard] = useState("All Boards");
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<Staff | null>(null);
-  const filtered = staffList.filter(s => {
-    const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || 
-                        s.empId.toLowerCase().includes(search.toLowerCase()) ||
-                        s.email.toLowerCase().includes(search.toLowerCase()) ||
-                        s.phone.includes(search);
+  const safeStaffList = Array.isArray(staffList) ? staffList : [];
+  const filtered = safeStaffList.filter(s => {
+    if (!s) return false;
+    const nameStr = s.name || "";
+    const empIdStr = s.empId || "";
+    const emailStr = s.email || "";
+    const phoneStr = s.phone || "";
+    const matchSearch = nameStr.toLowerCase().includes(search.toLowerCase()) || 
+                        empIdStr.toLowerCase().includes(search.toLowerCase()) ||
+                        emailStr.toLowerCase().includes(search.toLowerCase()) ||
+                        phoneStr.includes(search);
     const matchCentre = filterCentre === "All Centres" || s.centre === filterCentre;
     const matchRole = filterRole === "All Roles" || s.role === filterRole;
     const matchStatus = filterStatus === "All Status" || s.status === filterStatus;
     const matchBoard = filterBoard === "All Boards" || 
-      (s.assignments && s.assignments.some(a => a.board === filterBoard));
+      (Array.isArray(s.assignments) && s.assignments.some(a => a?.board === filterBoard));
     return matchSearch && matchCentre && matchRole && matchStatus && matchBoard;
   });
 
@@ -222,7 +228,7 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-3">
                             <div className="h-9 w-9 rounded-full bg-brand-blue text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                              {s.name.substring(0, 2).toUpperCase()}
+                              {((s.name || "ST").trim().substring(0, 2) || "ST").toUpperCase()}
                             </div>
                             <span className="font-bold text-text-primary">{s.name}</span>
                           </div>
@@ -336,8 +342,8 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
     name: staff?.name || "",
     email: staff?.email || "",
     phone: staff?.phone || "",
-    role: staff?.role || (config.roles[0] || "TEACHER"),
-    centre: staff?.centre || (config.centres[0] || ""),
+    role: staff?.role || (config?.roles?.[0] || "TEACHER"),
+    centre: staff?.centre || (config?.centres?.[0] || ""),
     status: staff?.status || "Active",
     assignments: staff?.assignments || [],
     password: ""
@@ -351,16 +357,16 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
     subject: string;
     customSubject: string;
   }>({ 
-    academicYear: config.academicYears[0] || "", 
-    board: config.boards[0] || "", 
+    academicYear: config?.academicYears?.[0] || "", 
+    board: config?.boards?.[0] || "", 
     selectedClasses: [], 
     division: "Division A", 
-    subject: config.subjects?.[0] || "",
+    subject: config?.subjects?.[0] || "",
     customSubject: "" 
   });
   const [showAddAssignment, setShowAddAssignment] = useState(false);
 
-  const availableClasses = config.classes.filter((c: any) => 
+  const availableClasses = (config?.classes || []).filter((c: any) => 
     !newAssignment.board || c.board === newAssignment.board || (c.boards && c.boards.includes(newAssignment.board))
   );
 

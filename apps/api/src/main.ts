@@ -9,10 +9,23 @@ import helmet from 'helmet';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // SEC-09: HTTP security headers
+  // SEC-09: HTTP security headers with Content Security Policy
   app.use(
     helmet({
-      contentSecurityPolicy: false, // Swagger and Next.js SPA use inline assets; CSP can be tailored per domain
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+          fontSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+          frameAncestors: ["'none'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
       crossOriginEmbedderPolicy: false,
     }),
   );

@@ -125,12 +125,7 @@ export class StudyMaterialService {
                   { targetTrackId: a.batch.trackId }
                 ]
               }] : [{ targetTrackId: null }]),
-              ...(assignedYearId ? [{
-                OR: [
-                  { academicYearId: assignedYearId },
-                  { academicYear: { isActive: true } }
-                ]
-              }] : []),
+              ...(assignedYearId ? [{ academicYearId: assignedYearId }] : []),
               {
                 OR: [
                   {
@@ -366,7 +361,7 @@ export class StudyMaterialService {
 
           const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
           if (material.academicYearId && assignedYearId && assignedYearId !== material.academicYearId) {
-            if (!material.academicYear?.isActive) return false;
+            return false;
           }
 
           if (material.targetTrackId !== null) {
@@ -610,6 +605,12 @@ export class StudyMaterialService {
         OR: [
           { url: rawUrl },
           { thumbnailUrl: rawUrl },
+          ...(validatedKey ? [
+            { url: validatedKey },
+            { thumbnailUrl: validatedKey },
+            { url: { endsWith: `/${validatedKey}` } },
+            { thumbnailUrl: { endsWith: `/${validatedKey}` } },
+          ] : [])
         ]
       }
     });
@@ -751,12 +752,7 @@ export class StudyMaterialService {
                 { targetTrackId: a.batch.trackId }
               ]
             }] : [{ targetTrackId: null }]),
-            ...(assignedYearId ? [{
-              OR: [
-                { academicYearId: assignedYearId },
-                { academicYear: { isActive: true } }
-              ]
-            }] : []),
+            ...(assignedYearId ? [{ academicYearId: assignedYearId }] : []),
             {
               OR: [
                 {
@@ -824,7 +820,50 @@ export class StudyMaterialService {
         ...(excludeId ? { id: { not: excludeId } } : {})
       }
     });
-    return !!existing;
+    if (existing) return true;
+
+    // Check MCQ Questions if model is present
+    const prismaAny = this.prisma as any;
+    if (prismaAny.mcqQuestion?.findFirst) {
+      try {
+        const mcqConditions: any[] = [{ imageUrl: url }];
+        if (validatedKey) {
+          mcqConditions.push(
+            { imageUrl: validatedKey },
+            { imageUrl: { endsWith: `/${validatedKey}` } },
+          );
+        }
+        const mcqExisting = await prismaAny.mcqQuestion.findFirst({
+          where: { OR: mcqConditions },
+        });
+        if (mcqExisting) return true;
+      } catch {
+        // Fail-safe: prevent deletion if check fails
+        return true;
+      }
+    }
+
+    // Check Student Answers if model is present
+    if (prismaAny.studentAnswer?.findFirst) {
+      try {
+        const answerConditions: any[] = [{ answerFileUrl: url }];
+        if (validatedKey) {
+          answerConditions.push(
+            { answerFileUrl: validatedKey },
+            { answerFileUrl: { endsWith: `/${validatedKey}` } },
+          );
+        }
+        const answerExisting = await prismaAny.studentAnswer.findFirst({
+          where: { OR: answerConditions },
+        });
+        if (answerExisting) return true;
+      } catch {
+        // Fail-safe: prevent deletion if check fails
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async delete(id: string, user?: any) {
