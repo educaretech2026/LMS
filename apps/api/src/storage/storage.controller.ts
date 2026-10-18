@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { StorageService } from './storage.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -14,8 +14,10 @@ export class StorageController {
   @ApiOperation({ summary: 'Get a presigned URL for direct client-side upload to R2' })
   async getPresignedUrl(
     @Query('filename') filename: string,
-    @Query('contentType') contentType: string
+    @Query('contentType') contentType: string,
+    @Req() req: any,
   ) {
-    return this.storageService.getPresignedUploadUrl(filename, contentType);
+    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix: 'materials' });
   }
 }
+

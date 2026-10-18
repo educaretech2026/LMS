@@ -25,6 +25,11 @@ export class FeeService {
                   batch: {
                     centreId: { in: centreIds }
                   }
+                },
+                none: {
+                  batch: {
+                    centreId: { notIn: centreIds }
+                  }
                 }
               }
             }
@@ -101,13 +106,19 @@ export class FeeService {
       }
     }
 
+    const VALID_FEE_STATUSES = ['PAID', 'PENDING', 'OVERDUE'];
+    const status = data.status || 'PENDING';
+    if (data.status && !VALID_FEE_STATUSES.includes(data.status)) {
+      throw new BadRequestException(`Invalid fee status: "${data.status}". Allowed values: ${VALID_FEE_STATUSES.join(', ')}`);
+    }
+
     return this.prisma.feeRecord.create({
       data: {
         receiptNo: `FEE-${Date.now()}`,
         studentId: data.studentId,
         centreId: effectiveCentreId,
         amount: Number(data.amount),
-        status: data.status || 'PAID',
+        status,
         paymentMode: data.paymentMode,
         feeHead: data.feeHead,
         targetTrackId: data.targetTrackId || null
@@ -153,6 +164,11 @@ export class FeeService {
   }
 
   async updateStatus(id: string, status: any, user?: any) {
+    const VALID_FEE_STATUSES = ['PAID', 'PENDING', 'OVERDUE'];
+    if (!status || !VALID_FEE_STATUSES.includes(status)) {
+      throw new BadRequestException(`Invalid fee status: "${status}". Allowed values: ${VALID_FEE_STATUSES.join(', ')}`);
+    }
+
     const record = await this.prisma.feeRecord.findUnique({
       where: { id },
       include: {

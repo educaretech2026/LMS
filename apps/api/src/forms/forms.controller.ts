@@ -84,8 +84,10 @@ export class FormsController {
 
     // Prefix the file with the form id to keep storage organized
     const safeBaseName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const customFilename = `forms/${id}/${Date.now()}-${safeBaseName}`;
-    return this.storageService.getPresignedUploadUrl(customFilename, contentType);
+    return this.storageService.getPresignedUploadUrl(safeBaseName, contentType, undefined, {
+      prefix: 'forms',
+      scopeId: id,
+    });
   }
 
   // Public Endpoint to submit a response

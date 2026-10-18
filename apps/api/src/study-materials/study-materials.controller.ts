@@ -75,12 +75,13 @@ export class StudyMaterialController {
   @Get('upload-url')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   async getUploadUrl(
-    @Query('type') type: 'VIDEO' | 'FILE',
+    @Query('type') type: 'VIDEO' | 'FILE' | 'THUMBNAIL',
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
     @Req() req: any,
   ) {
-    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id);
+    const prefix = type === 'THUMBNAIL' ? 'thumbnails' : 'materials';
+    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix });
   }
 
   @Get(':id/play-url')

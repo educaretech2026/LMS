@@ -179,8 +179,14 @@ export class StorageService {
    * Generates a pre-signed URL for client-side direct uploads.
    * Validates file extension, mime type, and cross-compatibility.
    * Scopes objectKey to requesting user when userId is provided.
+   * Enforces server-side controlled namespaces (materials, forms, thumbnails).
    */
-  async getPresignedUploadUrl(filename: string, contentType: string, userId?: string) {
+  async getPresignedUploadUrl(
+    filename: string,
+    contentType: string,
+    userId?: string,
+    options?: { prefix?: 'materials' | 'forms' | 'thumbnails'; scopeId?: string }
+  ) {
     if (!filename || !contentType) {
       throw new BadRequestException('Filename and contentType are required.');
     }
@@ -215,21 +221,36 @@ export class StorageService {
     const uniqueId = crypto.randomBytes(16).toString('hex');
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9.-]/g, '_');
 
-    let prefix = 'materials';
+    let prefix: 'materials' | 'forms' | 'thumbnails' = options?.prefix || 'materials';
     let scope = '';
 
-    if (typeof userId === 'string') {
-      scope = userId ? String(userId).replace(/[^a-zA-Z0-9_-]/g, '') : '';
-    }
-
-    if (filename.startsWith('forms/')) {
-      prefix = 'forms';
-      const parts = filename.split('/');
-      if (parts.length >= 2 && parts[1]) {
-        scope = parts[1].replace(/[^a-zA-Z0-9_-]/g, '');
+    if (options?.prefix) {
+      prefix = options.prefix;
+      if (prefix === 'forms' && options.scopeId) {
+        scope = String(options.scopeId).replace(/[^a-zA-Z0-9_-]/g, '');
+      } else if (typeof userId === 'string' && userId) {
+        scope = String(userId).replace(/[^a-zA-Z0-9_-]/g, '');
       }
-    } else if (filename.startsWith('thumbnails/')) {
-      prefix = 'thumbnails';
+    } else {
+      // If options not explicitly passed, maintain compatibility with internal callers/tests
+      // but only if filename explicitly indicated forms/ or thumbnails/
+      if (filename.startsWith('forms/')) {
+        prefix = 'forms';
+        const parts = filename.split('/');
+        if (parts.length >= 2 && parts[1]) {
+          scope = parts[1].replace(/[^a-zA-Z0-9_-]/g, '');
+        }
+      } else if (filename.startsWith('thumbnails/')) {
+        prefix = 'thumbnails';
+        if (typeof userId === 'string' && userId) {
+          scope = String(userId).replace(/[^a-zA-Z0-9_-]/g, '');
+        }
+      } else {
+        prefix = 'materials';
+        if (typeof userId === 'string' && userId) {
+          scope = String(userId).replace(/[^a-zA-Z0-9_-]/g, '');
+        }
+      }
     }
 
     if (prefix === 'forms') {

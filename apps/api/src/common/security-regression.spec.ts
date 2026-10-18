@@ -20,6 +20,9 @@ import { UsersService } from '../users/users.service';
 import { EstudyService } from '../estudy/estudy.service';
 import { SetupService } from '../setup/setup.service';
 import { FeeService } from '../fee/fee.service';
+import { StorageController } from '../storage/storage.controller';
+import { FormsController } from '../forms/forms.controller';
+import { ExamsController } from '../exams/exams.controller';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 
@@ -3728,7 +3731,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         it('should filter getByTopic by centre and teacher assignments for Teacher', async () => {
           mockPrisma.teacherProfile.findUnique.mockResolvedValue({
             userId: teacherA.id,
-            assignments: [{ subjectId: 'math-subj', standardId: 'std-10' }],
+            assignments: [{ subjectId: 'math-subj', standardId: 'std-10', centreId: 'centre-alpha' }],
           });
           mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
 
@@ -4197,8 +4200,8 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           mockPrisma.teacherProfile.findUnique.mockResolvedValue({
             userId: teacherA.id,
             assignments: [
-              { subjectId: 'physics-id', standardId: 'std-11' },
-              { subjectId: 'chemistry-id', standardId: 'std-12' },
+              { subjectId: 'physics-id', standardId: 'std-11', centreId: 'centre-alpha' },
+              { subjectId: 'chemistry-id', standardId: 'std-12', centreId: 'centre-alpha' },
             ]
           });
           mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
@@ -5096,7 +5099,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1', subjectId: 'sub-1', standardId: 'std-10' });
           mockPrisma.teacherProfile.findUnique.mockResolvedValue({
             userId: creator.id,
-            assignments: [{ subjectId: 'sub-1', standardId: 'std-10' }]
+            assignments: [{ subjectId: 'sub-1', standardId: 'std-10', centreId: 'centre-alpha' }]
           });
 
           await expect(
@@ -5114,7 +5117,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1', subjectId: 'sub-1', standardId: 'std-10' });
           mockPrisma.teacherProfile.findUnique.mockResolvedValue({
             userId: creator.id,
-            assignments: [{ subjectId: 'sub-1', standardId: 'std-10' }]
+            assignments: [{ subjectId: 'sub-1', standardId: 'std-10', centreId: 'centre-alpha' }]
           });
 
           await expect(
@@ -5132,7 +5135,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1', subjectId: 'sub-1', standardId: 'std-10' });
           mockPrisma.teacherProfile.findUnique.mockResolvedValue({
             userId: creator.id,
-            assignments: [{ subjectId: 'sub-1', standardId: 'std-10' }]
+            assignments: [{ subjectId: 'sub-1', standardId: 'std-10', centreId: 'centre-alpha' }]
           });
 
           await expect(
@@ -5638,8 +5641,304 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         });
       });
     });
+
+    describe('SEC-21: Final Consolidated Security Remediation & Full-Repository Verification', () => {
+      let mockPrisma: any;
+      let storageService: StorageService;
+      let studyMaterialService: StudyMaterialService;
+      let feeService: FeeService;
+      let formsService: FormsService;
+      let storageController: StorageController;
+      let examsController: ExamsController;
+      let formsController: FormsController;
+
+      beforeEach(() => {
+        mockPrisma = {
+          batch: { findUnique: jest.fn(), findMany: jest.fn() },
+          attendance: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'att-1' }), createMany: jest.fn() },
+          attendanceRecord: { deleteMany: jest.fn(), createMany: jest.fn() },
+          studentProfile: { findMany: jest.fn(), findUnique: jest.fn() },
+          teacherProfile: { findUnique: jest.fn() },
+          teacherAssignment: { findMany: jest.fn() },
+          feeRecord: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn(), update: jest.fn() },
+          studyMaterial: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), delete: jest.fn() },
+          targetTrack: { findUnique: jest.fn() },
+          syllabus: { findUnique: jest.fn(), findFirst: jest.fn() },
+          academicYear: { findMany: jest.fn(), findUnique: jest.fn() },
+          customForm: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+          customFormResponse: { create: jest.fn() },
+          user: { update: jest.fn(), findMany: jest.fn() },
+          $transaction: jest.fn(async (callback) => {
+            if (typeof callback === 'function') {
+              return callback(mockPrisma);
+            }
+            return callback;
+          }),
+        };
+
+        storageService = new StorageService();
+        studyMaterialService = new StudyMaterialService(mockPrisma as any, storageService);
+        feeService = new FeeService(mockPrisma as any);
+        formsService = new FormsService(mockPrisma as any, { sendNotification: jest.fn() } as any);
+        storageController = new StorageController(storageService);
+        examsController = new ExamsController({} as any, storageService);
+        formsController = new FormsController(formsService, storageService);
+      });
+
+      describe('1. Server-Enforced Storage Namespaces and Identity Binding', () => {
+        it('should bind presigned url to authenticated user id and enforce materials prefix in StorageController', async () => {
+          const req = { user: { id: 'teacher-sec21' } };
+          const res = await storageController.getPresignedUrl('lecture.pdf', 'application/pdf', req);
+          expect(res.objectKey).toMatch(/^materials\/teacher-sec21\/\d+-[a-f0-9]+-lecture\.pdf$/);
+        });
+
+        it('should prevent caller from hijacking forms namespace through StorageController filename', async () => {
+          const req = { user: { id: 'teacher-sec21' } };
+          const res = await storageController.getPresignedUrl('forms/secret-form/hack.pdf', 'application/pdf', req);
+          expect(res.objectKey.startsWith('materials/')).toBe(true);
+          expect(res.objectKey.startsWith('forms/')).toBe(false);
+        });
+
+        it('should bind ExamsController.getUploadUrl to authenticated user', async () => {
+          const req = { user: { id: 'teacher-exams' } };
+          const res = await examsController.getUploadUrl('question-paper.pdf', 'application/pdf', req);
+          expect(res.objectKey).toMatch(/^materials\/teacher-exams\/\d+-[a-f0-9]+-question-paper\.pdf$/);
+        });
+
+        it('should enforce forms namespace and scopeId in FormsController.getUploadUrl', async () => {
+          mockPrisma.customForm.findUnique.mockResolvedValue({
+            id: 'form-active-1',
+            isActive: true,
+          });
+
+          const res = await formsController.getUploadUrl('form-active-1', 'applicant-cv.pdf', 'application/pdf');
+          expect(res.objectKey).toMatch(/^forms\/form-active-1\/\d+-[a-f0-9]+-applicant-cv\.pdf$/);
+        });
+
+        it('should recognize both canonical object keys and full URLs in isStorageUrlInUse', async () => {
+          mockPrisma.studyMaterial.findFirst.mockResolvedValue({ id: 'existing-mat' });
+          const inUse = await studyMaterialService.isStorageUrlInUse('https://cdn.educare.test/materials/user-1/file.pdf', 'other-id');
+          expect(inUse).toBe(true);
+          expect(mockPrisma.studyMaterial.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({
+                OR: expect.arrayContaining([
+                  { url: 'https://cdn.educare.test/materials/user-1/file.pdf' },
+                  { url: 'materials/user-1/file.pdf' },
+                ]),
+              }),
+            })
+          );
+        });
+      });
+
+      describe('2. Teacher Assignment Track Boundary & Centre Binding', () => {
+        const teacherProfile = {
+          userId: 'teacher-track-test',
+          assignments: [
+            {
+              id: 'assign-1',
+              subjectId: 'sub-math',
+              standardId: 'std-10',
+              boardId: 'board-cbse',
+              batch: {
+                id: 'batch-general',
+                centreId: 'centre-alpha',
+                trackId: null, // Track is null (general batch)
+              },
+            },
+          ],
+        };
+
+        const teacherUser = {
+          id: 'teacher-track-test',
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should constrain getAll() to targetTrackId: null when teacher assignment track is null', async () => {
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue(teacherProfile);
+          mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
+
+          await studyMaterialService.getAll(teacherUser);
+
+          expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({
+                OR: expect.arrayContaining([
+                  expect.objectContaining({
+                    AND: expect.arrayContaining([
+                      { targetTrackId: null },
+                    ]),
+                  }),
+                ]),
+              }),
+            })
+          );
+        });
+
+        it('should deny teacher getById() when material has a specific track but assignment has null track', async () => {
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+            id: 'mat-track-science',
+            targetTrackId: 'track-science-only',
+            targetTrack: {
+              batches: [{ centreId: 'centre-alpha' }],
+            },
+            uploaderId: 'other-uploader',
+            uploader: { userCentres: [{ centreId: 'centre-alpha' }], role: { name: 'TEACHER' } },
+            syllabus: {
+              subjectId: 'sub-math',
+              standardId: 'std-10',
+              boardId: 'board-cbse',
+            },
+          });
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue(teacherProfile);
+
+          await expect(
+            studyMaterialService.getById('mat-track-science', teacherUser)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should reject teacher material creation for a centre not in teacher assignment', async () => {
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue(teacherProfile);
+          mockPrisma.syllabus.findUnique.mockResolvedValue({
+            id: 'syl-1',
+            subjectId: 'sub-math',
+            standardId: 'std-10',
+            boardId: 'board-cbse',
+          });
+          mockPrisma.academicYear.findMany.mockResolvedValue([{ id: 'ay-2026', isActive: true }]);
+
+          // Teacher attempts to upload targeting track from centre-beta
+          mockPrisma.targetTrack.findUnique.mockResolvedValue({
+            id: 'track-beta',
+            batches: [{ centreId: 'centre-beta' }],
+          });
+
+          await expect(
+            studyMaterialService.create(
+              {
+                title: 'Math Notes',
+                type: 'FILE',
+                syllabusId: 'syl-1',
+                targetTrackId: 'track-beta',
+              },
+              teacherUser
+            )
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('3. Fee Service Defaults, Validation, and Multi-Centre Student Isolation', () => {
+        const centreAdminAlpha = {
+          id: 'admin-alpha',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should default fee status to PENDING upon creation', async () => {
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'student-single',
+            enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+          });
+          mockPrisma.feeRecord.create.mockImplementation((args: any) => Promise.resolve(args.data));
+
+          const created = await feeService.create(
+            {
+              studentId: 'student-single',
+              amount: 1500,
+            },
+            centreAdminAlpha
+          );
+
+          expect(created.status).toBe('PENDING');
+        });
+
+        it('should reject invalid fee status on create and update', async () => {
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'student-single',
+            enrollments: [{ batch: { centreId: 'centre-alpha' } }],
+          });
+
+          await expect(
+            feeService.create(
+              {
+                studentId: 'student-single',
+                amount: 1500,
+                status: 'FORGED_STATUS',
+              },
+              centreAdminAlpha
+            )
+          ).rejects.toThrow(BadRequestException);
+
+          await expect(
+            feeService.updateStatus('fee-1', 'INVALID_STATUS', centreAdminAlpha)
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should exclude ambiguous null-centre records of multi-centre students in findAll()', async () => {
+          mockPrisma.feeRecord.findMany.mockResolvedValue([]);
+
+          await feeService.findAll(centreAdminAlpha);
+
+          expect(mockPrisma.feeRecord.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({
+                OR: expect.arrayContaining([
+                  { centreId: { in: ['centre-alpha'] } },
+                  {
+                    centreId: null,
+                    student: {
+                      enrollments: {
+                        some: { batch: { centreId: { in: ['centre-alpha'] } } },
+                        none: { batch: { centreId: { notIn: ['centre-alpha'] } } },
+                      },
+                    },
+                  },
+                ]),
+              }),
+            })
+          );
+        });
+      });
+
+      describe('4. Forms Service Mass Assignment Prevention', () => {
+        const superAdmin = {
+          id: 'super-admin-user',
+          role: { name: 'SUPER_ADMIN' },
+        };
+
+        it('should sanitize updateForm payload and reject mass assignment of injected fields', async () => {
+          mockPrisma.customForm.findUnique.mockResolvedValue({
+            id: 'form-123',
+            title: 'Admission Form',
+            centreId: null,
+          });
+          mockPrisma.customForm.update.mockImplementation((args: any) => Promise.resolve(args.data));
+
+          const maliciousPayload = {
+            title: 'Updated Title',
+            isActive: false,
+            id: 'forged-id-overwrite',
+            createdAt: new Date('2020-01-01'),
+            responses: { deleteMany: {} },
+            untrustedRole: 'SUPER_ADMIN',
+          };
+
+          const updated = await formsService.updateForm('form-123', maliciousPayload as any, superAdmin);
+
+          expect(updated.title).toBe('Updated Title');
+          expect(updated.isActive).toBe(false);
+          expect(updated.id).toBeUndefined();
+          expect(updated.createdAt).toBeUndefined();
+          expect(updated.responses).toBeUndefined();
+          expect(updated.untrustedRole).toBeUndefined();
+        });
+      });
+    });
   });
 });
+
 
 
 

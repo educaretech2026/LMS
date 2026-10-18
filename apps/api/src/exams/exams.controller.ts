@@ -99,8 +99,9 @@ export class ExamsController {
   getUploadUrl(
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
+    @Req() req: any,
   ) {
-    return this.storageService.getPresignedUploadUrl(filename, contentType);
+    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix: 'materials' });
   }
 
   @Get(':examId/review')

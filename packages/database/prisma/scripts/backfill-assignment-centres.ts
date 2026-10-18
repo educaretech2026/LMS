@@ -2,8 +2,8 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export async function reconcileLegacyAssignments(dryRun: boolean = false) {
-  console.log(`Starting legacy teacher assignment reconciliation (dryRun: ${dryRun})...`);
+export async function reconcileLegacyAssignments(dryRun: boolean = true) {
+  console.log(`Starting legacy teacher assignment reconciliation (mode: ${dryRun ? 'DRY-RUN' : 'APPLY'})...`);
 
   const unassigned = await prisma.teacherAssignment.findMany({
     where: { centreId: null },
@@ -22,14 +22,12 @@ export async function reconcileLegacyAssignments(dryRun: boolean = false) {
   console.log(`Found ${unassigned.length} teacher assignments without an authoritative centreId.`);
 
   let batchResolvedCount = 0;
-  let singleCentreResolvedCount = 0;
   const ambiguousRecords: Array<{
     assignmentId: string;
     teacherId: string;
     reason: string;
     subjectName?: string;
     standardName?: string;
-    userCentresCount: number;
   }> = [];
 
   for (const assignment of unassigned) {
@@ -41,26 +39,13 @@ export async function reconcileLegacyAssignments(dryRun: boolean = false) {
           data: { centreId: assignment.batch.centreId },
         });
       }
-    } else if (assignment.teacher?.userCentres?.length === 1) {
-      const singleCentreId = assignment.teacher.userCentres[0].centreId;
-      singleCentreResolvedCount++;
-      if (!dryRun) {
-        await prisma.teacherAssignment.update({
-          where: { id: assignment.id },
-          data: { centreId: singleCentreId },
-        });
-      }
     } else {
       ambiguousRecords.push({
         assignmentId: assignment.id,
         teacherId: assignment.teacherId,
         subjectName: assignment.subject?.name,
         standardName: assignment.standard?.name,
-        userCentresCount: assignment.teacher?.userCentres?.length || 0,
-        reason:
-          (assignment.teacher?.userCentres?.length || 0) > 1
-            ? 'Teacher belongs to multiple centres and assignment lacks batchId; requires explicit centre assignment.'
-            : 'Teacher has no centre memberships; cannot infer centre scope.',
+        reason: 'Assignment lacks batch link; cannot infer authoritative centre from current teacher membership alone. Left unscoped to fail closed until manual admin reconciliation.',
       });
     }
   }
@@ -68,7 +53,6 @@ export async function reconcileLegacyAssignments(dryRun: boolean = false) {
   console.log('--- Reconciliation Summary ---');
   console.log(`Total Inspected: ${unassigned.length}`);
   console.log(`Resolved via Batch Centre: ${batchResolvedCount}`);
-  console.log(`Resolved via Unique Teacher Centre: ${singleCentreResolvedCount}`);
   console.log(`Ambiguous (Failing Closed for Safety): ${ambiguousRecords.length}`);
 
   if (ambiguousRecords.length > 0) {
@@ -79,15 +63,20 @@ export async function reconcileLegacyAssignments(dryRun: boolean = false) {
   return {
     total: unassigned.length,
     batchResolvedCount,
-    singleCentreResolvedCount,
     ambiguousCount: ambiguousRecords.length,
     ambiguousRecords,
   };
 }
 
 if (require.main === module) {
-  const isDryRun = process.argv.includes('--dry-run');
-  reconcileLegacyAssignments(isDryRun)
+  const isApply = process.argv.includes('--apply');
+  const dryRun = !isApply;
+  if (dryRun) {
+    console.log('Running in DRY-RUN mode by default. Pass --apply to persist changes.');
+  } else {
+    console.log('Applying changes to database...');
+  }
+  reconcileLegacyAssignments(dryRun)
     .then(() => prisma.$disconnect())
     .catch((err) => {
       console.error('Error during assignment reconciliation:', err);

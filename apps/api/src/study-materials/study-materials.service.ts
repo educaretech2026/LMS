@@ -101,12 +101,14 @@ export class StudyMaterialService {
         const assignmentConditions = validAssignments.map(a => {
           const stdId = a.standardId || a.batch?.standardId;
           const brdId = a.boardId || a.batch?.boardId;
-          const assignedCentreId = a.batch?.centreId || (a as any).centreId || (authorizedCentres.length === 1 ? authorizedCentres[0] : null);
+          const assignedCentreId = a.batch?.centreId || (a as any).centreId;
 
           // If the assignment has no identifiable centre or is for an unauthorized centre, exclude it
           if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
             return null;
           }
+
+          const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
 
           return {
             AND: [
@@ -121,6 +123,12 @@ export class StudyMaterialService {
                 OR: [
                   { targetTrackId: null },
                   { targetTrackId: a.batch.trackId }
+                ]
+              }] : [{ targetTrackId: null }]),
+              ...(assignedYearId ? [{
+                OR: [
+                  { academicYearId: assignedYearId },
+                  { academicYear: { isActive: true } }
                 ]
               }] : []),
               {
@@ -346,12 +354,19 @@ export class StudyMaterialService {
             const brdId = a.boardId || a.batch?.boardId;
             if (brdId !== material.syllabus.boardId) return false;
           }
-          if (material.targetTrackId && a.batch?.trackId && a.batch.trackId !== material.targetTrackId) return false;
+          if (material.targetTrackId) {
+            if (!a.batch?.trackId || a.batch.trackId !== material.targetTrackId) return false;
+          }
 
           // Authoritative centre check per assignment
-          const assignedCentreId = a.batch?.centreId || (a as any).centreId || (authorizedCentres.length === 1 ? authorizedCentres[0] : null);
+          const assignedCentreId = a.batch?.centreId || (a as any).centreId;
           if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
             return false;
+          }
+
+          const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
+          if (material.academicYearId && assignedYearId && assignedYearId !== material.academicYearId) {
+            if (!material.academicYear?.isActive) return false;
           }
 
           if (material.targetTrackId !== null) {
@@ -457,6 +472,7 @@ export class StudyMaterialService {
         const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
 
         if (normalizedRole === 'TEACHER') {
+          const authorizedCentres = getAuthorizedCentreIds(user);
           const teacherProfile = await this.prisma.teacherProfile.findUnique({
             where: { userId: user.id },
             include: { assignments: { include: { batch: true } } },
@@ -472,10 +488,28 @@ export class StudyMaterialService {
               const brdId = a.boardId || a.batch?.boardId;
               if (brdId !== syllabus.boardId) return false;
             }
+
+            // Must be bound to authorized centre
+            const assignedCentreId = a.batch?.centreId || (a as any).centreId;
+            if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
+              return false;
+            }
+
+            // Must be bound to academic year if assignment or batch specifies it
+            const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
+            if (academicYearId && assignedYearId && assignedYearId !== academicYearId) {
+              return false;
+            }
+
+            // Must match targetTrackId
+            if (data.targetTrackId) {
+              if (!a.batch?.trackId || a.batch.trackId !== data.targetTrackId) return false;
+            }
+
             return true;
           });
           if (!isAssigned) {
-            throw new ForbiddenException('Teachers can only upload study materials for subjects and standards they are assigned to teach.');
+            throw new ForbiddenException('Teachers can only upload study materials for subjects, standards, centres, and tracks they are assigned to teach.');
           }
         }
       }
@@ -694,11 +728,13 @@ export class StudyMaterialService {
       const assignmentConditions = validAssignments.map(a => {
         const stdId = a.standardId || a.batch?.standardId;
         const brdId = a.boardId || a.batch?.boardId;
-        const assignedCentreId = a.batch?.centreId || (a as any).centreId || (authorizedCentres.length === 1 ? authorizedCentres[0] : null);
+        const assignedCentreId = a.batch?.centreId || (a as any).centreId;
 
         if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
           return null;
         }
+
+        const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
 
         return {
           AND: [
@@ -713,6 +749,12 @@ export class StudyMaterialService {
               OR: [
                 { targetTrackId: null },
                 { targetTrackId: a.batch.trackId }
+              ]
+            }] : [{ targetTrackId: null }]),
+            ...(assignedYearId ? [{
+              OR: [
+                { academicYearId: assignedYearId },
+                { academicYear: { isActive: true } }
               ]
             }] : []),
             {
@@ -763,12 +805,22 @@ export class StudyMaterialService {
 
   async isStorageUrlInUse(url: string, excludeId?: string): Promise<boolean> {
     if (!url) return false;
+    const validatedKey = this.storageService?.extractAndValidateObjectKey(url);
+    const searchConditions: any[] = [
+      { url },
+      { thumbnailUrl: url },
+    ];
+    if (validatedKey) {
+      searchConditions.push(
+        { url: validatedKey },
+        { thumbnailUrl: validatedKey },
+        { url: { endsWith: `/${validatedKey}` } },
+        { thumbnailUrl: { endsWith: `/${validatedKey}` } },
+      );
+    }
     const existing = await this.prisma.studyMaterial.findFirst({
       where: {
-        OR: [
-          { url },
-          { thumbnailUrl: url },
-        ],
+        OR: searchConditions,
         ...(excludeId ? { id: { not: excludeId } } : {})
       }
     });

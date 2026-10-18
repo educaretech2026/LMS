@@ -75,9 +75,16 @@ export class FormsService {
       }
     }
 
+    const updatePayload: any = {};
+    if (data.title !== undefined) updatePayload.title = String(data.title);
+    if (data.description !== undefined) updatePayload.description = data.description ? String(data.description) : null;
+    if (data.isActive !== undefined) updatePayload.isActive = Boolean(data.isActive);
+    if (data.fields !== undefined) updatePayload.fields = data.fields;
+    if (data.centreId !== undefined) updatePayload.centreId = data.centreId || null;
+
     return this.prisma.customForm.update({
       where: { id },
-      data,
+      data: updatePayload,
     });
   }
 
