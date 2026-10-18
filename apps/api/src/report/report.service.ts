@@ -502,6 +502,18 @@ export class ReportService {
     const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);
 
     const feeWhere: any = { date: { gte: from, lte: to } };
+    if (effectiveCentres) {
+      feeWhere.student = {
+        enrollments: {
+          some: {
+            batch: {
+              centreId: { in: effectiveCentres }
+            }
+          }
+        }
+      };
+    }
+
     const feeRecords = await this.prisma.feeRecord.findMany({
       where: feeWhere,
       include: {
@@ -516,12 +528,12 @@ export class ReportService {
     });
 
     const matchingFees = feeRecords.filter(f => {
-      if (!centreId && !batchId) return true;
-      return f.student.enrollments.some(e => {
-        if (centreId && e.batch.centreId !== centreId) return false;
-        if (batchId && e.batch.id !== batchId) return false;
-        return true;
-      });
+      if (effectiveCentres) {
+        const inEffective = f.student.enrollments.some(e => effectiveCentres.includes(e.batch?.centreId));
+        if (!inEffective) return false;
+      }
+      if (batchId && !f.student.enrollments.some(e => e.batch?.id === batchId)) return false;
+      return true;
     });
 
     const paidFees = matchingFees.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
@@ -536,7 +548,7 @@ export class ReportService {
       attendance: {
         date: { gte: from, lte: to },
         ...(batchId ? { batchId } : {}),
-        ...(centreId ? { batch: { centreId } } : {}),
+        ...(effectiveCentres ? { batch: { centreId: { in: effectiveCentres } } } : (centreId ? { batch: { centreId } } : {})),
         ...(subjectId ? { subjectId } : {}),
       }
     };
@@ -553,7 +565,7 @@ export class ReportService {
       createdAt: { gte: from, lte: to },
       exam: {
         ...(batchId ? { batchId } : {}),
-        ...(centreId ? { centreId } : {}),
+        ...(effectiveCentres ? { centreId: { in: effectiveCentres } } : (centreId ? { centreId } : {})),
         ...(academicYearId ? { academicYearId } : {}),
         ...(boardId ? { boardId } : {}),
         ...(standardId ? { standardId } : {}),
@@ -576,7 +588,7 @@ export class ReportService {
     const enquiries = await this.prisma.enquiry.findMany({
       where: {
         createdAt: { gte: from, lte: to },
-        ...(centreId ? { centreId } : {}),
+        ...(effectiveCentres ? { centreId: { in: effectiveCentres } } : (centreId ? { centreId } : {})),
       },
       select: { status: true }
     });
@@ -585,7 +597,15 @@ export class ReportService {
     const conversionRate = totalEnquiries > 0 ? (convertedEnquiries / totalEnquiries) * 100 : 0;
 
     // 5. Active Students count
-    const totalStudents = await this.prisma.studentProfile.count();
+    const totalStudents = await this.prisma.studentProfile.count({
+      where: effectiveCentres ? {
+        enrollments: {
+          some: {
+            batch: { centreId: { in: effectiveCentres } }
+          }
+        }
+      } : {}
+    });
 
     return {
       financials: {
@@ -627,14 +647,28 @@ export class ReportService {
     subjectId?: string,
     chapterId?: string,
     topicId?: string,
+    user?: any,
   ) {
     const from = startDate ? new Date(startDate) : undefined;
     const to = endDate ? new Date(endDate) : undefined;
     if (to) to.setHours(23, 59, 59, 999);
 
+    let effectiveCentres: string[] | null = null;
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      if (centreId) {
+        assertCentreAccess(user, centreId);
+        effectiveCentres = [centreId];
+      } else {
+        effectiveCentres = authorizedCentres;
+      }
+    } else if (centreId) {
+      effectiveCentres = [centreId];
+    }
+
     const where: any = {};
+    if (effectiveCentres) where.centreId = { in: effectiveCentres };
     if (batchId) where.batchId = batchId;
-    if (centreId) where.centreId = centreId;
     if (academicYearId) where.academicYearId = academicYearId;
     if (boardId) where.boardId = boardId;
     if (standardId) where.standardId = standardId;
@@ -642,6 +676,39 @@ export class ReportService {
     if (chapterId) where.chapterId = chapterId;
     if (topicId) where.topicId = topicId;
     if (from && to) where.createdAt = { gte: from, lte: to };
+
+    // Teacher assignment restrictions
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true },
+      });
+      if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+        return {
+          exams: [],
+          summary: {
+            totalExams: 0,
+            totalAttempts: 0,
+            overallAverage: 0,
+            gradeDistribution: { 'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C': 0, 'F': 0 }
+          }
+        };
+      }
+      const teacherConditions: any[] = [];
+      for (const a of teacherProfile.assignments) {
+        const cond: any = {};
+        if (a.subjectId) cond.subjectId = a.subjectId;
+        if (a.batchId) cond.batchId = a.batchId;
+        if (a.standardId) cond.standardId = a.standardId;
+        if (a.boardId) cond.boardId = a.boardId;
+        teacherConditions.push(cond);
+      }
+      if (teacherConditions.length > 0) {
+        where.OR = teacherConditions;
+      }
+    }
 
     const exams = await this.prisma.exam.findMany({
       where,
@@ -747,22 +814,69 @@ export class ReportService {
     boardId?: string,
     standardId?: string,
     subjectId?: string,
+    user?: any,
   ) {
     const from = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const to = endDate ? new Date(endDate) : new Date();
     to.setHours(23, 59, 59, 999);
+
+    let effectiveCentres: string[] | null = null;
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      if (centreId) {
+        assertCentreAccess(user, centreId);
+        effectiveCentres = [centreId];
+      } else {
+        effectiveCentres = authorizedCentres;
+      }
+    } else if (centreId) {
+      effectiveCentres = [centreId];
+    }
 
     const attWhere: any = {
       date: { gte: from, lte: to },
     };
     if (batchId) attWhere.batchId = batchId;
     if (subjectId) attWhere.subjectId = subjectId;
-    if (centreId || boardId || standardId) {
-      attWhere.batch = {
-        ...(centreId ? { centreId } : {}),
-        ...(boardId ? { boardId } : {}),
-        ...(standardId ? { standardId } : {}),
-      };
+    attWhere.batch = {
+      ...(effectiveCentres ? { centreId: { in: effectiveCentres } } : (centreId ? { centreId } : {})),
+      ...(boardId ? { boardId } : {}),
+      ...(standardId ? { standardId } : {}),
+    };
+
+    // Teacher assignment restrictions
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true },
+      });
+      if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+        return {
+          dailyTrends: [],
+          studentList: [],
+          summary: {
+            totalSessions: 0,
+            totalRecords: 0,
+            overallRate: 0,
+            atRiskCount: 0,
+          }
+        };
+      }
+      const assignedBatchIds = teacherProfile.assignments.map(a => a.batchId).filter(Boolean) as string[];
+      const assignedSubjectIds = teacherProfile.assignments.map(a => a.subjectId).filter(Boolean) as string[];
+      
+      const teacherConditions: any[] = [];
+      if (assignedBatchIds.length > 0) {
+        teacherConditions.push({ batchId: { in: assignedBatchIds } });
+      }
+      if (assignedSubjectIds.length > 0) {
+        teacherConditions.push({ subjectId: { in: assignedSubjectIds } });
+      }
+      if (teacherConditions.length > 0) {
+        attWhere.OR = teacherConditions;
+      }
     }
 
     const attendances = await this.prisma.attendance.findMany({
@@ -874,3 +988,4 @@ export class ReportService {
     };
   }
 }
+

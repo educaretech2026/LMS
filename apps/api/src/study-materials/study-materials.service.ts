@@ -8,10 +8,18 @@ export class StudyMaterialService {
 
   async getAll(user?: any) {
     try {
-      const isStudent = user?.role === 'STUDENT' || user?.role?.name === 'STUDENT';
+      const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+      const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+      const isStudent = normalizedRole === 'STUDENT';
+      const isPublicLearner = normalizedRole === 'PUBLIC_LEARNER';
+      const isTeacher = normalizedRole === 'TEACHER';
+      const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN';
+
       let where: any = {};
 
-      if (isStudent && user?.id) {
+      if (isPublicLearner) {
+        where = { targetTrackId: null };
+      } else if (isStudent && user?.id) {
         const student = await this.prisma.studentProfile.findUnique({
           where: { userId: user.id },
           include: { enrollments: { include: { batch: true } } }
@@ -24,18 +32,57 @@ export class StudyMaterialService {
         const standardIds = student.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
         const boardIds = student.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
         const academicYearIds = student.enrollments.map(e => e.batch?.academicYearId).filter(Boolean) as string[];
+        const trackIds = student.enrollments.map(e => e.trackId).filter(Boolean) as string[];
 
         where = {
-          OR: [
+          AND: [
             {
-              syllabus: {
-                standardId: { in: standardIds },
-                boardId: { in: boardIds }
-              }
+              OR: [
+                {
+                  syllabus: {
+                    standardId: { in: standardIds },
+                    boardId: { in: boardIds }
+                  }
+                },
+                {
+                  academicYearId: { in: academicYearIds }
+                }
+              ]
             },
             {
-              academicYearId: { in: academicYearIds }
+              OR: [
+                { targetTrackId: null },
+                ...(trackIds.length > 0 ? [{ targetTrackId: { in: trackIds } }] : [])
+              ]
             }
+          ]
+        };
+      } else if (isTeacher && user?.id) {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+          where: { userId: user.id },
+          include: { assignments: true },
+        });
+        const subjectIds = (teacherProfile?.assignments || []).map(a => a.subjectId).filter(Boolean) as string[];
+        const standardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
+        
+        where = {
+          OR: [
+            { uploaderId: user.id },
+            {
+              syllabus: {
+                ...(subjectIds.length > 0 ? { subjectId: { in: subjectIds } } : {}),
+                ...(standardIds.length > 0 ? { standardId: { in: standardIds } } : {}),
+              }
+            }
+          ]
+        };
+      } else if (isCentreAdmin && user?.id) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
+        where = {
+          OR: [
+            { uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } } },
+            { targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } } },
+            { targetTrackId: null },
           ]
         };
       }
@@ -78,8 +125,16 @@ export class StudyMaterialService {
       throw new NotFoundException('Study material not found');
     }
 
-    const isStudent = user?.role === 'STUDENT' || user?.role?.name === 'STUDENT';
-    if (isStudent && user?.id) {
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+    const isStudent = normalizedRole === 'STUDENT';
+    const isPublicLearner = normalizedRole === 'PUBLIC_LEARNER';
+
+    if (isPublicLearner) {
+      if (material.targetTrackId) {
+        throw new ForbiddenException('Access denied: Public learners cannot access track-restricted materials.');
+      }
+    } else if (isStudent && user?.id) {
       const student = await this.prisma.studentProfile.findUnique({
         where: { userId: user.id },
         include: { enrollments: { include: { batch: true } } }
@@ -168,10 +223,16 @@ export class StudyMaterialService {
   }
 
   async getByTopic(topicId: string, user?: any) {
-    const isStudent = user?.role === 'STUDENT' || user?.role?.name === 'STUDENT';
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+    const isStudent = normalizedRole === 'STUDENT';
+    const isPublicLearner = normalizedRole === 'PUBLIC_LEARNER';
+
     const where: any = { topicId };
 
-    if (isStudent && user?.id) {
+    if (isPublicLearner) {
+      where.targetTrackId = null;
+    } else if (isStudent && user?.id) {
       const student = await this.prisma.studentProfile.findUnique({
         where: { userId: user.id },
         include: { enrollments: { include: { batch: true } } }
@@ -196,6 +257,7 @@ export class StudyMaterialService {
         }
       ];
     }
+
 
     return this.prisma.studyMaterial.findMany({
       where,

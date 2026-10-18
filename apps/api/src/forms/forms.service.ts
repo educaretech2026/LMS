@@ -15,6 +15,8 @@ export class FormsService {
         assertCentreAccess(user, centreId);
       } else if (authorizedCentres.length > 0) {
         centreId = authorizedCentres[0];
+      } else {
+        throw new ForbiddenException('A centre assignment is required to create a form.');
       }
     }
 
@@ -33,10 +35,7 @@ export class FormsService {
     const where: any = {};
     if (user && !isSuperAdmin(user)) {
       const authorizedCentres = getAuthorizedCentreIds(user);
-      where.OR = [
-        { centreId: { in: authorizedCentres } },
-        { centreId: null }
-      ];
+      where.centreId = { in: authorizedCentres };
     }
 
     return this.prisma.customForm.findMany({
@@ -63,10 +62,15 @@ export class FormsService {
     if (!existing) throw new NotFoundException('Form not found');
 
     if (user && !isSuperAdmin(user)) {
-      if (existing.centreId) {
-        assertCentreAccess(user, existing.centreId);
+      if (!existing.centreId) {
+        throw new ForbiddenException('Only super administrators can modify global forms.');
       }
-      if (data.centreId) {
+      assertCentreAccess(user, existing.centreId);
+
+      if (data.centreId !== undefined) {
+        if (!data.centreId) {
+          throw new ForbiddenException('Cannot convert a centre form to a global form.');
+        }
         assertCentreAccess(user, data.centreId);
       }
     }
@@ -81,7 +85,10 @@ export class FormsService {
     const existing = await this.prisma.customForm.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Form not found');
 
-    if (user && !isSuperAdmin(user) && existing.centreId) {
+    if (user && !isSuperAdmin(user)) {
+      if (!existing.centreId) {
+        throw new ForbiddenException('Only super administrators can delete global forms.');
+      }
       assertCentreAccess(user, existing.centreId);
     }
 
@@ -125,7 +132,10 @@ export class FormsService {
     const form = await this.prisma.customForm.findUnique({ where: { id: formId } });
     if (!form) throw new NotFoundException('Form not found');
 
-    if (user && !isSuperAdmin(user) && form.centreId) {
+    if (user && !isSuperAdmin(user)) {
+      if (!form.centreId) {
+        throw new ForbiddenException('Only super administrators can view responses to global forms.');
+      }
       assertCentreAccess(user, form.centreId);
     }
 

@@ -20,15 +20,25 @@ export class FinanceService {
       }
     }
 
-    if (!data.category || data.amount === undefined || isNaN(Number(data.amount))) {
-      throw new BadRequestException('Valid category and numeric amount are required');
+    const amountNum = Number(data.amount);
+    if (!data.category || data.amount === undefined || !Number.isFinite(amountNum) || amountNum <= 0) {
+      throw new BadRequestException('Valid category and positive numeric amount are required');
+    }
+
+    const type = data.type || TransactionType.EXPENSE;
+    if (!Object.values(TransactionType).includes(type)) {
+      throw new BadRequestException(`Invalid transaction type: ${data.type}`);
+    }
+
+    if (data.date && isNaN(new Date(data.date).getTime())) {
+      throw new BadRequestException('Invalid transaction date');
     }
 
     return this.prisma.transaction.create({
       data: {
-        type: data.type || TransactionType.EXPENSE,
+        type,
         category: data.category,
-        amount: parseFloat(data.amount),
+        amount: amountNum,
         date: data.date ? new Date(data.date) : new Date(),
         reference: data.reference || null,
         description: data.description || null,

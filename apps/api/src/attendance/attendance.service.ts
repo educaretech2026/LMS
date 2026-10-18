@@ -200,20 +200,12 @@ export class AttendanceService {
   async markAttendance(data: any, user: any) {
     const userId = typeof user === 'string' ? user : user?.id;
     const { batchId, date, records, centreId, boardId, standardId, trackId, subjectId } = data;
+    
+    if (!date || isNaN(new Date(date).getTime())) {
+      throw new BadRequestException('A valid attendance date is required');
+    }
     const targetDate = new Date(date);
 
-    if (user && typeof user !== 'string' && !isSuperAdmin(user)) {
-      if (centreId) {
-        assertCentreAccess(user, centreId);
-      }
-      if (batchId && batchId !== 'ALL') {
-        const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
-        if (batch?.centreId) {
-          assertCentreAccess(user, batch.centreId);
-        }
-      }
-    }
-    
     let resolvedBatchId = batchId;
     if (batchId === 'ALL') {
       resolvedBatchId = null;
@@ -221,44 +213,136 @@ export class AttendanceService {
       resolvedBatchId = await this.resolveBatchId(centreId, boardId, standardId, trackId);
     }
 
-    let attendance = await this.prisma.attendance.findFirst({
-      where: { 
-        batchId: resolvedBatchId, 
-        date: targetDate,
-        subjectId: subjectId || null
+    let effectiveCentreId = centreId;
+    if (resolvedBatchId) {
+      const batch = await this.prisma.batch.findUnique({
+        where: { id: resolvedBatchId },
+        select: { id: true, centreId: true, standardId: true, boardId: true }
+      });
+      if (!batch) {
+        throw new BadRequestException('The specified batch does not exist');
+      }
+      effectiveCentreId = batch.centreId;
+    }
+
+    if (!effectiveCentreId) {
+      throw new BadRequestException('Cannot mark attendance without an identifiable centre');
+    }
+
+    if (user && typeof user !== 'string' && !isSuperAdmin(user)) {
+      assertCentreAccess(user, effectiveCentreId);
+
+      const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
+      const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+      if (normalizedRole === 'TEACHER') {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+          where: { userId: user.id },
+          include: { assignments: true },
+        });
+        if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
+          throw new ForbiddenException('Teacher has no active assignments to mark attendance');
+        }
+        if (resolvedBatchId) {
+          const isAssigned = teacherProfile.assignments.some(a => {
+            if (a.batchId && a.batchId !== resolvedBatchId) return false;
+            if (subjectId && a.subjectId && a.subjectId !== subjectId) return false;
+            return true;
+          });
+          if (!isAssigned) {
+            throw new ForbiddenException('You are not authorized to mark attendance for this batch or subject');
+          }
+        }
+      }
+    }
+
+    if (!Array.isArray(records) || records.length === 0) {
+      throw new BadRequestException('Attendance records list cannot be empty');
+    }
+
+    const validStatuses = Object.values(AttendanceStatus);
+    const seenStudentIds = new Set<string>();
+
+    for (const r of records) {
+      if (!r.studentId) {
+        throw new BadRequestException('Every attendance record must have a studentId');
+      }
+      if (seenStudentIds.has(r.studentId)) {
+        throw new BadRequestException(`Duplicate attendance entry for student ID: ${r.studentId}`);
+      }
+      seenStudentIds.add(r.studentId);
+
+      if (!validStatuses.includes(r.status)) {
+        throw new BadRequestException(`Invalid attendance status: ${r.status}. Allowed values: ${validStatuses.join(', ')}`);
+      }
+    }
+
+    // Verify ALL students exist and belong to the batch/centre
+    const studentProfiles = await this.prisma.studentProfile.findMany({
+      where: {
+        id: { in: Array.from(seenStudentIds) },
+      },
+      include: {
+        enrollments: {
+          where: {
+            ...(resolvedBatchId ? { batchId: resolvedBatchId } : {}),
+            batch: { centreId: effectiveCentreId }
+          }
+        }
       }
     });
 
-    if (attendance) {
-      attendance = await this.prisma.attendance.update({
-        where: { id: attendance.id },
-        data: { recordedById: userId }
-      });
-    } else {
-      attendance = await this.prisma.attendance.create({
-        data: {
-          batchId: resolvedBatchId,
+    if (studentProfiles.length !== seenStudentIds.size) {
+      throw new BadRequestException('One or more student profiles do not exist');
+    }
+
+    if (resolvedBatchId) {
+      for (const sp of studentProfiles) {
+        if (!sp.enrollments || sp.enrollments.length === 0) {
+          throw new BadRequestException(`Student ${sp.id} is not enrolled in the specified batch and centre`);
+        }
+      }
+    }
+
+    // Perform atomic update inside database transaction
+    await this.prisma.$transaction(async (tx) => {
+      let attendance = await tx.attendance.findFirst({
+        where: { 
+          batchId: resolvedBatchId, 
           date: targetDate,
-          recordedById: userId,
           subjectId: subjectId || null
         }
       });
-    }
 
-    // We can just delete the old records and insert new ones to handle upsert cleanly
-    await this.prisma.attendanceRecord.deleteMany({
-      where: { attendanceId: attendance.id }
-    });
+      if (attendance) {
+        attendance = await tx.attendance.update({
+          where: { id: attendance.id },
+          data: { recordedById: userId }
+        });
+      } else {
+        attendance = await tx.attendance.create({
+          data: {
+            batchId: resolvedBatchId,
+            date: targetDate,
+            recordedById: userId,
+            subjectId: subjectId || null
+          }
+        });
+      }
 
-    const createRecords = records.map((r: any) => ({
-      attendanceId: attendance.id,
-      studentId: r.studentId,
-      status: r.status as AttendanceStatus,
-      remarks: r.remarks
-    }));
+      await tx.attendanceRecord.deleteMany({
+        where: { attendanceId: attendance.id }
+      });
 
-    await this.prisma.attendanceRecord.createMany({
-      data: createRecords
+      const createRecords = records.map((r: any) => ({
+        attendanceId: attendance.id,
+        studentId: r.studentId,
+        status: r.status as AttendanceStatus,
+        remarks: r.remarks || null
+      }));
+
+      await tx.attendanceRecord.createMany({
+        data: createRecords
+      });
     });
 
     return { message: "Attendance marked successfully" };

@@ -17,6 +17,7 @@ import { DoubtsService } from '../doubts/doubts.service';
 import { FormsService } from '../forms/forms.service';
 import { UsersService } from '../users/users.service';
 import { EstudyService } from '../estudy/estudy.service';
+import { SetupService } from '../setup/setup.service';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 
@@ -2479,5 +2480,635 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       });
     });
   });
+
+  describe('SEC-14: Seventh-Pass Security Remediation Suite', () => {
+    const superAdmin = {
+      id: 'super-admin-1',
+      role: { name: 'SUPER_ADMIN' },
+      userCentres: []
+    };
+
+    const adminA = {
+      id: 'admin-a',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    const adminB = {
+      id: 'admin-b',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-beta' }]
+    };
+
+    const teacherA = {
+      id: 'teacher-a',
+      role: { name: 'TEACHER' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    const studentA1 = {
+      id: 'student-u1',
+      role: { name: 'STUDENT' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    const studentA2 = {
+      id: 'student-u2',
+      role: { name: 'STUDENT' },
+      userCentres: [{ centreId: 'centre-alpha' }]
+    };
+
+    describe('1. Assignment Access Control & Submission Privacy', () => {
+      let assignmentsService: AssignmentsService;
+      let mockPrisma: any;
+      let mockNotifications: any;
+      let mockSyllabus: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          studentProfile: {
+            findUnique: jest.fn(),
+          },
+          teacherProfile: {
+            findUnique: jest.fn(),
+          },
+          assignment: {
+            findUnique: jest.fn(),
+            findMany: jest.fn().mockResolvedValue([]),
+            update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+            delete: jest.fn().mockResolvedValue({ id: 'asgn-1' }),
+          },
+          assignmentSubmission: {
+            upsert: jest.fn().mockResolvedValue({ id: 'sub-1', status: 'SUBMITTED' }),
+            findUnique: jest.fn(),
+            update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+          },
+          batch: {
+            findUnique: jest.fn(),
+          },
+        };
+        mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
+        mockSyllabus = { recordStudentEvent: jest.fn().mockResolvedValue(true) };
+
+        assignmentsService = new AssignmentsService(mockPrisma as any, mockNotifications as any, mockSyllabus as any);
+      });
+
+      it('should isolate student submissions so calling student only sees their own submission', async () => {
+        mockPrisma.assignment.findUnique.mockResolvedValue({
+          id: 'asgn-1',
+          title: 'Math Homework',
+          batchId: 'batch-alpha-1',
+          batch: { centreId: 'centre-alpha' },
+          submissions: [
+            { id: 'sub-1', studentId: 'sp-1', student: { user: { firstName: 'Alice' } } },
+            { id: 'sub-2', studentId: 'sp-2', student: { user: { firstName: 'Bob' } } },
+          ]
+        });
+
+        mockPrisma.studentProfile.findUnique.mockResolvedValue({
+          id: 'sp-1',
+          userId: 'student-u1',
+          enrollments: [{ batchId: 'batch-alpha-1' }]
+        });
+
+        const result = await assignmentsService.getOne('asgn-1', studentA1);
+        expect(result.submissions).toHaveLength(1);
+        expect(result.submissions[0].studentId).toBe('sp-1');
+      });
+
+      it('should reject getOne for student not enrolled in the assignment batch', async () => {
+        mockPrisma.assignment.findUnique.mockResolvedValue({
+          id: 'asgn-1',
+          batchId: 'batch-alpha-other',
+          batch: { centreId: 'centre-alpha' },
+          submissions: []
+        });
+
+        mockPrisma.studentProfile.findUnique.mockResolvedValue({
+          id: 'sp-1',
+          userId: 'student-u1',
+          enrollments: [{ batchId: 'batch-alpha-1' }]
+        });
+
+        await expect(
+          assignmentsService.getOne('asgn-1', studentA1)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject student submitting on behalf of another user', async () => {
+        await expect(
+          assignmentsService.submit('asgn-1', 'other-student-id', { attachments: [] }, studentA1)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject submission if student is not enrolled in assignment batch', async () => {
+        mockPrisma.studentProfile.findUnique.mockResolvedValue({
+          id: 'sp-1',
+          userId: 'student-u1',
+          enrollments: [{ batchId: 'batch-alpha-1' }]
+        });
+
+        mockPrisma.assignment.findUnique.mockResolvedValue({
+          id: 'asgn-1',
+          batchId: 'batch-alpha-2',
+          batch: { centreId: 'centre-alpha' },
+        });
+
+        await expect(
+          assignmentsService.submit('asgn-1', 'student-u1', { attachments: [] }, studentA1)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should prevent Centre Admin of Centre A from updating Centre B assignment', async () => {
+        mockPrisma.assignment.findUnique.mockResolvedValue({
+          id: 'asgn-beta',
+          batch: { centreId: 'centre-beta' },
+          uploaderId: 'user-b'
+        });
+
+        await expect(
+          assignmentsService.update('asgn-beta', { title: 'Hacked' }, adminA.id, 'CENTRE_ADMIN', adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should prevent Centre Admin of Centre A from deleting Centre B assignment', async () => {
+        mockPrisma.assignment.findUnique.mockResolvedValue({
+          id: 'asgn-beta',
+          batch: { centreId: 'centre-beta' },
+          uploaderId: 'user-b'
+        });
+
+        await expect(
+          assignmentsService.delete('asgn-beta', adminA.id, 'CENTRE_ADMIN', adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should prevent teacher from grading an assignment in an unauthorized centre', async () => {
+        mockPrisma.assignmentSubmission.findUnique.mockResolvedValue({
+          id: 'sub-beta',
+          assignment: {
+            batch: { centreId: 'centre-beta' },
+            uploaderId: 'other-teacher'
+          }
+        });
+
+        await expect(
+          assignmentsService.gradeSubmission('sub-beta', { grade: 90 }, teacherA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject negative or non-finite grades during grading', async () => {
+        mockPrisma.assignmentSubmission.findUnique.mockResolvedValue({
+          id: 'sub-alpha',
+          assignment: {
+            batch: { centreId: 'centre-alpha' },
+            uploaderId: teacherA.id
+          }
+        });
+
+        await expect(
+          assignmentsService.gradeSubmission('sub-alpha', { grade: -10 }, teacherA)
+        ).rejects.toThrow(BadRequestException);
+
+        await expect(
+          assignmentsService.gradeSubmission('sub-alpha', { grade: NaN }, teacherA)
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('2. Exam, Attendance and Overview Analytics Isolation', () => {
+      let reportService: ReportService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          exam: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          attendance: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          transaction: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          feeRecord: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          attendanceRecord: {
+            findMany: jest.fn().mockResolvedValue([]),
+            count: jest.fn().mockResolvedValue(0),
+          },
+          examResult: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+          enquiry: {
+            findMany: jest.fn().mockResolvedValue([]),
+            count: jest.fn().mockResolvedValue(0),
+          },
+          studentProfile: {
+            count: jest.fn().mockResolvedValue(0),
+          },
+          studyMaterial: {
+            count: jest.fn().mockResolvedValue(0),
+          },
+          teacherProfile: {
+            findUnique: jest.fn(),
+          },
+        };
+        reportService = new ReportService(mockPrisma as any);
+      });
+
+      it('should scope getExamsAnalytics to caller authorized centres when centreId is omitted', async () => {
+        await reportService.getExamsAnalytics(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, adminA);
+
+        expect(mockPrisma.exam.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              centreId: { in: ['centre-alpha'] }
+            })
+          })
+        );
+      });
+
+      it('should reject getExamsAnalytics when caller requests an unauthorized centreId', async () => {
+        await expect(
+          reportService.getExamsAnalytics(undefined, undefined, undefined, undefined, 'centre-beta', undefined, undefined, undefined, undefined, undefined, adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should scope getAttendanceAnalytics to caller authorized centres', async () => {
+        await reportService.getAttendanceAnalytics(undefined, undefined, undefined, undefined, undefined, undefined, undefined, adminA);
+
+        expect(mockPrisma.attendance.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              batch: expect.objectContaining({
+                centreId: { in: ['centre-alpha'] }
+              })
+            })
+          })
+        );
+      });
+
+      it('should reject getAttendanceAnalytics for unauthorized cross-centre access', async () => {
+        await expect(
+          reportService.getAttendanceAnalytics(undefined, undefined, undefined, 'centre-beta', undefined, undefined, undefined, adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should filter overview analytics active students and fees by authorized centres', async () => {
+        await reportService.getOverviewAnalytics(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, adminA);
+
+        expect(mockPrisma.studentProfile.count).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              enrollments: {
+                some: {
+                  batch: { centreId: { in: ['centre-alpha'] } }
+                }
+              }
+            })
+          })
+        );
+      });
+    });
+
+    describe('3. Setup and Academic-Configuration Permissions', () => {
+      let setupService: SetupService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          batch: {
+            create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'b-new', ...args.data })),
+            findUnique: jest.fn(),
+            delete: jest.fn().mockResolvedValue({ id: 'b-del' }),
+          },
+        };
+        setupService = new SetupService(mockPrisma as any);
+      });
+
+      it('should reject Centre Admin creating a batch in another centre', async () => {
+        await expect(
+          setupService.createBatch(
+            { name: 'Batch Beta', academicYearId: 'ay-1', boardId: 'bd-1', standardId: 'std-1', centreId: 'centre-beta' },
+            adminA
+          )
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject Centre Admin deleting a batch in another centre', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-beta-1',
+          centreId: 'centre-beta',
+          _count: { enrollments: 0, assignments: 0, exams: 0 }
+        });
+
+        await expect(
+          setupService.deleteBatch('batch-beta-1', adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('4. Attendance Authorization and Atomic Integrity', () => {
+      let attendanceService: AttendanceService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          batch: {
+            findUnique: jest.fn(),
+          },
+          studentProfile: {
+            findMany: jest.fn(),
+          },
+          attendance: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue({ id: 'att-1' }),
+            update: jest.fn().mockResolvedValue({ id: 'att-1' }),
+          },
+          attendanceRecord: {
+            deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+            createMany: jest.fn().mockResolvedValue({ count: 2 }),
+          },
+          $transaction: jest.fn().mockImplementation(async (cb) => cb(mockPrisma)),
+        };
+        attendanceService = new AttendanceService(mockPrisma as any);
+      });
+
+      it('should reject marking attendance when centre scope is unauthorized', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-beta-1',
+          centreId: 'centre-beta',
+        });
+
+        await expect(
+          attendanceService.markAttendance(
+            { batchId: 'batch-beta-1', date: '2026-10-18', records: [{ studentId: 'sp-1', status: 'PRESENT' }] },
+            adminA
+          )
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject attendance marking if duplicate students exist in the request', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-1',
+          centreId: 'centre-alpha',
+        });
+
+        await expect(
+          attendanceService.markAttendance(
+            {
+              batchId: 'batch-alpha-1',
+              date: '2026-10-18',
+              records: [
+                { studentId: 'sp-1', status: 'PRESENT' },
+                { studentId: 'sp-1', status: 'ABSENT' },
+              ]
+            },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject attendance marking if invalid status enum is passed', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-1',
+          centreId: 'centre-alpha',
+        });
+
+        await expect(
+          attendanceService.markAttendance(
+            {
+              batchId: 'batch-alpha-1',
+              date: '2026-10-18',
+              records: [{ studentId: 'sp-1', status: 'MAYBE' }]
+            },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject attendance marking if student is not enrolled in the batch', async () => {
+        mockPrisma.batch.findUnique.mockResolvedValue({
+          id: 'batch-alpha-1',
+          centreId: 'centre-alpha',
+        });
+
+        // Student exists but has no enrollment in batch-alpha-1
+        mockPrisma.studentProfile.findMany.mockResolvedValue([
+          { id: 'sp-1', enrollments: [] }
+        ]);
+
+        await expect(
+          attendanceService.markAttendance(
+            {
+              batchId: 'batch-alpha-1',
+              date: '2026-10-18',
+              records: [{ studentId: 'sp-1', status: 'PRESENT' }]
+            },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('5. Doubt Threads & Reassignment Security', () => {
+      let doubtsService: DoubtsService;
+      let mockPrisma: any;
+      let mockNotifications: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          doubt: {
+            findUnique: jest.fn(),
+            update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+          },
+          doubtMessage: {
+            create: jest.fn().mockResolvedValue({ id: 'msg-1' }),
+          },
+          user: {
+            findUnique: jest.fn(),
+          },
+        };
+        mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
+        doubtsService = new DoubtsService(mockPrisma as any, mockNotifications as any);
+      });
+
+      it('should reject reassigning doubt thread to a non-teacher user', async () => {
+        mockPrisma.doubt.findUnique.mockResolvedValue({
+          id: 'doubt-1',
+          centreId: 'centre-alpha',
+          teacherId: 'teacher-a'
+        });
+
+        // Target user is a student, not a teacher
+        mockPrisma.user.findUnique.mockResolvedValue({
+          id: 'student-u1',
+          role: { name: 'STUDENT' },
+          status: 'ACTIVE',
+          userCentres: [{ centreId: 'centre-alpha' }],
+        });
+
+        await expect(
+          doubtsService.reassign('doubt-1', adminA.id, 'CENTRE_ADMIN', 'student-u1', adminA)
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject reassigning doubt thread to a teacher in another centre', async () => {
+        mockPrisma.doubt.findUnique.mockResolvedValue({
+          id: 'doubt-1',
+          centreId: 'centre-alpha',
+          teacherId: 'teacher-a'
+        });
+
+        // Target teacher belongs to centre-beta only
+        mockPrisma.user.findUnique.mockResolvedValue({
+          id: 'teacher-b',
+          role: { name: 'TEACHER' },
+          status: 'ACTIVE',
+          userCentres: [{ centreId: 'centre-beta' }],
+        });
+
+        await expect(
+          doubtsService.reassign('doubt-1', adminA.id, 'CENTRE_ADMIN', 'teacher-b', adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('6. Forms and Global vs Centre Ownership', () => {
+      let formsService: FormsService;
+      let mockPrisma: any;
+      let mockNotifications: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          customForm: {
+            findUnique: jest.fn(),
+            update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+            delete: jest.fn().mockResolvedValue({ id: 'form-1' }),
+          },
+          customFormResponse: {
+            findMany: jest.fn().mockResolvedValue([]),
+          },
+        };
+        mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
+        formsService = new FormsService(mockPrisma as any, mockNotifications as any);
+      });
+
+      it('should reject non-superadmin modifying a global form (centreId null)', async () => {
+        mockPrisma.customForm.findUnique.mockResolvedValue({
+          id: 'form-global',
+          centreId: null,
+        });
+
+        await expect(
+          formsService.updateForm('form-global', { title: 'New Title' }, adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject non-superadmin deleting a global form (centreId null)', async () => {
+        mockPrisma.customForm.findUnique.mockResolvedValue({
+          id: 'form-global',
+          centreId: null,
+        });
+
+        await expect(
+          formsService.deleteForm('form-global', adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('should reject non-superadmin viewing responses to a global form', async () => {
+        mockPrisma.customForm.findUnique.mockResolvedValue({
+          id: 'form-global',
+          centreId: null,
+        });
+
+        await expect(
+          formsService.getFormResponses('form-global', adminA)
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('7. Financial Validation & State Integrity', () => {
+      let financeService: FinanceService;
+      let mockPrisma: any;
+
+      beforeEach(() => {
+        mockPrisma = {
+          transaction: {
+            create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'tx-1', ...args.data })),
+          },
+        };
+        financeService = new FinanceService(mockPrisma as any);
+      });
+
+      it('should reject transactions with negative or non-finite amounts', async () => {
+        await expect(
+          financeService.createTransaction(
+            { category: 'Supplies', amount: -50, centreId: 'centre-alpha' },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+
+        await expect(
+          financeService.createTransaction(
+            { category: 'Supplies', amount: 0, centreId: 'centre-alpha' },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+
+        await expect(
+          financeService.createTransaction(
+            { category: 'Supplies', amount: Infinity, centreId: 'centre-alpha' },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject transactions with invalid transaction type enum', async () => {
+        await expect(
+          financeService.createTransaction(
+            { category: 'Supplies', amount: 100, type: 'INVALID_TYPE', centreId: 'centre-alpha' },
+            adminA
+          )
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('8. Storage Upload Security and Extension Validation', () => {
+      let storageService: StorageService;
+
+      beforeEach(() => {
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'mock-account';
+        process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'mock-key';
+        process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = 'mock-secret';
+        storageService = new StorageService();
+      });
+
+      afterEach(() => {
+        delete process.env.CLOUDFLARE_ACCOUNT_ID;
+        delete process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+        delete process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+      });
+
+      it('should reject disallowed executable extensions', async () => {
+        await expect(
+          storageService.getPresignedUploadUrl('malicious.exe', 'application/octet-stream')
+        ).rejects.toThrow(BadRequestException);
+
+        await expect(
+          storageService.getPresignedUploadUrl('script.sh', 'application/x-sh')
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should reject unlisted file extensions outside the allowlist', async () => {
+        await expect(
+          storageService.getPresignedUploadUrl('payload.xyz', 'application/octet-stream')
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+  });
 });
+
 

@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateDoubtDto } from './dto/create-doubt.dto';
@@ -433,11 +433,27 @@ export class DoubtsService {
 
       const newTeacher = await this.prisma.user.findUnique({
         where: { id: newTeacherId },
-        include: { role: true, teacherProfile: true },
+        include: { role: true, teacherProfile: { include: { assignments: true } }, userCentres: true },
       });
 
       if (!newTeacher) {
         throw new HttpException('Selected teacher not found', HttpStatus.BAD_REQUEST);
+      }
+
+      const newTeacherRole = newTeacher.role?.name?.toUpperCase().replace(/\s+/g, '_');
+      if (newTeacherRole !== 'TEACHER') {
+        throw new BadRequestException('Selected user is not a teacher');
+      }
+
+      if (newTeacher.status && newTeacher.status !== 'ACTIVE') {
+        throw new BadRequestException('Selected teacher is not active');
+      }
+
+      if (existingDoubt.centreId) {
+        const teacherCentres = (newTeacher.userCentres || []).map(uc => uc.centreId);
+        if (!teacherCentres.includes(existingDoubt.centreId)) {
+          throw new ForbiddenException('Selected teacher is not assigned to the centre of this doubt thread');
+        }
       }
 
       const actor = await this.prisma.user.findUnique({

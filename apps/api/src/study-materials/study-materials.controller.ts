@@ -16,13 +16,13 @@ export class StudyMaterialController {
   ) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getAll(@Req() req: any) {
     return this.studyMaterialService.getAll(req.user);
   }
 
   @Get('by-topic/:topicId')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getByTopic(@Param('topicId') topicId: string, @Req() req: any) {
     return this.studyMaterialService.getByTopic(topicId, req.user);
   }
@@ -49,7 +49,7 @@ export class StudyMaterialController {
   }
 
   @Post(':id/progress')
-  @Roles('STUDENT', 'SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Roles('STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   updateProgress(
     @Param('id') id: string,
     @Body() progressData: any,
@@ -69,7 +69,7 @@ export class StudyMaterialController {
   }
 
   @Get(':id/play-url')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   async getPlayUrl(@Param('id') id: string, @Req() req: any) {
     const material = await this.studyMaterialService.getById(id, req.user);
     if (!material) {

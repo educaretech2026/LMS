@@ -1,18 +1,20 @@
-import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SyllabusService } from '../syllabus/syllabus.service';
-import { SAFE_USER_SELECT, isSuperAdmin, assertCentreAccess } from '../common/utils/tenant.util';
+import { SAFE_USER_SELECT, isSuperAdmin, assertCentreAccess, getAuthorizedCentreIds } from '../common/utils/tenant.util';
 
 @Injectable()
 export class AssignmentsService {
+  private readonly logger = new Logger(AssignmentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private syllabusService: SyllabusService,
   ) {}
 
-  async getAll(userId: string, role: any): Promise<any> {
+  async getAll(userId: string, role: any, user?: any): Promise<any> {
     try {
       const roleStr = typeof role === 'object' && role !== null
         ? String(role.name || '')
@@ -79,8 +81,49 @@ export class AssignmentsService {
         });
       }
 
-      // Teachers/Admins see all assignments they have access to
+      // Scope non-student users
+      let where: any = {};
+      const isSuper = user ? isSuperAdmin(user) : normalizedRole === 'SUPER_ADMIN';
+
+      if (!isSuper) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
+        if (normalizedRole === 'TEACHER') {
+          const teacherProfile = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            include: { assignments: true },
+          });
+
+          const teacherConditions: any[] = [
+            { uploaderId: userId, batch: { centreId: { in: authorizedCentres } } }
+          ];
+
+          if (teacherProfile?.assignments && teacherProfile.assignments.length > 0) {
+            for (const ta of teacherProfile.assignments) {
+              const cond: any = {
+                batch: { centreId: { in: authorizedCentres } },
+              };
+              if (ta.batchId) cond.batchId = ta.batchId;
+              if (ta.subjectId) cond.subjectId = ta.subjectId;
+              if (ta.standardId) {
+                cond.batch = { ...cond.batch, standardId: ta.standardId };
+              }
+              teacherConditions.push(cond);
+            }
+          }
+
+          where = { OR: teacherConditions };
+        } else {
+          // Centre Admin / Admin
+          where = {
+            batch: {
+              centreId: { in: authorizedCentres }
+            }
+          };
+        }
+      }
+
       return await this.prisma.assignment.findMany({
+        where,
         include: {
           uploader: { select: { firstName: true, lastName: true } },
           subject: true,
@@ -101,13 +144,14 @@ export class AssignmentsService {
       });
 
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error(error);
       throw new HttpException('Failed to fetch assignments', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async getOne(id: string): Promise<any> {
-    return await this.prisma.assignment.findUnique({
+  async getOne(id: string, user?: any): Promise<any> {
+    const assignment = await this.prisma.assignment.findUnique({
       where: { id },
       include: {
         uploader: { select: { firstName: true, lastName: true } },
@@ -126,12 +170,83 @@ export class AssignmentsService {
         submissions: {
           include: {
             student: {
-              include: { user: { select: { firstName: true, lastName: true } } }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           }
         }
       }
     });
+
+    if (!assignment) {
+      throw new NotFoundException('Assignment not found');
+    }
+
+    if (!user) {
+      return assignment;
+    }
+
+    const roleStr = typeof user.role === 'object' && user.role !== null
+      ? String(user.role.name || '')
+      : String(user.role || '');
+    const normalizedRole = roleStr.toUpperCase().replace(/\s+/g, '_');
+
+    if (isSuperAdmin(user)) {
+      return assignment;
+    }
+
+    // Verify centre access
+    const centreId = assignment.batch?.centreId;
+    if (centreId) {
+      assertCentreAccess(user, centreId);
+    }
+
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { userId: user.id },
+      include: { enrollments: true },
+    });
+
+    const isStudent = normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER' || !!profile;
+
+    if (isStudent) {
+      if (!profile) {
+        throw new ForbiddenException('Access denied: Student profile not found.');
+      }
+
+      if (assignment.batchId) {
+        const isEnrolled = profile.enrollments.some(e => e.batchId === assignment.batchId);
+        if (!isEnrolled) {
+          throw new ForbiddenException('Access denied: You are not enrolled in the batch for this assignment.');
+        }
+      }
+
+      // Filter submissions to ONLY the student's own submission
+      return {
+        ...assignment,
+        submissions: (assignment.submissions || []).filter(s => s.studentId === profile.id),
+      };
+    }
+
+    if (normalizedRole === 'TEACHER') {
+      const isUploader = assignment.uploaderId === user.id;
+      if (!isUploader) {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+          where: { userId: user.id },
+          include: { assignments: true },
+        });
+
+        const isAssigned = teacherProfile?.assignments?.some(a => {
+          if (assignment.batchId && a.batchId && a.batchId !== assignment.batchId) return false;
+          if (assignment.subjectId && a.subjectId && a.subjectId !== assignment.subjectId) return false;
+          return true;
+        });
+
+        if (!isAssigned) {
+          throw new ForbiddenException('You are not authorized to view this assignment.');
+        }
+      }
+    }
+
+    return assignment;
   }
 
   async create(data: any, uploaderId: string, user?: any): Promise<any> {
@@ -200,14 +315,31 @@ export class AssignmentsService {
     }
   }
 
-  async update(id: string, data: any, userId: string, role: string): Promise<any> {
+  async update(id: string, data: any, userId: string, role: string, user?: any): Promise<any> {
     try {
-      const existing = await this.prisma.assignment.findUnique({ where: { id } });
-      if (!existing) throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+      const existing = await this.prisma.assignment.findUnique({
+        where: { id },
+        include: { batch: true }
+      });
+      if (!existing) throw new NotFoundException('Assignment not found');
       
-      const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(role);
-      if (!isPrivileged && existing.uploaderId !== userId) {
-        throw new HttpException('Unauthorized to edit this assignment', HttpStatus.FORBIDDEN);
+      const normalizedRole = (typeof role === 'string' ? role : (role as any)?.name || '').toUpperCase().replace(/\s+/g, '_');
+      const isSuper = user ? isSuperAdmin(user) : normalizedRole === 'SUPER_ADMIN';
+      const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole);
+
+      if (!isSuper) {
+        if (existing.batch?.centreId && user) {
+          assertCentreAccess(user, existing.batch.centreId);
+        }
+        if (!isPrivileged && existing.uploaderId !== userId) {
+          throw new ForbiddenException('Unauthorized to edit this assignment');
+        }
+        if (data.batchId && data.batchId !== existing.batchId && user) {
+          const targetBatch = await this.prisma.batch.findUnique({ where: { id: data.batchId } });
+          if (targetBatch?.centreId) {
+            assertCentreAccess(user, targetBatch.centreId);
+          }
+        }
       }
 
       return await this.prisma.assignment.update({
@@ -240,41 +372,71 @@ export class AssignmentsService {
         }
       });
     } catch (error) {
-      console.error(error);
       if (error instanceof HttpException) throw error;
+      console.error(error);
       throw new HttpException('Failed to update assignment', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async delete(id: string, userId: string, role: string): Promise<any> {
+  async delete(id: string, userId: string, role: string, user?: any): Promise<any> {
     try {
-      const existing = await this.prisma.assignment.findUnique({ where: { id } });
-      if (!existing) throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
+      const existing = await this.prisma.assignment.findUnique({
+        where: { id },
+        include: { batch: true }
+      });
+      if (!existing) throw new NotFoundException('Assignment not found');
 
-      const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(role);
-      if (!isPrivileged && existing.uploaderId !== userId) {
-        throw new HttpException('Unauthorized to delete this assignment', HttpStatus.FORBIDDEN);
+      const normalizedRole = (typeof role === 'string' ? role : (role as any)?.name || '').toUpperCase().replace(/\s+/g, '_');
+      const isSuper = user ? isSuperAdmin(user) : normalizedRole === 'SUPER_ADMIN';
+      const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole);
+
+      if (!isSuper) {
+        if (existing.batch?.centreId && user) {
+          assertCentreAccess(user, existing.batch.centreId);
+        }
+        if (!isPrivileged && existing.uploaderId !== userId) {
+          throw new ForbiddenException('Unauthorized to delete this assignment');
+        }
       }
 
       return await this.prisma.assignment.delete({ where: { id } });
     } catch (error) {
-      console.error(error);
       if (error instanceof HttpException) throw error;
+      console.error(error);
       throw new HttpException('Failed to delete assignment', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async submit(assignmentId: string, studentUserId: string, data: any): Promise<any> {
+  async submit(assignmentId: string, studentUserId: string, data: any, user?: any): Promise<any> {
     try {
+      if (user && user.id && user.id !== studentUserId) {
+        throw new ForbiddenException('Cannot submit assignment on behalf of another user');
+      }
+
       const profile = await this.prisma.studentProfile.findUnique({
         where: { userId: studentUserId },
-        include: { user: { select: SAFE_USER_SELECT } }
+        include: { user: { select: SAFE_USER_SELECT }, enrollments: true }
       });
 
-      if (!profile) throw new Error("Student profile not found");
+      if (!profile) throw new NotFoundException("Student profile not found");
 
-      const assignment = await this.prisma.assignment.findUnique({ where: { id: assignmentId } });
-      if (!assignment) throw new Error("Assignment not found");
+      const assignment = await this.prisma.assignment.findUnique({
+        where: { id: assignmentId },
+        include: { batch: true }
+      });
+      if (!assignment) throw new NotFoundException("Assignment not found");
+
+      if (user && !isSuperAdmin(user) && assignment.batch?.centreId) {
+        assertCentreAccess(user, assignment.batch.centreId);
+      }
+
+      // Verify student is enrolled in the assignment's batch
+      if (assignment.batchId) {
+        const isEnrolled = profile.enrollments.some(e => e.batchId === assignment.batchId);
+        if (!isEnrolled) {
+          throw new ForbiddenException('You are not enrolled in the batch for this assignment.');
+        }
+      }
 
       const isLate = assignment.dueDate ? new Date() > new Date(assignment.dueDate) : false;
       const submissionStatus = isLate ? 'LATE' : 'SUBMITTED';
@@ -328,6 +490,7 @@ export class AssignmentsService {
 
       return submission;
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error(error);
       throw new HttpException('Failed to submit assignment', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -355,16 +518,36 @@ export class AssignmentsService {
         if (centreId) {
           assertCentreAccess(user, centreId);
         }
+        const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
+        const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+        if (normalizedRole === 'TEACHER') {
+          const isUploader = existing.assignment?.uploaderId === user.id;
+          if (!isUploader) {
+            const teacherProfile = await this.prisma.teacherProfile.findUnique({
+              where: { userId: user.id },
+              include: { assignments: true },
+            });
+            const isAssigned = teacherProfile?.assignments?.some(a => {
+              if (existing.assignment?.batchId && a.batchId && a.batchId !== existing.assignment.batchId) return false;
+              if (existing.assignment?.subjectId && a.subjectId && a.subjectId !== existing.assignment.subjectId) return false;
+              return true;
+            });
+            if (!isAssigned) {
+              throw new ForbiddenException('You are not authorized to grade this assignment');
+            }
+          }
+        }
       }
 
-      if (data.grade === undefined || isNaN(Number(data.grade)) || Number(data.grade) < 0) {
+      const gradeNum = Number(data.grade);
+      if (data.grade === undefined || !Number.isFinite(gradeNum) || gradeNum < 0) {
         throw new BadRequestException('A valid non-negative numeric grade is required');
       }
 
       const submission = await this.prisma.assignmentSubmission.update({
         where: { id: submissionId },
         data: {
-          grade: Number(data.grade),
+          grade: gradeNum,
           feedback: data.feedback || null,
           status: 'GRADED'
         },
@@ -373,6 +556,8 @@ export class AssignmentsService {
           assignment: true
         }
       });
+
+      this.logger.log(`Submission ${submissionId} graded by user ${user?.id || 'unknown'}: ${gradeNum} marks`);
 
       // Notify the student
       try {
@@ -395,3 +580,4 @@ export class AssignmentsService {
     }
   }
 }
+

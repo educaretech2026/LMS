@@ -14,13 +14,13 @@ export class AssignmentsController {
   @Get()
   getAll(@Req() req: any): Promise<any> {
     const roleName = req.user?.role?.name || req.user?.role || '';
-    return this.assignmentsService.getAll(req.user.id, roleName);
+    return this.assignmentsService.getAll(req.user.id, roleName, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   @Get(':id')
-  getOne(@Param('id') id: string): Promise<any> {
-    return this.assignmentsService.getOne(id);
+  getOne(@Param('id') id: string, @Req() req: any): Promise<any> {
+    return this.assignmentsService.getOne(id, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -33,20 +33,20 @@ export class AssignmentsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() data: any, @Req() req: any): Promise<any> {
     const roleName = req.user?.role?.name || req.user?.role || '';
-    return this.assignmentsService.update(id, data, req.user.id, roleName);
+    return this.assignmentsService.update(id, data, req.user.id, roleName, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   @Delete(':id')
   delete(@Param('id') id: string, @Req() req: any): Promise<any> {
     const roleName = req.user?.role?.name || req.user?.role || '';
-    return this.assignmentsService.delete(id, req.user.id, roleName);
+    return this.assignmentsService.delete(id, req.user.id, roleName, req.user);
   }
 
   @Roles('STUDENT', 'PUBLIC_LEARNER')
   @Post(':id/submit')
   submit(@Param('id') id: string, @Body() data: any, @Req() req: any): Promise<any> {
-    return this.assignmentsService.submit(id, req.user.id, data);
+    return this.assignmentsService.submit(id, req.user.id, data, req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
@@ -55,3 +55,4 @@ export class AssignmentsController {
     return this.assignmentsService.gradeSubmission(id, data, req.user);
   }
 }
+

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Delete, Param, UseGuards, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Delete, Param, UseGuards, Put, Req } from '@nestjs/common';
 import { SetupService } from './setup.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -71,6 +71,7 @@ export class SetupController {
   }
 
   @Post('academic-years')
+  @Roles('SUPER_ADMIN')
   createAcademicYear(@Body() data: any) {
     if (data.startDate) data.startDate = new Date(data.startDate);
     if (data.endDate) data.endDate = new Date(data.endDate);
@@ -84,6 +85,7 @@ export class SetupController {
   }
 
   @Post('boards')
+  @Roles('SUPER_ADMIN')
   createBoard(@Body() data: any) {
     return this.setupService.createBoard(data);
   }
@@ -95,6 +97,7 @@ export class SetupController {
   }
 
   @Post('standards')
+  @Roles('SUPER_ADMIN')
   createStandard(@Body() data: any) {
     if (data.level) data.level = Number(data.level);
     return this.setupService.createStandard(data);
@@ -102,18 +105,23 @@ export class SetupController {
 
   @Get('batches')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
-  getBatches(@Query('boardId') boardId?: string, @Query('standardId') standardId?: string) {
-    return this.setupService.getBatches(boardId, standardId);
+  getBatches(
+    @Query('boardId') boardId?: string,
+    @Query('standardId') standardId?: string,
+    @Query('centreId') centreId?: string,
+    @Req() req?: any,
+  ) {
+    return this.setupService.getBatches(boardId, standardId, req?.user, centreId);
   }
 
   @Post('batches')
-  createBatch(@Body() data: any) {
-    return this.setupService.createBatch(data);
+  createBatch(@Body() data: any, @Req() req?: any) {
+    return this.setupService.createBatch(data, req?.user);
   }
 
   @Delete('batches/:id')
-  deleteBatch(@Param('id') id: string) {
-    return this.setupService.deleteBatch(id);
+  deleteBatch(@Param('id') id: string, @Req() req?: any) {
+    return this.setupService.deleteBatch(id, req?.user);
   }
 
   @Get('tracks')
@@ -123,11 +131,13 @@ export class SetupController {
   }
 
   @Post('tracks')
+  @Roles('SUPER_ADMIN')
   createTrack(@Body() data: { name: string }) {
     return this.setupService.createTrack(data);
   }
 
   @Delete('tracks/:id')
+  @Roles('SUPER_ADMIN')
   deleteTrack(@Param('id') id: string) {
     return this.setupService.deleteTrack(id);
   }
@@ -139,6 +149,7 @@ export class SetupController {
   }
 
   @Post('subjects')
+  @Roles('SUPER_ADMIN')
   createSubject(@Body() data: any) {
     return this.setupService.createSubject(data);
   }
@@ -150,6 +161,7 @@ export class SetupController {
   }
 
   @Post('syllabi')
+  @Roles('SUPER_ADMIN')
   createSyllabus(@Body() data: any) {
     return this.setupService.createSyllabus(data);
   }
@@ -161,6 +173,7 @@ export class SetupController {
   }
 
   @Post('chapters')
+  @Roles('SUPER_ADMIN')
   createChapter(@Body() data: any) {
     return this.setupService.createChapter(data);
   }
@@ -172,6 +185,7 @@ export class SetupController {
   }
 
   @Post('topics')
+  @Roles('SUPER_ADMIN')
   createTopic(@Body() data: any) {
     return this.setupService.createTopic(data);
   }
@@ -183,17 +197,20 @@ export class SetupController {
   }
 
   @Post('subtopics')
+  @Roles('SUPER_ADMIN')
   createSubtopic(@Body() data: any) {
     return this.setupService.createSubtopic(data);
   }
 
   // DELETE endpoints for hierarchy
   @Delete('boards/:id')
+  @Roles('SUPER_ADMIN')
   deleteBoard(@Param('id') id: string) {
     return this.setupService.deleteBoard(id);
   }
 
   @Delete('standards/:id')
+  @Roles('SUPER_ADMIN')
   deleteStandard(@Param('id') id: string) {
     return this.setupService.deleteStandard(id);
   }
@@ -205,26 +222,31 @@ export class SetupController {
   }
 
   @Delete('subjects/:id')
+  @Roles('SUPER_ADMIN')
   deleteSubject(@Param('id') id: string) {
     return this.setupService.deleteSubject(id);
   }
 
   @Delete('syllabi/:id')
+  @Roles('SUPER_ADMIN')
   deleteSyllabus(@Param('id') id: string) {
     return this.setupService.deleteSyllabus(id);
   }
 
   @Delete('chapters/:id')
+  @Roles('SUPER_ADMIN')
   deleteChapter(@Param('id') id: string) {
     return this.setupService.deleteChapter(id);
   }
 
   @Delete('topics/:id')
+  @Roles('SUPER_ADMIN')
   deleteTopic(@Param('id') id: string) {
     return this.setupService.deleteTopic(id);
   }
 
   @Delete('subtopics/:id')
+  @Roles('SUPER_ADMIN')
   deleteSubtopic(@Param('id') id: string) {
     return this.setupService.deleteSubtopic(id);
   }

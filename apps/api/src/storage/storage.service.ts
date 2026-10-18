@@ -23,12 +23,21 @@ const ALLOWED_MIME_PREFIXES = [
   'text/csv',
 ];
 
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.webp', '.gif',
+  '.mp4', '.webm', '.mov',
+  '.mp3', '.wav', '.m4a',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.txt', '.csv',
+]);
+
 const DISALLOWED_EXTENSIONS = new Set([
   '.exe', '.bat', '.cmd', '.sh', '.php', '.phtml', '.phtm', '.phps',
   '.js', '.mjs', '.cjs', '.jsp', '.asp', '.aspx', '.cgi', '.py', '.pl',
   '.html', '.htm', '.xhtml', '.svg', '.svgz', '.vbs', '.scr', '.msi',
   '.jar', '.com', '.hta', '.wsf', '.dll',
 ]);
+
 
 @Injectable()
 export class StorageService {
@@ -73,7 +82,7 @@ export class StorageService {
     }
 
     const ext = path.extname(filename).toLowerCase();
-    if (DISALLOWED_EXTENSIONS.has(ext)) {
+    if (!ext || !ALLOWED_EXTENSIONS.has(ext) || DISALLOWED_EXTENSIONS.has(ext)) {
       throw new BadRequestException(`File extension "${ext}" is not permitted.`);
     }
 

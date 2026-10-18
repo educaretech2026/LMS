@@ -7,16 +7,25 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import * as path from 'path';
 
-const DISALLOWED_FORM_MIME_TYPES = [
-  'text/html',
-  'image/svg+xml',
-  'application/x-sh',
-  'application/javascript',
-  'text/javascript',
-  'application/x-msdownload',
-  'application/xhtml+xml',
-  'application/x-httpd-php',
-];
+const ALLOWED_FORM_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+]);
+
+const ALLOWED_FORM_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.webp', '.gif',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+  '.txt', '.csv',
+]);
 
 @Controller('forms')
 export class FormsController {
@@ -58,7 +67,12 @@ export class FormsController {
       throw new BadRequestException('Filename and contentType are required');
     }
 
-    if (DISALLOWED_FORM_MIME_TYPES.includes(contentType.toLowerCase())) {
+    const ext = path.extname(filename).toLowerCase();
+    if (!ALLOWED_FORM_EXTENSIONS.has(ext)) {
+      throw new BadRequestException(`File extension "${ext}" is not permitted.`);
+    }
+
+    if (!ALLOWED_FORM_MIME_TYPES.has(contentType.toLowerCase())) {
       throw new BadRequestException(`Uploading files of type "${contentType}" is not permitted for security reasons.`);
     }
 

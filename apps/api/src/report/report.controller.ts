@@ -103,6 +103,7 @@ export class ReportController {
     @Query('subjectId') subjectId?: string,
     @Query('chapterId') chapterId?: string,
     @Query('topicId') topicId?: string,
+    @Req() req?: any,
   ) {
     return this.reportService.getExamsAnalytics(
       batchId,
@@ -115,6 +116,7 @@ export class ReportController {
       subjectId,
       chapterId,
       topicId,
+      req?.user,
     );
   }
 
@@ -128,6 +130,7 @@ export class ReportController {
     @Query('boardId') boardId?: string,
     @Query('standardId') standardId?: string,
     @Query('subjectId') subjectId?: string,
+    @Req() req?: any,
   ) {
     return this.reportService.getAttendanceAnalytics(
       batchId,
@@ -137,6 +140,7 @@ export class ReportController {
       boardId,
       standardId,
       subjectId,
+      req?.user,
     );
   }
 

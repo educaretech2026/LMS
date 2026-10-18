@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class SetupService {
+
   constructor(private prisma: PrismaService) {}
 
   // Roles
@@ -186,11 +188,25 @@ export class SetupService {
   }
 
   // Batches
-  async getBatches(boardId?: string, standardId?: string) {
+  async getBatches(boardId?: string, standardId?: string, user?: any, centreId?: string) {
+    let effectiveCentres: string[] | null = null;
+    if (user && !isSuperAdmin(user)) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      if (centreId) {
+        assertCentreAccess(user, centreId);
+        effectiveCentres = [centreId];
+      } else {
+        effectiveCentres = authorizedCentres;
+      }
+    } else if (centreId) {
+      effectiveCentres = [centreId];
+    }
+
     return this.prisma.batch.findMany({
       where: {
         ...(boardId && { boardId }),
         ...(standardId && { standardId }),
+        ...(effectiveCentres ? { centreId: { in: effectiveCentres } } : {}),
       },
       include: {
         board: true,
@@ -201,13 +217,20 @@ export class SetupService {
     });
   }
 
-  async createBatch(data: { name: string; academicYearId: string; boardId: string; standardId: string; centreId: string; trackId?: string }) {
+  async createBatch(data: { name: string; academicYearId: string; boardId: string; standardId: string; centreId: string; trackId?: string }, user?: any) {
+    if (user && !isSuperAdmin(user)) {
+      assertCentreAccess(user, data.centreId);
+    }
     return this.prisma.batch.create({ data });
   }
 
-  async deleteBatch(id: string) {
+  async deleteBatch(id: string, user?: any) {
     const batch = await this.prisma.batch.findUnique({ where: { id }, include: { _count: { select: { enrollments: true, assignments: true, exams: true } } } });
     if (!batch) return;
+
+    if (user && !isSuperAdmin(user) && batch.centreId) {
+      assertCentreAccess(user, batch.centreId);
+    }
     
     const { enrollments, assignments, exams } = batch._count;
     if (enrollments > 0 || assignments > 0 || exams > 0) {
@@ -216,6 +239,7 @@ export class SetupService {
 
     return this.prisma.batch.delete({ where: { id } });
   }
+
 
   // Target Tracks
   async getTracks() {
