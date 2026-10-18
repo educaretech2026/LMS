@@ -127,7 +127,7 @@ export class StaffService {
     const where: any = {
       role: {
         name: {
-          notIn: ['STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN']
+          notIn: ['STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN', 'Super Admin']
         }
       }
     };

@@ -15,7 +15,9 @@ export const SAFE_USER_SELECT = {
 export function isSuperAdmin(user: any): boolean {
   if (!user) return false;
   const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
-  return roleName?.toUpperCase() === 'SUPER_ADMIN';
+  if (!roleName) return false;
+  const normalized = roleName.toUpperCase().replace(/[\s_]+/g, '_');
+  return normalized === 'SUPER_ADMIN' || normalized === 'ADMIN';
 }
 
 export function getUserCentreIds(user: any): string[] {
