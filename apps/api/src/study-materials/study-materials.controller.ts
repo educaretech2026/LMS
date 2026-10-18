@@ -39,17 +39,23 @@ export class StudyMaterialController {
     const deleted = await this.studyMaterialService.delete(id, req.user);
     if (deleted) {
       if (deleted.url && !deleted.url.includes('youtube.com')) {
-        await this.storageService.deleteFile(deleted.url);
+        const stillInUse = await this.studyMaterialService.isStorageUrlInUse(deleted.url, deleted.id);
+        if (!stillInUse) {
+          await this.storageService.deleteFile(deleted.url);
+        }
       }
       if (deleted.thumbnailUrl) {
-        await this.storageService.deleteFile(deleted.thumbnailUrl);
+        const thumbInUse = await this.studyMaterialService.isStorageUrlInUse(deleted.thumbnailUrl, deleted.id);
+        if (!thumbInUse) {
+          await this.storageService.deleteFile(deleted.thumbnailUrl);
+        }
       }
     }
     return deleted;
   }
 
   @Post(':id/progress')
-  @Roles('STUDENT', 'PUBLIC_LEARNER', 'SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Roles('STUDENT')
   updateProgress(
     @Param('id') id: string,
     @Body() progressData: any,

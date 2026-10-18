@@ -24,12 +24,17 @@ export class AttendanceService {
       if (isTeacher && user?.id) {
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
-          include: { assignments: true },
+          include: { assignments: { include: { batch: true } } },
         });
         const isAssigned = teacherProfile?.assignments?.some(a => {
           if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
           if (a.batchId && a.batchId === batchId) return true;
-          if (a.standardId && batch.standardId === a.standardId) return true;
+          if (a.batch && a.batch.id === batchId) return true;
+          if (a.standardId && batch.standardId === a.standardId) {
+            if (a.boardId && batch.boardId && a.boardId !== batch.boardId) return false;
+            if (a.batch && a.batch.centreId && a.batch.centreId !== batch.centreId) return false;
+            return true;
+          }
           return false;
         });
         if (!isAssigned) {
@@ -138,12 +143,17 @@ export class AttendanceService {
       if (isTeacher && user?.id) {
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
-          include: { assignments: true },
+          include: { assignments: { include: { batch: true } } },
         });
         const isAssigned = teacherProfile?.assignments?.some(a => {
           if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
           if (a.batchId && a.batchId === batchId) return true;
-          if (a.standardId && batch.standardId === a.standardId) return true;
+          if (a.batch && a.batch.id === batchId) return true;
+          if (a.standardId && batch.standardId === a.standardId) {
+            if (a.boardId && batch.boardId && a.boardId !== batch.boardId) return false;
+            if (a.batch && a.batch.centreId && a.batch.centreId !== batch.centreId) return false;
+            return true;
+          }
           return false;
         });
         if (!isAssigned) {
@@ -174,10 +184,15 @@ export class AttendanceService {
       where: { centreId, boardId, standardId, trackId }
     });
     if (!batch) {
-      // Create a default batch for these dimensions so we can link attendance to it
-      // Find any active academic year
-      const ay = await this.prisma.academicYear.findFirst({ where: { isActive: true } }) || await this.prisma.academicYear.findFirst();
-      if (!ay) throw new BadRequestException("No academic year found");
+      // Find single active academic year deterministically
+      const activeYears = await this.prisma.academicYear.findMany({ where: { isActive: true } });
+      if (activeYears.length === 0) {
+        throw new BadRequestException("No active academic year configured. Please configure an active academic year.");
+      }
+      if (activeYears.length > 1) {
+        throw new BadRequestException("Multiple active academic years found. Cannot deterministically resolve default batch without explicit academic year.");
+      }
+      const ay = activeYears[0];
       
       batch = await this.prisma.batch.create({
         data: {
@@ -204,10 +219,16 @@ export class AttendanceService {
     if (isTeacher && user?.id) {
       const teacherProfile = await this.prisma.teacherProfile.findUnique({
         where: { userId: user.id },
-        include: { assignments: true },
+        include: { assignments: { include: { batch: true } } },
       });
-      assignedBatchIds = (teacherProfile?.assignments || []).map(a => a.batchId).filter(Boolean) as string[];
-      assignedStandardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
+      const validAssignments = (teacherProfile?.assignments || []).filter(a => {
+        if (a.batch) {
+          return a.batch.centreId === centreId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId);
+        }
+        return (!boardId || !a.boardId || a.boardId === boardId);
+      });
+      assignedBatchIds = validAssignments.map(a => a.batchId).filter(Boolean) as string[];
+      assignedStandardIds = validAssignments.map(a => a.standardId).filter(Boolean) as string[];
     }
 
     return this.prisma.batch.findMany({
@@ -239,11 +260,15 @@ export class AttendanceService {
         include: { assignments: { include: { batch: true } } },
       });
       const isAssigned = teacherProfile?.assignments?.some(a => {
-        if (a.standardId && a.standardId === standardId) return true;
         if (a.batch) {
           if (a.batch.centreId === centreId && a.batch.standardId === standardId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId)) {
             return true;
           }
+          return false;
+        }
+        if (a.standardId && a.standardId === standardId) {
+          if (boardId && a.boardId && a.boardId !== boardId) return false;
+          return true;
         }
         return false;
       });
@@ -283,11 +308,15 @@ export class AttendanceService {
         include: { assignments: { include: { batch: true } } },
       });
       const isAssigned = teacherProfile?.assignments?.some(a => {
-        if (a.standardId && a.standardId === standardId) return true;
         if (a.batch) {
           if (a.batch.centreId === centreId && a.batch.standardId === standardId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId)) {
             return true;
           }
+          return false;
+        }
+        if (a.standardId && a.standardId === standardId) {
+          if (boardId && a.boardId && a.boardId !== boardId) return false;
+          return true;
         }
         return false;
       });

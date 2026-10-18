@@ -28,7 +28,6 @@ const ALLOWED_MIMES = new Set([
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'text/plain',
   'text/csv',
-  'application/octet-stream',
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([
@@ -50,24 +49,24 @@ const DISALLOWED_EXTENSIONS = new Set([
 const EXTENSION_FAMILY_MIME_MAP: Record<string, string[]> = {
   '.jpg': ['image/jpeg', 'image/pjpeg'],
   '.jpeg': ['image/jpeg', 'image/pjpeg'],
-  '.png': ['image/png', 'image/jpeg'],
-  '.webp': ['image/webp', 'image/jpeg'],
-  '.gif': ['image/gif', 'image/jpeg'],
+  '.png': ['image/png'],
+  '.webp': ['image/webp'],
+  '.gif': ['image/gif'],
   '.mp4': ['video/mp4'],
   '.webm': ['video/webm'],
-  '.mov': ['video/quicktime', 'video/mp4'],
+  '.mov': ['video/quicktime'],
   '.mp3': ['audio/mpeg', 'audio/mp3'],
   '.wav': ['audio/wav', 'audio/x-wav'],
   '.m4a': ['audio/mp4', 'audio/x-m4a'],
   '.pdf': ['application/pdf'],
-  '.doc': ['application/msword', 'application/octet-stream'],
-  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/octet-stream'],
-  '.xls': ['application/vnd.ms-excel', 'application/octet-stream'],
-  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'],
-  '.ppt': ['application/vnd.ms-powerpoint', 'application/octet-stream'],
-  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/octet-stream'],
+  '.doc': ['application/msword'],
+  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  '.xls': ['application/vnd.ms-excel'],
+  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  '.ppt': ['application/vnd.ms-powerpoint'],
+  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
   '.txt': ['text/plain'],
-  '.csv': ['text/csv', 'text/plain', 'application/vnd.ms-excel'],
+  '.csv': ['text/csv'],
 };
 
 @Injectable()
