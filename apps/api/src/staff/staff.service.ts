@@ -84,6 +84,7 @@ export class StaffService {
               await prisma.teacherAssignment.create({
                 data: {
                   teacherProfileId: profile.id,
+                  centreId: centre.id,
                   academicYearId,
                   boardId,
                   subjectId,
@@ -261,9 +262,12 @@ export class StaffService {
             if (std) standardId = std.id;
           }
 
+          const effectiveCentreId = centre?.id || (await prisma.userCentre.findFirst({ where: { userId } }))?.centreId;
+
           await prisma.teacherAssignment.create({
             data: {
               teacherProfileId: profile.id,
+              centreId: effectiveCentreId,
               academicYearId,
               boardId,
               subjectId,

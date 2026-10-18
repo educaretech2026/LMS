@@ -149,8 +149,8 @@ export class StorageService {
       return null;
     }
 
-    // Must be in managed storage prefixes: 'materials/' or 'forms/'
-    if (!rawKey.startsWith('materials/') && !rawKey.startsWith('forms/')) {
+    // Must be in managed storage prefixes: 'materials/', 'forms/', or 'thumbnails/'
+    if (!rawKey.startsWith('materials/') && !rawKey.startsWith('forms/') && !rawKey.startsWith('thumbnails/')) {
       return null;
     }
 
@@ -163,10 +163,24 @@ export class StorageService {
   }
 
   /**
+   * Extracts the owning userId from an object key if it was generated with user scoping.
+   */
+  extractOwnerFromKey(objectKey: string): string | null {
+    const validated = this.extractAndValidateObjectKey(objectKey);
+    if (!validated) return null;
+    const parts = validated.split('/');
+    if (parts.length >= 3 && (parts[0] === 'materials' || parts[0] === 'thumbnails')) {
+      return parts[1];
+    }
+    return null;
+  }
+
+  /**
    * Generates a pre-signed URL for client-side direct uploads.
    * Validates file extension, mime type, and cross-compatibility.
+   * Scopes objectKey to requesting user when userId is provided.
    */
-  async getPresignedUploadUrl(filename: string, contentType: string) {
+  async getPresignedUploadUrl(filename: string, contentType: string, userId?: string) {
     if (!filename || !contentType) {
       throw new BadRequestException('Filename and contentType are required.');
     }
@@ -199,7 +213,10 @@ export class StorageService {
 
     const uniqueId = crypto.randomBytes(16).toString('hex');
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9.-]/g, '_');
-    const objectKey = `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
+    const safeUserId = userId ? String(userId).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+    const objectKey = safeUserId 
+      ? `materials/${safeUserId}/${Date.now()}-${uniqueId}-${safeFilename}`
+      : `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
 
     const command = new PutObjectCommand({
       Bucket: this.bucketName,

@@ -1,10 +1,14 @@
-import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { isSuperAdmin, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StudyMaterialService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly storageService?: StorageService
+  ) {}
 
   async getAll(user?: any) {
     try {
@@ -97,37 +101,52 @@ export class StudyMaterialService {
         const assignmentConditions = validAssignments.map(a => {
           const stdId = a.standardId || a.batch?.standardId;
           const brdId = a.boardId || a.batch?.boardId;
+          const assignedCentreId = a.batch?.centreId || (a as any).centreId || (authorizedCentres.length === 1 ? authorizedCentres[0] : null);
+
+          // If the assignment has no identifiable centre or is for an unauthorized centre, exclude it
+          if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
+            return null;
+          }
+
           return {
-            syllabus: {
-              subjectId: a.subjectId,
-              standardId: stdId,
-              ...(brdId ? { boardId: brdId } : {}),
-            }
+            AND: [
+              {
+                syllabus: {
+                  subjectId: a.subjectId,
+                  standardId: stdId,
+                  ...(brdId ? { boardId: brdId } : {}),
+                }
+              },
+              ...(a.batch?.trackId ? [{
+                OR: [
+                  { targetTrackId: null },
+                  { targetTrackId: a.batch.trackId }
+                ]
+              }] : []),
+              {
+                OR: [
+                  {
+                    targetTrackId: { not: null },
+                    targetTrack: { batches: { some: { centreId: assignedCentreId } } }
+                  },
+                  {
+                    targetTrackId: null,
+                    uploader: { userCentres: { some: { centreId: assignedCentreId } } }
+                  },
+                  {
+                    targetTrackId: null,
+                    uploader: { role: { name: 'SUPER_ADMIN' } }
+                  }
+                ]
+              }
+            ]
           };
-        });
+        }).filter(Boolean);
         
         where = {
-          AND: [
-            {
-              OR: [
-                {
-                  targetTrackId: { not: null },
-                  targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } }
-                },
-                {
-                  targetTrackId: null,
-                  uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } }
-                },
-                { uploaderId: user.id },
-                { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
-              ]
-            },
-            {
-              OR: [
-                { uploaderId: user.id },
-                ...(assignmentConditions.length > 0 ? assignmentConditions : [{ id: 'none' }]),
-              ]
-            }
+          OR: [
+            { uploaderId: user.id },
+            ...(assignmentConditions.length > 0 ? assignmentConditions : [{ id: 'none' }]),
           ]
         };
       } else if (isCentreAdmin && user?.id) {
@@ -237,18 +256,31 @@ export class StudyMaterialService {
           if (!trackCentres.includes(e.batch.centreId)) return false;
         } else if (material.targetTrackId !== null && trackCentres.length === 0) {
           return false;
-        } else if (!isSuperAdminUploader && uploaderCentres.length > 0) {
-          if (!uploaderCentres.includes(e.batch.centreId)) return false;
+        } else if (material.targetTrackId === null) {
+          if (isSuperAdminUploader) {
+            // Global superadmin material is allowed
+          } else if (uploaderCentres.length > 0) {
+            if (!uploaderCentres.includes(e.batch.centreId)) return false;
+          } else {
+            // Untracked material whose uploader has NO centre memberships must fail closed
+            return false;
+          }
         }
 
-        // Track ID check on this specific enrolment
-        if (material.targetTrackId && e.trackId && e.trackId !== material.targetTrackId) {
-          return false;
+        // Track ID check on this specific enrolment:
+        // A student MUST have a matching trackId if material has targetTrackId!
+        // A null trackId on enrolment cannot bypass or access a targeted-track material.
+        if (material.targetTrackId !== null) {
+          if (!e.trackId || e.trackId !== material.targetTrackId) {
+            return false;
+          }
         }
 
         // Academic Year check
         if (material.academicYearId && e.batch.academicYearId && e.batch.academicYearId !== material.academicYearId) {
-          return false;
+          if (!material.academicYear?.isActive) {
+            return false;
+          }
         }
 
         // Syllabus (board + standard) check together on this specific enrolment!
@@ -295,21 +327,9 @@ export class StudyMaterialService {
         const authorizedCentres = getAuthorizedCentreIds(user);
         const trackCentres = (material.targetTrack?.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
         const uploaderCentres = material.uploader?.userCentres?.map((uc: any) => uc.centreId) || [];
-
-        if (material.targetTrackId) {
-          const isTrackInCentre = trackCentres.some(c => authorizedCentres.includes(c));
-          if (!isTrackInCentre) {
-            throw new ForbiddenException('Access denied: Study material belongs to another centre.');
-          }
-        } else {
-          const isUploaderInCentre = uploaderCentres.some(c => authorizedCentres.includes(c));
-          const uploaderObj = material.uploader as any;
-          const roleStrUploader = typeof uploaderObj?.role === 'object' && uploaderObj?.role !== null ? uploaderObj?.role.name : uploaderObj?.role;
-          const isSuperAdminUploader = String(roleStrUploader || '').toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN';
-          if (!isUploaderInCentre && !isSuperAdminUploader) {
-            throw new ForbiddenException('Access denied: Study material belongs to another centre.');
-          }
-        }
+        const uploaderObj = material.uploader as any;
+        const roleStrUploader = typeof uploaderObj?.role === 'object' && uploaderObj?.role !== null ? uploaderObj?.role.name : uploaderObj?.role;
+        const isSuperAdminUploader = String(roleStrUploader || '').toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN';
 
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
@@ -327,6 +347,19 @@ export class StudyMaterialService {
             if (brdId !== material.syllabus.boardId) return false;
           }
           if (material.targetTrackId && a.batch?.trackId && a.batch.trackId !== material.targetTrackId) return false;
+
+          // Authoritative centre check per assignment
+          const assignedCentreId = a.batch?.centreId || (a as any).centreId || (authorizedCentres.length === 1 ? authorizedCentres[0] : null);
+          if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
+            return false;
+          }
+
+          if (material.targetTrackId !== null) {
+            if (!trackCentres.includes(assignedCentreId)) return false;
+          } else if (!isSuperAdminUploader) {
+            if (uploaderCentres.length === 0 || !uploaderCentres.includes(assignedCentreId)) return false;
+          }
+
           return true;
         });
 
@@ -456,27 +489,11 @@ export class StudyMaterialService {
 
       const effectiveUploaderId = (user && !isSuperAdmin(user)) ? user.id : (user?.id || data.uploaderId);
 
-      // Verify storage URL and thumbnailUrl ownership
-      const checkStorageOwnership = async (rawUrl: string, fieldName: string) => {
-        if (!rawUrl || rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be')) return;
-        const existingWithUrl = await this.prisma.studyMaterial.findFirst({
-          where: {
-            OR: [
-              { url: rawUrl },
-              { thumbnailUrl: rawUrl },
-            ]
-          }
-        });
-        if (existingWithUrl && existingWithUrl.uploaderId && existingWithUrl.uploaderId !== effectiveUploaderId) {
-          throw new ForbiddenException(`Cannot associate a storage object (${fieldName}) owned by another user or material.`);
-        }
-      };
-
       if (data.url) {
-        await checkStorageOwnership(data.url, 'url');
+        await this.checkStorageOwnership(data.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
       }
       if (data.thumbnailUrl) {
-        await checkStorageOwnership(data.thumbnailUrl, 'thumbnailUrl');
+        await this.checkStorageOwnership(data.thumbnailUrl, 'thumbnailUrl', effectiveUploaderId, user ? isSuperAdmin(user) : false);
       }
 
       return await this.prisma.studyMaterial.create({
@@ -500,6 +517,70 @@ export class StudyMaterialService {
       }
       console.error(error);
       throw new HttpException('Failed to create study material', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  extractAndValidateStorageKey(urlOrKey: string): string | null {
+    if (this.storageService) {
+      return this.storageService.extractAndValidateObjectKey(urlOrKey);
+    }
+    if (!urlOrKey || typeof urlOrKey !== 'string') return null;
+    let rawKey = urlOrKey.trim();
+    if (!rawKey) return null;
+    if (rawKey.startsWith('http://') || rawKey.startsWith('https://')) {
+      try {
+        const parsedUrl = new URL(rawKey);
+        rawKey = parsedUrl.pathname.replace(/^\/+/, '');
+      } catch {
+        return null;
+      }
+    } else {
+      rawKey = rawKey.replace(/^\/+/, '');
+    }
+    if (rawKey.includes('..') || rawKey.includes('\\')) return null;
+    if (!rawKey.startsWith('materials/') && !rawKey.startsWith('forms/') && !rawKey.startsWith('thumbnails/')) {
+      return null;
+    }
+    if (!/^[a-zA-Z0-9_\-\./]+$/.test(rawKey)) return null;
+    return rawKey;
+  }
+
+  async checkStorageOwnership(rawUrl: string, fieldName: string, effectiveUploaderId: string, isSuperAdminUser: boolean = false) {
+    if (!rawUrl || typeof rawUrl !== 'string') return;
+
+    if (rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be')) {
+      if (fieldName === 'thumbnailUrl') {
+        throw new BadRequestException('Thumbnails cannot be YouTube URLs.');
+      }
+      return;
+    }
+
+    // 1. Authoritative validation: must be a managed storage key/URL
+    const validatedKey = this.extractAndValidateStorageKey(rawUrl);
+    if (!validatedKey) {
+      throw new BadRequestException(`Invalid or unmanaged storage object (${fieldName}). Expected an approved managed storage key or URL.`);
+    }
+
+    // 2. If object key encodes an owner (e.g. materials/<userId>/...)
+    const keyParts = validatedKey.split('/');
+    if (keyParts.length >= 3 && (keyParts[0] === 'materials' || keyParts[0] === 'thumbnails')) {
+      const ownerInKey = keyParts[1];
+      if (ownerInKey && ownerInKey !== effectiveUploaderId && !isSuperAdminUser) {
+        throw new ForbiddenException(`Cannot associate a storage object (${fieldName}) owned by another user.`);
+      }
+    }
+
+    // 3. Database existing material check
+    const existingWithUrl = await this.prisma.studyMaterial.findFirst({
+      where: {
+        OR: [
+          { url: rawUrl },
+          { thumbnailUrl: rawUrl },
+        ]
+      }
+    });
+    if (existingWithUrl && existingWithUrl.uploaderId && existingWithUrl.uploaderId !== effectiveUploaderId && !isSuperAdminUser) {
+      throw new ForbiddenException(`Cannot associate a storage object (${fieldName}) owned by another user or material.`);
     }
   }
 
@@ -552,6 +633,12 @@ export class StudyMaterialService {
               { targetTrackId: e.trackId }
             ]
           }] : [{ targetTrackId: null }]),
+          ...(e.batch.academicYearId ? [{
+            OR: [
+              { academicYearId: e.batch.academicYearId },
+              { academicYear: { isActive: true } }
+            ]
+          }] : []),
           {
             OR: [
               ...(e.batch.centreId ? [
@@ -607,31 +694,49 @@ export class StudyMaterialService {
       const assignmentConditions = validAssignments.map(a => {
         const stdId = a.standardId || a.batch?.standardId;
         const brdId = a.boardId || a.batch?.boardId;
+        const assignedCentreId = a.batch?.centreId || (a as any).centreId || (authorizedCentres.length === 1 ? authorizedCentres[0] : null);
+
+        if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
+          return null;
+        }
+
         return {
-          syllabus: {
-            subjectId: a.subjectId,
-            standardId: stdId,
-            ...(brdId ? { boardId: brdId } : {}),
-          }
+          AND: [
+            {
+              syllabus: {
+                subjectId: a.subjectId,
+                standardId: stdId,
+                ...(brdId ? { boardId: brdId } : {}),
+              }
+            },
+            ...(a.batch?.trackId ? [{
+              OR: [
+                { targetTrackId: null },
+                { targetTrackId: a.batch.trackId }
+              ]
+            }] : []),
+            {
+              OR: [
+                {
+                  targetTrackId: { not: null },
+                  targetTrack: { batches: { some: { centreId: assignedCentreId } } }
+                },
+                {
+                  targetTrackId: null,
+                  uploader: { userCentres: { some: { centreId: assignedCentreId } } }
+                },
+                {
+                  targetTrackId: null,
+                  uploader: { role: { name: 'SUPER_ADMIN' } }
+                }
+              ]
+            }
+          ]
         };
-      });
+      }).filter(Boolean);
 
       where.AND = [
         { topicId },
-        {
-          OR: [
-            {
-              targetTrackId: { not: null },
-              targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } }
-            },
-            {
-              targetTrackId: null,
-              uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } }
-            },
-            { uploaderId: user.id },
-            { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
-          ]
-        },
         {
           OR: [
             { uploaderId: user.id },

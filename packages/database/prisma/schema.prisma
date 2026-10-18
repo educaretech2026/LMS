@@ -101,6 +101,7 @@ model Centre {
   Transaction Transaction[]
   customForms CustomForm[]
   doubts      Doubt[]
+  teacherAssignments TeacherAssignment[]
 
   @@map("centres")
 }
@@ -395,6 +396,7 @@ model TeacherProfile {
 model TeacherAssignment {
   id               String   @id @default(uuid())
   teacherProfileId String
+  centreId         String?
   batchId          String?
   subjectId        String?
   academicYearId   String?
@@ -410,6 +412,7 @@ model TeacherAssignment {
   updatedAt        DateTime @updatedAt
 
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  centre         Centre?        @relation(fields: [centreId], references: [id], onDelete: Cascade)
   batch          Batch?         @relation(fields: [batchId], references: [id], onDelete: Cascade)
   subject        Subject?       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   academicYear   AcademicYear?  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)

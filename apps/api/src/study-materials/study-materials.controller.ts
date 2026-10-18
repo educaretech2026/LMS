@@ -41,13 +41,21 @@ export class StudyMaterialController {
       if (deleted.url && !deleted.url.includes('youtube.com')) {
         const stillInUse = await this.studyMaterialService.isStorageUrlInUse(deleted.url, deleted.id);
         if (!stillInUse) {
-          await this.storageService.deleteFile(deleted.url);
+          try {
+            await this.storageService.deleteFile(deleted.url);
+          } catch (e: any) {
+            console.warn(`[Storage] Failed to delete file object for material ${id}:`, e?.message || e);
+          }
         }
       }
       if (deleted.thumbnailUrl) {
         const thumbInUse = await this.studyMaterialService.isStorageUrlInUse(deleted.thumbnailUrl, deleted.id);
         if (!thumbInUse) {
-          await this.storageService.deleteFile(deleted.thumbnailUrl);
+          try {
+            await this.storageService.deleteFile(deleted.thumbnailUrl);
+          } catch (e: any) {
+            console.warn(`[Storage] Failed to delete thumbnail object for material ${id}:`, e?.message || e);
+          }
         }
       }
     }
@@ -70,8 +78,9 @@ export class StudyMaterialController {
     @Query('type') type: 'VIDEO' | 'FILE',
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
+    @Req() req: any,
   ) {
-    return this.storageService.getPresignedUploadUrl(filename, contentType);
+    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id);
   }
 
   @Get(':id/play-url')

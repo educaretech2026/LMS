@@ -7,6 +7,14 @@ import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../com
 export class AttendanceService {
   constructor(private prisma: PrismaService) {}
 
+  private getAssignmentAuthoritativeCentre(assignment: any, userCentres: string[]): string | null {
+    if (assignment.batch?.centreId) return assignment.batch.centreId;
+    if (assignment.batchId) return null;
+    if (assignment.centreId) return assignment.centreId;
+    if (userCentres && userCentres.length === 1) return userCentres[0];
+    return null;
+  }
+
   async getBatchStudents(batchId?: string, subjectId?: string, user?: any) {
     let students: any[];
     const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
@@ -27,19 +35,36 @@ export class AttendanceService {
           include: { assignments: { include: { batch: true } } },
         });
         const teacherCentres = getAuthorizedCentreIds(user);
-        const isAssigned = teacherProfile?.assignments?.some(a => {
-          if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
+        const matchingAssignments = (teacherProfile?.assignments || []).filter(a => {
           if (a.batchId && a.batchId === batchId) return true;
           if (a.batch && a.batch.id === batchId) return true;
           if (!a.batchId && !a.batch && a.standardId && batch.standardId === a.standardId) {
             if (a.boardId && batch.boardId && a.boardId !== batch.boardId) return false;
-            if (!teacherCentres.includes(batch.centreId)) return false;
+            const assignedCentre = this.getAssignmentAuthoritativeCentre(a, teacherCentres);
+            if (assignedCentre !== batch.centreId) return false;
             return true;
           }
           return false;
         });
-        if (!isAssigned) {
+
+        if (matchingAssignments.length === 0) {
           throw new ForbiddenException('Teachers can only access students in their assigned batches.');
+        }
+
+        const hasBatchWideAssignment = matchingAssignments.some(a => !a.subjectId);
+        if (!hasBatchWideAssignment) {
+          if (subjectId) {
+            if (!matchingAssignments.some(a => a.subjectId === subjectId)) {
+              throw new ForbiddenException('You are not assigned to teach the specified subject in this batch.');
+            }
+          } else {
+            const uniqueSubjects = Array.from(new Set(matchingAssignments.map(a => a.subjectId).filter(Boolean))) as string[];
+            if (uniqueSubjects.length === 1) {
+              subjectId = uniqueSubjects[0];
+            } else if (uniqueSubjects.length > 1) {
+              throw new BadRequestException('Teacher has multiple assigned subjects for this batch. Please explicitly provide subjectId.');
+            }
+          }
         }
       }
 
@@ -147,19 +172,36 @@ export class AttendanceService {
           include: { assignments: { include: { batch: true } } },
         });
         const teacherCentres = getAuthorizedCentreIds(user);
-        const isAssigned = teacherProfile?.assignments?.some(a => {
-          if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
+        const matchingAssignments = (teacherProfile?.assignments || []).filter(a => {
           if (a.batchId && a.batchId === batchId) return true;
           if (a.batch && a.batch.id === batchId) return true;
           if (!a.batchId && !a.batch && a.standardId && batch.standardId === a.standardId) {
             if (a.boardId && batch.boardId && a.boardId !== batch.boardId) return false;
-            if (!teacherCentres.includes(batch.centreId)) return false;
+            const assignedCentre = this.getAssignmentAuthoritativeCentre(a, teacherCentres);
+            if (assignedCentre !== batch.centreId) return false;
             return true;
           }
           return false;
         });
-        if (!isAssigned) {
+
+        if (matchingAssignments.length === 0) {
           throw new ForbiddenException('Teachers can only access attendance for their assigned batches.');
+        }
+
+        const hasBatchWideAssignment = matchingAssignments.some(a => !a.subjectId);
+        if (!hasBatchWideAssignment) {
+          if (subjectId) {
+            if (!matchingAssignments.some(a => a.subjectId === subjectId)) {
+              throw new ForbiddenException('You are not assigned to teach the specified subject in this batch.');
+            }
+          } else {
+            const uniqueSubjects = Array.from(new Set(matchingAssignments.map(a => a.subjectId).filter(Boolean))) as string[];
+            if (uniqueSubjects.length === 1) {
+              subjectId = uniqueSubjects[0];
+            } else if (uniqueSubjects.length > 1) {
+              throw new BadRequestException('Teacher has multiple assigned subjects for this batch. Please explicitly provide subjectId.');
+            }
+          }
         }
       }
     } else if (isTeacher) {
@@ -223,10 +265,13 @@ export class AttendanceService {
         where: { userId: user.id },
         include: { assignments: { include: { batch: true } } },
       });
+      const teacherCentres = getAuthorizedCentreIds(user);
       const validAssignments = (teacherProfile?.assignments || []).filter(a => {
         if (a.batch) {
           return a.batch.centreId === centreId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId);
         }
+        const assignedCentre = this.getAssignmentAuthoritativeCentre(a, teacherCentres);
+        if (assignedCentre !== centreId) return false;
         return (!boardId || !a.boardId || a.boardId === boardId);
       });
       assignedBatchIds = validAssignments.map(a => a.batchId || a.batch?.id).filter(Boolean) as string[];
@@ -266,6 +311,7 @@ export class AttendanceService {
         where: { userId: user.id },
         include: { assignments: { include: { batch: true } } },
       });
+      const teacherCentres = getAuthorizedCentreIds(user);
       const isAssigned = teacherProfile?.assignments?.some(a => {
         if (a.batch) {
           if (a.batch.centreId === centreId && a.batch.standardId === standardId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId)) {
@@ -273,6 +319,8 @@ export class AttendanceService {
           }
           return false;
         }
+        const assignedCentre = this.getAssignmentAuthoritativeCentre(a, teacherCentres);
+        if (assignedCentre !== centreId) return false;
         if (a.standardId && a.standardId === standardId) {
           if (boardId && a.boardId && a.boardId !== boardId) return false;
           return true;
@@ -314,6 +362,7 @@ export class AttendanceService {
         where: { userId: user.id },
         include: { assignments: { include: { batch: true } } },
       });
+      const teacherCentres = getAuthorizedCentreIds(user);
       const isAssigned = teacherProfile?.assignments?.some(a => {
         if (a.batch) {
           if (a.batch.centreId === centreId && a.batch.standardId === standardId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId)) {
@@ -321,6 +370,8 @@ export class AttendanceService {
           }
           return false;
         }
+        const assignedCentre = this.getAssignmentAuthoritativeCentre(a, teacherCentres);
+        if (assignedCentre !== centreId) return false;
         if (a.standardId && a.standardId === standardId) {
           if (boardId && a.boardId && a.boardId !== boardId) return false;
           return true;
@@ -356,6 +407,7 @@ export class AttendanceService {
       throw new BadRequestException('A valid attendance date is required');
     }
     const targetDate = new Date(date);
+    let effectiveSubjectId = subjectId || null;
 
     let resolvedBatchId = batchId;
     if (batchId === 'ALL') {
@@ -399,19 +451,39 @@ export class AttendanceService {
           throw new ForbiddenException('Teacher has no active assignments to mark attendance');
         }
         const teacherCentres = getAuthorizedCentreIds(user);
-        const isAssigned = teacherProfile.assignments.some(a => {
-          if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
+        const matchingAssignments = teacherProfile.assignments.filter(a => {
           if (a.batchId && a.batchId === resolvedBatchId) return true;
           if (a.batch && a.batch.id === resolvedBatchId) return true;
           if (!a.batchId && !a.batch && a.standardId && targetBatch?.standardId === a.standardId) {
             if (a.boardId && targetBatch?.boardId && a.boardId !== targetBatch.boardId) return false;
-            if (!teacherCentres.includes(effectiveCentreId)) return false;
+            const assignedCentre = this.getAssignmentAuthoritativeCentre(a, teacherCentres);
+            if (assignedCentre !== effectiveCentreId) return false;
             return true;
           }
           return false;
         });
-        if (!isAssigned) {
-          throw new ForbiddenException('You are not authorized to mark attendance for this batch or subject');
+
+        if (matchingAssignments.length === 0) {
+          throw new ForbiddenException('You are not authorized to mark attendance for this batch or centre');
+        }
+
+        const hasBatchWideAssignment = matchingAssignments.some(a => !a.subjectId);
+        if (!hasBatchWideAssignment) {
+          if (subjectId) {
+            if (!matchingAssignments.some(a => a.subjectId === subjectId)) {
+              throw new ForbiddenException('You are not authorized to mark attendance for this subject in this batch');
+            }
+            effectiveSubjectId = subjectId;
+          } else {
+            const uniqueSubjects = Array.from(new Set(matchingAssignments.map(a => a.subjectId).filter(Boolean))) as string[];
+            if (uniqueSubjects.length === 1) {
+              effectiveSubjectId = uniqueSubjects[0];
+            } else if (uniqueSubjects.length > 1) {
+              throw new BadRequestException('Teacher has multiple assigned subjects for this batch. Please explicitly provide subjectId.');
+            } else {
+              throw new ForbiddenException('You are not authorized to mark batch-wide attendance without an assigned subject');
+            }
+          }
         }
       }
     }
@@ -447,7 +519,8 @@ export class AttendanceService {
           where: {
             ...(resolvedBatchId ? { batchId: resolvedBatchId } : {}),
             batch: { centreId: effectiveCentreId }
-          }
+          },
+          include: { batch: true }
         }
       }
     });
@@ -464,6 +537,14 @@ export class AttendanceService {
           throw new BadRequestException(`Student ${sp.id} is not enrolled in centre ${effectiveCentreId}`);
         }
       }
+      if (resolvedBatchId && targetBatch?.academicYearId) {
+        const hasMatchingYear = sp.enrollments.some((e: any) => 
+          !e.batch?.academicYearId || e.batch.academicYearId === targetBatch.academicYearId
+        );
+        if (!hasMatchingYear) {
+          throw new BadRequestException(`Student ${sp.id} is not enrolled in the matching academic year for this batch`);
+        }
+      }
     }
 
     // Perform atomic update inside database transaction
@@ -472,7 +553,7 @@ export class AttendanceService {
         where: { 
           batchId: resolvedBatchId, 
           date: targetDate,
-          subjectId: subjectId || null
+          subjectId: effectiveSubjectId
         }
       });
 
@@ -487,7 +568,7 @@ export class AttendanceService {
             batchId: resolvedBatchId,
             date: targetDate,
             recordedById: userId,
-            subjectId: subjectId || null
+            subjectId: effectiveSubjectId
           }
         });
       }
