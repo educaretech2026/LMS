@@ -1,11 +1,35 @@
+# Dependencies
 node_modules
+.pnpm-store
+
+# Production & Build outputs
 dist
 build
 .next
 .turbo
+coverage
+
+# Environment & Secret files
 .env
-.DS_Store
-scratch.py
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*credential*.json
+*service-account*.json
 google-meet-credentials.json
+
+# Developer, Scratch & Temporary files
+scratch.*
+*.patch
+.DS_Store
 .idea
 .vscode
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*

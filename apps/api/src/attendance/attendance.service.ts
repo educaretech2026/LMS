@@ -421,7 +421,7 @@ export class AttendanceService {
     if (resolvedBatchId) {
       targetBatch = await this.prisma.batch.findUnique({
         where: { id: resolvedBatchId },
-        select: { id: true, centreId: true, standardId: true, boardId: true }
+        select: { id: true, centreId: true, standardId: true, boardId: true, academicYearId: true }
       });
       if (!targetBatch || !targetBatch.centreId) {
         throw new BadRequestException('The specified batch does not exist or has no identifiable centre');

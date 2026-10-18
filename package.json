@@ -13,9 +13,18 @@
     "studio": "pnpm --filter @educare/database db:studio"
   },
   "devDependencies": {
-    "next": "16.3.5",
+    "next": "16.3.8",
     "prettier": "^3.2.5",
     "turbo": "^2.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "next": "16.3.8",
+      "body-parser": "^1.20.6",
+      "proxy-addr": "^2.0.8",
+      "handlebars": "^4.7.10",
+      "multer": "^2.3.0"
+    }
   },
   "packageManager": "pnpm@9.0.0"
 }

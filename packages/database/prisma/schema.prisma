@@ -102,6 +102,7 @@ model Centre {
   customForms CustomForm[]
   doubts      Doubt[]
   teacherAssignments TeacherAssignment[]
+  feeRecords         FeeRecord[]
 
   @@map("centres")
 }
@@ -643,6 +644,9 @@ model FeeRecord {
 
   targetTrackId String?
   targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])
+
+  centreId      String?
+  centre        Centre?      @relation(fields: [centreId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

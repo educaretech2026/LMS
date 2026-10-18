@@ -15,15 +15,21 @@ export class FeeService {
     } else if (!isSuperAdmin(user)) {
       const centreIds = getAuthorizedCentreIds(user);
       whereClause = {
-        student: {
-          enrollments: {
-            some: {
-              batch: {
-                centreId: { in: centreIds }
+        OR: [
+          { centreId: { in: centreIds } },
+          {
+            centreId: null,
+            student: {
+              enrollments: {
+                some: {
+                  batch: {
+                    centreId: { in: centreIds }
+                  }
+                }
               }
             }
           }
-        }
+        ]
       };
     }
 
@@ -54,20 +60,44 @@ export class FeeService {
       throw new BadRequestException('studentId is required');
     }
 
-    // Verify centre ownership for non-superadmin
-    if (user && !isSuperAdmin(user)) {
-      const student = await this.prisma.studentProfile.findUnique({
-        where: { id: data.studentId },
-        include: { enrollments: { include: { batch: true } } }
-      });
-      if (!student) {
-        throw new NotFoundException('Student not found');
+    const student = await this.prisma.studentProfile.findUnique({
+      where: { id: data.studentId },
+      include: { enrollments: { include: { batch: true } } }
+    });
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
+
+    const studentCentres = Array.from(
+      new Set(student.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[])
+    );
+
+    let effectiveCentreId: string | null = null;
+
+    if (data.centreId) {
+      if (!studentCentres.includes(data.centreId)) {
+        throw new BadRequestException('Student is not enrolled in the specified centre.');
       }
-      const allowed = getAuthorizedCentreIds(user);
-      const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean);
-      const hasAccess = studentCentres.some(cId => allowed.includes(cId));
-      if (!hasAccess) {
-        throw new ForbiddenException('Access denied: You cannot create fees for students outside your centre.');
+      if (user && !isSuperAdmin(user)) {
+        const allowed = getAuthorizedCentreIds(user);
+        if (!allowed.includes(data.centreId)) {
+          throw new ForbiddenException('Access denied: You cannot create fees for other centres.');
+        }
+      }
+      effectiveCentreId = data.centreId;
+    } else {
+      if (user && !isSuperAdmin(user)) {
+        const allowed = getAuthorizedCentreIds(user);
+        const matchingCentres = studentCentres.filter(cId => allowed.includes(cId));
+        if (matchingCentres.length === 1) {
+          effectiveCentreId = matchingCentres[0];
+        } else if (matchingCentres.length > 1) {
+          throw new BadRequestException('Student is enrolled in multiple centres; please specify centreId explicitly.');
+        } else {
+          throw new ForbiddenException('Access denied: You cannot create fees for students outside your centre.');
+        }
+      } else {
+        effectiveCentreId = studentCentres.length === 1 ? studentCentres[0] : null;
       }
     }
 
@@ -75,6 +105,7 @@ export class FeeService {
       data: {
         receiptNo: `FEE-${Date.now()}`,
         studentId: data.studentId,
+        centreId: effectiveCentreId,
         amount: Number(data.amount),
         status: data.status || 'PAID',
         paymentMode: data.paymentMode,
@@ -102,10 +133,17 @@ export class FeeService {
 
     if (user && !isSuperAdmin(user)) {
       const allowed = getAuthorizedCentreIds(user);
-      const studentCentres = record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
-      const hasAccess = studentCentres.some(cId => allowed.includes(cId));
-      if (!hasAccess) {
-        throw new ForbiddenException('Access denied: You cannot delete fee records for other centres.');
+      const studentCentres = Array.from(
+        new Set(record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) as string[])
+      );
+      const feeCentreId = record.centreId || (studentCentres.length === 1 ? studentCentres[0] : null);
+
+      if (feeCentreId) {
+        if (!allowed.includes(feeCentreId)) {
+          throw new ForbiddenException('Access denied: You cannot delete fee records for other centres.');
+        }
+      } else {
+        throw new ForbiddenException('Access denied: Unresolved centre scope for this fee record.');
       }
     }
 
@@ -132,10 +170,17 @@ export class FeeService {
 
     if (user && !isSuperAdmin(user)) {
       const allowed = getAuthorizedCentreIds(user);
-      const studentCentres = record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
-      const hasAccess = studentCentres.some(cId => allowed.includes(cId));
-      if (!hasAccess) {
-        throw new ForbiddenException('Access denied: You cannot update fee records for other centres.');
+      const studentCentres = Array.from(
+        new Set(record.student?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) as string[])
+      );
+      const feeCentreId = record.centreId || (studentCentres.length === 1 ? studentCentres[0] : null);
+
+      if (feeCentreId) {
+        if (!allowed.includes(feeCentreId)) {
+          throw new ForbiddenException('Access denied: You cannot update fee records for other centres.');
+        }
+      } else {
+        throw new ForbiddenException('Access denied: Unresolved centre scope for this fee record.');
       }
     }
 

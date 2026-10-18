@@ -58,20 +58,33 @@ async function bootstrap() {
       // Allow requests with no origin (like native mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
-      const cleanOrigin = origin.trim().replace(/\/+$/, '');
+      let parsedOrigin: URL;
+      try {
+        parsedOrigin = new URL(origin);
+      } catch {
+        return callback(null, false);
+      }
 
-      // Check allowlist
+      const cleanOrigin = `${parsedOrigin.protocol}//${parsedOrigin.host}`;
+
+      // In production, require HTTPS and exact allowlist match
+      if (isProduction) {
+        if (parsedOrigin.protocol !== 'https:') {
+          return callback(null, false);
+        }
+        if (allowedOrigins.includes(cleanOrigin)) {
+          return callback(null, true);
+        }
+        return callback(null, false);
+      }
+
+      // Development mode
       if (allowedOrigins.includes(cleanOrigin)) {
         return callback(null, true);
       }
 
-      // Allow any educarelearning.in subdomains
-      if (cleanOrigin.endsWith('.educarelearning.in') || cleanOrigin === 'https://educarelearning.in') {
-        return callback(null, true);
-      }
-
-      // Allow local development origins
-      if (!isProduction && (cleanOrigin.startsWith('http://localhost:') || cleanOrigin.startsWith('http://127.0.0.1:'))) {
+      // Allow localhost/127.0.0.1 in non-production
+      if (parsedOrigin.hostname === 'localhost' || parsedOrigin.hostname === '127.0.0.1') {
         return callback(null, true);
       }
 

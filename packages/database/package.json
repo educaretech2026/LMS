@@ -16,7 +16,8 @@
   "scripts": {
     "build": "tsc",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push --accept-data-loss",
+    "db:push": "prisma db push",
+    "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev"
   },

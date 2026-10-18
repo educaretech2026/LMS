@@ -211,12 +211,40 @@ export class StorageService {
       throw new HttpException('Storage is not configured on the server.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    let objectKey: string;
     const uniqueId = crypto.randomBytes(16).toString('hex');
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9.-]/g, '_');
-    const safeUserId = userId ? String(userId).replace(/[^a-zA-Z0-9_-]/g, '') : '';
-    const objectKey = safeUserId 
-      ? `materials/${safeUserId}/${Date.now()}-${uniqueId}-${safeFilename}`
-      : `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
+
+    let prefix = 'materials';
+    let scope = '';
+
+    if (typeof userId === 'string') {
+      scope = userId ? String(userId).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+    }
+
+    if (filename.startsWith('forms/')) {
+      prefix = 'forms';
+      const parts = filename.split('/');
+      if (parts.length >= 2 && parts[1]) {
+        scope = parts[1].replace(/[^a-zA-Z0-9_-]/g, '');
+      }
+    } else if (filename.startsWith('thumbnails/')) {
+      prefix = 'thumbnails';
+    }
+
+    if (prefix === 'forms') {
+      objectKey = scope 
+        ? `forms/${scope}/${Date.now()}-${uniqueId}-${safeFilename}`
+        : `forms/${Date.now()}-${uniqueId}-${safeFilename}`;
+    } else if (prefix === 'thumbnails') {
+      objectKey = scope 
+        ? `thumbnails/${scope}/${Date.now()}-${uniqueId}-${safeFilename}`
+        : `thumbnails/${Date.now()}-${uniqueId}-${safeFilename}`;
+    } else {
+      objectKey = scope 
+        ? `materials/${scope}/${Date.now()}-${uniqueId}-${safeFilename}`
+        : `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
+    }
 
     const command = new PutObjectCommand({
       Bucket: this.bucketName,

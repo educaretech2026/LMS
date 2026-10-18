@@ -19,6 +19,7 @@ import { FormsService } from '../forms/forms.service';
 import { UsersService } from '../users/users.service';
 import { EstudyService } from '../estudy/estudy.service';
 import { SetupService } from '../setup/setup.service';
+import { FeeService } from '../fee/fee.service';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 
@@ -5417,6 +5418,223 @@ describe('Security Regression Suite — Real Production Implementations', () => 
               records: [{ studentId: 'stud-old-year', status: 'PRESENT' }]
             }, teacherSubj)
           ).rejects.toThrow(BadRequestException);
+        });
+      });
+    });
+
+    describe('SEC-20: Final Consolidated Security Remediation Suite', () => {
+      let mockPrisma: any;
+      let attendanceService: AttendanceService;
+      let storageService: StorageService;
+      let feeService: FeeService;
+
+      beforeEach(() => {
+        mockPrisma = {
+          batch: { findUnique: jest.fn(), findMany: jest.fn() },
+          attendance: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'att-1' }), createMany: jest.fn() },
+          attendanceRecord: { deleteMany: jest.fn(), createMany: jest.fn() },
+          studentProfile: { findMany: jest.fn(), findUnique: jest.fn() },
+          teacherProfile: { findUnique: jest.fn() },
+          teacherAssignment: { findMany: jest.fn() },
+          feeRecord: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn(), update: jest.fn() },
+          user: { update: jest.fn() },
+          $transaction: jest.fn(async (callback) => {
+            if (typeof callback === 'function') {
+              return callback(mockPrisma);
+            }
+            return callback;
+          }),
+        };
+
+        attendanceService = new AttendanceService(mockPrisma as any);
+        storageService = new StorageService();
+        feeService = new FeeService(mockPrisma as any);
+      });
+
+      describe('1. Attendance Query Projection & Academic Year Matching', () => {
+        it('should query targetBatch selecting academicYearId in markAttendance', async () => {
+          mockPrisma.batch.findUnique.mockResolvedValue({
+            id: 'batch-proj-1',
+            centreId: 'centre-alpha',
+            standardId: 'std-10',
+            boardId: 'board-cbse',
+            academicYearId: 'ay-2026',
+          });
+
+          const teacher = {
+            id: 't-proj-1',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: 't-proj-1',
+            assignments: [
+              { batchId: 'batch-proj-1', batch: { id: 'batch-proj-1', centreId: 'centre-alpha' }, subjectId: 'subj-1' },
+            ],
+          });
+
+          mockPrisma.studentProfile.findMany.mockResolvedValue([
+            {
+              id: 'stud-1',
+              enrollments: [
+                {
+                  batchId: 'batch-proj-1',
+                  batch: { centreId: 'centre-alpha', academicYearId: 'ay-2026' },
+                },
+              ],
+            },
+          ]);
+
+          mockPrisma.attendance.createMany.mockResolvedValue({ count: 1 });
+
+          await attendanceService.markAttendance(
+            {
+              batchId: 'batch-proj-1',
+              date: '2026-10-18',
+              centreId: 'centre-alpha',
+              subjectId: 'subj-1',
+              records: [{ studentId: 'stud-1', status: 'PRESENT' }],
+            },
+            teacher
+          );
+
+          expect(mockPrisma.batch.findUnique).toHaveBeenCalledWith(
+            expect.objectContaining({
+              select: expect.objectContaining({
+                academicYearId: true,
+                centreId: true,
+                standardId: true,
+                boardId: true,
+              }),
+            })
+          );
+        });
+      });
+
+      describe('2. Storage Namespace Preservation (forms & thumbnails)', () => {
+        it('should generate objectKey under forms/ namespace when path starts with forms/', async () => {
+          process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account';
+          process.env.CLOUDFLARE_ACCESS_KEY_ID = 'test-key';
+          process.env.CLOUDFLARE_SECRET_ACCESS_KEY = 'test-secret';
+          process.env.CLOUDFLARE_R2_BUCKET_NAME = 'educare-test';
+          process.env.R2_PUBLIC_URL = 'https://cdn.educare.test';
+
+          const res = await storageService.getPresignedUploadUrl('forms/form-abc/application.pdf', 'application/pdf');
+          expect(res.objectKey).toMatch(/^forms\/form-abc\/\d+-[a-f0-9]+-application\.pdf$/);
+          expect(res.objectKey.startsWith('materials/')).toBe(false);
+        });
+
+        it('should generate objectKey under thumbnails/ namespace when path starts with thumbnails/', async () => {
+          const res = await storageService.getPresignedUploadUrl('thumbnails/preview.png', 'image/png');
+          expect(res.objectKey).toMatch(/^thumbnails\/\d+-[a-f0-9]+-preview\.png$/);
+          expect(res.objectKey.startsWith('materials/')).toBe(false);
+        });
+      });
+
+      describe('3. Fee Service Authoritative Centre Isolation', () => {
+        const centreAdminA = {
+          id: 'admin-a',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-a' }],
+        };
+
+        it('should prevent Centre Admin A from deleting fee record belonging to Centre B', async () => {
+          mockPrisma.feeRecord.findUnique.mockResolvedValue({
+            id: 'fee-b-1',
+            centreId: 'centre-b',
+            student: {
+              enrollments: [
+                { batch: { centreId: 'centre-a' } },
+                { batch: { centreId: 'centre-b' } },
+              ],
+            },
+          });
+
+          await expect(
+            feeService.delete('fee-b-1', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should prevent Centre Admin A from updating status of fee record belonging to Centre B', async () => {
+          mockPrisma.feeRecord.findUnique.mockResolvedValue({
+            id: 'fee-b-2',
+            centreId: 'centre-b',
+            student: {
+              enrollments: [
+                { batch: { centreId: 'centre-a' } },
+                { batch: { centreId: 'centre-b' } },
+              ],
+            },
+          });
+
+          await expect(
+            feeService.updateStatus('fee-b-2', 'PAID', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should require explicit centreId when creating fee for multi-centre student with multiple matching admin centres', async () => {
+          const multiAdmin = {
+            id: 'admin-ab',
+            role: { name: 'CENTRE_ADMIN' },
+            userCentres: [{ centreId: 'centre-a' }, { centreId: 'centre-b' }],
+          };
+
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'stud-multi',
+            enrollments: [
+              { batch: { centreId: 'centre-a' } },
+              { batch: { centreId: 'centre-b' } },
+            ],
+          });
+
+          await expect(
+            feeService.create(
+              {
+                studentId: 'stud-multi',
+                amount: 5000,
+              },
+              multiAdmin
+            )
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should reject creating fee in Centre B when Centre Admin only has access to Centre A', async () => {
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'stud-multi',
+            enrollments: [
+              { batch: { centreId: 'centre-a' } },
+              { batch: { centreId: 'centre-b' } },
+            ],
+          });
+
+          await expect(
+            feeService.create(
+              {
+                studentId: 'stud-multi',
+                amount: 5000,
+                centreId: 'centre-b',
+              },
+              centreAdminA
+            )
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should fail closed when trying to modify legacy fee record with null centreId for multi-centre student', async () => {
+          mockPrisma.feeRecord.findUnique.mockResolvedValue({
+            id: 'fee-legacy',
+            centreId: null,
+            student: {
+              enrollments: [
+                { batch: { centreId: 'centre-a' } },
+                { batch: { centreId: 'centre-b' } },
+              ],
+            },
+          });
+
+          await expect(
+            feeService.delete('fee-legacy', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
         });
       });
     });

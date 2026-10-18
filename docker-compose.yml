@@ -5,11 +5,12 @@ services:
     image: postgres:16-alpine
     container_name: educare_postgres
     environment:
-      POSTGRES_USER: educare
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: educare_db
+      POSTGRES_USER: ${POSTGRES_USER:-educare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-educare_db}
     ports:
-      - "5433:5432"
+      # SEC-13: Bind database port to loopback interface only to prevent external exposure
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -18,7 +19,8 @@ services:
     image: redis:7-alpine
     container_name: educare_redis
     ports:
-      - "6379:6379"
+      # SEC-13: Bind Redis port to loopback interface only to prevent unauthenticated access
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
