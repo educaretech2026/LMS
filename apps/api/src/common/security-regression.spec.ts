@@ -6601,6 +6601,25 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             expect(result.scanned).toBe(2);
             expect(result.purged).toBe(2);
           });
+
+          it('should reject negative, zero, and out-of-range maxAgeHours in cleanupOrphanUploads', async () => {
+            // Negative value moving threshold into the future
+            await expect(testStorageService.cleanupOrphanUploads(-1)).rejects.toThrow(BadRequestException);
+            await expect(testStorageService.cleanupOrphanUploads(-24)).rejects.toThrow(BadRequestException);
+
+            // Zero value
+            await expect(testStorageService.cleanupOrphanUploads(0)).rejects.toThrow(BadRequestException);
+
+            // Less than safe 1-hour minimum retention
+            await expect(testStorageService.cleanupOrphanUploads(0.5)).rejects.toThrow(BadRequestException);
+
+            // Excessive value (> 720 hours / 30 days)
+            await expect(testStorageService.cleanupOrphanUploads(1000)).rejects.toThrow(BadRequestException);
+
+            // Non-finite values
+            await expect(testStorageService.cleanupOrphanUploads(NaN)).rejects.toThrow(BadRequestException);
+            await expect(testStorageService.cleanupOrphanUploads(Infinity)).rejects.toThrow(BadRequestException);
+          });
         });
       });
     });

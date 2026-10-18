@@ -41,7 +41,14 @@ export class StorageController {
   async cleanupOrphanUploads(
     @Query('maxAgeHours') maxAgeHours?: string,
   ) {
-    const hours = maxAgeHours && !isNaN(Number(maxAgeHours)) ? Number(maxAgeHours) : 2;
+    let hours = 2;
+    if (maxAgeHours !== undefined && maxAgeHours !== '') {
+      const parsed = Number(maxAgeHours);
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 720) {
+        throw new BadRequestException('maxAgeHours must be a finite number between 1 and 720 hours (minimum 1 hour retention).');
+      }
+      hours = parsed;
+    }
     return this.storageService.cleanupOrphanUploads(hours);
   }
 }

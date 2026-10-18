@@ -476,6 +476,10 @@ export class StorageService {
    * Implements full ContinuationToken pagination across result sets.
    */
   async cleanupOrphanUploads(maxAgeHours: number = 2, maxObjectsPerPrefix: number = 1000): Promise<{ scanned: number; purged: number }> {
+    if (!Number.isFinite(maxAgeHours) || maxAgeHours < 1 || maxAgeHours > 720) {
+      throw new BadRequestException('maxAgeHours must be a finite number between 1 and 720 hours (minimum 1 hour retention).');
+    }
+
     if (!process.env.CLOUDFLARE_ACCOUNT_ID || !this.prisma) {
       return { scanned: 0, purged: 0 };
     }
