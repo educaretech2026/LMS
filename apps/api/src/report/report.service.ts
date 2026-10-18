@@ -161,12 +161,30 @@ export class ReportService {
   }
 
   async getStudentPerformanceReport(batchId?: string, user?: any) {
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+
     if (batchId && user && !isSuperAdmin(user)) {
       const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
       if (!batch || !batch.centreId) {
         throw new ForbiddenException('Cannot access performance report for a batch without an identifiable centre.');
       }
       assertCentreAccess(user, batch.centreId);
+
+      if (isTeacher && user?.id) {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+          where: { userId: user.id },
+          include: { assignments: true },
+        });
+        const isAssigned = teacherProfile?.assignments?.some(a => {
+          if (a.batchId && a.batchId === batchId) return true;
+          if (a.standardId && batch.standardId === a.standardId) return true;
+          return false;
+        });
+        if (!isAssigned) {
+          throw new ForbiddenException('Teachers can only access performance reports for their assigned batches.');
+        }
+      }
     }
 
     let students;
@@ -180,6 +198,36 @@ export class ReportService {
         }
       });
       students = enrollments.map((e: any) => e.studentProfile);
+    } else if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: { include: { batch: true } } },
+      });
+      const assignedBatchIds = (teacherProfile?.assignments || []).map(a => a.batchId).filter(Boolean) as string[];
+      const assignedStandardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
+      const authorizedCentres = getAuthorizedCentreIds(user);
+
+      if (assignedBatchIds.length === 0 && assignedStandardIds.length === 0) {
+        students = [];
+      } else {
+        const enrollments = await this.prisma.enrollment.findMany({
+          where: {
+            batch: {
+              centreId: { in: authorizedCentres },
+              OR: [
+                ...(assignedBatchIds.length > 0 ? [{ id: { in: assignedBatchIds } }] : []),
+                ...(assignedStandardIds.length > 0 ? [{ standardId: { in: assignedStandardIds } }] : []),
+              ]
+            }
+          },
+          include: {
+            studentProfile: {
+              include: { user: { select: { firstName: true, lastName: true } } }
+            }
+          }
+        });
+        students = enrollments.map((e: any) => e.studentProfile);
+      }
     } else {
       if (user && !isSuperAdmin(user)) {
         const authorizedCentres = getAuthorizedCentreIds(user);
@@ -236,7 +284,7 @@ export class ReportService {
         user: { select: { firstName: true, lastName: true, id: true } },
         enrollments: {
           include: {
-            batch: { select: { id: true, centreId: true } }
+            batch: { select: { id: true, centreId: true, standardId: true } }
           }
         }
       }
@@ -246,7 +294,8 @@ export class ReportService {
 
     if (user) {
       const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
-      if (roleName === 'STUDENT' || roleName === 'PUBLIC_LEARNER') {
+      const normalizedRole = String(roleName || '').toUpperCase().replace(/\s+/g, '_');
+      if (normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER') {
         if (student.userId !== user.id) {
           throw new ForbiddenException("Students may only access their own performance report");
         }
@@ -255,6 +304,21 @@ export class ReportService {
         const hasAccess = student.enrollments.some(e => e.batch?.centreId && authorizedCentres.includes(e.batch.centreId));
         if (!hasAccess && authorizedCentres.length > 0) {
           throw new ForbiddenException("Access denied to student outside your authorized centres");
+        }
+        if (normalizedRole === 'TEACHER' && user?.id) {
+          const teacherProfile = await this.prisma.teacherProfile.findUnique({
+            where: { userId: user.id },
+            include: { assignments: true },
+          });
+          const assignedBatchIds = (teacherProfile?.assignments || []).map(a => a.batchId).filter(Boolean) as string[];
+          const assignedStandardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
+          const isTeacherAssigned = student.enrollments.some(e => 
+            (e.batchId && assignedBatchIds.includes(e.batchId)) ||
+            (e.batch?.standardId && assignedStandardIds.includes(e.batch.standardId))
+          );
+          if (!isTeacherAssigned) {
+            throw new ForbiddenException("Teachers can only access performance reports for students in their assigned batches.");
+          }
         }
       }
     }

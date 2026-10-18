@@ -134,6 +134,22 @@ export class AttendanceService {
       if (user && !isSuperAdmin(user)) {
         assertCentreAccess(user, batch.centreId);
       }
+
+      if (isTeacher && user?.id) {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+          where: { userId: user.id },
+          include: { assignments: true },
+        });
+        const isAssigned = teacherProfile?.assignments?.some(a => {
+          if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
+          if (a.batchId && a.batchId === batchId) return true;
+          if (a.standardId && batch.standardId === a.standardId) return true;
+          return false;
+        });
+        if (!isAssigned) {
+          throw new ForbiddenException('Teachers can only access attendance for their assigned batches.');
+        }
+      }
     } else if (isTeacher) {
       throw new ForbiddenException('Teachers must specify an assigned batch.');
     }
@@ -181,8 +197,32 @@ export class AttendanceService {
     if (user && !isSuperAdmin(user)) {
       assertCentreAccess(user, centreId);
     }
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+    let assignedBatchIds: string[] | null = null;
+    let assignedStandardIds: string[] | null = null;
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true },
+      });
+      assignedBatchIds = (teacherProfile?.assignments || []).map(a => a.batchId).filter(Boolean) as string[];
+      assignedStandardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
+    }
+
     return this.prisma.batch.findMany({
-      where: { centreId, boardId, standardId, trackId }
+      where: {
+        centreId,
+        boardId,
+        standardId,
+        trackId,
+        ...(isTeacher && assignedBatchIds !== null && assignedStandardIds !== null ? {
+          OR: [
+            ...(assignedBatchIds.length > 0 ? [{ id: { in: assignedBatchIds } }] : []),
+            ...(assignedStandardIds.length > 0 ? [{ standardId: { in: assignedStandardIds } }] : []),
+          ]
+        } : {})
+      }
     });
   }
 
@@ -190,6 +230,28 @@ export class AttendanceService {
     if (user && !isSuperAdmin(user)) {
       assertCentreAccess(user, centreId);
     }
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: { include: { batch: true } } },
+      });
+      const isAssigned = teacherProfile?.assignments?.some(a => {
+        if (a.standardId && a.standardId === standardId) return true;
+        if (a.batch) {
+          if (a.batch.centreId === centreId && a.batch.standardId === standardId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId)) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (!isAssigned) {
+        throw new ForbiddenException('Teachers can only access student lists for their assigned classes and tracks.');
+      }
+    }
+
     const enrollments = await this.prisma.enrollment.findMany({
       where: {
         batch: { centreId, boardId, standardId, trackId }
@@ -212,6 +274,28 @@ export class AttendanceService {
     if (user && !isSuperAdmin(user)) {
       assertCentreAccess(user, centreId);
     }
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+
+    if (isTeacher && user?.id) {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: { include: { batch: true } } },
+      });
+      const isAssigned = teacherProfile?.assignments?.some(a => {
+        if (a.standardId && a.standardId === standardId) return true;
+        if (a.batch) {
+          if (a.batch.centreId === centreId && a.batch.standardId === standardId && (!boardId || a.batch.boardId === boardId) && (!trackId || a.batch.trackId === trackId)) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (!isAssigned) {
+        throw new ForbiddenException('Teachers can only access attendance for their assigned classes and tracks.');
+      }
+    }
+
     const targetDate = new Date(date);
     const batch = await this.prisma.batch.findFirst({
       where: { centreId, boardId, standardId, trackId }

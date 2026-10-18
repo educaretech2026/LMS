@@ -3612,6 +3612,422 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         });
       });
     });
+
+    describe('SEC-16: Ninth-Pass Security Remediation & Storage Ownership Suite', () => {
+      let mockPrisma: any;
+      let studyMaterialService: StudyMaterialService;
+      let storageService: StorageService;
+      let attendanceService: AttendanceService;
+      let reportService: ReportService;
+
+      beforeEach(() => {
+        mockPrisma = {
+          studyMaterial: {
+            findUnique: jest.fn(),
+            findMany: jest.fn(),
+            create: jest.fn(),
+            delete: jest.fn(),
+          },
+          studyMaterialProgress: {
+            findUnique: jest.fn(),
+            upsert: jest.fn(),
+          },
+          academicYear: {
+            findFirst: jest.fn(),
+            findMany: jest.fn(),
+            findUnique: jest.fn(),
+          },
+          syllabus: {
+            findFirst: jest.fn(),
+            findUnique: jest.fn(),
+          },
+          targetTrack: {
+            findUnique: jest.fn(),
+          },
+          studentProfile: {
+            findUnique: jest.fn(),
+            findMany: jest.fn(),
+          },
+          teacherProfile: {
+            findUnique: jest.fn(),
+          },
+          batch: {
+            findUnique: jest.fn(),
+            findFirst: jest.fn(),
+            findMany: jest.fn(),
+          },
+          enrollment: {
+            findMany: jest.fn(),
+          },
+          attendance: {
+            findFirst: jest.fn(),
+            findMany: jest.fn(),
+          },
+          attendanceRecord: {
+            findMany: jest.fn(),
+          },
+          $transaction: jest.fn((cb) => cb(mockPrisma)),
+        };
+
+        studyMaterialService = new StudyMaterialService(mockPrisma);
+        storageService = new StorageService();
+        attendanceService = new AttendanceService(mockPrisma);
+        reportService = new ReportService(mockPrisma);
+
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'mock-account';
+        process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'mock-key';
+        process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = 'mock-secret';
+        process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN = 'cdn.educare.test';
+      });
+
+      afterEach(() => {
+        delete process.env.CLOUDFLARE_ACCOUNT_ID;
+        delete process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+        delete process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+        delete process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN;
+      });
+
+      describe('A. Study Material Consistent Authorization (getAll & getByTopic & updateProgress)', () => {
+        const centreAdminA: any = {
+          id: 'admin-a',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        const teacherA: any = {
+          id: 'teacher-a',
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should filter getByTopic by centre and uploader for Centre Admin', async () => {
+          mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
+
+          await studyMaterialService.getByTopic('topic-1', centreAdminA);
+
+          expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({
+                topicId: 'topic-1',
+                OR: expect.arrayContaining([
+                  { uploader: { userCentres: { some: { centreId: { in: ['centre-alpha'] } } } } },
+                  { uploaderId: 'admin-a' },
+                ]),
+              }),
+            })
+          );
+        });
+
+        it('should filter getByTopic by centre and teacher assignments for Teacher', async () => {
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{ subjectId: 'math-subj', standardId: 'std-10' }],
+          });
+          mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
+
+          await studyMaterialService.getByTopic('topic-math', teacherA);
+
+          expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({
+                topicId: 'topic-math',
+                AND: expect.arrayContaining([
+                  expect.objectContaining({
+                    OR: expect.arrayContaining([
+                      { uploader: { userCentres: { some: { centreId: { in: ['centre-alpha'] } } } } },
+                      { uploaderId: 'teacher-a' },
+                    ]),
+                  }),
+                  expect.objectContaining({
+                    OR: expect.arrayContaining([
+                      { uploaderId: 'teacher-a' },
+                      {
+                        syllabus: {
+                          subjectId: { in: ['math-subj'] },
+                          standardId: { in: ['std-10'] },
+                        },
+                      },
+                    ]),
+                  }),
+                ]),
+              }),
+            })
+          );
+        });
+
+        it('should filter getAll for Centre Admin without bypassing on null track from other centres', async () => {
+          mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
+
+          await studyMaterialService.getAll(centreAdminA);
+
+          expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: {
+                OR: [
+                  { uploader: { userCentres: { some: { centreId: { in: ['centre-alpha'] } } } } },
+                  { targetTrack: { batches: { some: { centreId: { in: ['centre-alpha'] } } } } },
+                  { uploaderId: 'admin-a' },
+                  { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
+                  { uploaderId: null, targetTrackId: null },
+                ],
+              },
+            })
+          );
+        });
+
+        it('should prevent student from updating progress on unauthorized study material', async () => {
+          const studentUser: any = { id: 'student-user-1', role: { name: 'STUDENT' } };
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'student-profile-1',
+            userId: 'student-user-1',
+            enrollments: [{
+              trackId: 'track-1',
+              batch: { centreId: 'centre-alpha', standardId: 'std-9', boardId: 'board-cbse' },
+            }],
+          });
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+            id: 'mat-diff-centre',
+            syllabus: { standardId: 'std-12', boardId: 'board-cbse' },
+            uploader: { userCentres: [{ centreId: 'centre-beta' }] },
+            targetTrack: { batches: [{ centreId: 'centre-beta' }] },
+          });
+
+          await expect(
+            studyMaterialService.updateProgress('mat-diff-centre', studentUser.id, { isOpened: true }, studentUser)
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('B. Secure Storage Object Ownership & Deletion', () => {
+        it('should reject deleting objects via untrusted or external URLs', async () => {
+          const result1 = await storageService.deleteFile('https://attacker-domain.com/materials/stolen.pdf');
+          expect(result1).toBe(false);
+
+          const result2 = await storageService.deleteFile('https://youtube.com/watch?v=12345');
+          expect(result2).toBe(false);
+        });
+
+        it('should reject deleting objects with path traversal sequences', async () => {
+          const result = await storageService.deleteFile('materials/../../etc/passwd');
+          expect(result).toBe(false);
+        });
+
+        it('should reject deleting objects outside managed prefixes (materials/ and forms/)', async () => {
+          const result = await storageService.deleteFile('users/avatars/admin.png');
+          expect(result).toBe(false);
+        });
+
+        it('should reject generating download URLs for unmanaged or external keys', async () => {
+          await expect(
+            storageService.getPresignedDownloadUrl('https://evil.com/payload.exe')
+          ).rejects.toThrow(BadRequestException);
+        });
+      });
+
+      describe('C. Study Material Creation Scope & Deterministic Academic Year', () => {
+        const centreAdminA: any = {
+          id: 'admin-a',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        const teacherA: any = {
+          id: 'teacher-a',
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should reject material creation when multiple active academic years exist and academicYearId is omitted', async () => {
+          mockPrisma.academicYear.findMany.mockResolvedValue([
+            { id: 'ay-2025', name: '2025-2026', isActive: true },
+            { id: 'ay-2026', name: '2026-2027', isActive: true },
+          ]);
+
+          await expect(
+            studyMaterialService.create({
+              title: 'Chemistry Notes',
+              type: 'PDF',
+              syllabusId: 'syl-1',
+            }, centreAdminA)
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should reject target track outside caller centre', async () => {
+          mockPrisma.academicYear.findMany.mockResolvedValue([{ id: 'ay-2026', isActive: true }]);
+          mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1' });
+          mockPrisma.targetTrack.findUnique.mockResolvedValue({
+            id: 'track-beta',
+            batches: [{ centreId: 'centre-beta' }],
+          });
+
+          await expect(
+            studyMaterialService.create({
+              title: 'Chemistry Notes',
+              type: 'PDF',
+              syllabusId: 'syl-1',
+              targetTrackId: 'track-beta',
+            }, centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should reject target track when teacher is not assigned to any batch in that track', async () => {
+          mockPrisma.academicYear.findMany.mockResolvedValue([{ id: 'ay-2026', isActive: true }]);
+          mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1', subjectId: 'chem', standardId: 'std-10' });
+          mockPrisma.targetTrack.findUnique.mockResolvedValue({
+            id: 'track-alpha-neet',
+            batches: [{ id: 'batch-neet-1', centreId: 'centre-alpha', trackId: 'track-alpha-neet' }],
+          });
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{
+              subjectId: 'chem',
+              standardId: 'std-10',
+              batch: { id: 'batch-jee-1', trackId: 'track-alpha-jee' },
+            }],
+          });
+
+          await expect(
+            studyMaterialService.create({
+              title: 'Chemistry Notes',
+              type: 'PDF',
+              syllabusId: 'syl-1',
+              targetTrackId: 'track-alpha-neet',
+            }, teacherA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('D. Teacher Assignment Checks on Attendance Reads', () => {
+        const teacherA: any = {
+          id: 'teacher-a',
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should reject getAttendanceForBatchAndDate when teacher is not assigned to batch', async () => {
+          mockPrisma.batch.findUnique.mockResolvedValue({
+            id: 'batch-unassigned',
+            centreId: 'centre-alpha',
+            standardId: 'std-10',
+          });
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{ batchId: 'batch-assigned-1', subjectId: 'math' }],
+          });
+
+          await expect(
+            attendanceService.getAttendanceForBatchAndDate('batch-unassigned', '2026-10-18', undefined, teacherA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should reject getStudentsByFilter when teacher is not assigned to standard/track in centre', async () => {
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{
+              standardId: 'std-11',
+              batch: { centreId: 'centre-alpha', standardId: 'std-11', boardId: 'cbse', trackId: 'science' },
+            }],
+          });
+
+          await expect(
+            attendanceService.getStudentsByFilter('centre-alpha', 'cbse', 'std-10', 'commerce', teacherA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should reject getAttendanceByFilter when teacher is not assigned to standard/track in centre', async () => {
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{
+              standardId: 'std-11',
+              batch: { centreId: 'centre-alpha', standardId: 'std-11', boardId: 'cbse', trackId: 'science' },
+            }],
+          });
+
+          await expect(
+            attendanceService.getAttendanceByFilter('centre-alpha', 'cbse', 'std-10', 'commerce', '2026-10-18', teacherA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('E. Student Performance Report Batch Scope for Teachers', () => {
+        const teacherA: any = {
+          id: 'teacher-a',
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should reject getStudentPerformanceReport when teacher is not assigned to requested batch', async () => {
+          mockPrisma.batch.findUnique.mockResolvedValue({
+            id: 'batch-not-mine',
+            centreId: 'centre-alpha',
+            standardId: 'std-10',
+          });
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{ batchId: 'batch-mine-1', standardId: 'std-12' }],
+          });
+
+          await expect(
+            reportService.getStudentPerformanceReport('batch-not-mine', teacherA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should scope getStudentPerformanceReport to assigned batches when batchId is omitted', async () => {
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{ batchId: 'batch-mine-1', batch: { id: 'batch-mine-1' } }],
+          });
+          mockPrisma.enrollment.findMany.mockResolvedValue([]);
+          mockPrisma.attendanceRecord.findMany.mockResolvedValue([]);
+
+          await reportService.getStudentPerformanceReport(undefined, teacherA);
+
+          expect(mockPrisma.enrollment.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({
+                batch: expect.objectContaining({
+                  centreId: { in: ['centre-alpha'] },
+                  OR: [{ id: { in: ['batch-mine-1'] } }],
+                }),
+              }),
+            })
+          );
+        });
+
+        it('should reject getSingleStudentPerformance when teacher is not assigned to student batch', async () => {
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'student-1',
+            userId: 'student-user-1',
+            enrollments: [{
+              batchId: 'batch-unassigned',
+              batch: { id: 'batch-unassigned', centreId: 'centre-alpha', standardId: 'std-10' },
+            }],
+          });
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherA.id,
+            assignments: [{ batchId: 'batch-assigned-2', standardId: 'std-12' }],
+          });
+
+          await expect(
+            reportService.getSingleStudentPerformance('student-1', teacherA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('F. Strict Storage MIME Validation & Parameter Handling', () => {
+        it('should strip parameters cleanly from MIME type and accept valid pair', async () => {
+          const res = await storageService.getPresignedUploadUrl('doc.txt', 'text/plain; charset=utf-8');
+          expect(res).toHaveProperty('uploadUrl');
+          expect(res).toHaveProperty('objectKey');
+        });
+
+        it('should reject prefix spoofed MIME types', async () => {
+          await expect(
+            storageService.getPresignedUploadUrl('image.jpg', 'image/jpeg.malicious')
+          ).rejects.toThrow(BadRequestException);
+        });
+      });
+    });
   });
 });
 

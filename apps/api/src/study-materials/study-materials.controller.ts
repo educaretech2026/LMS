@@ -55,7 +55,7 @@ export class StudyMaterialController {
     @Body() progressData: any,
     @Req() req: any
   ) {
-    return this.studyMaterialService.updateProgress(id, req.user.id, progressData);
+    return this.studyMaterialService.updateProgress(id, req.user.id, progressData, req.user);
   }
 
   @Get('upload-url')
@@ -81,17 +81,11 @@ export class StudyMaterialController {
       return { playUrl: material.url };
     }
     
-    let objectKey = material.url;
-    if (objectKey && objectKey.startsWith('http')) {
-      const parts = objectKey.split('/');
-      objectKey = parts.slice(3).join('/');
-    }
-    
-    if (!objectKey) {
+    if (!material.url) {
       throw new HttpException('Invalid video URL', HttpStatus.BAD_REQUEST);
     }
 
-    const result = await this.storageService.getPresignedDownloadUrl(objectKey, 7200);
+    const result = await this.storageService.getPresignedDownloadUrl(material.url, 7200);
     return { playUrl: result.downloadUrl };
   }
 }

@@ -58,6 +58,7 @@ export class StudyMaterialService {
           ]
         };
       } else if (isTeacher && user?.id) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
           include: { assignments: true },
@@ -66,13 +67,26 @@ export class StudyMaterialService {
         const standardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
         
         where = {
-          OR: [
-            { uploaderId: user.id },
+          AND: [
             {
-              syllabus: {
-                ...(subjectIds.length > 0 ? { subjectId: { in: subjectIds } } : {}),
-                ...(standardIds.length > 0 ? { standardId: { in: standardIds } } : {}),
-              }
+              OR: [
+                { uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } } },
+                { targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } } },
+                { uploaderId: user.id },
+                { uploader: { role: { name: 'SUPER_ADMIN' } } },
+                { uploaderId: null },
+              ]
+            },
+            {
+              OR: [
+                { uploaderId: user.id },
+                {
+                  syllabus: {
+                    ...(subjectIds.length > 0 ? { subjectId: { in: subjectIds } } : { id: 'none' }),
+                    ...(standardIds.length > 0 ? { standardId: { in: standardIds } } : {}),
+                  }
+                }
+              ]
             }
           ]
         };
@@ -82,7 +96,9 @@ export class StudyMaterialService {
           OR: [
             { uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } } },
             { targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } } },
-            { targetTrackId: null },
+            { uploaderId: user.id },
+            { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
+            { uploaderId: null, targetTrackId: null },
           ]
         };
       }
@@ -245,13 +261,16 @@ export class StudyMaterialService {
     try {
       let { academicYearId, syllabusId } = data;
 
-      // Resolve academic year deterministically
+      // Resolve academic year deterministically without arbitrary selection
       if (academicYearId === "dummy-academic-year" || !academicYearId) {
-        const year = await this.prisma.academicYear.findFirst({ where: { isActive: true } });
-        if (!year) {
+        const activeYears = await this.prisma.academicYear.findMany({ where: { isActive: true } });
+        if (activeYears.length === 0) {
           throw new BadRequestException('An active academic year must be configured before creating study materials');
         }
-        academicYearId = year.id;
+        if (activeYears.length > 1) {
+          throw new BadRequestException('Multiple active academic years found. Please explicitly specify academicYearId.');
+        }
+        academicYearId = activeYears[0].id;
       } else {
         const year = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
         if (!year) {
@@ -283,6 +302,40 @@ export class StudyMaterialService {
         }
       }
 
+      // Validate target track authorization and scope
+      if (data.targetTrackId) {
+        const track = await this.prisma.targetTrack.findUnique({
+          where: { id: data.targetTrackId },
+          include: { batches: true }
+        });
+        if (!track) {
+          throw new BadRequestException('The specified target track does not exist');
+        }
+
+        if (user && !isSuperAdmin(user)) {
+          const authorizedCentres = getAuthorizedCentreIds(user);
+          const trackCentres = (track.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
+          if (trackCentres.length > 0 && !trackCentres.some(cId => authorizedCentres.includes(cId))) {
+            throw new ForbiddenException('You cannot target a track from another centre.');
+          }
+
+          const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
+          const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+          if (normalizedRole === 'TEACHER') {
+            const teacherProfile = await this.prisma.teacherProfile.findUnique({
+              where: { userId: user.id },
+              include: { assignments: { include: { batch: true } } },
+            });
+            const hasAssignedBatchInTrack = teacherProfile?.assignments?.some(a => 
+              a.batch?.trackId === data.targetTrackId
+            );
+            if (!hasAssignedBatchInTrack && (track.batches || []).length > 0) {
+              throw new ForbiddenException('Teachers can only target tracks associated with their assigned batches.');
+            }
+          }
+        }
+      }
+
       // Check teacher assignment authorization
       if (user && !isSuperAdmin(user)) {
         const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
@@ -309,6 +362,8 @@ export class StudyMaterialService {
         }
       }
 
+      const effectiveUploaderId = (user && !isSuperAdmin(user)) ? user.id : (user?.id || data.uploaderId);
+
       return await this.prisma.studyMaterial.create({
         data: {
           title: data.title,
@@ -320,7 +375,7 @@ export class StudyMaterialService {
           chapterId: data.chapterId || null,
           topicId: data.topicId || null,
           subtopicId: data.subtopicId || null,
-          uploaderId: user?.id || data.uploaderId,
+          uploaderId: effectiveUploaderId,
           targetTrackId: data.targetTrackId || null,
         },
       });
@@ -338,6 +393,8 @@ export class StudyMaterialService {
     const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
     const isStudent = normalizedRole === 'STUDENT';
     const isPublicLearner = normalizedRole === 'PUBLIC_LEARNER';
+    const isTeacher = normalizedRole === 'TEACHER';
+    const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN';
 
     const where: any = { topicId };
 
@@ -355,20 +412,77 @@ export class StudyMaterialService {
 
       const standardIds = student.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
       const boardIds = student.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
+      const trackIds = student.enrollments.map(e => e.trackId).filter(Boolean) as string[];
+      const studentCentres = student.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
 
-      where.OR = [
+      where.AND = [
         {
-          syllabus: {
-            standardId: { in: standardIds },
-            boardId: { in: boardIds }
-          }
+          OR: [
+            {
+              syllabus: {
+                standardId: { in: standardIds },
+                boardId: { in: boardIds }
+              }
+            },
+            { syllabusId: null }
+          ]
         },
         {
-          syllabusId: null
+          OR: [
+            { targetTrackId: null },
+            ...(trackIds.length > 0 ? [{ targetTrackId: { in: trackIds } }] : [])
+          ]
+        },
+        {
+          OR: [
+            { uploader: { userCentres: { some: { centreId: { in: studentCentres } } } } },
+            { targetTrack: { batches: { some: { centreId: { in: studentCentres } } } } },
+            { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
+            { uploaderId: null, targetTrackId: null },
+          ]
+        }
+      ];
+    } else if (isCentreAdmin && user?.id) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      where.OR = [
+        { uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } } },
+        { targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } } },
+        { uploaderId: user.id },
+        { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
+        { uploaderId: null, targetTrackId: null },
+      ];
+    } else if (isTeacher && user?.id) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true },
+      });
+      const subjectIds = (teacherProfile?.assignments || []).map(a => a.subjectId).filter(Boolean) as string[];
+      const standardIds = (teacherProfile?.assignments || []).map(a => a.standardId).filter(Boolean) as string[];
+
+      where.AND = [
+        {
+          OR: [
+            { uploader: { userCentres: { some: { centreId: { in: authorizedCentres } } } } },
+            { targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } } },
+            { uploaderId: user.id },
+            { uploader: { role: { name: 'SUPER_ADMIN' } } },
+            { uploaderId: null },
+          ]
+        },
+        {
+          OR: [
+            { uploaderId: user.id },
+            {
+              syllabus: {
+                ...(subjectIds.length > 0 ? { subjectId: { in: subjectIds } } : { id: 'none' }),
+                ...(standardIds.length > 0 ? { standardId: { in: standardIds } } : {}),
+              }
+            }
+          ]
         }
       ];
     }
-
 
     return this.prisma.studyMaterial.findMany({
       where,
@@ -425,7 +539,7 @@ export class StudyMaterialService {
     }
   }
 
-  async updateProgress(studyMaterialId: string, userId: string, progressData: any) {
+  async updateProgress(studyMaterialId: string, userId: string, progressData: any, user?: any) {
     const student = await this.prisma.studentProfile.findUnique({
       where: { userId }
     });
@@ -433,6 +547,10 @@ export class StudyMaterialService {
       throw new HttpException('Student profile not found', HttpStatus.NOT_FOUND);
     }
     
+    // Authorize student access to this study material before recording progress
+    const callingUser = user || { id: userId, role: 'STUDENT' };
+    await this.getById(studyMaterialId, callingUser);
+
     const { isOpened, timeWatchedSecs, isCompleted } = progressData;
     
     // Get existing progress to keep the max time watched
