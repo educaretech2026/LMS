@@ -34,5 +34,15 @@ export class StorageController {
     }
     return this.storageService.finalizeUpload(objectKey, req.user);
   }
+
+  @Roles('SUPER_ADMIN')
+  @Post('cleanup-orphans')
+  @ApiOperation({ summary: 'Admin-only trigger for purging unreferenced orphan uploads with safe pagination' })
+  async cleanupOrphanUploads(
+    @Query('maxAgeHours') maxAgeHours?: string,
+  ) {
+    const hours = maxAgeHours && !isNaN(Number(maxAgeHours)) ? Number(maxAgeHours) : 2;
+    return this.storageService.cleanupOrphanUploads(hours);
+  }
 }
 

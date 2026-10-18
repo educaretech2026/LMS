@@ -2,7 +2,7 @@ import { getJwtSecret } from './config/jwt.config';
 import { StorageService } from '../storage/storage.service';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from './utils/tenant.util';
-import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException, ServiceUnavailableException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, HttpException, HttpStatus, UnauthorizedException, ServiceUnavailableException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { ExamsService } from '../exams/exams.service';
 import { StudentsService } from '../students/students.service';
 import { LiveClassService } from '../live-class/live-class.service';
@@ -6154,6 +6154,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             };
             (testStorageService as any).s3Client = mockS3Client;
             (testStorageService as any).publicUrl = 'https://cdn.educare.test';
+            process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-id';
           });
 
           it('should enforce 100MB limit for materials, 20MB for thumbnails, and custom limits for forms in getPresignedUploadUrl', async () => {
@@ -6538,6 +6539,67 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             const result = await testStorageService.cleanupOrphanUploads(2);
             expect(result.scanned).toBe(3);
             expect(result.purged).toBe(1);
+          });
+
+          it('should reject unscoped keys for non-Super Admins and fail closed when user is missing in finalizeUpload', async () => {
+            const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' } };
+
+            // 1. Unscoped key (only 2 parts, no owner segment) must be rejected for non-superadmin
+            await expect(
+              testStorageService.finalizeUpload('materials/unscoped-file.pdf', teacherUser)
+            ).rejects.toThrow(ForbiddenException);
+
+            // 2. Missing authenticated user must fail closed
+            await expect(
+              testStorageService.finalizeUpload('materials/teacher-1/file.pdf', null)
+            ).rejects.toThrow(ForbiddenException);
+          });
+
+          it('should fail closed when database is unavailable during form upload finalization', async () => {
+            const teacherUser = { id: 'teacher-1', role: { name: 'TEACHER' } };
+            const serviceWithoutPrisma = new StorageService(null as any);
+
+            await expect(
+              serviceWithoutPrisma.finalizeUpload('forms/form-1/file.pdf', teacherUser)
+            ).rejects.toThrow(InternalServerErrorException);
+          });
+
+          it('should follow S3 ContinuationToken pagination in cleanupOrphanUploads across multiple pages', async () => {
+            const oldDate = new Date(Date.now() - 4 * 60 * 60 * 1000);
+            let pageCall = 0;
+
+            mockS3Client.send.mockImplementation(async (cmd: any) => {
+              if (cmd.constructor?.name === 'ListObjectsV2Command' || cmd.input?.Prefix) {
+                if (cmd.input.Prefix === 'materials/') {
+                  pageCall++;
+                  if (pageCall === 1) {
+                    return {
+                      IsTruncated: true,
+                      NextContinuationToken: 'token-page-2',
+                      Contents: [
+                        { Key: 'materials/u-1/orphan-page-1.pdf', LastModified: oldDate }
+                      ],
+                    };
+                  } else {
+                    return {
+                      IsTruncated: false,
+                      Contents: [
+                        { Key: 'materials/u-1/orphan-page-2.pdf', LastModified: oldDate }
+                      ],
+                    };
+                  }
+                }
+                return { Contents: [] };
+              }
+              return {};
+            });
+
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue(null);
+
+            const result = await testStorageService.cleanupOrphanUploads(2);
+            expect(pageCall).toBe(2);
+            expect(result.scanned).toBe(2);
+            expect(result.purged).toBe(2);
           });
         });
       });

@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, BadRequestException, ForbiddenException, InternalServerErrorException, Optional } from '@nestjs/common';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PrismaService } from '../database/prisma.service';
@@ -386,8 +386,11 @@ export class StorageService {
 
   /**
    * Finalizes and verifies an upload before resource attachment.
+   * - Fails closed: authenticated user context is strictly required.
    * - Enforces server-defined size limit policy (clients cannot specify limit).
-   * - Authenticates upload ownership: verifies user owns the upload key.
+   * - Authenticates upload ownership: requires owner-bearing key for ordinary uploads;
+   *   rejects unscoped/legacy keys for non-Super Admins.
+   * - Fails closed on database availability for form authorizations.
    * - Never bypasses reference checks: referenced objects are never deleted.
    */
   async finalizeUpload(urlOrKey: string, user: any) {
@@ -399,26 +402,38 @@ export class StorageService {
       throw new BadRequestException('Invalid or unmanaged storage object.');
     }
 
+    // Fail closed: authenticated user context is strictly required
+    if (!user || !user.id) {
+      throw new ForbiddenException('Authenticated user is required to finalize uploads.');
+    }
+
     // Authenticate upload ownership
-    if (user && !isSuperAdmin(user)) {
+    if (!isSuperAdmin(user)) {
       if (validatedKey.startsWith('materials/') || validatedKey.startsWith('thumbnails/')) {
         const ownerId = this.extractOwnerFromKey(validatedKey);
-        if (ownerId && ownerId !== user.id) {
+        if (!ownerId) {
+          throw new ForbiddenException('Access denied: Upload key lacks required owner scoping.');
+        }
+        if (ownerId !== user.id) {
           throw new ForbiddenException('Access denied: You can only finalize your own uploads.');
         }
       } else if (validatedKey.startsWith('forms/')) {
+        if (!this.prisma) {
+          throw new InternalServerErrorException('Database service is unavailable for form authorization.');
+        }
         const parts = validatedKey.split('/');
         const formId = parts[1];
-        if (this.prisma) {
-          const form = await (this.prisma as any).customForm?.findUnique?.({ where: { id: formId } });
-          if (!form) {
-            throw new BadRequestException('Referenced form does not exist.');
-          }
-          if (form.centreId) {
-            assertCentreAccess(user, form.centreId);
-          } else {
-            throw new ForbiddenException('Only super administrators can manage global form uploads.');
-          }
+        if (parts.length < 3 || !formId) {
+          throw new BadRequestException('Form upload key must contain a valid form identifier.');
+        }
+        const form = await (this.prisma as any).customForm?.findUnique?.({ where: { id: formId } });
+        if (!form) {
+          throw new BadRequestException('Referenced form does not exist.');
+        }
+        if (form.centreId) {
+          assertCentreAccess(user, form.centreId);
+        } else {
+          throw new ForbiddenException('Only super administrators can manage global form uploads.');
         }
       }
     }
@@ -428,13 +443,20 @@ export class StorageService {
     if (validatedKey.startsWith('materials/')) {
       serverLimit = 100 * 1024 * 1024; // 100 MB
     } else if (validatedKey.startsWith('forms/')) {
+      if (!this.prisma) {
+        throw new InternalServerErrorException('Database service is unavailable for form authorization.');
+      }
       let customLimit = 25 * 1024 * 1024;
       const parts = validatedKey.split('/');
       const formId = parts[1];
-      if (this.prisma) {
-        const form = await (this.prisma as any).customForm?.findUnique?.({ where: { id: formId } });
-        if (form?.maxFileSizeBytes) customLimit = form.maxFileSizeBytes;
+      if (parts.length < 3 || !formId) {
+        throw new BadRequestException('Form upload key must contain a valid form identifier.');
       }
+      const form = await (this.prisma as any).customForm?.findUnique?.({ where: { id: formId } });
+      if (!form) {
+        throw new BadRequestException('Referenced form does not exist.');
+      }
+      if (form?.maxFileSizeBytes) customLimit = form.maxFileSizeBytes;
       serverLimit = customLimit;
     } else {
       serverLimit = 20 * 1024 * 1024; // 20 MB for thumbnails
@@ -451,8 +473,9 @@ export class StorageService {
   /**
    * Scans storage for unreferenced orphan objects older than the retention threshold (default 2 hours)
    * and purges them safely after verifying that no application records reference them.
+   * Implements full ContinuationToken pagination across result sets.
    */
-  async cleanupOrphanUploads(maxAgeHours: number = 2): Promise<{ scanned: number; purged: number }> {
+  async cleanupOrphanUploads(maxAgeHours: number = 2, maxObjectsPerPrefix: number = 1000): Promise<{ scanned: number; purged: number }> {
     if (!process.env.CLOUDFLARE_ACCOUNT_ID || !this.prisma) {
       return { scanned: 0, purged: 0 };
     }
@@ -464,25 +487,36 @@ export class StorageService {
 
       const prefixes = ['materials/', 'thumbnails/', 'forms/'];
       for (const prefix of prefixes) {
-        const listCmd = new ListObjectsV2Command({
-          Bucket: this.bucketName,
-          Prefix: prefix,
-          MaxKeys: 100,
-        });
+        let continuationToken: string | undefined = undefined;
+        let prefixScanned = 0;
 
-        const listRes = await this.s3Client.send(listCmd);
-        const contents = listRes.Contents || [];
-        for (const item of contents) {
-          if (!item.Key || !item.LastModified) continue;
-          scannedCount++;
-          if (item.LastModified.getTime() < thresholdTime) {
-            const inUse = await this.isStorageUrlInUse(item.Key);
-            if (!inUse) {
-              const deleted = await this.deleteFile(item.Key, false);
-              if (deleted) purgedCount++;
+        do {
+          const listCmd: ListObjectsV2Command = new ListObjectsV2Command({
+            Bucket: this.bucketName,
+            Prefix: prefix,
+            MaxKeys: 100,
+            ContinuationToken: continuationToken,
+          });
+
+          const listRes = await this.s3Client.send(listCmd);
+          const contents = listRes.Contents || [];
+          for (const item of contents) {
+            if (!item.Key || !item.LastModified) continue;
+            scannedCount++;
+            prefixScanned++;
+            if (item.LastModified.getTime() < thresholdTime) {
+              const inUse = await this.isStorageUrlInUse(item.Key);
+              if (!inUse) {
+                const deleted = await this.deleteFile(item.Key, false);
+                if (deleted) purgedCount++;
+              }
             }
           }
-        }
+
+          continuationToken = listRes.IsTruncated && listRes.NextContinuationToken
+            ? listRes.NextContinuationToken
+            : undefined;
+        } while (continuationToken && prefixScanned < maxObjectsPerPrefix);
       }
 
       return { scanned: scannedCount, purged: purgedCount };

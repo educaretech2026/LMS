@@ -1,11 +1,17 @@
 import type { NextConfig } from "next";
 
+const enableSRI = process.env.NEXT_ENABLE_SRI === 'true';
+
 const nextConfig: NextConfig = {
-  experimental: {
-    sri: {
-      algorithm: 'sha256',
-    },
-  },
+  ...(enableSRI
+    ? {
+        experimental: {
+          sri: {
+            algorithm: 'sha256',
+          },
+        },
+      }
+    : {}),
   async redirects() {
     return [
       {
