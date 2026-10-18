@@ -2409,7 +2409,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           },
         };
         mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
-        formsService = new FormsService(mockPrisma as any, mockNotifications as any);
+        formsService = new FormsService(mockPrisma as any, mockNotifications as any, new StorageService(mockPrisma as any));
       });
 
       it('should reject submission to an inactive form with BadRequestException', async () => {
@@ -3008,7 +3008,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           },
         };
         mockNotifications = { sendNotification: jest.fn().mockResolvedValue(true) };
-        formsService = new FormsService(mockPrisma as any, mockNotifications as any);
+        formsService = new FormsService(mockPrisma as any, mockNotifications as any, new StorageService(mockPrisma as any));
       });
 
       it('should reject non-superadmin modifying a global form (centreId null)', async () => {
@@ -5687,7 +5687,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         storageService = new StorageService();
         studyMaterialService = new StudyMaterialService(mockPrisma as any, storageService);
         feeService = new FeeService(mockPrisma as any);
-        formsService = new FormsService(mockPrisma as any, { sendNotification: jest.fn() } as any);
+        formsService = new FormsService(mockPrisma as any, { sendNotification: jest.fn() } as any, storageService);
         storageController = new StorageController(storageService);
         examsController = new ExamsController({} as any, storageService);
         formsController = new FormsController(formsService, storageService);
@@ -6474,6 +6474,70 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             const report = await reportService.getExpenseIncomeReport('2026-01-01', '2026-12-31', 'centre-alpha');
             expect(report.feeRecords[0].centreName).toBe('Centre Alpha');
             expect(report.feeRecords[0].batchName).toBe('Batch Alpha');
+          });
+
+          it('should reject finalizeUpload when user does not own the object key and derive limits server-side', async () => {
+            const attackerUser = { id: 'attacker-user', role: { name: 'TEACHER' } };
+            const legitimateUser = { id: 'legit-user', role: { name: 'TEACHER' } };
+
+            // 1. Attacker tries to finalize another user's material key
+            await expect(
+              testStorageService.finalizeUpload('materials/legit-user/file.pdf', attackerUser)
+            ).rejects.toThrow(ForbiddenException);
+
+            // 2. Legitimate user finalizes their own key with mock S3
+            mockS3Client.send.mockResolvedValueOnce({ ContentLength: 50 * 1024 * 1024 });
+            const res = await testStorageService.finalizeUpload('materials/legit-user/file.pdf', legitimateUser);
+            expect(res.verified).toBe(true);
+            expect(res.objectKey).toBe('materials/legit-user/file.pdf');
+          });
+
+          it('should never delete a referenced object during oversized validation', async () => {
+            // Object is referenced by studyMaterial
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue({ id: 'existing-mat' });
+            mockS3Client.send.mockResolvedValueOnce({ ContentLength: 150 * 1024 * 1024 }); // 150MB > 100MB
+
+            await expect(
+              testStorageService.validateAndEnforceObjectSize('materials/u-1/shared.pdf')
+            ).rejects.toThrow(BadRequestException);
+
+            // DeleteObjectCommand must NOT have been called because object is in use
+            const deleteCalls = mockS3Client.send.mock.calls.filter(
+              (call: any[]) => call[0]?.constructor?.name === 'DeleteObjectCommand' || call[0]?.schema?.[2] === 'DeleteObject'
+            );
+            expect(deleteCalls.length).toBe(0);
+          });
+
+          it('should clean up unreferenced orphan uploads older than retention threshold without deleting referenced objects', async () => {
+            const oldDate = new Date(Date.now() - 3 * 60 * 60 * 1000); // 3 hours old
+            const recentDate = new Date();
+
+            mockS3Client.send.mockImplementation(async (cmd: any) => {
+              if (cmd.constructor?.name === 'ListObjectsV2Command' || cmd.input?.Prefix) {
+                if (cmd.input.Prefix === 'materials/') {
+                  return {
+                    Contents: [
+                      { Key: 'materials/u-1/abandoned-orphan.pdf', LastModified: oldDate },
+                      { Key: 'materials/u-1/claimed-active.pdf', LastModified: oldDate },
+                      { Key: 'materials/u-1/recent.pdf', LastModified: recentDate },
+                    ],
+                  };
+                }
+                return { Contents: [] };
+              }
+              return {};
+            });
+
+            // Mock claimed-active.pdf to be in use, abandoned-orphan to not be in use
+            mockStoragePrisma.studyMaterial.findFirst.mockImplementation(async ({ where }: any) => {
+              const str = JSON.stringify(where);
+              if (str.includes('claimed-active.pdf')) return { id: 'mat-active' };
+              return null;
+            });
+
+            const result = await testStorageService.cleanupOrphanUploads(2);
+            expect(result.scanned).toBe(3);
+            expect(result.purged).toBe(1);
           });
         });
       });

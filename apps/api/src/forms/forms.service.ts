@@ -87,7 +87,7 @@ export class FormsService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
-    @Optional() private storageService?: StorageService
+    private storageService: StorageService
   ) {}
 
   async createForm(data: { title: string; description?: string; isActive?: boolean; fields: any; centreId?: string }, user?: any): Promise<any> {
@@ -248,6 +248,9 @@ export class FormsService {
 
     // Validate uploaded file attachments in submitted form response data
     if (data && typeof data === 'object') {
+      if (!this.storageService) {
+        throw new BadRequestException('Storage service is not available to validate uploaded form attachments.');
+      }
       const customFormLimit = (form as any).maxFileSizeBytes;
       const expectedPrefix = `forms/${formId}/`;
 
@@ -255,9 +258,7 @@ export class FormsService {
         for (const [key, val] of Object.entries(obj)) {
           if (typeof val === 'string') {
             const trimmed = val.trim();
-            const validatedKey = this.storageService?.extractAndValidateObjectKey
-              ? this.storageService.extractAndValidateObjectKey(trimmed)
-              : (trimmed.startsWith('forms/') ? trimmed : null);
+            const validatedKey = this.storageService.extractAndValidateObjectKey(trimmed);
 
             if (validatedKey || trimmed.includes('forms/') || trimmed.includes('/forms/')) {
               // Ensure it is a valid managed storage key
@@ -274,19 +275,15 @@ export class FormsService {
 
               // Check if object is already claimed by another record.
               // If claimed, do not allow reuse across form submissions or deletion via purge!
-              if (this.storageService?.isStorageUrlInUse) {
-                const isClaimed = await this.storageService.isStorageUrlInUse(validatedKey);
-                if (isClaimed) {
-                  throw new BadRequestException(
-                    `File "${key}" has already been claimed or referenced by another record.`
-                  );
-                }
+              const isClaimed = await this.storageService.isStorageUrlInUse(validatedKey);
+              if (isClaimed) {
+                throw new BadRequestException(
+                  `File "${key}" has already been claimed or referenced by another record.`
+                );
               }
 
               // Validate size and purge oversized file only after proving it is an unclaimed upload belonging to this form
-              if (this.storageService?.validateAndEnforceObjectSize) {
-                await this.storageService.validateAndEnforceObjectSize(validatedKey, customFormLimit);
-              }
+              await this.storageService.validateAndEnforceObjectSize(validatedKey, customFormLimit);
             }
           } else if (val && typeof val === 'object') {
             await traverseAndCheck(val);

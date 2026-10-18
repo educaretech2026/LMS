@@ -24,15 +24,15 @@ export class StorageController {
   }
 
   @Post('finalize')
-  @ApiOperation({ summary: 'Verify and finalize an upload, purging oversized objects immediately' })
+  @ApiOperation({ summary: 'Verify and finalize an upload, binding strictly to upload owner' })
   async finalizeUpload(
     @Body('objectKey') objectKey: string,
-    @Body('maxSizeBytes') maxSizeBytes?: number,
+    @Req() req: any,
   ) {
     if (!objectKey) {
       throw new BadRequestException('objectKey is required to finalize upload');
     }
-    return this.storageService.finalizeUpload(objectKey, maxSizeBytes);
+    return this.storageService.finalizeUpload(objectKey, req.user);
   }
 }
 

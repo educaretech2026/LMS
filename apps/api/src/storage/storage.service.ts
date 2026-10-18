@@ -1,7 +1,8 @@
-import { Injectable, HttpException, HttpStatus, BadRequestException, Optional } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { Injectable, HttpException, HttpStatus, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PrismaService } from '../database/prisma.service';
+import { isSuperAdmin, assertCentreAccess } from '../common/utils/tenant.util';
 import * as crypto from 'crypto';
 import * as path from 'path';
 
@@ -359,12 +360,16 @@ export class StorageService {
       const actualSizeBytes = head.ContentLength || 0;
 
       if (actualSizeBytes > maxSizeBytes) {
-        // Purge oversized object immediately from storage
-        const purged = await this.deleteFile(validatedKey, true);
+        // Never bypass reference checks! Only delete unreferenced uploads
+        const inUse = await this.isStorageUrlInUse(validatedKey);
+        let purged = false;
+        if (!inUse) {
+          purged = await this.deleteFile(validatedKey, false);
+        }
         const maxMB = Math.round(maxSizeBytes / (1024 * 1024));
         const actualMB = (actualSizeBytes / (1024 * 1024)).toFixed(1);
         throw new BadRequestException(
-          `Uploaded file size (${actualMB}MB) exceeds the maximum allowed limit of ${maxMB}MB.${purged ? ' The oversized object has been purged from storage.' : ' Deletion of the oversized object failed, but attachment is rejected.'}`
+          `Uploaded file size (${actualMB}MB) exceeds the maximum allowed limit of ${maxMB}MB.${purged ? ' The oversized object has been purged from storage.' : ' Deletion was skipped or failed, and attachment is rejected.'}`
         );
       }
 
@@ -380,16 +385,111 @@ export class StorageService {
   }
 
   /**
-   * Finalizes and verifies an upload before resource attachment or to clean up abandoned oversized uploads.
+   * Finalizes and verifies an upload before resource attachment.
+   * - Enforces server-defined size limit policy (clients cannot specify limit).
+   * - Authenticates upload ownership: verifies user owns the upload key.
+   * - Never bypasses reference checks: referenced objects are never deleted.
    */
-  async finalizeUpload(urlOrKey: string, customMaxSizeBytes?: number) {
-    const validated = await this.validateAndEnforceObjectSize(urlOrKey, customMaxSizeBytes);
-    const key = this.extractAndValidateObjectKey(urlOrKey);
+  async finalizeUpload(urlOrKey: string, user: any) {
+    if (!urlOrKey || typeof urlOrKey !== 'string') {
+      throw new BadRequestException('Storage object key is required.');
+    }
+    const validatedKey = this.extractAndValidateObjectKey(urlOrKey);
+    if (!validatedKey) {
+      throw new BadRequestException('Invalid or unmanaged storage object.');
+    }
+
+    // Authenticate upload ownership
+    if (user && !isSuperAdmin(user)) {
+      if (validatedKey.startsWith('materials/') || validatedKey.startsWith('thumbnails/')) {
+        const ownerId = this.extractOwnerFromKey(validatedKey);
+        if (ownerId && ownerId !== user.id) {
+          throw new ForbiddenException('Access denied: You can only finalize your own uploads.');
+        }
+      } else if (validatedKey.startsWith('forms/')) {
+        const parts = validatedKey.split('/');
+        const formId = parts[1];
+        if (this.prisma) {
+          const form = await (this.prisma as any).customForm?.findUnique?.({ where: { id: formId } });
+          if (!form) {
+            throw new BadRequestException('Referenced form does not exist.');
+          }
+          if (form.centreId) {
+            assertCentreAccess(user, form.centreId);
+          } else {
+            throw new ForbiddenException('Only super administrators can manage global form uploads.');
+          }
+        }
+      }
+    }
+
+    // Server-enforced size limit policy (no client tampering)
+    let serverLimit: number;
+    if (validatedKey.startsWith('materials/')) {
+      serverLimit = 100 * 1024 * 1024; // 100 MB
+    } else if (validatedKey.startsWith('forms/')) {
+      let customLimit = 25 * 1024 * 1024;
+      const parts = validatedKey.split('/');
+      const formId = parts[1];
+      if (this.prisma) {
+        const form = await (this.prisma as any).customForm?.findUnique?.({ where: { id: formId } });
+        if (form?.maxFileSizeBytes) customLimit = form.maxFileSizeBytes;
+      }
+      serverLimit = customLimit;
+    } else {
+      serverLimit = 20 * 1024 * 1024; // 20 MB for thumbnails
+    }
+
+    const validated = await this.validateAndEnforceObjectSize(validatedKey, serverLimit);
     return {
       verified: true,
-      objectKey: key,
+      objectKey: validatedKey,
       sizeBytes: validated.actualSizeBytes,
     };
+  }
+
+  /**
+   * Scans storage for unreferenced orphan objects older than the retention threshold (default 2 hours)
+   * and purges them safely after verifying that no application records reference them.
+   */
+  async cleanupOrphanUploads(maxAgeHours: number = 2): Promise<{ scanned: number; purged: number }> {
+    if (!process.env.CLOUDFLARE_ACCOUNT_ID || !this.prisma) {
+      return { scanned: 0, purged: 0 };
+    }
+
+    try {
+      const thresholdTime = Date.now() - maxAgeHours * 60 * 60 * 1000;
+      let purgedCount = 0;
+      let scannedCount = 0;
+
+      const prefixes = ['materials/', 'thumbnails/', 'forms/'];
+      for (const prefix of prefixes) {
+        const listCmd = new ListObjectsV2Command({
+          Bucket: this.bucketName,
+          Prefix: prefix,
+          MaxKeys: 100,
+        });
+
+        const listRes = await this.s3Client.send(listCmd);
+        const contents = listRes.Contents || [];
+        for (const item of contents) {
+          if (!item.Key || !item.LastModified) continue;
+          scannedCount++;
+          if (item.LastModified.getTime() < thresholdTime) {
+            const inUse = await this.isStorageUrlInUse(item.Key);
+            if (!inUse) {
+              const deleted = await this.deleteFile(item.Key, false);
+              if (deleted) purgedCount++;
+            }
+          }
+        }
+      }
+
+      return { scanned: scannedCount, purged: purgedCount };
+    } catch (err) {
+      console.error('Error during orphan upload cleanup:', err);
+      return { scanned: 0, purged: 0 };
+    }
   }
 
   /**
