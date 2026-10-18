@@ -26,13 +26,14 @@ export class AttendanceService {
           where: { userId: user.id },
           include: { assignments: { include: { batch: true } } },
         });
+        const teacherCentres = getAuthorizedCentreIds(user);
         const isAssigned = teacherProfile?.assignments?.some(a => {
           if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
           if (a.batchId && a.batchId === batchId) return true;
           if (a.batch && a.batch.id === batchId) return true;
-          if (a.standardId && batch.standardId === a.standardId) {
+          if (!a.batchId && !a.batch && a.standardId && batch.standardId === a.standardId) {
             if (a.boardId && batch.boardId && a.boardId !== batch.boardId) return false;
-            if (a.batch && a.batch.centreId && a.batch.centreId !== batch.centreId) return false;
+            if (!teacherCentres.includes(batch.centreId)) return false;
             return true;
           }
           return false;
@@ -145,13 +146,14 @@ export class AttendanceService {
           where: { userId: user.id },
           include: { assignments: { include: { batch: true } } },
         });
+        const teacherCentres = getAuthorizedCentreIds(user);
         const isAssigned = teacherProfile?.assignments?.some(a => {
           if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
           if (a.batchId && a.batchId === batchId) return true;
           if (a.batch && a.batch.id === batchId) return true;
-          if (a.standardId && batch.standardId === a.standardId) {
+          if (!a.batchId && !a.batch && a.standardId && batch.standardId === a.standardId) {
             if (a.boardId && batch.boardId && a.boardId !== batch.boardId) return false;
-            if (a.batch && a.batch.centreId && a.batch.centreId !== batch.centreId) return false;
+            if (!teacherCentres.includes(batch.centreId)) return false;
             return true;
           }
           return false;
@@ -227,8 +229,13 @@ export class AttendanceService {
         }
         return (!boardId || !a.boardId || a.boardId === boardId);
       });
-      assignedBatchIds = validAssignments.map(a => a.batchId).filter(Boolean) as string[];
-      assignedStandardIds = validAssignments.map(a => a.standardId).filter(Boolean) as string[];
+      assignedBatchIds = validAssignments.map(a => a.batchId || a.batch?.id).filter(Boolean) as string[];
+      const classWideAssignments = validAssignments.filter(a => !a.batchId && !a.batch && a.standardId);
+      assignedStandardIds = classWideAssignments.map(a => a.standardId).filter(Boolean) as string[];
+
+      if (assignedBatchIds.length === 0 && assignedStandardIds.length === 0) {
+        return [];
+      }
     }
 
     return this.prisma.batch.findMany({
@@ -386,15 +393,21 @@ export class AttendanceService {
 
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
-          include: { assignments: true },
+          include: { assignments: { include: { batch: true } } },
         });
         if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
           throw new ForbiddenException('Teacher has no active assignments to mark attendance');
         }
+        const teacherCentres = getAuthorizedCentreIds(user);
         const isAssigned = teacherProfile.assignments.some(a => {
           if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
           if (a.batchId && a.batchId === resolvedBatchId) return true;
-          if (a.standardId && targetBatch?.standardId === a.standardId) return true;
+          if (a.batch && a.batch.id === resolvedBatchId) return true;
+          if (!a.batchId && !a.batch && a.standardId && targetBatch?.standardId === a.standardId) {
+            if (a.boardId && targetBatch?.boardId && a.boardId !== targetBatch.boardId) return false;
+            if (!teacherCentres.includes(effectiveCentreId)) return false;
+            return true;
+          }
           return false;
         });
         if (!isAssigned) {
