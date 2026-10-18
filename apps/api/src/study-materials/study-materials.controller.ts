@@ -36,16 +36,16 @@ export class StudyMaterialController {
   @Delete(':id')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   async delete(@Param('id') id: string, @Req() req: any) {
-    const material = await this.studyMaterialService.getById(id, req.user);
-    if (material) {
-      if (material.url && !material.url.includes('youtube.com')) {
-        await this.storageService.deleteFile(material.url);
+    const deleted = await this.studyMaterialService.delete(id, req.user);
+    if (deleted) {
+      if (deleted.url && !deleted.url.includes('youtube.com')) {
+        await this.storageService.deleteFile(deleted.url);
       }
-      if (material.thumbnailUrl) {
-        await this.storageService.deleteFile(material.thumbnailUrl);
+      if (deleted.thumbnailUrl) {
+        await this.storageService.deleteFile(deleted.thumbnailUrl);
       }
     }
-    return this.studyMaterialService.delete(id, req.user);
+    return deleted;
   }
 
   @Post(':id/progress')

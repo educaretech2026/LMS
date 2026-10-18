@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
@@ -228,7 +228,10 @@ export class SetupService {
     const batch = await this.prisma.batch.findUnique({ where: { id }, include: { _count: { select: { enrollments: true, assignments: true, exams: true } } } });
     if (!batch) return;
 
-    if (user && !isSuperAdmin(user) && batch.centreId) {
+    if (user && !isSuperAdmin(user)) {
+      if (!batch.centreId) {
+        throw new ForbiddenException('Cannot delete batch: effective centre cannot be established.');
+      }
       assertCentreAccess(user, batch.centreId);
     }
     

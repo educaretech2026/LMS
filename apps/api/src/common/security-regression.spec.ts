@@ -6,6 +6,7 @@ import { ExamsService } from '../exams/exams.service';
 import { StudentsService } from '../students/students.service';
 import { LiveClassService } from '../live-class/live-class.service';
 import { StudyMaterialService } from '../study-materials/study-materials.service';
+import { StudyMaterialController } from '../study-materials/study-materials.controller';
 import { AuthService } from '../auth/auth.service';
 import { AuthController } from '../auth/auth.controller';
 import { RedisService } from '../redis/redis.service';
@@ -3106,6 +3107,509 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         await expect(
           storageService.getPresignedUploadUrl('payload.xyz', 'application/octet-stream')
         ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('9. SEC-15: Eighth-Pass Cross-Centre Authorization, Resource Scoping and IDOR Protection', () => {
+      let mockPrisma: any;
+      let studyMaterialService: StudyMaterialService;
+      let storageService: StorageService;
+      let reportService: ReportService;
+      let assignmentsService: AssignmentsService;
+      let attendanceService: AttendanceService;
+      let setupService: SetupService;
+
+      beforeEach(() => {
+        mockPrisma = {
+          studyMaterial: {
+            findUnique: jest.fn(),
+            findMany: jest.fn(),
+            create: jest.fn(),
+            delete: jest.fn(),
+          },
+          academicYear: {
+            findFirst: jest.fn(),
+            findUnique: jest.fn(),
+          },
+          syllabus: {
+            findFirst: jest.fn(),
+            findUnique: jest.fn(),
+          },
+          studentProfile: {
+            findUnique: jest.fn(),
+            findMany: jest.fn(),
+          },
+          teacherProfile: {
+            findUnique: jest.fn(),
+          },
+          attendance: {
+            findFirst: jest.fn(),
+            findMany: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
+          },
+          attendanceRecord: {
+            deleteMany: jest.fn(),
+            createMany: jest.fn(),
+          },
+          assignment: {
+            findUnique: jest.fn(),
+            findMany: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
+            delete: jest.fn(),
+          },
+          assignmentSubmission: {
+            findUnique: jest.fn(),
+            update: jest.fn(),
+            upsert: jest.fn(),
+          },
+          batch: {
+            findUnique: jest.fn(),
+            delete: jest.fn(),
+          },
+          enrollment: {
+            findMany: jest.fn(),
+          },
+          exam: {
+            findMany: jest.fn(),
+          },
+          $transaction: jest.fn((cb) => cb(mockPrisma)),
+        };
+
+        studyMaterialService = new StudyMaterialService(mockPrisma);
+        storageService = new StorageService();
+        reportService = new ReportService(mockPrisma);
+        assignmentsService = new AssignmentsService(mockPrisma, { sendNotification: jest.fn() } as any, {} as any);
+        attendanceService = new AttendanceService(mockPrisma);
+        setupService = new SetupService(mockPrisma);
+      });
+
+      describe('A. Study Material IDOR & Cross-Centre Access Control', () => {
+        const materialCentreA: any = {
+          id: 'mat-centre-a',
+          title: 'Physics Chapter 1 Notes',
+          url: 'https://cdn.example.com/materials/physics.pdf',
+          thumbnailUrl: 'https://cdn.example.com/thumbnails/physics.jpg',
+          uploaderId: 'teacher-a-id',
+          syllabus: { subjectId: 'phys-id', standardId: 'std-10' },
+          academicYearId: 'ay-2026',
+          uploader: {
+            userCentres: [{ centreId: 'centre-alpha' }],
+          },
+          targetTrack: {
+            batches: [{ centreId: 'centre-alpha' }],
+          },
+        };
+
+        const centreAdminB: any = {
+          id: 'admin-b-id',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-beta' }],
+        };
+
+        const teacherB: any = {
+          id: 'teacher-b-id',
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-beta' }],
+        };
+
+        it('should deny cross-centre material retrieval for Centre Admins', async () => {
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue(materialCentreA);
+
+          await expect(
+            studyMaterialService.getById('mat-centre-a', centreAdminB)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny cross-centre material retrieval for Teachers from another centre', async () => {
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue(materialCentreA);
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherB.id,
+            assignments: [{ subjectId: 'phys-id', standardId: 'std-10', batch: { centreId: 'centre-beta' } }],
+          });
+
+          await expect(
+            studyMaterialService.getById('mat-centre-a', teacherB)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny deletion of study material by Centre Admin of another centre', async () => {
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue(materialCentreA);
+
+          await expect(
+            studyMaterialService.delete('mat-centre-a', centreAdminB)
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockPrisma.studyMaterial.delete).not.toHaveBeenCalled();
+        });
+
+        it('should deny deletion of study material by a teacher who is not the uploader', async () => {
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue(materialCentreA);
+          const teacherAlphaOther: any = {
+            id: 'teacher-a-other',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherAlphaOther.id,
+            assignments: [{ subjectId: 'phys-id', standardId: 'std-10', batch: { centreId: 'centre-alpha' } }],
+          });
+
+          await expect(
+            studyMaterialService.delete('mat-centre-a', teacherAlphaOther)
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockPrisma.studyMaterial.delete).not.toHaveBeenCalled();
+        });
+
+        it('should not delete storage files when controller delete fails authorization', async () => {
+          mockPrisma.studyMaterial.findUnique.mockResolvedValue(materialCentreA);
+          const deleteFileSpy = jest.spyOn(storageService, 'deleteFile');
+
+          const controller = new StudyMaterialController(
+            studyMaterialService,
+            storageService,
+            { getDirectUploadUrl: jest.fn() } as any
+          );
+
+          await expect(
+            controller.delete('mat-centre-a', { user: centreAdminB })
+          ).rejects.toThrow(ForbiddenException);
+
+          expect(deleteFileSpy).not.toHaveBeenCalled();
+        });
+      });
+
+      describe('B. Teacher-Scoped Attendance & Exam Analytics Compound Tuples', () => {
+        it('should scope teacher attendance analytics to exact compound (batchId AND subjectId) assignment tuples', async () => {
+          const teacherUser: any = {
+            id: 'teacher-1',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherUser.id,
+            assignments: [
+              { batchId: 'batch-math', subjectId: 'subj-math' },
+              { batchId: 'batch-sci', subjectId: 'subj-sci' },
+            ],
+          });
+          mockPrisma.attendance.findMany.mockResolvedValue([]);
+
+          await reportService.getAttendanceAnalytics(undefined, undefined, undefined, 'centre-alpha', undefined, undefined, undefined, teacherUser);
+
+          expect(mockPrisma.attendance.findMany).toHaveBeenCalledTimes(1);
+          const queryWhere = mockPrisma.attendance.findMany.mock.calls[0][0].where;
+
+          expect(queryWhere.OR).toEqual([
+            { subjectId: 'subj-math', batchId: 'batch-math' },
+            { subjectId: 'subj-sci', batchId: 'batch-sci' },
+          ]);
+          expect(queryWhere.OR).not.toContainEqual({ batchId: { in: ['batch-math', 'batch-sci'] } });
+        });
+
+        it('should return empty attendance report if teacher has only incomplete assignments', async () => {
+          const teacherUser: any = {
+            id: 'teacher-incomplete',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherUser.id,
+            assignments: [
+              { batchId: null, subjectId: null },
+              { batchId: 'batch-1', subjectId: null },
+            ],
+          });
+
+          const result = await reportService.getAttendanceAnalytics(undefined, undefined, undefined, 'centre-alpha', undefined, undefined, undefined, teacherUser);
+          expect(result.summary.totalSessions).toBe(0);
+          expect(mockPrisma.attendance.findMany).not.toHaveBeenCalled();
+        });
+
+        it('should prevent empty {} predicate in exam analytics when teacher assignment lacks subject or scope', async () => {
+          const teacherUser: any = {
+            id: 'teacher-exam',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherUser.id,
+            assignments: [
+              { batchId: null, subjectId: null, standardId: null, boardId: null },
+            ],
+          });
+
+          const result = await reportService.getExamsAnalytics(undefined, undefined, undefined, undefined, 'centre-alpha', undefined, undefined, undefined, undefined, undefined, teacherUser);
+          expect(result.summary.totalExams).toBe(0);
+          expect(mockPrisma.exam.findMany).not.toHaveBeenCalled();
+        });
+      });
+
+      describe('C. Centre-Less Assignment Access Denial & Wildcard Removal', () => {
+        const centrelessAssignment: any = {
+          id: 'asg-centreless',
+          title: 'Orphan Assignment',
+          batchId: 'batch-no-centre',
+          subjectId: 'subj-math',
+          batch: {
+            id: 'batch-no-centre',
+            centreId: null,
+          },
+          submissions: [],
+        };
+
+        const centreAdminA: any = {
+          id: 'admin-a',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        it('should fail closed when attempting to fetch centre-less assignment by ID', async () => {
+          mockPrisma.assignment.findUnique.mockResolvedValue(centrelessAssignment);
+
+          await expect(
+            assignmentsService.getOne('asg-centreless', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny updating centre-less assignments for non-superadmin users', async () => {
+          mockPrisma.assignment.findUnique.mockResolvedValue(centrelessAssignment);
+
+          await expect(
+            assignmentsService.update('asg-centreless', { title: 'New Title' }, centreAdminA.id, 'CENTRE_ADMIN', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny deleting centre-less assignments for non-superadmin users', async () => {
+          mockPrisma.assignment.findUnique.mockResolvedValue(centrelessAssignment);
+
+          await expect(
+            assignmentsService.delete('asg-centreless', centreAdminA.id, 'CENTRE_ADMIN', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny submission for centre-less assignments', async () => {
+          mockPrisma.studentProfile.findUnique.mockResolvedValue({
+            id: 'std-profile-1',
+            userId: 'student-user-1',
+            user: { firstName: 'John', lastName: 'Doe' },
+            enrollments: [{ batchId: 'batch-no-centre' }],
+          });
+          mockPrisma.assignment.findUnique.mockResolvedValue(centrelessAssignment);
+
+          await expect(
+            assignmentsService.submit('asg-centreless', 'student-user-1', { content: 'test' }, { id: 'student-user-1', role: 'STUDENT', userCentres: [{ centreId: 'centre-alpha' }] })
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny wildcard matching for teachers with incomplete or different subject assignments in getOne', async () => {
+          const assignmentWithCentre: any = {
+            id: 'asg-with-centre',
+            title: 'Math Assignment',
+            batchId: 'batch-alpha-1',
+            subjectId: 'math-id',
+            uploaderId: 'other-teacher',
+            batch: {
+              id: 'batch-alpha-1',
+              centreId: 'centre-alpha',
+              standardId: 'std-10',
+            },
+            submissions: [],
+          };
+          mockPrisma.assignment.findUnique.mockResolvedValue(assignmentWithCentre);
+
+          const teacherUser: any = {
+            id: 'teacher-chem',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherUser.id,
+            assignments: [
+              { batchId: 'batch-alpha-1', subjectId: 'chem-id' },
+              { batchId: 'batch-alpha-1', subjectId: null },
+            ],
+          });
+
+          await expect(
+            assignmentsService.getOne('asg-with-centre', teacherUser)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should deny wildcard matching for teachers in gradeSubmission', async () => {
+          mockPrisma.assignmentSubmission.findUnique.mockResolvedValue({
+            id: 'sub-1',
+            assignment: {
+              id: 'asg-math',
+              subjectId: 'math-id',
+              batchId: 'batch-alpha-1',
+              uploaderId: 'uploader-t',
+              batch: { centreId: 'centre-alpha', standardId: 'std-10' },
+            },
+          });
+
+          const teacherUser: any = {
+            id: 'teacher-chem',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+          mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+            userId: teacherUser.id,
+            assignments: [
+              { batchId: 'batch-alpha-1', subjectId: 'chem-id' },
+            ],
+          });
+
+          await expect(
+            assignmentsService.gradeSubmission('sub-1', { grade: 85 }, teacherUser)
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('D. Attendance Operations with batchId = ALL', () => {
+        it('should reject teachers attempting to mark centre-wide attendance with ALL batch path', async () => {
+          const teacherUser: any = {
+            id: 'teacher-1',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          await expect(
+            attendanceService.markAttendance(
+              {
+                batchId: 'ALL',
+                centreId: 'centre-alpha',
+                date: '2026-10-18',
+                records: [{ studentId: 'student-1', status: 'PRESENT' }],
+              },
+              teacherUser
+            )
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should reject teachers attempting to retrieve all students across centre using ALL', async () => {
+          const teacherUser: any = {
+            id: 'teacher-1',
+            role: { name: 'TEACHER' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          await expect(
+            attendanceService.getBatchStudents('ALL', undefined, teacherUser)
+          ).rejects.toThrow(ForbiddenException);
+        });
+
+        it('should validate all students belong to centre when Centre Admin marks attendance with ALL', async () => {
+          const centreAdminA: any = {
+            id: 'admin-a',
+            role: { name: 'CENTRE_ADMIN' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+
+          mockPrisma.studentProfile.findMany.mockResolvedValue([
+            { id: 'student-1', enrollments: [{ id: 'enr-1', batch: { centreId: 'centre-alpha' } }] },
+            { id: 'student-2', enrollments: [] },
+          ]);
+
+          await expect(
+            attendanceService.markAttendance(
+              {
+                batchId: 'ALL',
+                centreId: 'centre-alpha',
+                date: '2026-10-18',
+                records: [
+                  { studentId: 'student-1', status: 'PRESENT' },
+                  { studentId: 'student-2', status: 'PRESENT' },
+                ],
+              },
+              centreAdminA
+            )
+          ).rejects.toThrow(BadRequestException);
+        });
+      });
+
+      describe('E. Study-Material Creation Academic Resolution & Batch Deletion', () => {
+        it('should reject study material creation when academicYearId cannot be deterministically found', async () => {
+          mockPrisma.academicYear.findUnique.mockResolvedValue(null);
+
+          await expect(
+            studyMaterialService.create({
+              title: 'Physics Book',
+              type: 'PDF',
+              academicYearId: 'invalid-year-id',
+              syllabusId: 'syl-1',
+            })
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should reject study material creation when syllabus is missing and cannot be resolved', async () => {
+          mockPrisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1', isActive: true });
+
+          await expect(
+            studyMaterialService.create({
+              title: 'Physics Book',
+              type: 'PDF',
+              academicYearId: 'ay-1',
+            })
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should reject batch deletion when batch centre cannot be established for Centre Admin', async () => {
+          const centreAdminA: any = {
+            id: 'admin-a',
+            role: { name: 'CENTRE_ADMIN' },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          };
+          mockPrisma.batch.findUnique.mockResolvedValue({
+            id: 'batch-orphan',
+            centreId: null,
+            _count: { enrollments: 0, assignments: 0, exams: 0 },
+          });
+
+          await expect(
+            setupService.deleteBatch('batch-orphan', centreAdminA)
+          ).rejects.toThrow(ForbiddenException);
+        });
+      });
+
+      describe('F. Storage Upload Extension & MIME Type Compatibility', () => {
+        beforeEach(() => {
+          process.env.CLOUDFLARE_ACCOUNT_ID = 'mock-account';
+          process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'mock-key';
+          process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = 'mock-secret';
+        });
+
+        afterEach(() => {
+          delete process.env.CLOUDFLARE_ACCOUNT_ID;
+          delete process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+          delete process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+        });
+
+        it('should reject uploads where MIME type does not match file extension family', async () => {
+          await expect(
+            storageService.getPresignedUploadUrl('malicious.pdf', 'video/mp4')
+          ).rejects.toThrow(BadRequestException);
+
+          await expect(
+            storageService.getPresignedUploadUrl('photo.jpg', 'application/pdf')
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should reject excessively long filenames (>255 characters)', async () => {
+          const longName = 'a'.repeat(256) + '.png';
+          await expect(
+            storageService.getPresignedUploadUrl(longName, 'image/png')
+          ).rejects.toThrow(BadRequestException);
+        });
+
+        it('should accept valid and compatible file extension and MIME type', async () => {
+          const res = await storageService.getPresignedUploadUrl('lecture_notes.pdf', 'application/pdf');
+          expect(res).toHaveProperty('uploadUrl');
+          expect(res).toHaveProperty('objectKey');
+        });
       });
     });
   });

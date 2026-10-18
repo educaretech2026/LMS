@@ -163,9 +163,10 @@ export class ReportService {
   async getStudentPerformanceReport(batchId?: string, user?: any) {
     if (batchId && user && !isSuperAdmin(user)) {
       const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
-      if (batch?.centreId) {
-        assertCentreAccess(user, batch.centreId);
+      if (!batch || !batch.centreId) {
+        throw new ForbiddenException('Cannot access performance report for a batch without an identifiable centre.');
       }
+      assertCentreAccess(user, batch.centreId);
     }
 
     let students;
@@ -698,16 +699,28 @@ export class ReportService {
       }
       const teacherConditions: any[] = [];
       for (const a of teacherProfile.assignments) {
-        const cond: any = {};
-        if (a.subjectId) cond.subjectId = a.subjectId;
+        // Enforce required assignment attributes: must have subjectId AND at least one scope delimiter
+        if (!a.subjectId || (!a.batchId && !a.standardId && !a.boardId)) {
+          continue; // Incomplete assignment cannot widen query
+        }
+        const cond: any = { subjectId: a.subjectId };
         if (a.batchId) cond.batchId = a.batchId;
         if (a.standardId) cond.standardId = a.standardId;
         if (a.boardId) cond.boardId = a.boardId;
         teacherConditions.push(cond);
       }
-      if (teacherConditions.length > 0) {
-        where.OR = teacherConditions;
+      if (teacherConditions.length === 0) {
+        return {
+          exams: [],
+          summary: {
+            totalExams: 0,
+            totalAttempts: 0,
+            overallAverage: 0,
+            gradeDistribution: { 'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C': 0, 'F': 0 }
+          }
+        };
       }
+      where.OR = teacherConditions;
     }
 
     const exams = await this.prisma.exam.findMany({
@@ -864,19 +877,33 @@ export class ReportService {
           }
         };
       }
-      const assignedBatchIds = teacherProfile.assignments.map(a => a.batchId).filter(Boolean) as string[];
-      const assignedSubjectIds = teacherProfile.assignments.map(a => a.subjectId).filter(Boolean) as string[];
-      
       const teacherConditions: any[] = [];
-      if (assignedBatchIds.length > 0) {
-        teacherConditions.push({ batchId: { in: assignedBatchIds } });
+      for (const a of teacherProfile.assignments) {
+        if (!a.subjectId || (!a.batchId && !a.standardId)) {
+          continue; // Incomplete assignment cannot widen query
+        }
+        const cond: any = { subjectId: a.subjectId };
+        if (a.batchId) {
+          cond.batchId = a.batchId;
+        } else if (a.standardId) {
+          cond.batch = { standardId: a.standardId };
+        }
+        teacherConditions.push(cond);
       }
-      if (assignedSubjectIds.length > 0) {
-        teacherConditions.push({ subjectId: { in: assignedSubjectIds } });
+
+      if (teacherConditions.length === 0) {
+        return {
+          dailyTrends: [],
+          studentList: [],
+          summary: {
+            totalSessions: 0,
+            totalRecords: 0,
+            overallRate: 0,
+            atRiskCount: 0,
+          }
+        };
       }
-      if (teacherConditions.length > 0) {
-        attWhere.OR = teacherConditions;
-      }
+      attWhere.OR = teacherConditions;
     }
 
     const attendances = await this.prisma.attendance.findMany({

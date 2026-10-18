@@ -39,6 +39,29 @@ const DISALLOWED_EXTENSIONS = new Set([
 ]);
 
 
+const EXTENSION_FAMILY_MIME_MAP: Record<string, string[]> = {
+  '.jpg': ['image/jpeg', 'image/pjpeg'],
+  '.jpeg': ['image/jpeg', 'image/pjpeg'],
+  '.png': ['image/png', 'image/jpeg'],
+  '.webp': ['image/webp', 'image/jpeg'],
+  '.gif': ['image/gif', 'image/jpeg'],
+  '.mp4': ['video/mp4'],
+  '.webm': ['video/webm'],
+  '.mov': ['video/quicktime', 'video/mp4'],
+  '.mp3': ['audio/mpeg', 'audio/mp3'],
+  '.wav': ['audio/wav', 'audio/x-wav'],
+  '.m4a': ['audio/mp4', 'audio/x-m4a'],
+  '.pdf': ['application/pdf'],
+  '.doc': ['application/msword', 'application/octet-stream'],
+  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/octet-stream'],
+  '.xls': ['application/vnd.ms-excel', 'application/octet-stream'],
+  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'],
+  '.ppt': ['application/vnd.ms-powerpoint', 'application/octet-stream'],
+  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/octet-stream'],
+  '.txt': ['text/plain'],
+  '.csv': ['text/csv', 'text/plain', 'application/vnd.ms-excel'],
+};
+
 @Injectable()
 export class StorageService {
   private s3Client: S3Client;
@@ -74,11 +97,15 @@ export class StorageService {
 
   /**
    * Generates a pre-signed URL for client-side direct uploads.
-   * Validates file extension and mime type.
+   * Validates file extension, mime type, and cross-compatibility.
    */
   async getPresignedUploadUrl(filename: string, contentType: string) {
     if (!filename || !contentType) {
       throw new BadRequestException('Filename and contentType are required.');
+    }
+
+    if (filename.length > 255) {
+      throw new BadRequestException('Filename must not exceed 255 characters.');
     }
 
     const ext = path.extname(filename).toLowerCase();
@@ -93,11 +120,20 @@ export class StorageService {
       throw new BadRequestException(`Content-Type "${contentType}" is not permitted.`);
     }
 
+    const expectedMimes = EXTENSION_FAMILY_MIME_MAP[ext];
+    if (expectedMimes) {
+      const lowerMime = contentType.toLowerCase();
+      const isCompatible = expectedMimes.some(m => lowerMime === m || lowerMime.startsWith(m));
+      if (!isCompatible) {
+        throw new BadRequestException(`Content-Type "${contentType}" is incompatible with file extension "${ext}".`);
+      }
+    }
+
     if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
       throw new HttpException('Storage is not configured on the server.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const uniqueId = crypto.randomBytes(16).toString('hex');
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9.-]/g, '_');
     const objectKey = `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
 

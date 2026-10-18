@@ -99,11 +99,12 @@ export class AssignmentsService {
 
           if (teacherProfile?.assignments && teacherProfile.assignments.length > 0) {
             for (const ta of teacherProfile.assignments) {
+              if (!ta.subjectId || (!ta.batchId && !ta.standardId)) continue;
               const cond: any = {
                 batch: { centreId: { in: authorizedCentres } },
+                subjectId: ta.subjectId,
               };
               if (ta.batchId) cond.batchId = ta.batchId;
-              if (ta.subjectId) cond.subjectId = ta.subjectId;
               if (ta.standardId) {
                 cond.batch = { ...cond.batch, standardId: ta.standardId };
               }
@@ -195,9 +196,12 @@ export class AssignmentsService {
     }
 
     // Verify centre access
-    const centreId = assignment.batch?.centreId;
-    if (centreId) {
-      assertCentreAccess(user, centreId);
+    const effectiveCentreId = assignment.batch?.centreId;
+    if (!isSuperAdmin(user)) {
+      if (!effectiveCentreId) {
+        throw new ForbiddenException('Access denied: Centre assignment cannot be established for this resource.');
+      }
+      assertCentreAccess(user, effectiveCentreId);
     }
 
     const profile = await this.prisma.studentProfile.findUnique({
@@ -235,9 +239,13 @@ export class AssignmentsService {
         });
 
         const isAssigned = teacherProfile?.assignments?.some(a => {
-          if (assignment.batchId && a.batchId && a.batchId !== assignment.batchId) return false;
-          if (assignment.subjectId && a.subjectId && a.subjectId !== assignment.subjectId) return false;
-          return true;
+          if (!a.subjectId || a.subjectId !== assignment.subjectId) return false;
+          if (assignment.batchId) {
+            if (a.batchId && a.batchId === assignment.batchId) return true;
+            if (a.standardId && assignment.batch?.standardId === a.standardId) return true;
+            return false;
+          }
+          return false;
         });
 
         if (!isAssigned) {
@@ -251,10 +259,32 @@ export class AssignmentsService {
 
   async create(data: any, uploaderId: string, user?: any): Promise<any> {
     try {
-      if (data.batchId && user && !isSuperAdmin(user)) {
+      if (user && !isSuperAdmin(user)) {
+        if (!data.batchId) {
+          throw new BadRequestException('batchId is required to create an assignment');
+        }
         const batch = await this.prisma.batch.findUnique({ where: { id: data.batchId } });
-        if (batch?.centreId) {
-          assertCentreAccess(user, batch.centreId);
+        if (!batch || !batch.centreId) {
+          throw new ForbiddenException('Cannot create assignment for a batch without an identifiable centre');
+        }
+        assertCentreAccess(user, batch.centreId);
+
+        const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
+        const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+        if (normalizedRole === 'TEACHER') {
+          const teacherProfile = await this.prisma.teacherProfile.findUnique({
+            where: { userId: user.id },
+            include: { assignments: true },
+          });
+          const isAssigned = teacherProfile?.assignments?.some(a => {
+            if (!a.subjectId || a.subjectId !== data.subjectId) return false;
+            if (a.batchId && a.batchId === data.batchId) return true;
+            if (a.standardId && batch.standardId === a.standardId) return true;
+            return false;
+          });
+          if (!isAssigned) {
+            throw new ForbiddenException('Teachers can only create assignments for batches and subjects they are assigned to teach.');
+          }
         }
       }
 
@@ -328,17 +358,22 @@ export class AssignmentsService {
       const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole);
 
       if (!isSuper) {
-        if (existing.batch?.centreId && user) {
-          assertCentreAccess(user, existing.batch.centreId);
+        const effectiveCentreId = existing.batch?.centreId;
+        if (!effectiveCentreId) {
+          throw new ForbiddenException('Access denied: Centre assignment cannot be established for this resource.');
+        }
+        if (user) {
+          assertCentreAccess(user, effectiveCentreId);
         }
         if (!isPrivileged && existing.uploaderId !== userId) {
           throw new ForbiddenException('Unauthorized to edit this assignment');
         }
         if (data.batchId && data.batchId !== existing.batchId && user) {
           const targetBatch = await this.prisma.batch.findUnique({ where: { id: data.batchId } });
-          if (targetBatch?.centreId) {
-            assertCentreAccess(user, targetBatch.centreId);
+          if (!targetBatch || !targetBatch.centreId) {
+            throw new ForbiddenException('Target batch must belong to an identifiable centre.');
           }
+          assertCentreAccess(user, targetBatch.centreId);
         }
       }
 
@@ -391,8 +426,12 @@ export class AssignmentsService {
       const isPrivileged = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(normalizedRole);
 
       if (!isSuper) {
-        if (existing.batch?.centreId && user) {
-          assertCentreAccess(user, existing.batch.centreId);
+        const effectiveCentreId = existing.batch?.centreId;
+        if (!effectiveCentreId) {
+          throw new ForbiddenException('Access denied: Centre assignment cannot be established for this resource.');
+        }
+        if (user) {
+          assertCentreAccess(user, effectiveCentreId);
         }
         if (!isPrivileged && existing.uploaderId !== userId) {
           throw new ForbiddenException('Unauthorized to delete this assignment');
@@ -426,8 +465,12 @@ export class AssignmentsService {
       });
       if (!assignment) throw new NotFoundException("Assignment not found");
 
-      if (user && !isSuperAdmin(user) && assignment.batch?.centreId) {
-        assertCentreAccess(user, assignment.batch.centreId);
+      if (user && !isSuperAdmin(user)) {
+        const effectiveCentreId = assignment.batch?.centreId;
+        if (!effectiveCentreId) {
+          throw new ForbiddenException('Access denied: Centre assignment cannot be established for this resource.');
+        }
+        assertCentreAccess(user, effectiveCentreId);
       }
 
       // Verify student is enrolled in the assignment's batch
@@ -503,7 +546,7 @@ export class AssignmentsService {
         include: {
           assignment: {
             include: {
-              batch: { select: { centreId: true } }
+              batch: { select: { centreId: true, standardId: true } }
             }
           }
         }
@@ -515,9 +558,11 @@ export class AssignmentsService {
 
       if (user && !isSuperAdmin(user)) {
         const centreId = existing.assignment?.batch?.centreId;
-        if (centreId) {
-          assertCentreAccess(user, centreId);
+        if (!centreId) {
+          throw new ForbiddenException('Access denied: Centre assignment cannot be established for this resource.');
         }
+        assertCentreAccess(user, centreId);
+
         const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
         const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
         if (normalizedRole === 'TEACHER') {
@@ -528,9 +573,13 @@ export class AssignmentsService {
               include: { assignments: true },
             });
             const isAssigned = teacherProfile?.assignments?.some(a => {
-              if (existing.assignment?.batchId && a.batchId && a.batchId !== existing.assignment.batchId) return false;
-              if (existing.assignment?.subjectId && a.subjectId && a.subjectId !== existing.assignment.subjectId) return false;
-              return true;
+              if (!a.subjectId || a.subjectId !== existing.assignment?.subjectId) return false;
+              if (existing.assignment?.batchId) {
+                if (a.batchId && a.batchId === existing.assignment.batchId) return true;
+                if (a.standardId && existing.assignment?.batch?.standardId === a.standardId) return true;
+                return false;
+              }
+              return false;
             });
             if (!isAssigned) {
               throw new ForbiddenException('You are not authorized to grade this assignment');

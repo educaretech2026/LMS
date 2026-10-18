@@ -9,11 +9,31 @@ export class AttendanceService {
 
   async getBatchStudents(batchId?: string, subjectId?: string, user?: any) {
     let students: any[];
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+
     if (batchId && batchId !== 'ALL') {
+      const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+      if (!batch || !batch.centreId) {
+        throw new ForbiddenException('Cannot access students for a batch without an identifiable centre.');
+      }
       if (user && !isSuperAdmin(user)) {
-        const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
-        if (batch?.centreId) {
-          assertCentreAccess(user, batch.centreId);
+        assertCentreAccess(user, batch.centreId);
+      }
+
+      if (isTeacher && user?.id) {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+          where: { userId: user.id },
+          include: { assignments: true },
+        });
+        const isAssigned = teacherProfile?.assignments?.some(a => {
+          if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
+          if (a.batchId && a.batchId === batchId) return true;
+          if (a.standardId && batch.standardId === a.standardId) return true;
+          return false;
+        });
+        if (!isAssigned) {
+          throw new ForbiddenException('Teachers can only access students in their assigned batches.');
         }
       }
 
@@ -32,6 +52,9 @@ export class AttendanceService {
       });
       students = enrollments.map(e => e.studentProfile);
     } else {
+      if (isTeacher) {
+        throw new ForbiddenException('Teachers must specify a specific assigned batch to retrieve students.');
+      }
       if (user && !isSuperAdmin(user)) {
         const authorizedCentres = getAuthorizedCentreIds(user);
         const enrollments = await this.prisma.enrollment.findMany({
@@ -100,11 +123,19 @@ export class AttendanceService {
   }
 
   async getAttendanceForBatchAndDate(batchId: string | undefined, date: string, subjectId?: string, user?: any) {
-    if (batchId && batchId !== 'ALL' && user && !isSuperAdmin(user)) {
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const isTeacher = String(roleStr || '').toUpperCase().replace(/\s+/g, '_') === 'TEACHER';
+
+    if (batchId && batchId !== 'ALL') {
       const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
-      if (batch?.centreId) {
+      if (!batch || !batch.centreId) {
+        throw new ForbiddenException('Cannot access attendance for a batch without an identifiable centre.');
+      }
+      if (user && !isSuperAdmin(user)) {
         assertCentreAccess(user, batch.centreId);
       }
+    } else if (isTeacher) {
+      throw new ForbiddenException('Teachers must specify an assigned batch.');
     }
 
     const targetDate = new Date(date);
@@ -214,15 +245,16 @@ export class AttendanceService {
     }
 
     let effectiveCentreId = centreId;
+    let targetBatch: any = null;
     if (resolvedBatchId) {
-      const batch = await this.prisma.batch.findUnique({
+      targetBatch = await this.prisma.batch.findUnique({
         where: { id: resolvedBatchId },
         select: { id: true, centreId: true, standardId: true, boardId: true }
       });
-      if (!batch) {
-        throw new BadRequestException('The specified batch does not exist');
+      if (!targetBatch || !targetBatch.centreId) {
+        throw new BadRequestException('The specified batch does not exist or has no identifiable centre');
       }
-      effectiveCentreId = batch.centreId;
+      effectiveCentreId = targetBatch.centreId;
     }
 
     if (!effectiveCentreId) {
@@ -235,6 +267,10 @@ export class AttendanceService {
       const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
       const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
       if (normalizedRole === 'TEACHER') {
+        if (batchId === 'ALL' || !resolvedBatchId) {
+          throw new ForbiddenException('Teachers cannot mark centre-wide attendance. Please select a specific assigned batch.');
+        }
+
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
           include: { assignments: true },
@@ -242,15 +278,14 @@ export class AttendanceService {
         if (!teacherProfile || !teacherProfile.assignments || teacherProfile.assignments.length === 0) {
           throw new ForbiddenException('Teacher has no active assignments to mark attendance');
         }
-        if (resolvedBatchId) {
-          const isAssigned = teacherProfile.assignments.some(a => {
-            if (a.batchId && a.batchId !== resolvedBatchId) return false;
-            if (subjectId && a.subjectId && a.subjectId !== subjectId) return false;
-            return true;
-          });
-          if (!isAssigned) {
-            throw new ForbiddenException('You are not authorized to mark attendance for this batch or subject');
-          }
+        const isAssigned = teacherProfile.assignments.some(a => {
+          if (subjectId && (!a.subjectId || a.subjectId !== subjectId)) return false;
+          if (a.batchId && a.batchId === resolvedBatchId) return true;
+          if (a.standardId && targetBatch?.standardId === a.standardId) return true;
+          return false;
+        });
+        if (!isAssigned) {
+          throw new ForbiddenException('You are not authorized to mark attendance for this batch or subject');
         }
       }
     }
@@ -295,10 +330,12 @@ export class AttendanceService {
       throw new BadRequestException('One or more student profiles do not exist');
     }
 
-    if (resolvedBatchId) {
-      for (const sp of studentProfiles) {
-        if (!sp.enrollments || sp.enrollments.length === 0) {
+    for (const sp of studentProfiles) {
+      if (!sp.enrollments || sp.enrollments.length === 0) {
+        if (resolvedBatchId) {
           throw new BadRequestException(`Student ${sp.id} is not enrolled in the specified batch and centre`);
+        } else {
+          throw new BadRequestException(`Student ${sp.id} is not enrolled in centre ${effectiveCentreId}`);
         }
       }
     }
