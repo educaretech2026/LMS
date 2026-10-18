@@ -249,13 +249,52 @@ export class FormsService {
     // Validate uploaded file attachments in submitted form response data
     if (data && typeof data === 'object') {
       const customFormLimit = (form as any).maxFileSizeBytes;
-      for (const val of Object.values(data)) {
-        if (typeof val === 'string' && (val.includes('forms/') || val.includes('/forms/'))) {
-          if (this.storageService?.validateAndEnforceObjectSize) {
-            await this.storageService.validateAndEnforceObjectSize(val, customFormLimit);
+      const expectedPrefix = `forms/${formId}/`;
+
+      const traverseAndCheck = async (obj: any) => {
+        for (const [key, val] of Object.entries(obj)) {
+          if (typeof val === 'string') {
+            const trimmed = val.trim();
+            const validatedKey = this.storageService?.extractAndValidateObjectKey
+              ? this.storageService.extractAndValidateObjectKey(trimmed)
+              : (trimmed.startsWith('forms/') ? trimmed : null);
+
+            if (validatedKey || trimmed.includes('forms/') || trimmed.includes('/forms/')) {
+              // Ensure it is a valid managed storage key
+              if (!validatedKey) {
+                throw new BadRequestException(`Invalid storage reference for field "${key}".`);
+              }
+
+              // Validate key belongs strictly to this form ID and namespace
+              if (!validatedKey.startsWith(expectedPrefix)) {
+                throw new BadRequestException(
+                  `Cross-form upload rejected: File does not belong to form "${formId}".`
+                );
+              }
+
+              // Check if object is already claimed by another record.
+              // If claimed, do not allow reuse across form submissions or deletion via purge!
+              if (this.storageService?.isStorageUrlInUse) {
+                const isClaimed = await this.storageService.isStorageUrlInUse(validatedKey);
+                if (isClaimed) {
+                  throw new BadRequestException(
+                    `File "${key}" has already been claimed or referenced by another record.`
+                  );
+                }
+              }
+
+              // Validate size and purge oversized file only after proving it is an unclaimed upload belonging to this form
+              if (this.storageService?.validateAndEnforceObjectSize) {
+                await this.storageService.validateAndEnforceObjectSize(validatedKey, customFormLimit);
+              }
+            }
+          } else if (val && typeof val === 'object') {
+            await traverseAndCheck(val);
           }
         }
-      }
+      };
+
+      await traverseAndCheck(data);
     }
 
     const response = await this.prisma.customFormResponse.create({

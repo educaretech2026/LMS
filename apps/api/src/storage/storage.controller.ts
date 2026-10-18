@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { StorageService } from './storage.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -21,6 +21,18 @@ export class StorageController {
     @Req() req: any,
   ) {
     return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix: 'materials' });
+  }
+
+  @Post('finalize')
+  @ApiOperation({ summary: 'Verify and finalize an upload, purging oversized objects immediately' })
+  async finalizeUpload(
+    @Body('objectKey') objectKey: string,
+    @Body('maxSizeBytes') maxSizeBytes?: number,
+  ) {
+    if (!objectKey) {
+      throw new BadRequestException('objectKey is required to finalize upload');
+    }
+    return this.storageService.finalizeUpload(objectKey, maxSizeBytes);
   }
 }
 

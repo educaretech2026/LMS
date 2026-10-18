@@ -6310,6 +6310,171 @@ describe('Security Regression Suite — Real Production Implementations', () => 
               }),
             }));
           });
+
+          it('should fail closed in validateAndEnforceObjectSize when CLOUDFLARE_ACCOUNT_ID is missing or provider errors', async () => {
+            const oldId = process.env.CLOUDFLARE_ACCOUNT_ID;
+            delete process.env.CLOUDFLARE_ACCOUNT_ID;
+
+            await expect(
+              testStorageService.validateAndEnforceObjectSize('materials/u-1/file.pdf')
+            ).rejects.toThrow(BadRequestException);
+
+            process.env.CLOUDFLARE_ACCOUNT_ID = oldId || 'test-account';
+
+            // Provider unexpected error fails closed
+            mockS3Client.send.mockRejectedValueOnce(new Error('S3 500 Internal Service Error'));
+            await expect(
+              testStorageService.validateAndEnforceObjectSize('materials/u-1/file.pdf')
+            ).rejects.toThrow(BadRequestException);
+          });
+
+          it('should fail closed in isStorageUrlInUse when prisma is missing or throws', async () => {
+            const noDbService = new StorageService(null as any);
+            expect(await noDbService.isStorageUrlInUse('materials/u-1/file.pdf')).toBe(true);
+
+            // Query error fails closed
+            mockStoragePrisma.studyMaterial.findFirst.mockRejectedValueOnce(new Error('DB Connection Timeout'));
+            expect(await testStorageService.isStorageUrlInUse('materials/u-1/file.pdf')).toBe(true);
+          });
+
+          it('should report storage URL in use if referenced by customForm.fields JSON', async () => {
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.mcqQuestion.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.studentAnswer.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.customFormResponse = { findFirst: jest.fn().mockResolvedValue(null) };
+            mockStoragePrisma.customForm = {
+              findMany: jest.fn().mockResolvedValue([
+                { id: 'form-1', fields: [{ id: 'field-1', type: 'image', imageUrl: 'forms/f-1/header.png' }] },
+              ]),
+            };
+
+            const inUse = await testStorageService.isStorageUrlInUse('forms/f-1/header.png');
+            expect(inUse).toBe(true);
+          });
+
+          it('should reject teacher material creation when assignment lacks academic year and year is resolved from active year', async () => {
+            const teacherWithYearlessAssignment = {
+              id: 'teacher-1',
+              role: { name: 'TEACHER' },
+              userCentres: [{ centreId: 'centre-alpha' }],
+              teacherProfile: {
+                assignments: [
+                  {
+                    id: 'assign-1',
+                    subjectId: 'sub-1',
+                    standardId: 'std-1',
+                    boardId: 'brd-1',
+                    centreId: 'centre-alpha',
+                    academicYearId: null, // Missing academic year on assignment
+                    batch: { centreId: 'centre-alpha', academicYearId: null, trackId: null },
+                  },
+                ],
+              },
+            };
+
+            mockPrisma.academicYear.findMany.mockResolvedValue([{ id: 'active-year-2026', isActive: true }]);
+            mockPrisma.syllabus.findUnique.mockResolvedValue({
+              id: 'syl-1',
+              subjectId: 'sub-1',
+              standardId: 'std-1',
+              boardId: 'brd-1',
+            });
+            mockPrisma.teacherProfile.findUnique.mockResolvedValue({
+              assignments: teacherWithYearlessAssignment.teacherProfile.assignments,
+            });
+
+            // Mock storage service S3 head so size validation passes and assignment year check is tested
+            if ((studyMaterialService as any).storageService) {
+              ((studyMaterialService as any).storageService as any).s3Client = {
+                send: jest.fn().mockResolvedValue({ ContentLength: 1024 }),
+              };
+            }
+
+            // Teacher omits academicYearId in body; resolved from active year, but assignment is yearless -> MUST REJECT
+            await expect(
+              studyMaterialService.create(
+                {
+                  title: 'New Material',
+                  syllabusId: 'syl-1',
+                  type: 'FILE',
+                  url: 'materials/teacher-1/doc.pdf',
+                  // academicYearId omitted
+                },
+                teacherWithYearlessAssignment
+              )
+            ).rejects.toThrow(ForbiddenException);
+          });
+
+          it('should reject cross-form uploads and already-claimed uploads in submitResponse', async () => {
+            const formsService = new (require('../forms/forms.service').FormsService)(
+              mockPrisma,
+              { sendNotification: jest.fn() },
+              testStorageService
+            );
+
+            mockPrisma.customForm.findUnique.mockResolvedValue({
+              id: 'form-alpha',
+              isActive: true,
+              maxFileSizeBytes: 10 * 1024 * 1024,
+            });
+
+            // 1. Cross-form upload: submitting key from form-beta into form-alpha
+            await expect(
+              formsService.submitResponse('form-alpha', {
+                resume: 'forms/form-beta/resume.pdf',
+              })
+            ).rejects.toThrow(BadRequestException);
+
+            // 2. Already claimed upload
+            mockStoragePrisma.studyMaterial.findFirst.mockResolvedValue(null);
+            mockStoragePrisma.customFormResponse = {
+              findMany: jest.fn().mockResolvedValue([
+                { id: 'resp-prior', data: { resume: 'forms/form-alpha/claimed.pdf' } },
+              ]),
+            };
+            await expect(
+              formsService.submitResponse('form-alpha', {
+                resume: 'forms/form-alpha/claimed.pdf',
+              })
+            ).rejects.toThrow(BadRequestException);
+          });
+
+          it('should scope expense income report fee records to fee centre and matching batch', async () => {
+            mockPrisma.transaction = { findMany: jest.fn().mockResolvedValue([]) };
+            mockPrisma.feeRecord = {
+              findMany: jest.fn().mockResolvedValue([
+                {
+                  id: 'fee-1',
+                  receiptNo: 'REC-001',
+                  amount: 5000,
+                  date: new Date('2026-05-01'),
+                  status: 'PAID',
+                  centreId: 'centre-alpha',
+                  centre: { id: 'centre-alpha', name: 'Centre Alpha' },
+                  student: {
+                    admissionNo: 'ADM-001',
+                    user: { firstName: 'Alice', lastName: 'Smith' },
+                    enrollments: [
+                      {
+                        centreId: 'centre-beta',
+                        batch: { name: 'Batch Beta', centre: { name: 'Centre Beta' }, centreId: 'centre-beta' },
+                      },
+                      {
+                        centreId: 'centre-alpha',
+                        batch: { name: 'Batch Alpha', centre: { name: 'Centre Alpha' }, centreId: 'centre-alpha' },
+                      },
+                    ],
+                  },
+                },
+              ]),
+            };
+
+            const reportService = new (require('../report/report.service').ReportService)(mockPrisma);
+
+            const report = await reportService.getExpenseIncomeReport('2026-01-01', '2026-12-31', 'centre-alpha');
+            expect(report.feeRecords[0].centreName).toBe('Centre Alpha');
+            expect(report.feeRecords[0].batchName).toBe('Batch Alpha');
+          });
         });
       });
     });

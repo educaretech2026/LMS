@@ -48,11 +48,11 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self'",
+              "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data: https://fonts.gstatic.com",
-              "connect-src 'self' https: wss:",
+              "connect-src 'self' http://localhost:3001 http://localhost:3000 http://127.0.0.1:3001 http://127.0.0.1:3000 https://*.educarelearning.in https://educarelearning.in https://*.r2.cloudflarestorage.com https://*.livekit.cloud wss://*.livekit.cloud https://fonts.googleapis.com https://fonts.gstatic.com",
               "media-src 'self' blob: https:",
               "frame-ancestors 'none'",
               "object-src 'none'",

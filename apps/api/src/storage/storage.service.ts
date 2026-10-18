@@ -330,7 +330,7 @@ export class StorageService {
     customMaxSizeBytes?: number
   ): Promise<{ valid: boolean; actualSizeBytes: number }> {
     if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
-      return { valid: true, actualSizeBytes: 0 };
+      throw new BadRequestException('Storage service is not configured to verify uploaded file size.');
     }
 
     const validatedKey = this.extractAndValidateObjectKey(urlOrKey);
@@ -360,11 +360,11 @@ export class StorageService {
 
       if (actualSizeBytes > maxSizeBytes) {
         // Purge oversized object immediately from storage
-        await this.deleteFile(validatedKey, true);
+        const purged = await this.deleteFile(validatedKey, true);
         const maxMB = Math.round(maxSizeBytes / (1024 * 1024));
         const actualMB = (actualSizeBytes / (1024 * 1024)).toFixed(1);
         throw new BadRequestException(
-          `Uploaded file size (${actualMB}MB) exceeds the maximum allowed limit of ${maxMB}MB. The oversized object has been purged from storage.`
+          `Uploaded file size (${actualMB}MB) exceeds the maximum allowed limit of ${maxMB}MB.${purged ? ' The oversized object has been purged from storage.' : ' Deletion of the oversized object failed, but attachment is rejected.'}`
         );
       }
 
@@ -374,17 +374,32 @@ export class StorageService {
       if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
         throw new BadRequestException('Uploaded object does not exist in storage.');
       }
-      console.error('Error inspecting object size in R2:', err);
-      return { valid: true, actualSizeBytes: 0 };
+      console.error('Error inspecting object size in R2 (failing closed):', err);
+      throw new BadRequestException('Failed to verify uploaded object size. Storage verification failed closed.');
     }
   }
 
   /**
+   * Finalizes and verifies an upload before resource attachment or to clean up abandoned oversized uploads.
+   */
+  async finalizeUpload(urlOrKey: string, customMaxSizeBytes?: number) {
+    const validated = await this.validateAndEnforceObjectSize(urlOrKey, customMaxSizeBytes);
+    const key = this.extractAndValidateObjectKey(urlOrKey);
+    return {
+      verified: true,
+      objectKey: key,
+      sizeBytes: validated.actualSizeBytes,
+    };
+  }
+
+  /**
    * Authoritative check across ALL application models to verify if a storage URL or key is referenced.
-   * Checks: studyMaterial, mcqQuestion, studentAnswer, customFormResponse, user, notice, supportTicket, assignment, doubt.
+   * Checks: studyMaterial, mcqQuestion, studentAnswer, customFormResponse, customForm (fields), user, notice, supportTicket, assignment, doubt.
+   * Fails closed: if database access is absent or any query fails, returns true (object in use).
    */
   async isStorageUrlInUse(urlOrKey: string, excludeContext?: { model?: string; id?: string }): Promise<boolean> {
-    if (!urlOrKey || !this.prisma) return false;
+    if (!urlOrKey) return false;
+    if (!this.prisma) return true; // Fail closed: missing database connection cannot prove unused
     const validatedKey = this.extractAndValidateObjectKey(urlOrKey);
     if (!validatedKey) return false;
 
@@ -403,6 +418,8 @@ export class StorageService {
     if (prismaAny.studyMaterial?.findFirst) {
       try {
         const smConditions: any[] = [
+          { url: urlOrKey },
+          { url: validatedKey },
           { url: { in: keyVariations } },
           { thumbnailUrl: { in: keyVariations } },
           { url: { endsWith: validatedKey } },
@@ -415,7 +432,8 @@ export class StorageService {
           },
         });
         if (existing) return true;
-      } catch {
+      } catch (err) {
+        console.error('Error checking studyMaterial references (failing closed):', err);
         return true;
       }
     }
@@ -434,7 +452,8 @@ export class StorageService {
           },
         });
         if (existing) return true;
-      } catch {
+      } catch (err) {
+        console.error('Error checking mcqQuestion references (failing closed):', err);
         return true;
       }
     }
@@ -453,7 +472,8 @@ export class StorageService {
           },
         });
         if (existing) return true;
-      } catch {
+      } catch (err) {
+        console.error('Error checking studentAnswer references (failing closed):', err);
         return true;
       }
     }
@@ -467,17 +487,40 @@ export class StorageService {
             `%${validatedKey}%`
           );
           if (Array.isArray(rawResponses) && rawResponses.length > 0) return true;
-        } else if (prismaAny.customFormResponse.findMany) {
+        }
+        if (prismaAny.customFormResponse.findMany) {
           const sample = await prismaAny.customFormResponse.findMany({ take: 100 });
           const found = sample.some((r: any) => JSON.stringify(r.data || {}).includes(validatedKey));
           if (found) return true;
         }
-      } catch {
-        // fail-safe
+      } catch (err) {
+        console.error('Error checking customFormResponse references (failing closed):', err);
+        return true;
       }
     }
 
-    // 5. User Avatars (avatar)
+    // 5. Custom Form Definitions (fields JSON, e.g. field imageUrl or header/layout images)
+    if (prismaAny.customForm) {
+      try {
+        if (prismaAny.$queryRawUnsafe) {
+          const rawForms = await prismaAny.$queryRawUnsafe(
+            `SELECT id FROM "custom_forms" WHERE "fields"::text LIKE $1 LIMIT 1`,
+            `%${validatedKey}%`
+          );
+          if (Array.isArray(rawForms) && rawForms.length > 0) return true;
+        }
+        if (prismaAny.customForm.findMany) {
+          const sample = await prismaAny.customForm.findMany({ take: 100 });
+          const found = sample.some((f: any) => JSON.stringify(f.fields || {}).includes(validatedKey));
+          if (found) return true;
+        }
+      } catch (err) {
+        console.error('Error checking customForm fields references (failing closed):', err);
+        return true;
+      }
+    }
+
+    // 6. User Avatars (avatar)
     if (prismaAny.user?.findFirst) {
       try {
         const userExisting = await prismaAny.user.findFirst({
@@ -490,12 +533,13 @@ export class StorageService {
           },
         });
         if (userExisting) return true;
-      } catch {
+      } catch (err) {
+        console.error('Error checking user avatar references (failing closed):', err);
         return true;
       }
     }
 
-    // 6. Notices (imageUrl)
+    // 7. Notices (imageUrl)
     if (prismaAny.notice?.findFirst) {
       try {
         const noticeExisting = await prismaAny.notice.findFirst({
@@ -508,12 +552,13 @@ export class StorageService {
           },
         });
         if (noticeExisting) return true;
-      } catch {
+      } catch (err) {
+        console.error('Error checking notice references (failing closed):', err);
         return true;
       }
     }
 
-    // 7. Support Tickets (imageUrl)
+    // 8. Support Tickets (imageUrl)
     if (prismaAny.supportTicket?.findFirst) {
       try {
         const ticketExisting = await prismaAny.supportTicket.findFirst({
@@ -526,45 +571,67 @@ export class StorageService {
           },
         });
         if (ticketExisting) return true;
-      } catch {
+      } catch (err) {
+        console.error('Error checking supportTicket references (failing closed):', err);
         return true;
       }
     }
 
-    // 8. Assignments & Submissions (attachments JSON)
-    if (prismaAny.assignment?.findFirst && prismaAny.$queryRawUnsafe) {
+    // 9. Assignments & Submissions (attachments JSON)
+    if (prismaAny.assignment) {
       try {
-        const rawAssignments = await prismaAny.$queryRawUnsafe(
-          `SELECT id FROM "assignments" WHERE "attachments"::text LIKE $1 LIMIT 1`,
-          `%${validatedKey}%`
-        );
-        if (Array.isArray(rawAssignments) && rawAssignments.length > 0) return true;
-      } catch {
-        // ignore
+        if (prismaAny.$queryRawUnsafe) {
+          const rawAssignments = await prismaAny.$queryRawUnsafe(
+            `SELECT id FROM "assignments" WHERE "attachments"::text LIKE $1 LIMIT 1`,
+            `%${validatedKey}%`
+          );
+          if (Array.isArray(rawAssignments) && rawAssignments.length > 0) return true;
+        } else if (prismaAny.assignment.findMany) {
+          const sample = await prismaAny.assignment.findMany({ take: 100 });
+          const found = sample.some((a: any) => JSON.stringify(a.attachments || {}).includes(validatedKey));
+          if (found) return true;
+        }
+      } catch (err) {
+        console.error('Error checking assignment references (failing closed):', err);
+        return true;
       }
     }
-    if (prismaAny.assignmentSubmission?.findFirst && prismaAny.$queryRawUnsafe) {
+    if (prismaAny.assignmentSubmission) {
       try {
-        const rawSubmissions = await prismaAny.$queryRawUnsafe(
-          `SELECT id FROM "assignment_submissions" WHERE "attachments"::text LIKE $1 LIMIT 1`,
-          `%${validatedKey}%`
-        );
-        if (Array.isArray(rawSubmissions) && rawSubmissions.length > 0) return true;
-      } catch {
-        // ignore
+        if (prismaAny.$queryRawUnsafe) {
+          const rawSubmissions = await prismaAny.$queryRawUnsafe(
+            `SELECT id FROM "assignment_submissions" WHERE "attachments"::text LIKE $1 LIMIT 1`,
+            `%${validatedKey}%`
+          );
+          if (Array.isArray(rawSubmissions) && rawSubmissions.length > 0) return true;
+        } else if (prismaAny.assignmentSubmission.findMany) {
+          const sample = await prismaAny.assignmentSubmission.findMany({ take: 100 });
+          const found = sample.some((s: any) => JSON.stringify(s.attachments || {}).includes(validatedKey));
+          if (found) return true;
+        }
+      } catch (err) {
+        console.error('Error checking assignmentSubmission references (failing closed):', err);
+        return true;
       }
     }
 
-    // 9. Doubts (attachments JSON)
-    if (prismaAny.doubt?.findFirst && prismaAny.$queryRawUnsafe) {
+    // 10. Doubts (attachments JSON)
+    if (prismaAny.doubt) {
       try {
-        const rawDoubts = await prismaAny.$queryRawUnsafe(
-          `SELECT id FROM "doubts" WHERE "attachments"::text LIKE $1 LIMIT 1`,
-          `%${validatedKey}%`
-        );
-        if (Array.isArray(rawDoubts) && rawDoubts.length > 0) return true;
-      } catch {
-        // ignore
+        if (prismaAny.$queryRawUnsafe) {
+          const rawDoubts = await prismaAny.$queryRawUnsafe(
+            `SELECT id FROM "doubts" WHERE "attachments"::text LIKE $1 LIMIT 1`,
+            `%${validatedKey}%`
+          );
+          if (Array.isArray(rawDoubts) && rawDoubts.length > 0) return true;
+        } else if (prismaAny.doubt.findMany) {
+          const sample = await prismaAny.doubt.findMany({ take: 100 });
+          const found = sample.some((d: any) => JSON.stringify(d.attachments || {}).includes(validatedKey));
+          if (found) return true;
+        }
+      } catch (err) {
+        console.error('Error checking doubt references (failing closed):', err);
+        return true;
       }
     }
 
@@ -588,7 +655,11 @@ export class StorageService {
       return false;
     }
 
-    if (!forcePurge && this.prisma) {
+    if (!forcePurge) {
+      if (!this.prisma) {
+        console.warn(`[StorageService] Database service unavailable. Failing closed to prevent deletion of potentially referenced object: ${validatedKey}`);
+        return false;
+      }
       const stillInUse = await this.isStorageUrlInUse(validatedKey);
       if (stillInUse) {
         console.warn(`[StorageService] Refusing to delete storage object in use: ${validatedKey}`);

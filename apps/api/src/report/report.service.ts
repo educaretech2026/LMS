@@ -73,10 +73,12 @@ export class ReportService {
       where: feeWhere,
       orderBy: { date: 'desc' },
       include: {
+        centre: { select: { id: true, name: true } },
         student: {
           include: {
             user: { select: { firstName: true, lastName: true } },
             enrollments: {
+              where: effectiveCentres ? { batch: { centreId: { in: effectiveCentres } } } : undefined,
               include: {
                 batch: {
                   include: {
@@ -97,19 +99,29 @@ export class ReportService {
 
     return {
       transactions,
-      feeRecords: filteredFees.map(f => ({
-        id: f.id,
-        receiptNo: f.receiptNo,
-        amount: f.amount,
-        date: f.date,
-        status: f.status,
-        paymentMode: f.paymentMode || 'CASH',
-        feeHead: f.feeHead || 'Tuition Fee',
-        studentName: `${f.student.user.firstName} ${f.student.user.lastName}`,
-        admissionNo: f.student.admissionNo,
-        batchName: f.student.enrollments[0]?.batch?.name || '-',
-        centreName: f.student.enrollments[0]?.batch?.centre?.name || '-',
-      })),
+      feeRecords: filteredFees.map(f => {
+        const studentEnrollments = f.student?.enrollments || [];
+        const matchingEnrollment = f.centreId
+          ? studentEnrollments.find((e: any) => e.batch?.centreId === f.centreId)
+          : studentEnrollments[0];
+
+        const centreName = f.centre?.name || matchingEnrollment?.batch?.centre?.name || '-';
+        const batchName = matchingEnrollment?.batch?.name || '-';
+
+        return {
+          id: f.id,
+          receiptNo: f.receiptNo,
+          amount: f.amount,
+          date: f.date,
+          status: f.status,
+          paymentMode: f.paymentMode || 'CASH',
+          feeHead: f.feeHead || 'Tuition Fee',
+          studentName: f.student?.user ? `${f.student.user.firstName} ${f.student.user.lastName}` : 'Unknown Student',
+          admissionNo: f.student?.admissionNo,
+          batchName,
+          centreName,
+        };
+      }),
       feeTotal,
     };
   }

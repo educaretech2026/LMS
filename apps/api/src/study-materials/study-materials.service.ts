@@ -8,7 +8,11 @@ export class StudyMaterialService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly storageService?: StorageService
-  ) {}
+  ) {
+    if (this.storageService && !(this.storageService as any).prisma && this.prisma) {
+      (this.storageService as any).prisma = this.prisma;
+    }
+  }
 
   async getAll(user?: any) {
     try {
@@ -507,14 +511,12 @@ export class StudyMaterialService {
               return false;
             }
 
-            // Must be bound to academic year if material specifies it
+            // Must be bound to academic year for year-specific material
             const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
-            if (data.academicYearId) {
-              if (!assignedYearId || assignedYearId !== data.academicYearId) {
+            if (academicYearId) {
+              if (!assignedYearId || assignedYearId !== academicYearId) {
                 return false;
               }
-            } else if (academicYearId && assignedYearId && assignedYearId !== academicYearId) {
-              return false;
             }
 
             // Must match targetTrackId
