@@ -2,8 +2,10 @@
 
 **Document ID:** SEC-OP-2026-001  
 **Classification:** Internal Operational Security  
-**Date:** 2026-10-18  
+**Date:** 2026-10-19  
+**Incident Status:** ⚠️ **OPEN — PRODUCTION GATE ACTIVE (Pending External Cloud Revocation)**  
 **Scope:** Historical secret exposure investigation (`scratch.ts`), credential revocation, cloud audit inspection, and incident closure verification.
+
 
 ---
 
@@ -88,3 +90,7 @@ Before closing this incident, verify that no unauthorized API requests were made
 | 4 | Cloudflare R2 API Token rotated | 🔲 Operational Action Required | Operator Sign-off |
 | 5 | Cloud audit logs reviewed for anomalous IP requests | 🔲 Operational Action Required | Operator Sign-off |
 | 6 | Incident officially declared closed in security register | 🔲 Final Sign-off | Security Lead |
+
+> [!CAUTION]
+> **Production Gate Condition:** Deletion of `scratch.ts` from Git history removes local exposure, but **does not revoke genuine credentials**. This incident remains **OPEN** as an active production blocker until the authorized cloud administrator performs and signs off on steps 3 through 6. Do NOT put the historical credential back into source or share it in logs.
+
