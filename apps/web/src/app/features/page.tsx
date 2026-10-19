@@ -1,790 +1,1144 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState } from "react";
+import Link from "next/link";
 import {
-  BookOpen,
-  Users,
-  BarChart3,
-  Shield,
-  Zap,
-  Globe,
-  CheckCircle,
-  Star,
+  ShieldCheck,
+  CheckCircle2,
   ArrowRight,
   GraduationCap,
   Building2,
-  CalendarCheck,
-  IndianRupee,
   Bell,
   Video,
-  Award,
-  Layers,
   Database,
-  Cloud,
   Lock,
-  Cpu,
-  Sparkles,
-  ChevronDown,
+  Layers,
+  Server,
   FileText,
-  Search,
-  PieChart,
-  ClipboardList,
-  UserCheck,
-  Trophy,
-  Brain,
-  Rocket,
-  Code2,
+  Check,
+  ExternalLink,
   Menu,
   X,
-  MessagesSquare,
-  FileCheck,
+  Clock,
+  Calculator,
 } from "lucide-react";
 
-// ── Particle Canvas ────────────────────────────────────────────────
-function ParticleCanvas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d")!;
-    let animId: number;
-    const particles: {
-      x: number; y: number; vx: number; vy: number;
-      r: number; alpha: number; color: string;
-    }[] = [];
-    const colors = ["#0162b1", "#7c3aed", "#059669", "#2563eb", "#a78bfa"];
+// ── Types ────────────────────────────────────────────────────────────
+type PillarKey = "academics" | "assessments" | "mentorship" | "operations";
+type RoleLens = "SUPER_ADMIN" | "CAMPUS_ADMIN" | "TEACHER" | "STUDENT";
 
-    const resize = () => {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    for (let i = 0; i < 80; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        r: Math.random() * 2 + 0.5,
-        alpha: Math.random() * 0.5 + 0.1,
-        color: colors[Math.floor(Math.random() * colors.length)],
-      });
-    }
-
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach((p) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
-        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = p.color + Math.floor(p.alpha * 255).toString(16).padStart(2, "0");
-        ctx.fill();
-      });
-      particles.forEach((a, i) => {
-        particles.slice(i + 1).forEach((b) => {
-          const dx = a.x - b.x, dy = a.y - b.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 100) {
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = `rgba(99,102,241,${0.12 * (1 - dist / 100)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        });
-      });
-      animId = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />;
+interface PillarData {
+  id: PillarKey;
+  label: string;
+  badge: string;
+  title: string;
+  description: string;
+  features: {
+    title: string;
+    description: string;
+    specs: string[];
+  }[];
 }
 
-// ── Typewriter ─────────────────────────────────────────────────────
-function Typewriter({ words }: { words: string[] }) {
-  const [display, setDisplay] = useState("");
-  const [wordIdx, setWordIdx] = useState(0);
-  const [charIdx, setCharIdx] = useState(0);
-  const [deleting, setDeleting] = useState(false);
+const PILLARS: Record<PillarKey, PillarData> = {
+  academics: {
+    id: "academics",
+    label: "Academic Delivery",
+    badge: "Core Learning Engine",
+    title: "Structured Curriculum Delivery Across Every Campus Tier",
+    description:
+      "Educare eliminates academic fragmentation by binding curriculum pacing directly to the institutional hierarchy: Academic Year › Campus Centre › Board › Class › Batch › Subject › Chapter › Topic.",
+    features: [
+      {
+        title: "Batch-Wise Attendance Tracking",
+        description:
+          "Daily session marking for students and faculty with instant status flags (Present, Absent, Late, Excused) and at-risk attendance percentage detection.",
+        specs: ["Interactive status registers", "Historical session registers", "Parent alert triggers"],
+      },
+      {
+        title: "e-Study Digital Repository",
+        description:
+          "Structured learning material distribution mapped to chapters, supporting chapter PDFs, supplementary lecture recordings, and topic-level mastery quizzes.",
+        specs: ["S3 presigned asset delivery", "Chapter & topic binding", "Student progress tracking"],
+      },
+      {
+        title: "Integrated Live Virtual Classes",
+        description:
+          "WebRTC and LiveKit-powered virtual classrooms with batch scheduling, faculty controls, screen sharing, and automated room token generation.",
+        specs: ["Zero external software", "Batch admission scoping", "Real-time room status"],
+      },
+      {
+        title: "Syllabus Pacing & Lesson Logs",
+        description:
+          "Institutional syllabus trackers allow academic directors to verify planned vs completed topics across centres in real time.",
+        specs: ["Pacing variance alerts", "Faculty topic sign-offs", "Annual term alignment"],
+      },
+    ],
+  },
+  assessments: {
+    id: "assessments",
+    label: "Examinations & Grading",
+    badge: "Evaluation Architecture",
+    title: "High-Integrity Testing, Timed Attempts, and Automated Grading",
+    description:
+      "From weekly topic quizzes to full-scale competitive entrance simulations, the examination engine enforces strict time windows, negative marking rules, and instant scorecards.",
+    features: [
+      {
+        title: "Comprehensive MCQ Assessment Engine",
+        description:
+          "Build multi-section exams with custom positive/negative marking rules, mathematical formulas, and image-based questions.",
+        specs: ["Negative marking support", "Timed auto-submission", "Randomized question order"],
+      },
+      {
+        title: "Hierarchical Homework & Assignments",
+        description:
+          "Allocate assignments down to specific batches and target tracks. Collect student digital submissions with file attachments and faculty grading rubrics.",
+        specs: ["Submission deadlines", "Faculty feedback scorecards", "Video explanation embeds"],
+      },
+      {
+        title: "Chapter-Level Mastery Analytics",
+        description:
+          "Automated grade calculation generates individual student dossiers highlighting weak topics, mastery percentages, and peer cohort percentiles.",
+        specs: ["Automated rank generation", "Topic difficulty weighting", "CSV gradebook exports"],
+      },
+      {
+        title: "Credential & Certificate Issuance",
+        description:
+          "Generate tamper-evident course completion certificates and student identity cards equipped with scannable QR verification codes.",
+        specs: ["Templated certificate engine", "Student ID card generator", "QR validation links"],
+      },
+    ],
+  },
+  mentorship: {
+    id: "mentorship",
+    label: "Mentorship & Alerts",
+    badge: "Academic Safeguarding",
+    title: "1-on-1 Academic Doubt Clearance with Structural Safeguards",
+    description:
+      "A dedicated academic communication framework connecting students directly with verified teachers. Unlike generic chat apps, Educare strictly prevents unmonitored student-to-student backchannels.",
+    features: [
+      {
+        title: "Supervised 1-on-1 Doubt Channels",
+        description:
+          "Students initiate academic inquiries tagged to subjects. Verified faculty provide step-by-step solutions with rich image and PDF problem attachments.",
+        specs: ["Zero student-to-student chat", "Supervisor audit badges", "Faculty re-assignment"],
+      },
+      {
+        title: "Real-Time Notification Hub",
+        description:
+          "In-app sliding notification drawer categorized by streams (Doubts, Assignments, System Notices) with 15-second background synchronization.",
+        specs: ["Categorized alert streams", "Direct deep-linking", "Single-click mark read"],
+      },
+      {
+        title: "Automated SMS & Urgent Dispatches",
+        description:
+          "Broadcast emergency campus closures, critical fee reminders, and attendance absentee alerts directly to parents via integrated SMS gateways.",
+        specs: ["Batch SMS broadcast", "Template compliance", "Delivery status tracking"],
+      },
+      {
+        title: "Internal Support Help Desk",
+        description:
+          "Structured ticketing for administrative requests, technical inquiries, and student grievances with full resolution audit trails.",
+        specs: ["SLA status workflows", "Internal note threads", "Role-based assignment"],
+      },
+    ],
+  },
+  operations: {
+    id: "operations",
+    label: "Governance & Finance",
+    badge: "Institutional Administration",
+    title: "Multi-Campus Financial Operations, Inquiries, and Executive Reports",
+    description:
+      "Complete operational oversight for educational networks operating across multiple campuses, managing admissions pipelines, fee installments, and compliance registers.",
+    features: [
+      {
+        title: "Multi-Campus Institutional Hierarchy",
+        description:
+          "Centralized configuration of multiple branch campuses, academic years, boards, standards, batches, and competitive target tracks.",
+        specs: ["Centre-scoped isolation", "Multi-branch admin access", "Unified academic calendar"],
+      },
+      {
+        title: "Fee Structures & Installment Ledgers",
+        description:
+          "Configurable fee packages, scholarship discounts, scheduled payment installments, partial collection recording, and automated PDF receipts.",
+        specs: ["Defaulter tracking", "Scholarship audit logs", "Instant receipt generation"],
+      },
+      {
+        title: "Dynamic Form Builder & Admissions CRM",
+        description:
+          "Build custom public admission and registration forms without code. Capture inquiries, assign admissions counselors, and track conversion stages.",
+        specs: ["Custom drag-and-drop fields", "Public shareable URLs", "Counselor assignment"],
+      },
+      {
+        title: "Executive Reports & Audit Logs",
+        description:
+          "Comprehensive registers covering financial collections vs expenses, attendance standing rosters, exam score distributions, and staff activity.",
+        specs: ["Centre-wise financial ledgers", "Attendance standing registers", "Export to CSV/PDF"],
+      },
+    ],
+  },
+};
 
-  useEffect(() => {
-    const word = words[wordIdx];
-    const delay = deleting ? 50 : charIdx === word.length ? 1800 : 80;
-    const t = setTimeout(() => {
-      if (!deleting && charIdx < word.length) {
-        setDisplay(word.slice(0, charIdx + 1));
-        setCharIdx((c) => c + 1);
-      } else if (deleting && charIdx > 0) {
-        setDisplay(word.slice(0, charIdx - 1));
-        setCharIdx((c) => c - 1);
-      } else if (!deleting && charIdx === word.length) {
-        setDeleting(true);
-      } else {
-        setDeleting(false);
-        setWordIdx((i) => (i + 1) % words.length);
-      }
-    }, delay);
-    return () => clearTimeout(t);
-  }, [charIdx, deleting, wordIdx, words]);
+// ── Interactive Console Previews ─────────────────────────────────────
+function ConsolePreview({ activeTab, activeRole }: { activeTab: PillarKey; activeRole: RoleLens }) {
+  // Interactive student attendance clicker state
+  const [students, setStudents] = useState([
+    { id: "ADM-2026-012", name: "Ananya Sharma", roll: "12-A-01", status: "PRESENT", time: "08:28 AM" },
+    { id: "ADM-2026-018", name: "Devansh Varma", roll: "12-A-02", status: "PRESENT", time: "08:31 AM" },
+    { id: "ADM-2026-024", name: "Ishaan Nair", roll: "12-A-03", status: "LATE", time: "08:48 AM" },
+    { id: "ADM-2026-031", name: "Kavya Menon", roll: "12-A-04", status: "EXCUSED", time: "Medical Leave" },
+    { id: "ADM-2026-039", name: "Rohan Kulkarni", roll: "12-A-05", status: "ABSENT", time: "Unexcused" },
+  ]);
 
-  return (
-    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#60a5fa] via-[#a78bfa] to-[#34d399]">
-      {display}
-      <span className="animate-pulse text-[#60a5fa]">|</span>
-    </span>
-  );
-}
+  // Interactive MCQ assessment tester state
+  const [selectedOption, setSelectedOption] = useState<string | null>("B");
 
-// ── useInView ──────────────────────────────────────────────────────
-function useInView(threshold = 0.12) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) setInView(true); },
-      { threshold }
+  // Interactive fee simulator state
+  const [feePlanMonths, setFeePlanMonths] = useState(3);
+  const totalCourseFee = 75000;
+  const scholarshipDiscount = 15000;
+  const netPayable = totalCourseFee - scholarshipDiscount;
+  const installmentAmount = Math.round(netPayable / feePlanMonths);
+
+  const toggleStudentStatus = (id: string) => {
+    setStudents((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const nextStatus = s.status === "PRESENT" ? "LATE" : s.status === "LATE" ? "ABSENT" : "PRESENT";
+        return { ...s, status: nextStatus };
+      })
     );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return { ref, inView };
-}
-
-// ── AnimatedCounter ────────────────────────────────────────────────
-function Counter({ to, suffix = "", prefix = "" }: { to: number; suffix?: string; prefix?: string }) {
-  const [val, setVal] = useState(0);
-  const { ref, inView } = useInView(0.5);
-  useEffect(() => {
-    if (!inView) return;
-    let start = 0;
-    const step = to / 60;
-    const t = setInterval(() => {
-      start += step;
-      if (start >= to) { setVal(to); clearInterval(t); }
-      else setVal(Math.floor(start));
-    }, 16);
-    return () => clearInterval(t);
-  }, [inView, to]);
-  return <span ref={ref}>{prefix}{val.toLocaleString()}{suffix}</span>;
-}
-
-// ── 3D Tilt Card ───────────────────────────────────────────────────
-function TiltCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const handleMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const card = cardRef.current;
-    if (!card) return;
-    const { left, top, width, height } = card.getBoundingClientRect();
-    const x = (e.clientX - left) / width - 0.5;
-    const y = (e.clientY - top) / height - 0.5;
-    card.style.transform = `perspective(800px) rotateY(${x * 10}deg) rotateX(${-y * 10}deg) scale3d(1.02,1.02,1.02)`;
-  }, []);
-  const handleLeave = useCallback(() => {
-    const card = cardRef.current;
-    if (!card) return;
-    card.style.transform = "perspective(800px) rotateY(0deg) rotateX(0deg) scale3d(1,1,1)";
-  }, []);
-  return (
-    <div
-      ref={cardRef}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      className={className}
-      style={{ transition: "transform 0.15s ease-out", transformStyle: "preserve-3d" }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ── Magnetic Button ────────────────────────────────────────────────
-function MagneticButton({ children, href, primary = false }: { children: React.ReactNode; href: string; primary?: boolean }) {
-  const ref = useRef<HTMLAnchorElement>(null);
-  const handleMove = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    const el = ref.current;
-    if (!el) return;
-    const { left, top, width, height } = el.getBoundingClientRect();
-    const x = (e.clientX - left - width / 2) * 0.3;
-    const y = (e.clientY - top - height / 2) * 0.3;
-    el.style.transform = `translate(${x}px, ${y}px)`;
   };
-  const handleLeave = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.transform = "translate(0,0)";
-  };
-  return (
-    <a
-      ref={ref}
-      href={href}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      style={{ transition: "transform 0.25s ease-out" }}
-      className={`inline-flex items-center gap-2 font-bold rounded-2xl transition-all duration-300 px-8 py-4 text-base ${
-        primary
-          ? "bg-gradient-to-r from-[#0162b1] via-[#2563eb] to-[#7c3aed] text-white shadow-2xl shadow-[#0162b1]/40 hover:shadow-[#0162b1]/60 hover:-translate-y-0.5"
-          : "bg-white/10 backdrop-blur-md border border-white/20 text-white hover:bg-white/20"
-      }`}
-    >
-      {children}
-    </a>
-  );
-}
 
-// ── Floating Orb ───────────────────────────────────────────────────
-function FloatingOrb({ color, size, top, left, delay = 0 }: { color: string; size: number; top: string; left: string; delay?: number }) {
-  return (
-    <div
-      className="absolute rounded-full pointer-events-none"
-      style={{
-        width: size, height: size, top, left,
-        background: `radial-gradient(circle, ${color}40 0%, transparent 70%)`,
-        filter: "blur(60px)",
-        animation: `orbFloat ${6 + delay}s ease-in-out infinite alternate`,
-        animationDelay: `${delay}s`,
-      }}
-    />
-  );
-}
+  const presentCount = students.filter((s) => s.status === "PRESENT").length;
+  const attendanceRate = ((presentCount / students.length) * 100).toFixed(1);
 
-// ── Animated Section ───────────────────────────────────────────────
-function AnimatedSection({ children }: { children: React.ReactNode }) {
-  const { ref, inView } = useInView(0.1);
-  return (
-    <div
-      ref={ref}
-      style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0)" : "translateY(32px)",
-        transition: "opacity 0.75s cubic-bezier(0.16,1,0.3,1), transform 0.75s cubic-bezier(0.16,1,0.3,1)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ── Stagger Card ───────────────────────────────────────────────────
-function StaggerCard({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
-  const { ref, inView } = useInView(0.08);
-  return (
-    <div
-      ref={ref}
-      style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0) scale(1)" : "translateY(24px) scale(0.97)",
-        transition: `opacity 0.65s cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 0.65s cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ── Module Data ────────────────────────────────────────────────────
-const modules = [
-  { icon: MessagesSquare, title: "Doubt Clearance & Academic Chat", description: "Direct 1-on-1 academic mentorship between students and verified faculty. Strict structural boundaries preventing student-to-student private chat, administrative oversight with supervisor badges, and rich image & PDF problem uploads.", tags: ["1-on-1 Mentorship", "Image & PDF Uploads", "Admin Supervision", "Faculty Reassignment"], accentColor: "#6366f1", glow: "rgba(99,102,241,0.3)" },
-  { icon: ClipboardList, title: "Hierarchical Assignment Engine", description: "Full e-Study hierarchy integration (Board › Standard › Batch › Subject › Chapter › Topic › Target Track). Digital student submissions, deadline enforcement, faculty scorecard grading with feedback, and embedded in-page video players.", tags: ["e-Study Hierarchy", "Submissions & Grading", "Embedded Video Player", "Live Setup Data"], accentColor: "#ec4899", glow: "rgba(236,72,153,0.3)" },
-  { icon: Bell, title: "In-App Notification Hub & Real-Time Sync", description: "Segmented real-time notification drawer with category streams (Doubts, Assignments, System Alerts), contextual icon badges, one-click mark read & dismiss actions, deep-linking directly to specific doubt threads, and 15s synchronization.", tags: ["Category Streams", "Deep-Linking", "15s Live Sync", "Action Controls"], accentColor: "#7c3aed", glow: "rgba(124,58,237,0.3)" },
-  { icon: Brain, title: "Examination & Assessment Engine", description: "Full-featured MCQ examinations with custom positive/negative marking, image-enriched questions, timed attempts, real-time grading, and detailed scorecard analytics.", tags: ["MCQ Tests", "Auto Grading", "Live Timers", "Grade Analytics"], accentColor: "#a855f7", glow: "rgba(168,85,247,0.3)" },
-  { icon: Users, title: "User, Role & Identity Management", description: "Strict RBAC across Super Admin, Centre Admin, Teacher, and Student roles. JWT authentication with Redis-backed session enforcement and active session invalidation.", tags: ["RBAC", "JWT Auth", "Redis Sessions", "Multi-Role"], accentColor: "#0162b1", glow: "rgba(1,98,177,0.3)" },
-  { icon: Building2, title: "Academic Hierarchy & Setup", description: "Complete multi-tier institutional configuration: Academic Years, Multi-Campus Centres, Boards, Classes, Batches, Subjects, Chapters, Topics, and Competitive Tracks.", tags: ["Multi-Campus", "Hierarchical", "Boards & Batches", "Track System"], accentColor: "#059669", glow: "rgba(5,150,105,0.3)" },
-  { icon: BookOpen, title: "E-Study & Content Management", description: "Digital study material distribution mapped to chapters and topics, video lecture embedding with dedicated player, progress tracking, and topic-level quiz assessments.", tags: ["PDF Materials", "Video Lectures", "Progress Tracking", "Topic Quizzes"], accentColor: "#d97706", glow: "rgba(217,119,6,0.3)" },
-  { icon: CalendarCheck, title: "Attendance Management", description: "Batch-wise daily attendance recording (Present, Absent, Late, Excused) for students and staff. Percentage reporting, historical logs, and at-risk student detection.", tags: ["Daily Records", "Staff Attendance", "At-Risk Alerts", "History Logs"], accentColor: "#0891b2", glow: "rgba(8,145,178,0.3)" },
-  { icon: IndianRupee, title: "Fee & Financial Management", description: "Customizable fee structures, scholarship allocations, installment scheduling, payment collection recording, outstanding dues tracking, and automated receipt generation.", tags: ["Fee Engine", "Scholarships", "Installments", "Receipt Gen"], accentColor: "#16a34a", glow: "rgba(22,163,74,0.3)" },
-  { icon: FileCheck, title: "Dynamic Form Builder & Admissions", description: "No-code drag-and-drop form builder, public form sharing URLs, lead tracking, counselor assignment, follow-up management, and seamless enrollment conversion pipeline.", tags: ["Form Builder", "CRM", "Lead Tracking", "Admissions"], accentColor: "#dc2626", glow: "rgba(220,38,38,0.3)" },
-  { icon: Video, title: "Live Classes & Virtual Classroom", description: "WebRTC/LiveKit-powered live class scheduling per batch and subject, real-time video, audio, screen sharing, and automated room access token issuance.", tags: ["LiveKit", "WebRTC", "Screen Share", "Batch Scheduling"], accentColor: "#0284c7", glow: "rgba(2,132,199,0.3)" },
-  { icon: Award, title: "Certificates & Achievement Records", description: "Templated certificate generation for course completions and student milestones, with digital ID card generation and QR code verification for every student.", tags: ["Cert Generator", "Digital ID Card", "QR Codes", "Achievement"], accentColor: "#f59e0b", glow: "rgba(245,158,11,0.3)" },
-  { icon: BarChart3, title: "Reports & Analytics Dashboard", description: "Executive analytics dashboard with financial ledgers, academic hierarchy exam reports, attendance registers, CRM pipeline funnels, and student performance dossiers.", tags: ["KPI Dashboard", "Finance Analytics", "Hierarchy Reports", "CSV Export"], accentColor: "#0d9488", glow: "rgba(13,148,136,0.3)" },
-  { icon: FileText, title: "Support Help Desk", description: "Internal ticketing system for students, teachers, and administrators. Track, assign, and resolve support queries with full audit trails.", tags: ["Ticketing", "Internal Support", "Audit Trail", "Assignment"], accentColor: "#64748b", glow: "rgba(100,116,139,0.3)" },
-];
-
-const techStack = [
-  { icon: Code2, label: "Next.js 16", sub: "App Router + RSC", color: "#e2e8f0" },
-  { icon: Cpu, label: "NestJS", sub: "TypeScript + Guards", color: "#e0234e" },
-  { icon: Database, label: "PostgreSQL", sub: "Prisma ORM", color: "#336791" },
-  { icon: Zap, label: "Redis", sub: "Session & Cache", color: "#d82c20" },
-  { icon: Cloud, label: "Cloudflare R2", sub: "Presigned Storage", color: "#f38020" },
-  { icon: Lock, label: "JWT + RBAC", sub: "Strict Auth Guards", color: "#34d399" },
-];
-
-const stats = [
-  { value: 14, suffix: "+", label: "Core Modules", icon: Layers, color: "#60a5fa" },
-  { value: 4, suffix: "", label: "Role Levels", icon: Shield, color: "#a78bfa" },
-  { value: 7, suffix: "", label: "Hierarchy Tiers", icon: Building2, color: "#34d399" },
-  { value: 99, suffix: "%", label: "Uptime SLA", icon: Rocket, color: "#fb923c" },
-];
-
-const navLinks = ["Modules", "Analytics", "Technology", "Security"];
-
-// ── PAGE ───────────────────────────────────────────────────────────
-export default function FeaturesPage() {
-  const [scrolled, setScrolled] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const y = window.scrollY;
-      const max = document.body.scrollHeight - window.innerHeight;
-      setScrolled(y > 60);
-      setScrollProgress(max > 0 ? (y / max) * 100 : 0);
-    };
-    const handleMouse = (e: MouseEvent) => setMousePos({ x: e.clientX, y: e.clientY });
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("mousemove", handleMouse, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("mousemove", handleMouse);
-    };
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-[#050816] text-white overflow-x-hidden">
-      {/* Scroll Progress Bar */}
-      <div
-        className="fixed top-0 left-0 h-[2px] bg-gradient-to-r from-[#0162b1] via-[#a78bfa] to-[#34d399] z-[100] transition-all duration-100"
-        style={{ width: `${scrollProgress}%` }}
-      />
-
-      {/* Cursor Glow (desktop only) */}
-      <div
-        className="fixed pointer-events-none z-40 hidden lg:block"
-        style={{
-          width: 300, height: 300, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(1,98,177,0.08) 0%, transparent 70%)",
-          transform: `translate(${mousePos.x - 150}px, ${mousePos.y - 150}px)`,
-          transition: "transform 0.15s ease-out",
-        }}
-      />
-
-      {/* ── Nav ─────────────────────────────────────────────────── */}
-      <nav className={`fixed left-0 right-0 z-50 px-4 transition-all duration-500 ${scrolled ? "top-0" : "top-2"}`}>
-        <div className={`max-w-6xl mx-auto h-14 flex items-center justify-between px-5 rounded-2xl transition-all duration-500 ${scrolled ? "bg-[#080f1f]/80 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40" : "bg-transparent"}`}>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0162b1] to-[#7c3aed] flex items-center justify-center shadow-lg shadow-[#0162b1]/40">
-              <GraduationCap className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-black text-[15px] tracking-tight">
-              <span className="text-[#60a5fa]">edu</span>care
-              <span className="ml-1.5 text-[9px] font-bold uppercase tracking-widest text-white/30 align-middle">LMS</span>
-            </span>
+  if (activeTab === "academics") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Attendance Register • Division A (Grade 12)
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Click status badges to test real-time recalculation:
+            </p>
           </div>
-          <div className="hidden md:flex items-center gap-6">
-            {navLinks.map((s) => (
-              <a key={s} href={`#${s.toLowerCase()}`} className="text-[13px] font-semibold text-white/50 hover:text-white transition-colors duration-200 relative group">
-                {s}
-                <span className="absolute -bottom-0.5 left-0 right-0 h-px bg-gradient-to-r from-[#0162b1] to-[#a78bfa] scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left" />
-              </a>
-            ))}
-          </div>
-          <div className="flex items-center gap-3">
-            <a href="/login" className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#0162b1] to-[#2563eb] text-white text-[13px] font-bold shadow-lg shadow-[#0162b1]/30 hover:shadow-[#0162b1]/60 hover:-translate-y-0.5 transition-all duration-200">
-              Sign In <ArrowRight className="h-3.5 w-3.5" />
-            </a>
-            <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors">
-              {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            </button>
-          </div>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {attendanceRate}% Present ({presentCount}/{students.length})
+          </span>
         </div>
-        <div className={`md:hidden transition-all duration-300 overflow-hidden ${mobileOpen ? "max-h-72 opacity-100" : "max-h-0 opacity-0"}`}>
-          <div className="max-w-6xl mx-auto mt-2 px-5 py-4 bg-[#080f1f]/95 backdrop-blur-xl border border-white/10 rounded-2xl">
-            {navLinks.map((s) => (
-              <a key={s} href={`#${s.toLowerCase()}`} onClick={() => setMobileOpen(false)} className="block py-2.5 text-[14px] font-semibold text-white/60 hover:text-white transition-colors border-b border-white/5 last:border-0">
-                {s}
-              </a>
-            ))}
-            <a href="/login" className="mt-3 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-[#0162b1] to-[#7c3aed] text-white text-[14px] font-bold">
-              Sign In <ArrowRight className="h-4 w-4" />
-            </a>
-          </div>
-        </div>
-      </nav>
 
-      {/* ── HERO ──────────────────────────────────────────────────── */}
-      <section id="hero" className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20">
-        <ParticleCanvas />
-        <FloatingOrb color="#0162b1" size={600} top="-10%" left="-10%" delay={0} />
-        <FloatingOrb color="#7c3aed" size={500} top="30%" left="60%" delay={2} />
-        <FloatingOrb color="#059669" size={400} top="70%" left="20%" delay={4} />
-        <FloatingOrb color="#d97706" size={300} top="10%" left="70%" delay={1} />
-        <div className="absolute inset-0 pointer-events-none opacity-[0.04]" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
-
-        <div className="relative z-10 max-w-5xl mx-auto px-6 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#0162b1]/40 bg-[#0162b1]/10 backdrop-blur-sm text-[11px] font-black uppercase tracking-widest text-[#60a5fa] mb-8" style={{ animation: "fadeSlideDown 0.8s ease both" }}>
-            <Sparkles className="h-3 w-3" />
-            Enterprise Learning Management System
-            <Sparkles className="h-3 w-3" />
-          </div>
-
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-black tracking-tight leading-[1.02] mb-6" style={{ animation: "fadeSlideDown 0.9s 0.1s ease both" }}>
-            <span className="text-white">The Complete Platform</span>
-            <br />
-            <span className="text-white">for </span>
-            <Typewriter words={["Education.", "Excellence.", "Growth.", "Institutions."]} />
-          </h1>
-
-          <p className="text-lg sm:text-xl text-white/50 max-w-2xl mx-auto leading-relaxed mb-10" style={{ animation: "fadeSlideDown 1s 0.2s ease both" }}>
-            Educare LMS is an enterprise-grade, all-in-one platform built for modern educational institutions.
-            Manage exams, attendance, fees, live classes, analytics, and admissions — all from one intelligent dashboard.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16" style={{ animation: "fadeSlideDown 1.1s 0.3s ease both" }}>
-            <MagneticButton href="/login" primary>
-              Access Platform <ArrowRight className="h-5 w-5" />
-            </MagneticButton>
-            <MagneticButton href="#modules">
-              Explore Features <ChevronDown className="h-5 w-5 text-white/50" />
-            </MagneticButton>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-2xl mx-auto" style={{ animation: "fadeSlideDown 1.2s 0.4s ease both" }}>
-            {stats.map((s) => {
-              const Icon = s.icon;
-              return (
-                <div key={s.label} className="relative group bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300 overflow-hidden">
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl" style={{ background: `radial-gradient(circle at center, ${s.color}20 0%, transparent 70%)` }} />
-                  <Icon className="h-4 w-4 mx-auto mb-2 relative z-10" style={{ color: s.color }} />
-                  <p className="text-2xl font-black leading-none relative z-10" style={{ color: s.color }}>
-                    <Counter to={s.value} suffix={s.suffix} />
-                  </p>
-                  <p className="text-[10px] text-white/35 font-semibold mt-1 uppercase tracking-wide relative z-10">{s.label}</p>
+        <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+          {students.map((student) => (
+            <div key={student.id} className="py-2 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                  {student.name.charAt(0)}
                 </div>
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{student.name}</p>
+                  <p className="text-[10px] text-slate-400 font-mono">{student.id} • Roll {student.roll}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-slate-400 hidden sm:inline">{student.time}</span>
+                <button
+                  type="button"
+                  onClick={() => toggleStudentStatus(student.id)}
+                  title="Click to cycle status"
+                  className={`px-2.5 py-1 rounded text-[10px] font-semibold tracking-wide transition-all cursor-pointer hover:scale-105 ${
+                    student.status === "PRESENT"
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700"
+                      : student.status === "LATE"
+                      ? "bg-amber-50 text-amber-700 dark:bg-amber-950/80 dark:text-amber-400 border border-amber-300 dark:border-amber-700"
+                      : student.status === "EXCUSED"
+                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/80 dark:text-blue-400 border border-blue-300 dark:border-blue-700"
+                      : "bg-rose-50 text-rose-700 dark:bg-rose-950/80 dark:text-rose-400 border border-rose-300 dark:border-rose-700"
+                  }`}
+                >
+                  {student.status} ↻
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
+          <span>Role view: <strong className="text-slate-700 dark:text-slate-300 font-mono">{activeRole}</strong></span>
+          <span className="font-semibold text-brand-blue">Batch Session: Physics • 08:30 - 10:00 AM</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeTab === "assessments") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Interactive Assessment Palette • Organic Chemistry
+            </p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">
+              NEET Mock Assessment #04 • 45 Questions
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200 dark:border-blue-800/80">
+            <Clock className="h-3.5 w-3.5" />
+            34m 12s Left
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            <p className="text-[10px] text-slate-400 font-semibold uppercase">Total Candidates</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">142</p>
+            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">138 Active</p>
+          </div>
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            <p className="text-[10px] text-slate-400 font-semibold uppercase">Marking Rule</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">+4 / -1</p>
+            <p className="text-[10px] text-slate-500">Negative Penalty</p>
+          </div>
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            <p className="text-[10px] text-slate-400 font-semibold uppercase">Score Impact</p>
+            <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+              {selectedOption === "B" ? "+4 Pts" : selectedOption === null ? "0 Pts" : "-1 Pt"}
+            </p>
+            <p className="text-[10px] text-slate-500">Live Auto-calc</p>
+          </div>
+        </div>
+
+        <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200/80 dark:border-slate-800 text-xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">Interactive Question Sample • Q.18</span>
+            <span className="text-[10px] font-mono text-slate-400">Aldehydes & Ketones</span>
+          </div>
+          <p className="text-slate-700 dark:text-slate-300 text-xs leading-relaxed">
+            Which reagent selectively reduces cyclopentanone to cyclopentanol without affecting an ester group?
+          </p>
+          <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+            {[
+              { key: "A", label: "A) LiAlH4 / Ether", correct: false },
+              { key: "B", label: "B) NaBH4 / EtOH", correct: true },
+              { key: "C", label: "C) H2 / Pd-C (Heat)", correct: false },
+              { key: "D", label: "D) Zn-Hg / HCl (Clemmensen)", correct: false },
+            ].map((opt) => {
+              const isSelected = selectedOption === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setSelectedOption(opt.key)}
+                  className={`p-2 rounded text-left transition-all cursor-pointer font-mono flex items-center justify-between ${
+                    isSelected
+                      ? opt.correct
+                        ? "bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-400 text-emerald-800 dark:text-emerald-300 font-bold"
+                        : "bg-rose-50 dark:bg-rose-950/50 border border-rose-400 text-rose-800 dark:text-rose-300 font-bold"
+                      : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-brand-blue"
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  {isSelected && opt.correct && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                </button>
               );
             })}
           </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-          <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/25">Scroll</span>
-          <div className="w-5 h-8 rounded-full border border-white/20 flex items-start justify-center pt-1.5">
-            <div className="w-1 h-2 rounded-full bg-white/40" style={{ animation: "scrollDot 1.5s ease-in-out infinite" }} />
+  if (activeTab === "mentorship") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Supervised 1-on-1 Academic Thread
+            </p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">
+              Ticket #DBT-2026-441 • Physics: Electromagnetism
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            Solution Verified
+          </span>
+        </div>
+
+        <div className="space-y-3 text-xs">
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold text-slate-900 dark:text-white">Arjun Rao (Student • Batch A)</span>
+              <span className="text-slate-400">10:14 AM</span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
+              &ldquo;Sir, in Faraday&apos;s law problem #14, does Lenz&apos;s law opposing sign apply when computing instantaneous induced emf in a rotating loop?&rdquo;
+            </p>
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] text-slate-500 font-mono">
+              <FileText className="h-3 w-3 text-brand-blue" />
+              problem_diagram_14.png (142 KB)
+            </div>
+          </div>
+
+          <div className="p-3 bg-blue-50/50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900/40 space-y-1.5 ml-3">
+            <div className="flex items-center justify-between text-[11px]">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-900 dark:text-white">Dr. R. Venkat (Senior Faculty)</span>
+                <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-semibold">
+                  Verified Faculty
+                </span>
+              </div>
+              <span className="text-slate-400">10:22 AM</span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
+              &ldquo;Yes Arjun. The negative sign represents direction opposing the change in magnetic flux. Use ε = -dΦ/dt = ωNAB sin(ωt).&rdquo;
+            </p>
           </div>
         </div>
-      </section>
 
-      {/* ── Marquee Strip ─────────────────────────────────────────── */}
-      <div className="relative overflow-hidden border-y border-white/5 bg-white/[0.02] py-3">
-        <div className="flex items-center gap-8 whitespace-nowrap" style={{ animation: "marquee 30s linear infinite" }}>
-          {["MCQ Examinations", "Live Classes", "Fee Management", "Digital Attendance", "E-Study Materials", "Analytics Dashboard", "CRM & Admissions", "Bulk SMS Alerts", "Certificate Generator", "Multi-Campus Support", "RBAC Security", "Redis Sessions", "MCQ Examinations", "Live Classes", "Fee Management", "Digital Attendance"].map((item, i) => (
-            <span key={i} className="flex items-center gap-2.5 text-white/30 text-[11px] font-bold shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#0162b1]/60" />
-              {item}
-            </span>
-          ))}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+          <span className="flex items-center gap-1">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+            Administrative supervisor audit active • Zero student-student backchannels
+          </span>
+          <span className="text-brand-blue font-semibold">Thread History (3)</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Operations / Fee preview with live installment calculator
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Fee Collection Ledger & Dues
+          </p>
+          <p className="text-sm font-bold text-slate-900 dark:text-white">
+            Academic Year 2026-27 • North Campus
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
+          Ledger Balanced
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2.5 text-xs">
+        <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800">
+          <p className="text-[10px] text-slate-400 font-semibold uppercase">Total Invoiced</p>
+          <p className="text-base font-bold text-slate-900 dark:text-white mt-0.5">₹42,80,000</p>
+          <p className="text-[10px] text-slate-500">320 Enrollments</p>
+        </div>
+        <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800">
+          <p className="text-[10px] text-slate-400 font-semibold uppercase">Collections Cleared</p>
+          <p className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">₹36,15,000</p>
+          <p className="text-[10px] text-emerald-600 dark:text-emerald-400">84.4% Realized</p>
+        </div>
+        <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800">
+          <p className="text-[10px] text-slate-400 font-semibold uppercase">Pending Dues</p>
+          <p className="text-base font-bold text-rose-600 dark:text-rose-400 mt-0.5">₹6,65,000</p>
+          <p className="text-[10px] text-rose-500">Due 30-Oct</p>
         </div>
       </div>
 
-      {/* ── Modules ───────────────────────────────────────────────── */}
-      <section id="modules" className="max-w-7xl mx-auto px-4 sm:px-6 py-28">
-        <AnimatedSection>
-          <div className="text-center mb-16">
-            <p className="inline-block text-[11px] font-black uppercase tracking-[0.2em] text-[#60a5fa] bg-[#60a5fa]/10 border border-[#60a5fa]/20 px-4 py-2 rounded-full mb-5">Complete Module Suite</p>
-            <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight mb-5">
-              Everything Your Institution{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#60a5fa] to-[#a78bfa]">Needs</span>
-            </h2>
-            <p className="text-base sm:text-lg text-white/40 max-w-2xl mx-auto leading-relaxed">
-              11 deeply integrated modules designed to streamline every academic, administrative, and financial workflow — from enrollment to graduation.
-            </p>
-          </div>
-        </AnimatedSection>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {modules.map((mod, i) => {
-            const Icon = mod.icon;
-            return (
-              <StaggerCard key={mod.title} delay={i % 3 * 100}>
-                <TiltCard className="h-full">
-                  <div className="relative h-full bg-white/[0.03] border border-white/10 rounded-2xl p-6 overflow-hidden group cursor-default hover:border-white/20 transition-all duration-500" style={{ backdropFilter: "blur(10px)" }}>
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 rounded-2xl" style={{ background: `radial-gradient(ellipse at top left, ${mod.glow} 0%, transparent 60%)` }} />
-                    <div className="absolute top-0 right-0 w-24 h-24 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: `radial-gradient(circle at top right, ${mod.accentColor}20 0%, transparent 70%)` }} />
-                    <div className="relative z-10">
-                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-5 group-hover:scale-110 transition-transform duration-300" style={{ background: `${mod.accentColor}20`, boxShadow: `0 0 20px ${mod.accentColor}30` }}>
-                        <Icon className="h-5 w-5" style={{ color: mod.accentColor }} />
-                      </div>
-                      <h3 className="text-[15px] font-bold text-white mb-2.5 leading-tight">{mod.title}</h3>
-                      <p className="text-[13px] text-white/45 leading-relaxed mb-4">{mod.description}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {mod.tags.map((tag) => (
-                          <span key={tag} className="inline-block px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide border" style={{ background: `${mod.accentColor}15`, color: mod.accentColor, borderColor: `${mod.accentColor}30` }}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </TiltCard>
-              </StaggerCard>
-            );
-          })}
+      {/* Interactive Installment Simulator */}
+      <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200/80 dark:border-slate-800 text-xs space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+            <Calculator className="h-3.5 w-3.5 text-brand-blue" />
+            Installment Schedule Simulator
+          </span>
+          <span className="text-[10px] text-slate-500">Scholarship: ₹{scholarshipDiscount.toLocaleString()} applied</span>
         </div>
-      </section>
-
-      {/* ── Analytics Spotlight ────────────────────────────────────── */}
-      <section id="analytics" className="relative py-28 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#050816] via-[#080f24] to-[#050816]" />
-        <FloatingOrb color="#0162b1" size={700} top="-20%" left="-15%" delay={0} />
-        <FloatingOrb color="#7c3aed" size={500} top="50%" left="60%" delay={3} />
-
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6">
-          <AnimatedSection>
-            <div className="text-center mb-16">
-              <p className="inline-block text-[11px] font-black uppercase tracking-[0.2em] text-[#a78bfa] bg-[#a78bfa]/10 border border-[#a78bfa]/20 px-4 py-2 rounded-full mb-5">Executive Analytics</p>
-              <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight mb-5">
-                Institutional Intelligence{" "}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#a78bfa] to-[#60a5fa]">at a Glance</span>
-              </h2>
-            </div>
-          </AnimatedSection>
-
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <AnimatedSection>
-              <div className="space-y-5">
-                {[
-                  { icon: PieChart, title: "Financial Ledger & Revenue Analytics", desc: "Live fee collection ledger, expense tracking, and net margin visualization with donut charts.", color: "#34d399" },
-                  { icon: Trophy, title: "Academic Hierarchy Exam Reports", desc: "Exam performance sorted by Year → Centre → Class → Subject → Topic with grade spread charts.", color: "#a78bfa" },
-                  { icon: UserCheck, title: "Attendance Standing Registers", desc: "Centre → Class → Batch → Student registers with at-risk detection and dossier drilldown.", color: "#60a5fa" },
-                  { icon: Search, title: "Student Performance Dossiers", desc: "Instant student lookup with comprehensive attendance, exam, and fee history in one modal.", color: "#fb923c" },
-                ].map((item, i) => {
-                  const Icon = item.icon;
-                  return (
-                    <StaggerCard key={item.title} delay={i * 120}>
-                      <div className="flex gap-4 group">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300" style={{ background: `${item.color}20`, boxShadow: `0 0 20px ${item.color}25` }}>
-                          <Icon className="h-4 w-4" style={{ color: item.color }} />
-                        </div>
-                        <div>
-                          <p className="text-[14px] font-bold text-white mb-1">{item.title}</p>
-                          <p className="text-[12px] text-white/35 leading-relaxed">{item.desc}</p>
-                        </div>
-                      </div>
-                    </StaggerCard>
-                  );
-                })}
-              </div>
-            </AnimatedSection>
-
-            <AnimatedSection>
-              <TiltCard>
-                <div className="relative bg-[#080f24]/80 backdrop-blur-xl rounded-2xl border border-white/10 p-5 shadow-2xl">
-                  <div className="absolute inset-0 rounded-2xl" style={{ boxShadow: "0 0 80px rgba(1,98,177,0.15) inset" }} />
-                  <div className="flex items-center gap-1 mb-4 border-b border-white/10 pb-3 overflow-x-auto">
-                    {["Overview", "Finance", "Academics", "Attendance"].map((t, i) => (
-                      <span key={t} className={`text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0 cursor-default transition-all ${i === 0 ? "bg-gradient-to-r from-[#0162b1] to-[#2563eb] text-white shadow-lg shadow-[#0162b1]/30" : "text-white/30 hover:text-white/60"}`}>
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2.5 mb-4">
-                    {[
-                      { label: "Total Revenue", val: "₹12,40,000", color: "#34d399", sub: "Fee: ₹9.8L • Ad-hoc: ₹2.6L" },
-                      { label: "Total Expenses", val: "₹4,20,000", color: "#f43f5e", sub: "32 Vouchers logged" },
-                      { label: "Attendance Rate", val: "87.3%", color: "#60a5fa", sub: "3,240 sessions held" },
-                      { label: "Exam Pass Rate", val: "91.2%", color: "#a78bfa", sub: "Avg: 74.5% cohort" },
-                    ].map((k) => (
-                      <div key={k.label} className="bg-white/[0.04] rounded-xl p-3 border border-white/5 hover:bg-white/[0.07] transition-colors">
-                        <p className="text-[9px] text-white/30 font-semibold uppercase tracking-wide mb-1">{k.label}</p>
-                        <p className="text-lg font-black" style={{ color: k.color }}>{k.val}</p>
-                        <p className="text-[9px] text-white/20 mt-0.5">{k.sub}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-4 bg-white/[0.04] rounded-xl p-3 border border-white/5">
-                    <div className="relative w-16 h-16 shrink-0">
-                      <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
-                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#334155" strokeWidth="3" />
-                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#34d399" strokeWidth="3" strokeDasharray="60 40" strokeLinecap="round" />
-                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#06b6d4" strokeWidth="3" strokeDasharray="20 80" strokeDashoffset="-60" strokeLinecap="round" />
-                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#f43f5e" strokeWidth="3" strokeDasharray="20 80" strokeDashoffset="-80" strokeLinecap="round" />
-                      </svg>
-                      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white">Net</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {[{ dot: "#34d399", label: "Fee Collections — 60%" }, { dot: "#06b6d4", label: "Ad-hoc Income — 20%" }, { dot: "#f43f5e", label: "Expenses — 20%" }].map((l) => (
-                        <div key={l.label} className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: l.dot }} />
-                          <span className="text-[10px] text-white/40">{l.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="absolute -top-3 -right-3 flex items-center gap-1.5 bg-gradient-to-r from-[#7c3aed] to-[#0162b1] text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#34d399] animate-pulse" />
-                    LIVE DATA
-                  </div>
-                </div>
-              </TiltCard>
-            </AnimatedSection>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Technology Stack ───────────────────────────────────────── */}
-      <section id="technology" className="max-w-7xl mx-auto px-4 sm:px-6 py-28">
-        <AnimatedSection>
-          <div className="text-center mb-16">
-            <p className="inline-block text-[11px] font-black uppercase tracking-[0.2em] text-[#34d399] bg-[#34d399]/10 border border-[#34d399]/20 px-4 py-2 rounded-full mb-5">Technology Stack</p>
-            <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight mb-5">
-              Built on{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#34d399] to-[#60a5fa]">Enterprise-Grade</span>
-              {" "}Infrastructure
-            </h2>
-            <p className="text-base sm:text-lg text-white/40 max-w-2xl mx-auto leading-relaxed">Every layer is engineered for performance, security, and scalability.</p>
-          </div>
-        </AnimatedSection>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-16">
-          {techStack.map(({ icon: Icon, label, sub, color }, i) => (
-            <StaggerCard key={label} delay={i * 80}>
-              <TiltCard>
-                <div className="group flex flex-col items-center text-center bg-white/[0.03] border border-white/10 rounded-2xl p-5 hover:bg-white/[0.07] hover:border-white/20 transition-all duration-300 cursor-default">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300" style={{ background: `${color}18`, boxShadow: `0 0 20px ${color}25` }}>
-                    <Icon className="h-5 w-5" style={{ color }} />
-                  </div>
-                  <p className="text-[13px] font-black text-white leading-tight">{label}</p>
-                  <p className="text-[10px] text-white/30 font-semibold mt-0.5">{sub}</p>
-                </div>
-              </TiltCard>
-            </StaggerCard>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-slate-500 shrink-0">Split into:</span>
+          {[1, 2, 3, 4].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setFeePlanMonths(n)}
+              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                feePlanMonths === n
+                  ? "bg-brand-blue text-white shadow-xs"
+                  : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+              }`}
+            >
+              {n} {n === 1 ? "Payment" : "Installments"}
+            </button>
           ))}
         </div>
+        <div className="pt-1 flex items-center justify-between border-t border-slate-200/60 dark:border-slate-800 text-[11px]">
+          <span className="text-slate-500">Net Fee: ₹{netPayable.toLocaleString()}</span>
+          <span className="font-bold text-emerald-700 dark:text-emerald-400">
+            ₹{installmentAmount.toLocaleString()} / installment
+          </span>
+        </div>
+      </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {[
-            { icon: Globe, title: "Monorepo Architecture", desc: "Turborepo-powered monorepo with shared packages for database, config, and types — ensuring consistency across the web and API layers.", color: "#60a5fa" },
-            { icon: Lock, title: "End-to-End Security", desc: "JWT access tokens, Redis-backed session enforcement, concurrency control, per-role route guards, and parameterized Prisma queries prevent SQLi and XSS.", color: "#f43f5e" },
-            { icon: Cloud, title: "S3-Compatible Storage", desc: "Presigned upload URLs directly to MinIO or AWS S3 for exam images, study materials, and student profile photos — zero bandwidth through the API server.", color: "#fb923c" },
-            { icon: Zap, title: "Redis Caching Layer", desc: "Session tokens, rate-limit counters, live class states, and notification queues run through Redis for sub-millisecond response on high-frequency operations.", color: "#d82c20" },
-            { icon: Database, title: "Relational Data Integrity", desc: "PostgreSQL with a comprehensive Prisma schema featuring cascading deletes, relational constraints, and indexed queries across all entity relationships.", color: "#336791" },
-            { icon: Rocket, title: "Coolify & Nixpacks Deploy", desc: "Zero-config Nixpacks build pipeline with Coolify orchestration and Docker containerization — deployed and live in minutes with full environment isolation.", color: "#a78bfa" },
-          ].map((item, i) => {
-            const Icon = item.icon;
-            return (
-              <StaggerCard key={item.title} delay={i % 3 * 100}>
-                <div className="group bg-white/[0.03] border border-white/10 rounded-2xl p-5 hover:bg-white/[0.07] hover:border-white/20 transition-all duration-300 overflow-hidden relative">
-                  <div className="absolute top-0 left-0 w-32 h-32 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" style={{ background: `radial-gradient(circle at top left, ${item.color}15 0%, transparent 70%)` }} />
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300" style={{ background: `${item.color}18`, boxShadow: `0 0 20px ${item.color}25` }}>
-                    <Icon className="h-4 w-4" style={{ color: item.color }} />
-                  </div>
-                  <p className="text-[14px] font-bold text-white mb-2">{item.title}</p>
-                  <p className="text-[12px] text-white/35 leading-relaxed">{item.desc}</p>
+      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
+        <span>Defaulter notice batch scheduled for 25-Oct</span>
+        <span className="font-semibold text-brand-blue">Download Financial Statement (CSV) →</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page Component ──────────────────────────────────────────────
+export default function FeaturesPage() {
+  const [activePillar, setActivePillar] = useState<PillarKey>("academics");
+  const [activeRole, setActiveRole] = useState<RoleLens>("SUPER_ADMIN");
+  const [selectedHierarchyStep, setSelectedHierarchyStep] = useState<number>(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const currentPillar = PILLARS[activePillar];
+
+  const HIERARCHY_STEPS = [
+    {
+      step: "01",
+      tier: "Academic Year & Campus",
+      badge: "Strict Scope",
+      description: "Isolates student admissions, fee ledgers, and grade histories into distinct operational terms.",
+      dbModel: "model Centre { id, name, code, addresses, batches, enrollments }",
+      cascadeRule: "ON DELETE RESTRICT (Prevents orphaned campus records)",
+    },
+    {
+      step: "02",
+      tier: "Boards & Standards",
+      badge: "Curriculum Binding",
+      description: "Configures curriculum boards (CBSE, ICSE, State) and educational standards (Class 9 through 12).",
+      dbModel: "model Standard { id, name, boardId, subjects, batches }",
+      cascadeRule: "Board › Standard relational consistency",
+    },
+    {
+      step: "03",
+      tier: "Batches & Competitive Tracks",
+      badge: "Cohort Scoping",
+      description: "Partitions student divisions into specialized tracks (e.g. JEE Advanced, NEET, Foundation).",
+      dbModel: "model Batch { id, name, standardId, centreId, trackId, enrollments }",
+      cascadeRule: "Unique batch enrollments with active academic year check",
+    },
+    {
+      step: "04",
+      tier: "Subjects, Chapters & Topics",
+      badge: "Granular Pacing",
+      description: "Direct binding of lesson plans, MCQ banks, e-Study PDFs, and 1-on-1 doubt tickets.",
+      dbModel: "model Topic { id, chapterId, subTopics, studyMaterials, doubtTickets }",
+      cascadeRule: "Automated progress tracking on completed topic assessments",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 selection:bg-brand-blue selection:text-white antialiased relative">
+      {/* ── Architectural Engineering Background Grid ──────────────── */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-40 dark:opacity-20"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgba(148, 163, 184, 0.15) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(148, 163, 184, 0.15) 1px, transparent 1px)
+          `,
+          backgroundSize: "40px 40px",
+          maskImage: "radial-gradient(ellipse 70% 60% at 50% 0%, #000 60%, transparent 100%)",
+        }}
+      />
+
+      {/* ── Top Navigation Bar ──────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#090D16]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2.5 group">
+              <div className="w-9 h-9 rounded-lg bg-brand-blue flex items-center justify-center shadow-sm group-hover:bg-brand-blue-dark transition-colors">
+                <GraduationCap className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <span className="font-black text-lg tracking-tight text-slate-900 dark:text-white">
+                  educare<span className="text-brand-blue ml-0.5">LMS</span>
+                </span>
+                <span className="hidden sm:inline-block ml-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                  Enterprise Platform
+                </span>
+              </div>
+            </Link>
+          </div>
+
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
+            <a href="#overview" className="hover:text-brand-blue transition-colors">
+              Platform Overview
+            </a>
+            <a href="#modules" className="hover:text-brand-blue transition-colors">
+              Institutional Modules
+            </a>
+            <a href="#hierarchy" className="hover:text-brand-blue transition-colors">
+              Academic Hierarchy
+            </a>
+            <a href="#architecture" className="hover:text-brand-blue transition-colors">
+              Security & Architecture
+            </a>
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white text-xs sm:text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2"
+            >
+              Institutional Console
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label="Toggle Navigation Menu"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-slate-200 dark:border-slate-800 px-4 py-3 bg-white dark:bg-[#090D16] space-y-2">
+            <a
+              href="#overview"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Platform Overview
+            </a>
+            <a
+              href="#modules"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Institutional Modules
+            </a>
+            <a
+              href="#hierarchy"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Academic Hierarchy
+            </a>
+            <a
+              href="#architecture"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Security & Architecture
+            </a>
+          </div>
+        )}
+      </header>
+
+      {/* ── Hero Section ──────────────────────────────────────────── */}
+      <section id="overview" className="relative pt-12 pb-20 sm:pt-20 sm:pb-28 border-b border-slate-200/80 dark:border-slate-800/80 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+            {/* Left: Authoritative Headline & Narrative */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-brand-blue dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60">
+                <ShieldCheck className="h-4 w-4 text-brand-blue" />
+                Enterprise Learning & Operations System
+              </div>
+
+              <h1 className="text-3xl sm:text-5xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.12]">
+                Architected for Institutional Rigor & Academic Delivery.
+              </h1>
+
+              <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">
+                Educare unifies multi-campus administration, automated examination grading, daily attendance registers, fee reconciliation, and verified 1-on-1 mentorship into a singular high-reliability platform.
+              </p>
+
+              <div className="grid sm:grid-cols-3 gap-4 pt-2">
+                <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-blue transition-colors">
+                  <p className="text-2xl font-black text-slate-900 dark:text-white">4-Tier</p>
+                  <p className="text-xs font-semibold text-slate-500 mt-0.5">Role Scoping (RBAC)</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Super Admin, Centre, Faculty & Student</p>
                 </div>
-              </StaggerCard>
+                <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-blue transition-colors">
+                  <p className="text-2xl font-black text-slate-900 dark:text-white">7-Level</p>
+                  <p className="text-xs font-semibold text-slate-500 mt-0.5">Academic Hierarchy</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Campus › Board › Batch › Topic</p>
+                </div>
+                <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-blue transition-colors">
+                  <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">100%</p>
+                  <p className="text-xs font-semibold text-slate-500 mt-0.5">Relational Integrity</p>
+                  <p className="text-[11px] text-slate-400 mt-1">PostgreSQL & Prisma ACID model</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 pt-2">
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-semibold text-sm shadow-sm transition-all"
+                >
+                  Sign In to Tenant Console
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <a
+                  href="#modules"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 font-semibold text-sm border border-slate-200 dark:border-slate-700 transition-colors"
+                >
+                  Explore Core Modules
+                </a>
+              </div>
+            </div>
+
+            {/* Right: Live Interactive Console Preview Window */}
+            <div className="lg:col-span-5">
+              <div className="rounded-xl border border-slate-300/80 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xl overflow-hidden">
+                {/* Console Window Header */}
+                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-400/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-amber-400/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-emerald-400/80 inline-block" />
+                    <span className="ml-2 text-xs font-mono font-medium text-slate-500 dark:text-slate-400">
+                      console.educare.ac.in
+                    </span>
+                  </div>
+
+                  {/* Interactive Persona / Role Switcher */}
+                  <div className="flex items-center gap-1 bg-slate-200/80 dark:bg-slate-800 p-0.5 rounded text-[10px] font-mono">
+                    {(["SUPER_ADMIN", "TEACHER", "STUDENT"] as RoleLens[]).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setActiveRole(r)}
+                        className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                          activeRole === r
+                            ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-bold shadow-2xs"
+                            : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                        }`}
+                      >
+                        {r.replace("_", " ")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sub-navigation tabs */}
+                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1 overflow-x-auto text-xs">
+                  <div className="flex items-center gap-1">
+                    {(["academics", "assessments", "mentorship", "operations"] as PillarKey[]).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setActivePillar(tab)}
+                        className={`px-3 py-1.5 rounded-md font-semibold transition-colors shrink-0 cursor-pointer ${
+                          activePillar === tab
+                            ? "bg-white dark:bg-slate-800 text-brand-blue shadow-xs"
+                            : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                        }`}
+                      >
+                        {PILLARS[tab].label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Interactive Window Content */}
+                <div className="p-5">
+                  <ConsolePreview activeTab={activePillar} activeRole={activeRole} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Institutional Pillars & Detailed Features ──────────────── */}
+      <section id="modules" className="py-20 sm:py-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="space-y-4 mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <Layers className="h-3.5 w-3.5 text-brand-blue" />
+            Product Architecture & Capabilities
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+            Comprehensive Institutional Modules Built for Scale
+          </h2>
+          <p className="text-slate-600 dark:text-slate-400 text-base max-w-2xl leading-relaxed">
+            Every module in Educare is designed to eliminate manual administrative overhead while providing full transparency across branches, faculties, and enrolled cohorts.
+          </p>
+        </div>
+
+        {/* Tab Controls for the 4 Pillars */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl mb-10 border border-slate-200/80 dark:border-slate-800">
+          {(["academics", "assessments", "mentorship", "operations"] as PillarKey[]).map((key) => {
+            const p = PILLARS[key];
+            const isActive = activePillar === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActivePillar(key)}
+                className={`py-3 px-4 rounded-lg text-left transition-all cursor-pointer ${
+                  isActive
+                    ? "bg-white dark:bg-slate-800 shadow-sm border border-slate-200/80 dark:border-slate-700"
+                    : "hover:bg-slate-200/60 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                <p className={`text-xs font-semibold uppercase tracking-wider ${isActive ? "text-brand-blue" : "text-slate-400"}`}>
+                  {p.badge}
+                </p>
+                <p className={`text-sm font-bold mt-0.5 ${isActive ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-slate-300"}`}>
+                  {p.label}
+                </p>
+              </button>
             );
           })}
         </div>
-      </section>
 
-      {/* ── Security ───────────────────────────────────────────────── */}
-      <section id="security" className="relative py-24 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#050816] via-[#07102a] to-[#050816]" />
-        <FloatingOrb color="#dc2626" size={400} top="20%" left="70%" delay={2} />
-        <FloatingOrb color="#7c3aed" size={350} top="60%" left="10%" delay={1} />
-        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
-          <AnimatedSection>
-            <p className="inline-block text-[11px] font-black uppercase tracking-[0.2em] text-[#f43f5e] bg-[#f43f5e]/10 border border-[#f43f5e]/20 px-4 py-2 rounded-full mb-6">Security & Compliance</p>
-            <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight mb-5">
-              Institutional-Grade{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#f43f5e] to-[#fb923c]">Security Standards</span>
-            </h2>
-            <p className="text-base sm:text-lg text-white/40 max-w-xl mx-auto leading-relaxed mb-12">
-              Role-based access, session security, encrypted tokens, and data integrity controls meet the rigorous standards educational institutions demand.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {["JWT Access Tokens", "Refresh Token Rotation", "Redis Single-Session Enforcement", "Role-Based Route Guards", "Parameterized Queries (No SQLi)", "Presigned S3 Uploads", "HTTPS-First Architecture", "Concurrency Control", "Audit Trails", "Data Validation Pipes"].map((item) => (
-                <span key={item} className="inline-flex items-center gap-2 px-4 py-2 bg-white/[0.04] border border-white/10 rounded-full text-[12px] font-semibold text-white/60 hover:bg-white/[0.08] hover:text-white hover:border-white/20 transition-all duration-200 cursor-default">
-                  <CheckCircle className="h-3 w-3 text-[#34d399]" />
-                  {item}
-                </span>
-              ))}
+        {/* Active Pillar Deep Dive */}
+        <div className="bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-10 shadow-xs">
+          <div className="grid lg:grid-cols-12 gap-8 items-start mb-8 pb-8 border-b border-slate-100 dark:border-slate-800">
+            <div className="lg:col-span-8 space-y-2">
+              <span className="px-2.5 py-1 rounded text-xs font-mono font-semibold bg-blue-50 text-brand-blue dark:bg-blue-950/60 dark:text-blue-300">
+                Pillar {activePillar.toUpperCase()}
+              </span>
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                {currentPillar.title}
+              </h3>
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
+                {currentPillar.description}
+              </p>
             </div>
-          </AnimatedSection>
+            <div className="lg:col-span-4 flex items-center justify-end">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-colors"
+              >
+                Launch Module in Console
+                <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {currentPillar.features.map((feat) => (
+              <div
+                key={feat.title}
+                className="p-5 rounded-xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/80 space-y-3 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+              >
+                <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-brand-blue shrink-0" />
+                  {feat.title}
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {feat.description}
+                </p>
+                <div className="pt-2 flex flex-wrap gap-1.5">
+                  {feat.specs.map((spec) => (
+                    <span
+                      key={spec}
+                      className="px-2 py-0.5 rounded text-[11px] font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                    >
+                      {spec}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* ── CTA ────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden py-28">
-        <div className="absolute inset-0 bg-[#030712]" />
-        <FloatingOrb color="#0162b1" size={700} top="-30%" left="-15%" delay={0} />
-        <FloatingOrb color="#7c3aed" size={600} top="20%" left="60%" delay={2} />
-        <FloatingOrb color="#059669" size={400} top="70%" left="30%" delay={4} />
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
-
-        <div className="relative z-10 max-w-3xl mx-auto px-6 text-center">
-          <AnimatedSection>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white/60 text-[11px] font-bold uppercase tracking-widest mb-8">
-              <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-              Ready to Transform Education
-              <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
+      {/* ── Interactive Academic Hierarchy Explorer ────────────────── */}
+      <section id="hierarchy" className="py-20 bg-slate-100/70 dark:bg-slate-950/40 border-y border-slate-200/80 dark:border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl space-y-4 mb-10">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              <Building2 className="h-3.5 w-3.5" />
+              Hierarchical Institutional Modeling
             </div>
-            <h2 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.05] mb-6">
-              Your Institution.<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#60a5fa] via-[#a78bfa] to-[#34d399]">Fully Empowered.</span>
+            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+              A Relational Architecture That Matches Real Educational Operations
             </h2>
-            <p className="text-white/35 text-base sm:text-lg leading-relaxed mb-10 max-w-xl mx-auto">
-              Access the complete Educare LMS platform — examinations, analytics, admissions, and everything in between — designed to run at institutional scale.
+            <p className="text-slate-600 dark:text-slate-400 text-base leading-relaxed">
+              Select any tier below to inspect its schema representation and relational cascade guarantee:
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <MagneticButton href="/login" primary>
-                Launch Platform <ArrowRight className="h-5 w-5" />
-              </MagneticButton>
-              <MagneticButton href="#modules">
-                View Features <ChevronDown className="h-5 w-5 text-white/40" />
-              </MagneticButton>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {HIERARCHY_STEPS.map((node, index) => {
+              const isSelected = selectedHierarchyStep === index;
+              return (
+                <button
+                  key={node.step}
+                  type="button"
+                  onClick={() => setSelectedHierarchyStep(index)}
+                  className={`p-5 rounded-xl border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? "bg-white dark:bg-slate-900 border-brand-blue ring-2 ring-brand-blue/20 shadow-md"
+                      : "bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`font-mono text-xs font-bold ${isSelected ? "text-brand-blue" : "text-slate-400"}`}>
+                      {node.step}
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                      {node.badge}
+                    </span>
+                  </div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white">{node.tier}</h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                    {node.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Dynamic Hierarchy Step Deep-Dive Inspector */}
+          <div className="p-5 bg-slate-900 text-slate-200 rounded-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1 font-mono text-xs">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                <Database className="h-4 w-4" />
+                <span>Tier {HIERARCHY_STEPS[selectedHierarchyStep].step} Schema Definition:</span>
+                <span className="text-slate-400">{HIERARCHY_STEPS[selectedHierarchyStep].tier}</span>
+              </div>
+              <p className="text-slate-300 text-[11px] pt-0.5">
+                {HIERARCHY_STEPS[selectedHierarchyStep].dbModel}
+              </p>
+              <p className="text-slate-400 text-[10px]">
+                Rule: {HIERARCHY_STEPS[selectedHierarchyStep].cascadeRule}
+              </p>
             </div>
-          </AnimatedSection>
+            <Link
+              href="/setup"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium border border-slate-700 shrink-0 transition-colors"
+            >
+              Configure Institutional Setup →
+            </Link>
+          </div>
         </div>
       </section>
 
-      {/* ── Footer ─────────────────────────────────────────────────── */}
-      <footer className="border-t border-white/5 bg-[#030712] py-8">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#0162b1] to-[#7c3aed] flex items-center justify-center">
-              <GraduationCap className="h-3 w-3 text-white" />
+      {/* ── Technical Infrastructure & Security ─────────────────────── */}
+      <section id="architecture" className="py-20 sm:py-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-3xl space-y-4 mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-brand-blue dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+            <Lock className="h-3.5 w-3.5" />
+            Verified Enterprise Infrastructure
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+            Production-Grade Reliability & Security Controls
+          </h2>
+          <p className="text-slate-600 dark:text-slate-400 text-base leading-relaxed">
+            Engineered using standard modern technologies with strict session invalidation, parameterized query execution, presigned storage architecture, and zero mock dependencies.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          {[
+            {
+              icon: Server,
+              title: "Next.js 16 & NestJS Architecture",
+              specs: "TypeScript 5 • Turborepo",
+              description:
+                "Clean monorepo separation between the modern React 19 Next.js frontend and the robust, guard-protected NestJS backend API.",
+            },
+            {
+              icon: Database,
+              title: "PostgreSQL & Prisma Relational Core",
+              specs: "PostgreSQL 14/16 • ACID",
+              description:
+                "Strict relational tables with complete migration history. Parameterized queries eliminate SQL injection vulnerabilities by design.",
+            },
+            {
+              icon: Lock,
+              title: "Redis Session Enforcement & RBAC",
+              specs: "Single-session • Token Revocation",
+              description:
+                "JWT authentication backed by Redis token blacklisting. Password changes or session logouts invalidate active tokens across all devices.",
+            },
+            {
+              icon: ShieldCheck,
+              title: "Presigned Cloudflare R2 / S3 Storage",
+              specs: "Direct Upload • Ownership Scoped",
+              description:
+                "Exam media and study materials upload directly via presigned URLs with strict ownership path validation, preventing server bandwidth choke points.",
+            },
+            {
+              icon: Video,
+              title: "LiveKit & WebRTC Video Classrooms",
+              specs: "Low Latency • Encrypted Tokens",
+              description:
+                "Scalable real-time audio, video, and screen sharing with token-governed room access restricted to authorized batch enrollments.",
+            },
+            {
+              icon: Bell,
+              title: "Real-Time In-App Synchronization",
+              specs: "Notification Drawer • 15s Polling",
+              description:
+                "Contextual alert feeds deep-linking directly into active doubt threads, pending homework grading, and administrative approvals.",
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.title}
+                className="p-5 bg-white dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-brand-blue">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">{item.title}</h4>
+                <p className="text-[11px] font-mono text-slate-400">{item.specs}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {item.description}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Security Checklist Callout */}
+        <div className="p-6 bg-slate-900 text-white rounded-2xl border border-slate-800">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <p className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
+                Institutional Compliance & Audit Rigor
+              </p>
+              <h3 className="text-lg font-bold text-white mt-0.5">
+                Engineered to Protect Student Privacy and Financial Records
+              </h3>
             </div>
-            <span className="text-[13px] font-black text-white">
-              <span className="text-[#60a5fa]">edu</span>care LMS
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 shrink-0">
+              Security Audit Verified
             </span>
           </div>
-          <p className="text-[11px] text-white/20 font-medium">Built with Next.js · NestJS · PostgreSQL · Redis</p>
-          <p className="text-[11px] text-white/20">© {new Date().getFullYear()} Educare Technologies</p>
+
+          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+            {[
+              "Single-session JWT with Redis revocation",
+              "Owner-scoped S3 asset validation",
+              "Zero student-to-student private chat",
+              "Fee collection receipt audit trails",
+              "Role-based guards on all 47 API endpoints",
+              "Anti-cheat randomized exam question sets",
+              "Daily attendance record immutability",
+              "Multi-tenant campus boundary isolation",
+            ].map((check) => (
+              <div key={check} className="flex items-start gap-2 text-slate-300">
+                <Check className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span>{check}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Institutional Call to Action ───────────────────────────── */}
+      <section className="py-20 bg-slate-100 dark:bg-slate-900/40 border-t border-slate-200/80 dark:border-slate-800/80">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-brand-blue dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+            <GraduationCap className="h-4 w-4" />
+            Ready for Institutional Deployment
+          </div>
+
+          <h2 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+            Streamline Your Institution on Educare LMS.
+          </h2>
+
+          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto">
+            Log into your institutional console to manage active student batches, schedule live assessments, and track fee collection in real time.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 px-7 py-3.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-bold text-sm shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2"
+            >
+              Sign In to Management Console
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/admission"
+              className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-sm border border-slate-300 dark:border-slate-700 transition-colors"
+            >
+              Student Admission Intake
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Professional Footer ────────────────────────────────────── */}
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B12] py-12 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+            <div>
+              <p className="font-bold text-slate-900 dark:text-slate-200 mb-3 uppercase tracking-wider text-[11px]">
+                Academic Core
+              </p>
+              <ul className="space-y-2">
+                <li><Link href="/students" className="hover:text-brand-blue transition-colors">Student Management</Link></li>
+                <li><Link href="/attendance" className="hover:text-brand-blue transition-colors">Daily Attendance</Link></li>
+                <li><Link href="/assignments" className="hover:text-brand-blue transition-colors">Assignments & Grading</Link></li>
+                <li><Link href="/doubts" className="hover:text-brand-blue transition-colors">Doubt Mentorship</Link></li>
+                <li><Link href="/live-class" className="hover:text-brand-blue transition-colors">Live Classrooms</Link></li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 dark:text-slate-200 mb-3 uppercase tracking-wider text-[11px]">
+                Evaluation & e-Study
+              </p>
+              <ul className="space-y-2">
+                <li><Link href="/exam" className="hover:text-brand-blue transition-colors">Examination Engine</Link></li>
+                <li><Link href="/estudy" className="hover:text-brand-blue transition-colors">Digital Material Library</Link></li>
+                <li><Link href="/syllabus" className="hover:text-brand-blue transition-colors">Syllabus Pacing</Link></li>
+                <li><Link href="/certificate" className="hover:text-brand-blue transition-colors">Certificates & ID Cards</Link></li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 dark:text-slate-200 mb-3 uppercase tracking-wider text-[11px]">
+                Operations & CRM
+              </p>
+              <ul className="space-y-2">
+                <li><Link href="/staff" className="hover:text-brand-blue transition-colors">Faculty & Staff Scoping</Link></li>
+                <li><Link href="/enquiry" className="hover:text-brand-blue transition-colors">Inquiries & Leads</Link></li>
+                <li><Link href="/forms" className="hover:text-brand-blue transition-colors">Dynamic Form Builder</Link></li>
+                <li><Link href="/fee" className="hover:text-brand-blue transition-colors">Fee Structures & Dues</Link></li>
+                <li><Link href="/expense" className="hover:text-brand-blue transition-colors">Financial Ledgers</Link></li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 dark:text-slate-200 mb-3 uppercase tracking-wider text-[11px]">
+                Governance & System
+              </p>
+              <ul className="space-y-2">
+                <li><Link href="/setup" className="hover:text-brand-blue transition-colors">Campus Hierarchy Setup</Link></li>
+                <li><Link href="/report" className="hover:text-brand-blue transition-colors">Executive Analytics</Link></li>
+                <li><Link href="/settings" className="hover:text-brand-blue transition-colors">System Configuration</Link></li>
+                <li><Link href="/help" className="hover:text-brand-blue transition-colors">Support Help Desk</Link></li>
+                <li><Link href="/login" className="hover:text-brand-blue transition-colors">Console Authentication</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="pt-8 border-t border-slate-200 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded bg-brand-blue flex items-center justify-center text-white">
+                <GraduationCap className="h-3.5 w-3.5" />
+              </div>
+              <span className="font-bold text-slate-900 dark:text-white">
+                Educare Technologies LMS
+              </span>
+              <span className="text-slate-400">| Enterprise Academic Operating System</span>
+            </div>
+            <p className="text-slate-400">
+              © {new Date().getFullYear()} Educare Technologies. All institutional rights reserved.
+            </p>
+          </div>
         </div>
       </footer>
-
-      {/* ── Global Keyframes ────────────────────────────────────────── */}
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        @keyframes orbFloat {
-          0% { transform: translateY(0px) scale(1); }
-          100% { transform: translateY(-30px) scale(1.05); }
-        }
-        @keyframes fadeSlideDown {
-          from { opacity: 0; transform: translateY(-20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes scrollDot {
-          0%, 100% { transform: translateY(0); opacity: 1; }
-          50% { transform: translateY(10px); opacity: 0.2; }
-        }
-      `}</style>
     </div>
   );
 }

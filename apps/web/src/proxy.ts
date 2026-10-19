@@ -5,9 +5,13 @@ export default function proxy(request: NextRequest) {
   const token = request.cookies.get('AccessToken');
   
   // Public routes that don't require authentication
-  const isPublicRoute = 
+  const isAuthOnlyRoute = 
     request.nextUrl.pathname === '/login' || 
-    request.nextUrl.pathname === '/signup' ||
+    request.nextUrl.pathname === '/signup';
+
+  const isPublicRoute = 
+    isAuthOnlyRoute ||
+    request.nextUrl.pathname === '/features' || 
     request.nextUrl.pathname.startsWith('/admission') ||
     request.nextUrl.pathname.startsWith('/f/') ||
     request.nextUrl.pathname.startsWith('/public');
@@ -17,7 +21,7 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (token && isPublicRoute) {
+  if (token && isAuthOnlyRoute) {
     // Redirect authenticated users trying to access login/signup to the dashboard
     return NextResponse.redirect(new URL('/', request.url));
   }
