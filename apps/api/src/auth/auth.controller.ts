@@ -25,12 +25,14 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { access_token, user } = await this.authService.login(loginDto);
     
-    res.cookie('AccessToken', access_token, {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieName = isProduction ? '__Host-AccessToken' : 'AccessToken';
+    res.cookie(cookieName, access_token, {
       httpOnly: true,
-      secure: true, // MUST be true for SameSite=None
+      secure: true, // MUST be true for SameSite=None and __Host- cookies
       sameSite: 'none',
       path: '/',
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days matching JWT expiration
     });
 
     return { message: 'Login successful', user, access_token };
@@ -46,13 +48,23 @@ export class AuthController {
       sessionRevoked = await this.redisService.revokeSession(req.user.id, req.user.jti);
     }
     
-    res.cookie('AccessToken', '', {
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('__Host-AccessToken', '', {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
       path: '/',
       expires: new Date(0),
     });
+    if (!isProduction) {
+      res.cookie('AccessToken', '', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        path: '/',
+        expires: new Date(0),
+      });
+    }
     return {
       message: sessionRevoked
         ? 'Logout successful'
@@ -71,13 +83,23 @@ export class AuthController {
       sessionRevoked = await this.redisService.revokeAllSessions(req.user.id);
     }
     
-    res.cookie('AccessToken', '', {
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('__Host-AccessToken', '', {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
       path: '/',
       expires: new Date(0),
     });
+    if (!isProduction) {
+      res.cookie('AccessToken', '', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        path: '/',
+        expires: new Date(0),
+      });
+    }
     return {
       message: sessionRevoked
         ? 'Logged out of all devices successfully'
