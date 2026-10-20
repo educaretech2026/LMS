@@ -22,23 +22,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    if (payload.role !== 'PUBLIC_LEARNER') {
-      const isValid = await this.redisService.isSessionValid(payload.sub, payload.jti);
-      if (!isValid) {
-        throw new UnauthorizedException('Session has been revoked or expired');
-      }
-      
-      // Track user as online
-      await this.redisService.trackOnlineUser(payload.sub);
+    const isValid = await this.redisService.isSessionValid(payload.sub, payload.jti);
+    if (!isValid) {
+      throw new UnauthorizedException('Session has been revoked or expired');
     }
+    
+    // Track user as online
+    await this.redisService.trackOnlineUser(payload.sub);
 
     if (payload.role === 'PUBLIC_LEARNER') {
       const publicUser = await this.prisma.publicUser.findUnique({
         where: { id: payload.sub }
       });
       if (!publicUser) throw new UnauthorizedException('User not found');
-      // Mock the role so RolesGuard works properly
-      return { ...publicUser, role: { name: 'PUBLIC_LEARNER' }, status: 'ACTIVE' };
+      // Mock the role so RolesGuard works properly and attach jti for session revocation
+      return { ...publicUser, role: { name: 'PUBLIC_LEARNER' }, status: 'ACTIVE', jti: payload.jti };
     }
 
     const user = await this.prisma.user.findUnique({

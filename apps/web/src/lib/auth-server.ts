@@ -1,13 +1,20 @@
 import { cookies } from "next/headers";
 
-export async function getUserFromToken() {
+export async function getAuthTokenFromCookies() {
   const cookieStore = await cookies();
-  const token = cookieStore.get("AccessToken")?.value;
+  return (
+    cookieStore.get("__Host-AccessToken")?.value ||
+    cookieStore.get("AccessToken")?.value ||
+    null
+  );
+}
+
+export async function getUserFromToken() {
+  const token = await getAuthTokenFromCookies();
   
   if (!token) return null;
   
   try {
-    // JWT format is Header.Payload.Signature
     const payloadBase64Url = token.split('.')[1];
     if (!payloadBase64Url) return null;
     
@@ -19,6 +26,7 @@ export async function getUserFromToken() {
       id: payload.sub,
       email: payload.email,
       role: payload.role,
+      centreName: payload.centreName || null,
     };
   } catch (e) {
     console.error("Failed to parse JWT token on server", e);

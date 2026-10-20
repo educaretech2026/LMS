@@ -19,11 +19,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response: any = await fetchApi("/auth/login", {
+      await fetchApi("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      document.cookie = `AccessToken=${response.access_token}; path=/; max-age=86400; samesite=lax`;
+      // Session cookie is securely set via HttpOnly cookie by BFF
       // Force a cache-busting hard reload to the dashboard
       window.location.href = "/?t=" + Date.now();
     } catch (err: any) {

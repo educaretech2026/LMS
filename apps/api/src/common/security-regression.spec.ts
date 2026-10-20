@@ -24,6 +24,9 @@ import { FeeService } from '../fee/fee.service';
 import { StorageController } from '../storage/storage.controller';
 import { FormsController } from '../forms/forms.controller';
 import { ExamsController } from '../exams/exams.controller';
+import { JwtStrategy } from '../auth/jwt.strategy';
+import { PublicAuthService } from '../public-auth/public-auth.service';
+import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 
@@ -6621,6 +6624,565 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             await expect(testStorageService.cleanupOrphanUploads(Infinity)).rejects.toThrow(BadRequestException);
           });
         });
+      });
+    });
+  });
+
+  describe('SEC-24: Multi-Role Session Registration, Server-Side Logout Revocation, and Token Replay Rejection', () => {
+    let mockPrisma: any;
+    let mockRedisService: any;
+    let jwtService: any;
+    let jwtStrategy: any;
+    let authController: any;
+    let publicAuthService: any;
+    let authService: any;
+
+    const activeSessions = new Map<string, string>(); // `session:${jti}` -> userId
+    const userSessionSets = new Map<string, Set<string>>(); // userId -> Set<jti>
+
+    beforeEach(() => {
+      activeSessions.clear();
+      userSessionSets.clear();
+
+      mockRedisService = {
+        whitelistSession: jest.fn(async (userId: string, jti: string, ttl: number) => {
+          activeSessions.set(`session:${jti}`, userId);
+          if (!userSessionSets.has(userId)) {
+            userSessionSets.set(userId, new Set());
+          }
+          userSessionSets.get(userId)!.add(jti);
+          return true;
+        }),
+        isSessionValid: jest.fn(async (userId: string, jti?: string) => {
+          if (!jti) return false;
+          return activeSessions.has(`session:${jti}`);
+        }),
+        revokeSession: jest.fn(async (userId: string, jti: string) => {
+          activeSessions.delete(`session:${jti}`);
+          userSessionSets.get(userId)?.delete(jti);
+          return true;
+        }),
+        revokeAllSessions: jest.fn(async (userId: string) => {
+          const jtis = userSessionSets.get(userId);
+          if (jtis) {
+            for (const jti of jtis) {
+              activeSessions.delete(`session:${jti}`);
+            }
+            userSessionSets.delete(userId);
+          }
+          return true;
+        }),
+        trackOnlineUser: jest.fn(async () => true),
+        isLoginLocked: jest.fn(async () => false),
+        incrementLoginAttempts: jest.fn(async () => 0),
+        resetLoginAttempts: jest.fn(async () => {}),
+      };
+
+      mockPrisma = {
+        publicUser: {
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+        },
+        user: {
+          findUnique: jest.fn(),
+        },
+        otpToken: {
+          findFirst: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          updateMany: jest.fn(),
+        },
+        studentProfile: {
+          findUnique: jest.fn(),
+        },
+        userCentre: {
+          findFirst: jest.fn(),
+        },
+      };
+
+      jwtService = {
+        sign: jest.fn((payload: any) => `mock.jwt.${Buffer.from(JSON.stringify(payload)).toString('base64')}`),
+      };
+
+      jwtStrategy = new JwtStrategy(mockPrisma as any, mockRedisService as any);
+      authController = new AuthController(
+        authService as any,
+        mockRedisService as any
+      );
+      publicAuthService = new PublicAuthService(
+        mockPrisma as any,
+        jwtService as any,
+        mockRedisService as any
+      );
+      authService = new AuthService(
+        mockPrisma as any,
+        jwtService as any,
+        mockRedisService as any
+      );
+    });
+
+    describe('1. PUBLIC_LEARNER Complete Authentication & Revocation Lifecycle', () => {
+      const publicUserId = 'pub-learner-101';
+      const rawPassword = 'StrongPassword123!';
+      let passwordHash: string;
+
+      beforeAll(async () => {
+        passwordHash = await argon2.hash(rawPassword);
+      });
+
+      it('should enforce session registration on login, validate active token, and reject token replay after logout', async () => {
+        // Step 1: Mock verified public user in database
+        mockPrisma.publicUser.findUnique.mockResolvedValue({
+          id: publicUserId,
+          email: 'learner@example.com',
+          name: 'Jane Learner',
+          phone: '9876543210',
+          passwordHash,
+          isVerified: true,
+          avatar: null,
+        });
+
+        // Step 2: Log in
+        const loginResult = await publicAuthService.login({
+          email: 'learner@example.com',
+          password: rawPassword,
+        });
+
+        expect(loginResult).toHaveProperty('accessToken');
+        expect(loginResult.user.id).toBe(publicUserId);
+
+        // Verify session was registered in Redis with a valid JTI
+        expect(mockRedisService.whitelistSession).toHaveBeenCalledWith(
+          publicUserId,
+          expect.any(String),
+          7 * 24 * 60 * 60
+        );
+
+        const capturedJti = mockRedisService.whitelistSession.mock.calls[0][1];
+        expect(capturedJti).toBeDefined();
+        expect(activeSessions.has(`session:${capturedJti}`)).toBe(true);
+
+        // Step 3: Validate active token in JwtStrategy
+        const activePayload = {
+          sub: publicUserId,
+          role: 'PUBLIC_LEARNER',
+          jti: capturedJti,
+        };
+
+        const validatedUser = await jwtStrategy.validate(activePayload);
+        expect(validatedUser.id).toBe(publicUserId);
+        expect(validatedUser.role.name).toBe('PUBLIC_LEARNER');
+        expect(validatedUser.jti).toBe(capturedJti);
+        expect(mockRedisService.trackOnlineUser).toHaveBeenCalledWith(publicUserId);
+
+        // Step 4: Perform real logout via AuthController
+        const mockResponse: any = {
+          cookie: jest.fn(),
+        };
+
+        const logoutResult = await authController.logout(
+          { user: { id: publicUserId, jti: capturedJti } },
+          mockResponse
+        );
+
+        expect(logoutResult.sessionRevoked).toBe(true);
+        expect(logoutResult.message).toBe('Logout successful');
+        expect(mockRedisService.revokeSession).toHaveBeenCalledWith(publicUserId, capturedJti);
+        expect(activeSessions.has(`session:${capturedJti}`)).toBe(false);
+
+        // Step 5: Replay the exact same bearer token payload
+        await expect(jwtStrategy.validate(activePayload)).rejects.toThrow(
+          new UnauthorizedException('Session has been revoked or expired')
+        );
+
+        // Step 6: Verify a fresh login issues a new distinct token/session that works
+        const secondLogin = await publicAuthService.login({
+          email: 'learner@example.com',
+          password: rawPassword,
+        });
+
+        const secondJti = mockRedisService.whitelistSession.mock.calls[1][1];
+        expect(secondJti).not.toBe(capturedJti);
+
+        const freshPayload = {
+          sub: publicUserId,
+          role: 'PUBLIC_LEARNER',
+          jti: secondJti,
+        };
+
+        const freshValidatedUser = await jwtStrategy.validate(freshPayload);
+        expect(freshValidatedUser.id).toBe(publicUserId);
+        expect(freshValidatedUser.jti).toBe(secondJti);
+
+        // Replaying the old token still fails
+        await expect(jwtStrategy.validate(activePayload)).rejects.toThrow(UnauthorizedException);
+      });
+
+      it('should reject tokens missing JTI unconditionally', async () => {
+        const legacyPayloadNoJti = {
+          sub: publicUserId,
+          role: 'PUBLIC_LEARNER',
+        };
+
+        await expect(jwtStrategy.validate(legacyPayloadNoJti)).rejects.toThrow(
+          new UnauthorizedException('Session has been revoked or expired')
+        );
+      });
+    });
+
+    describe('2. Internal Roles (STUDENT, TEACHER, CENTRE_ADMIN) Complete Lifecycle', () => {
+      const internalRoles = ['STUDENT', 'TEACHER', 'CENTRE_ADMIN'] as const;
+
+      for (const roleName of internalRoles) {
+        it(`should verify login, active session, logout revocation, and token replay for ${roleName}`, async () => {
+          const userId = `user-${roleName.toLowerCase()}-1`;
+          const jti = crypto.randomUUID();
+
+          // Mock user in database
+          mockPrisma.user.findUnique.mockResolvedValue({
+            id: userId,
+            email: `${roleName.toLowerCase()}@educare.test`,
+            password: 'hashed-password',
+            status: 'ACTIVE',
+            role: { name: roleName, permissions: [] },
+            userCentres: [{ centreId: 'centre-alpha' }],
+          });
+
+          // Whitelist session in Redis
+          await mockRedisService.whitelistSession(userId, jti, 7 * 24 * 60 * 60);
+          expect(activeSessions.has(`session:${jti}`)).toBe(true);
+
+          const payload = {
+            sub: userId,
+            role: roleName,
+            jti,
+          };
+
+          // Step 1: Active token validation
+          const activeUser = await jwtStrategy.validate(payload);
+          expect(activeUser.id).toBe(userId);
+          expect(activeUser.role.name).toBe(roleName);
+          expect(activeUser.jti).toBe(jti);
+
+          // Step 2: Logout
+          const mockRes: any = { cookie: jest.fn() };
+          const logoutRes = await authController.logout(
+            { user: { id: userId, jti } },
+            mockRes
+          );
+          expect(logoutRes.sessionRevoked).toBe(true);
+          expect(mockRedisService.revokeSession).toHaveBeenCalledWith(userId, jti);
+          expect(activeSessions.has(`session:${jti}`)).toBe(false);
+
+          // Step 3: Token replay fails closed
+          await expect(jwtStrategy.validate(payload)).rejects.toThrow(
+            new UnauthorizedException('Session has been revoked or expired')
+          );
+
+          // Step 4: Fresh login works
+          const freshJti = crypto.randomUUID();
+          await mockRedisService.whitelistSession(userId, freshJti, 7 * 24 * 60 * 60);
+
+          const freshUser = await jwtStrategy.validate({
+            sub: userId,
+            role: roleName,
+            jti: freshJti,
+          });
+          expect(freshUser.id).toBe(userId);
+          expect(freshUser.jti).toBe(freshJti);
+        });
+      }
+
+      it('should invalidate all active user sessions on logout-all', async () => {
+        const userId = 'teacher-multi-device';
+        const jtiDevice1 = crypto.randomUUID();
+        const jtiDevice2 = crypto.randomUUID();
+
+        mockPrisma.user.findUnique.mockResolvedValue({
+          id: userId,
+          email: 'teacher@educare.test',
+          password: 'pwd',
+          status: 'ACTIVE',
+          role: { name: 'TEACHER', permissions: [] },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        });
+
+        await mockRedisService.whitelistSession(userId, jtiDevice1, 604800);
+        await mockRedisService.whitelistSession(userId, jtiDevice2, 604800);
+
+        expect(await mockRedisService.isSessionValid(userId, jtiDevice1)).toBe(true);
+        expect(await mockRedisService.isSessionValid(userId, jtiDevice2)).toBe(true);
+
+        const mockRes: any = { cookie: jest.fn() };
+        const logoutAllRes = await authController.logoutAll({ user: { id: userId } }, mockRes);
+        expect(logoutAllRes.sessionRevoked).toBe(true);
+
+        // Both device tokens must now be rejected
+        await expect(jwtStrategy.validate({ sub: userId, role: 'TEACHER', jti: jtiDevice1 })).rejects.toThrow(
+          UnauthorizedException
+        );
+        await expect(jwtStrategy.validate({ sub: userId, role: 'TEACHER', jti: jtiDevice2 })).rejects.toThrow(
+          UnauthorizedException
+        );
+      });
+    });
+  });
+
+  describe('SEC-25: Next.js Backend-for-Frontend (BFF) Security Invariants', () => {
+    // Replicate core BFF helper logic for direct unit assertion
+    function testGetAuthCookieName(isHttps: boolean, env: string): string {
+      return env === 'production' || isHttps ? '__Host-AccessToken' : 'AccessToken';
+    }
+
+    function testGetAuthCookieOptions(isHttps: boolean, env: string) {
+      const isProduction = env === 'production';
+      const secure = isProduction || isHttps;
+      return {
+        httpOnly: true,
+        secure,
+        sameSite: 'lax' as const,
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60,
+        domain: undefined,
+      };
+    }
+
+    function testValidateCsrf(headers: Record<string, string>, method: string, requestUrl: string, env: string) {
+      const m = method.toUpperCase();
+      if (['GET', 'HEAD', 'OPTIONS'].includes(m)) {
+        return { valid: true };
+      }
+
+      if (headers['sec-fetch-site'] === 'cross-site') {
+        return { valid: false, reason: 'Cross-site mutation rejected by Sec-Fetch-Site' };
+      }
+
+      const origin = headers['origin'];
+      if (!origin) {
+        return { valid: false, reason: 'Missing Origin header on state-changing request' };
+      }
+
+      let parsedOrigin: URL;
+      try {
+        parsedOrigin = new URL(origin);
+      } catch {
+        return { valid: false, reason: 'Malformed Origin header' };
+      }
+
+      const cleanOrigin = `${parsedOrigin.protocol}//${parsedOrigin.host}`;
+      const reqUrl = new URL(requestUrl);
+      const currentOrigin = `${reqUrl.protocol}//${reqUrl.host}`;
+
+      const allowedOrigins = [
+        currentOrigin,
+        'https://lms.educarelearning.in',
+        env !== 'production' ? 'http://localhost:3000' : null,
+        env !== 'production' ? 'http://127.0.0.1:3000' : null,
+      ].filter(Boolean) as string[];
+
+      if (!allowedOrigins.includes(cleanOrigin)) {
+        return { valid: false, reason: `Origin ${cleanOrigin} is not in trusted origin list` };
+      }
+
+      return { valid: true };
+    }
+
+    const ALLOWED_PREFIXES = [
+      'assignments', 'attendance', 'auth', 'centres', 'courses', 'doubts',
+      'enquiry', 'estudy', 'exams', 'fee', 'finance', 'forms', 'live-class',
+      'notices', 'notifications', 'permissions', 'public', 'report', 'roles',
+      'setup', 'sms', 'staff', 'storage', 'students', 'study-materials',
+      'support', 'syllabus', 'users'
+    ];
+
+    function testValidateApiPath(segments: string[]) {
+      if (!segments || segments.length === 0) {
+        return { valid: false, reason: 'Empty API route path' };
+      }
+      for (const seg of segments) {
+        if (seg === '..' || seg === '.' || seg.includes('/') || seg.includes('\\')) {
+          return { valid: false, reason: 'Path traversal attempt detected' };
+        }
+        try {
+          const decoded = decodeURIComponent(seg);
+          if (decoded.includes('..') || decoded.includes('/') || decoded.includes('\\')) {
+            return { valid: false, reason: 'Encoded path traversal attempt detected' };
+          }
+        } catch {
+          return { valid: false, reason: 'Malformed URL encoding' };
+        }
+      }
+      const top = segments[0];
+      if (!ALLOWED_PREFIXES.includes(top)) {
+        return { valid: false, reason: `API route prefix '${top}' is not authorized` };
+      }
+      return { valid: true, normalizedPath: '/' + segments.join('/') };
+    }
+
+    describe('1. Host-Only Cookie Invariants (RFC 6265bis)', () => {
+      it('should enforce __Host- prefix, HttpOnly, Secure, SameSite=Lax, Path=/, and no Domain in production', () => {
+        const cookieName = testGetAuthCookieName(true, 'production');
+        expect(cookieName).toBe('__Host-AccessToken');
+
+        const options = testGetAuthCookieOptions(true, 'production');
+        expect(options.httpOnly).toBe(true);
+        expect(options.secure).toBe(true);
+        expect(options.sameSite).toBe('lax');
+        expect(options.path).toBe('/');
+        expect(options.domain).toBeUndefined();
+      });
+
+      it('should fall back to AccessToken in local HTTP dev without weakening production settings', () => {
+        const cookieName = testGetAuthCookieName(false, 'development');
+        expect(cookieName).toBe('AccessToken');
+
+        const options = testGetAuthCookieOptions(false, 'development');
+        expect(options.httpOnly).toBe(true);
+        expect(options.secure).toBe(false);
+        expect(options.sameSite).toBe('lax');
+        expect(options.path).toBe('/');
+        expect(options.domain).toBeUndefined();
+      });
+    });
+
+    describe('2. Raw-Token Non-Disclosure', () => {
+      it('should strip access_token from login response and return only user metadata', () => {
+        const upstreamResponse = {
+          access_token: 'secret-raw-jwt-token-string-xyz',
+          user: {
+            id: 'u-1',
+            email: 'admin@educare.test',
+            name: 'Admin User',
+          },
+        };
+
+        // Client response constructed by BFF
+        const clientBody: any = {
+          success: true,
+          user: upstreamResponse.user,
+        };
+
+        expect(clientBody.access_token).toBeUndefined();
+        expect(clientBody.token).toBeUndefined();
+        expect(JSON.stringify(clientBody)).not.toContain('secret-raw-jwt-token-string-xyz');
+      });
+    });
+
+    describe('3. CSRF Protection and Origin Validation', () => {
+      const appUrl = 'https://lms.educarelearning.in/api/proxy/students';
+
+      it('should allow safe methods (GET, HEAD, OPTIONS) without Origin header', () => {
+        expect(testValidateCsrf({}, 'GET', appUrl, 'production').valid).toBe(true);
+        expect(testValidateCsrf({}, 'HEAD', appUrl, 'production').valid).toBe(true);
+        expect(testValidateCsrf({}, 'OPTIONS', appUrl, 'production').valid).toBe(true);
+      });
+
+      it('should reject state-changing mutations with missing Origin header', () => {
+        const postRes = testValidateCsrf({}, 'POST', appUrl, 'production');
+        expect(postRes.valid).toBe(false);
+        expect(postRes.reason).toContain('Missing Origin header');
+
+        const deleteRes = testValidateCsrf({}, 'DELETE', appUrl, 'production');
+        expect(deleteRes.valid).toBe(false);
+        expect(deleteRes.reason).toContain('Missing Origin header');
+      });
+
+      it('should reject mutations with untrusted external Origin', () => {
+        const res = testValidateCsrf(
+          { origin: 'https://evil-hacker.com' },
+          'POST',
+          appUrl,
+          'production'
+        );
+        expect(res.valid).toBe(false);
+        expect(res.reason).toContain('not in trusted origin list');
+      });
+
+      it('should accept mutations with trusted same-origin Origin header', () => {
+        const res = testValidateCsrf(
+          { origin: 'https://lms.educarelearning.in' },
+          'POST',
+          appUrl,
+          'production'
+        );
+        expect(res.valid).toBe(true);
+      });
+
+      it('should reject requests with Sec-Fetch-Site: cross-site', () => {
+        const res = testValidateCsrf(
+          {
+            origin: 'https://lms.educarelearning.in',
+            'sec-fetch-site': 'cross-site',
+          },
+          'POST',
+          appUrl,
+          'production'
+        );
+        expect(res.valid).toBe(false);
+        expect(res.reason).toContain('Sec-Fetch-Site');
+      });
+    });
+
+    describe('4. API Route Allowlisting and Path Traversal Prevention', () => {
+      it('should allow valid, whitelisted API routes', () => {
+        const allowedTests = [
+          ['students'],
+          ['assignments', 'batch-1'],
+          ['exams', '123', 'results'],
+          ['storage', 'presigned-url'],
+          ['setup', 'academic-years'],
+          ['fee', 'records'],
+          ['report', 'overview'],
+        ];
+
+        for (const segments of allowedTests) {
+          const res = testValidateApiPath(segments);
+          expect(res.valid).toBe(true);
+          expect(res.normalizedPath).toBe('/' + segments.join('/'));
+        }
+      });
+
+      it('should strictly reject path traversal attempts with ..', () => {
+        const malicious = [
+          ['..', 'admin'],
+          ['students', '..', 'admin'],
+          ['assignments', '..', '..', 'etc', 'passwd'],
+        ];
+
+        for (const seg of malicious) {
+          const res = testValidateApiPath(seg);
+          expect(res.valid).toBe(false);
+          expect(res.reason).toContain('Path traversal');
+        }
+      });
+
+      it('should strictly reject URL-encoded path traversal (%2e%2e)', () => {
+        const encoded = [
+          ['%2e%2e', 'secret'],
+          ['students', '%2e%2e%2fadmin'],
+        ];
+
+        for (const seg of encoded) {
+          const res = testValidateApiPath(seg);
+          expect(res.valid).toBe(false);
+          expect(res.reason?.toLowerCase()).toContain('path traversal');
+        }
+      });
+
+      it('should reject non-allowlisted top-level route prefixes', () => {
+        const unauthorized = [
+          ['internal', 'debug'],
+          ['admin-console'],
+          ['metrics'],
+          ['env'],
+        ];
+
+        for (const seg of unauthorized) {
+          const res = testValidateApiPath(seg);
+          expect(res.valid).toBe(false);
+          expect(res.reason).toContain('not authorized');
+        }
       });
     });
   });

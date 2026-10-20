@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 
 export default async function SyllabusPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get("AccessToken")?.value;
+  const token =
+    cookieStore.get("__Host-AccessToken")?.value ||
+    cookieStore.get("AccessToken")?.value;
   let isStudent = false;
   if (token) {
     try {

@@ -3,7 +3,9 @@ import { API_BASE_URL } from "./api";
 
 export async function fetchApiServer<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const cookieStore = await cookies();
-  const token = cookieStore.get("AccessToken")?.value;
+  const token =
+    cookieStore.get("__Host-AccessToken")?.value ||
+    cookieStore.get("AccessToken")?.value;
   
   const url = `${API_BASE_URL}${endpoint}`;
   const response = await fetch(url, {
@@ -11,7 +13,6 @@ export async function fetchApiServer<T>(endpoint: string, options: RequestInit =
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { 
-        'Cookie': `AccessToken=${token}`,
         'Authorization': `Bearer ${token}` 
       } : {}),
       ...options.headers,

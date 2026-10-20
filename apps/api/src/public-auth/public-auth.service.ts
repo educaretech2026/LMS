@@ -1,13 +1,16 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { JwtService } from '@nestjs/jwt';
+import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class PublicAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly redisService: RedisService,
   ) {}
 
   async register(data: any): Promise<any> {
@@ -71,7 +74,18 @@ export class PublicAuthService {
       throw new UnauthorizedException('Account not verified. Please verify your OTP.');
     }
 
-    const payload = { sub: user.id, role: 'PUBLIC_LEARNER' };
+    const jti = crypto.randomUUID();
+    const payload = { sub: user.id, role: 'PUBLIC_LEARNER', jti };
+
+    // SEC-04: Mandatory session registration check in Redis
+    const sessionRegistered = await this.redisService.whitelistSession(user.id, jti, 7 * 24 * 60 * 60);
+    if (!sessionRegistered) {
+      throw new HttpException(
+        'Authentication session service unavailable. Please retry shortly.',
+        HttpStatus.SERVICE_UNAVAILABLE
+      );
+    }
+
     const token = this.jwtService.sign(payload);
 
     return {

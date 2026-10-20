@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export default function proxy(request: NextRequest) {
-  const token = request.cookies.get('AccessToken');
+  const token =
+    request.cookies.get('__Host-AccessToken')?.value ||
+    request.cookies.get('AccessToken')?.value;
   
   // Public routes that don't require authentication
   const isAuthOnlyRoute = 

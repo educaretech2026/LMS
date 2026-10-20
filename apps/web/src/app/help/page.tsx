@@ -6,7 +6,9 @@ import { cookies } from "next/headers";
 
 export default async function HelpPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get("AccessToken")?.value;
+  const token =
+    cookieStore.get("__Host-AccessToken")?.value ||
+    cookieStore.get("AccessToken")?.value;
   let role = "";
   if (token) {
     try {

@@ -22,8 +22,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-inter">
-        <SplashScreen />
-        <AuthProvider initialRole={user?.role} initialEmail={user?.email}>{children}</AuthProvider>
+        <AuthProvider
+          initialRole={user?.role}
+          initialEmail={user?.email}
+          initialCentreName={user?.centreName}
+          initialUserId={user?.id}
+        >
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
