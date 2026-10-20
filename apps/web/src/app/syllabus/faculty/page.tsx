@@ -1,13 +1,10 @@
 import { fetchApiServer } from "@/lib/api-server";
 import { FacultyClient } from "./faculty-client";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getAuthTokenFromCookies } from "@/lib/auth-server";
 
 export default async function FacultyPage() {
-  const cookieStore = await cookies();
-  const token =
-    cookieStore.get("__Host-AccessToken")?.value ||
-    cookieStore.get("AccessToken")?.value;
+  const token = await getAuthTokenFromCookies();
   
   if (!token) {
     redirect("/login");

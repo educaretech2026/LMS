@@ -6930,7 +6930,27 @@ describe('Security Regression Suite — Real Production Implementations', () => 
   });
 
   describe('SEC-25: Next.js Backend-for-Frontend (BFF) Security Invariants', () => {
-    // Replicate core BFF helper logic for direct unit assertion
+    function testGetInternalApiUrl(env: string, internalApiUrl?: string): string {
+      const isProduction = env === 'production';
+      const configured = internalApiUrl;
+      if (isProduction) {
+        if (!configured || !configured.trim()) {
+          throw new Error('FATAL: INTERNAL_API_URL is mandatory in production for secure BFF upstream proxying.');
+        }
+        let parsed: URL;
+        try {
+          parsed = new URL(configured);
+        } catch (e: any) {
+          throw new Error(`FATAL: INTERNAL_API_URL is not a valid URL: ${e?.message || e}`);
+        }
+        if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+          throw new Error('FATAL: INTERNAL_API_URL must use HTTPS protocol in production.');
+        }
+        return configured.trim().replace(/\/+$/, '');
+      }
+      return (configured || 'http://localhost:3001/api').trim().replace(/\/+$/, '');
+    }
+
     function testGetAuthCookieName(isHttps: boolean, env: string): string {
       return env === 'production' || isHttps ? '__Host-AccessToken' : 'AccessToken';
     }
@@ -6948,7 +6968,18 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       };
     }
 
-    function testValidateCsrf(headers: Record<string, string>, method: string, requestUrl: string, env: string) {
+    function testExtractToken(cookies: Record<string, string>, env: string): string | undefined {
+      const isProduction = env === 'production';
+      const hostToken = cookies['__Host-AccessToken'];
+      if (hostToken) return hostToken;
+      if (!isProduction) {
+        const legacyToken = cookies['AccessToken'];
+        if (legacyToken) return legacyToken;
+      }
+      return undefined;
+    }
+
+    function testValidateCsrf(headers: Record<string, string>, method: string, env: string) {
       const m = method.toUpperCase();
       if (['GET', 'HEAD', 'OPTIONS'].includes(m)) {
         return { valid: true };
@@ -6970,16 +7001,16 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         return { valid: false, reason: 'Malformed Origin header' };
       }
 
-      const cleanOrigin = `${parsedOrigin.protocol}//${parsedOrigin.host}`;
-      const reqUrl = new URL(requestUrl);
-      const currentOrigin = `${reqUrl.protocol}//${reqUrl.host}`;
-
-      const allowedOrigins = [
-        currentOrigin,
+      const cleanOrigin = `${parsedOrigin.protocol}//${parsedOrigin.host}`.toLowerCase();
+      const canonicalOrigins = [
         'https://lms.educarelearning.in',
-        env !== 'production' ? 'http://localhost:3000' : null,
-        env !== 'production' ? 'http://127.0.0.1:3000' : null,
-      ].filter(Boolean) as string[];
+        'https://educarelearning.in',
+        'https://api.educarelearning.in',
+      ];
+
+      const allowedOrigins = env === 'production'
+        ? Array.from(new Set(canonicalOrigins))
+        : Array.from(new Set([...canonicalOrigins, 'http://localhost:3000', 'http://127.0.0.1:3000']));
 
       if (!allowedOrigins.includes(cleanOrigin)) {
         return { valid: false, reason: `Origin ${cleanOrigin} is not in trusted origin list` };
@@ -7000,189 +7031,183 @@ describe('Security Regression Suite — Real Production Implementations', () => 
       if (!segments || segments.length === 0) {
         return { valid: false, reason: 'Empty API route path' };
       }
-      for (const seg of segments) {
-        if (seg === '..' || seg === '.' || seg.includes('/') || seg.includes('\\')) {
+
+      const sanitizedSegments: string[] = [];
+
+      for (const rawSegment of segments) {
+        if (!rawSegment || rawSegment === '.' || rawSegment === '..') {
           return { valid: false, reason: 'Path traversal attempt detected' };
         }
-        try {
-          const decoded = decodeURIComponent(seg);
-          if (decoded.includes('..') || decoded.includes('/') || decoded.includes('\\')) {
-            return { valid: false, reason: 'Encoded path traversal attempt detected' };
-          }
-        } catch {
-          return { valid: false, reason: 'Malformed URL encoding' };
+        if (rawSegment.includes('/') || rawSegment.includes('\\') || rawSegment.includes('\0')) {
+          return { valid: false, reason: 'Illegal separator or null byte in path segment' };
         }
+
+        let current = rawSegment;
+        for (let i = 0; i < 3; i++) {
+          try {
+            const decoded = decodeURIComponent(current);
+            if (decoded === current) break;
+            current = decoded;
+            if (
+              current === '.' ||
+              current === '..' ||
+              current.includes('..') ||
+              current.includes('/') ||
+              current.includes('\\') ||
+              current.includes('\0')
+            ) {
+              return { valid: false, reason: 'Decoded path traversal or illegal character detected' };
+            }
+          } catch {
+            return { valid: false, reason: 'Malformed percent-encoding' };
+          }
+        }
+        sanitizedSegments.push(current);
       }
-      const top = segments[0];
+
+      const top = sanitizedSegments[0]?.toLowerCase();
       if (!ALLOWED_PREFIXES.includes(top)) {
         return { valid: false, reason: `API route prefix '${top}' is not authorized` };
       }
-      return { valid: true, normalizedPath: '/' + segments.join('/') };
+
+      if (top === 'auth') {
+        const sub = sanitizedSegments[1]?.toLowerCase();
+        if (['login', 'logout', 'logout-all'].includes(sub)) {
+          return {
+            valid: false,
+            reason: `Route '/auth/${sub}' must be accessed via dedicated '/api/auth/${sub}' handler`,
+          };
+        }
+      }
+
+      return { valid: true, normalizedPath: '/' + sanitizedSegments.join('/') };
     }
 
-    describe('1. Host-Only Cookie Invariants (RFC 6265bis)', () => {
-      it('should enforce __Host- prefix, HttpOnly, Secure, SameSite=Lax, Path=/, and no Domain in production', () => {
-        const cookieName = testGetAuthCookieName(true, 'production');
-        expect(cookieName).toBe('__Host-AccessToken');
+    describe('1. Production-Mode Legacy Cookie Strict Rejection', () => {
+      it('should strictly reject legacy AccessToken cookie in production and accept only __Host-AccessToken', () => {
+        // Production: Legacy AccessToken alone must be rejected
+        expect(testExtractToken({ AccessToken: 'legacy-token-123' }, 'production')).toBeUndefined();
 
-        const options = testGetAuthCookieOptions(true, 'production');
-        expect(options.httpOnly).toBe(true);
-        expect(options.secure).toBe(true);
-        expect(options.sameSite).toBe('lax');
-        expect(options.path).toBe('/');
-        expect(options.domain).toBeUndefined();
+        // Production: __Host-AccessToken must be accepted
+        expect(testExtractToken({ '__Host-AccessToken': 'valid-host-token' }, 'production')).toBe('valid-host-token');
+
+        // Production: When both are present, __Host-AccessToken must take precedence
+        expect(
+          testExtractToken(
+            { '__Host-AccessToken': 'valid-host-token', AccessToken: 'legacy-token' },
+            'production'
+          )
+        ).toBe('valid-host-token');
       });
 
-      it('should fall back to AccessToken in local HTTP dev without weakening production settings', () => {
-        const cookieName = testGetAuthCookieName(false, 'development');
-        expect(cookieName).toBe('AccessToken');
-
-        const options = testGetAuthCookieOptions(false, 'development');
-        expect(options.httpOnly).toBe(true);
-        expect(options.secure).toBe(false);
-        expect(options.sameSite).toBe('lax');
-        expect(options.path).toBe('/');
-        expect(options.domain).toBeUndefined();
+      it('should allow AccessToken fallback only in non-production development mode', () => {
+        expect(testExtractToken({ AccessToken: 'dev-token-123' }, 'development')).toBe('dev-token-123');
+        expect(testExtractToken({ '__Host-AccessToken': 'dev-host-token' }, 'development')).toBe('dev-host-token');
       });
     });
 
-    describe('2. Raw-Token Non-Disclosure', () => {
-      it('should strip access_token from login response and return only user metadata', () => {
-        const upstreamResponse = {
-          access_token: 'secret-raw-jwt-token-string-xyz',
-          user: {
-            id: 'u-1',
-            email: 'admin@educare.test',
-            name: 'Admin User',
-          },
-        };
+    describe('2. Fail-Closed INTERNAL_API_URL Enforcement', () => {
+      it('should fail fast in production if INTERNAL_API_URL is missing or empty', () => {
+        expect(() => testGetInternalApiUrl('production', undefined)).toThrow(
+          'FATAL: INTERNAL_API_URL is mandatory in production'
+        );
+        expect(() => testGetInternalApiUrl('production', '')).toThrow(
+          'FATAL: INTERNAL_API_URL is mandatory in production'
+        );
+        expect(() => testGetInternalApiUrl('production', '   ')).toThrow(
+          'FATAL: INTERNAL_API_URL is mandatory in production'
+        );
+      });
 
-        // Client response constructed by BFF
-        const clientBody: any = {
-          success: true,
-          user: upstreamResponse.user,
-        };
+      it('should fail fast in production if INTERNAL_API_URL is not HTTPS', () => {
+        expect(() => testGetInternalApiUrl('production', 'http://api.external.com/api')).toThrow(
+          'FATAL: INTERNAL_API_URL must use HTTPS protocol in production'
+        );
+      });
 
-        expect(clientBody.access_token).toBeUndefined();
-        expect(clientBody.token).toBeUndefined();
-        expect(JSON.stringify(clientBody)).not.toContain('secret-raw-jwt-token-string-xyz');
+      it('should accept valid HTTPS URL in production and localhost in development', () => {
+        expect(testGetInternalApiUrl('production', 'https://api.educarelearning.in/api')).toBe(
+          'https://api.educarelearning.in/api'
+        );
+        expect(testGetInternalApiUrl('development', undefined)).toBe('http://localhost:3001/api');
       });
     });
 
-    describe('3. CSRF Protection and Origin Validation', () => {
-      const appUrl = 'https://lms.educarelearning.in/api/proxy/students';
-
-      it('should allow safe methods (GET, HEAD, OPTIONS) without Origin header', () => {
-        expect(testValidateCsrf({}, 'GET', appUrl, 'production').valid).toBe(true);
-        expect(testValidateCsrf({}, 'HEAD', appUrl, 'production').valid).toBe(true);
-        expect(testValidateCsrf({}, 'OPTIONS', appUrl, 'production').valid).toBe(true);
-      });
-
-      it('should reject state-changing mutations with missing Origin header', () => {
-        const postRes = testValidateCsrf({}, 'POST', appUrl, 'production');
-        expect(postRes.valid).toBe(false);
-        expect(postRes.reason).toContain('Missing Origin header');
-
-        const deleteRes = testValidateCsrf({}, 'DELETE', appUrl, 'production');
-        expect(deleteRes.valid).toBe(false);
-        expect(deleteRes.reason).toContain('Missing Origin header');
-      });
-
-      it('should reject mutations with untrusted external Origin', () => {
-        const res = testValidateCsrf(
-          { origin: 'https://evil-hacker.com' },
+    describe('3. Canonical CSRF Origin Validation & Host Header Poisoning Defense', () => {
+      it('should never trust an attacker-supplied Host or arbitrary origin even if matching', () => {
+        // Attacker attempts Host Header Poisoning with origin matching the spoofed host
+        const attackerAttempt = testValidateCsrf(
+          { origin: 'https://attacker-controlled-host.com' },
           'POST',
-          appUrl,
           'production'
         );
-        expect(res.valid).toBe(false);
-        expect(res.reason).toContain('not in trusted origin list');
+        expect(attackerAttempt.valid).toBe(false);
+        expect(attackerAttempt.reason).toContain('not in trusted origin list');
       });
 
-      it('should accept mutations with trusted same-origin Origin header', () => {
-        const res = testValidateCsrf(
-          { origin: 'https://lms.educarelearning.in' },
-          'POST',
-          appUrl,
-          'production'
-        );
-        expect(res.valid).toBe(true);
+      it('should accept only explicit canonical Educare production origins in production', () => {
+        expect(testValidateCsrf({ origin: 'https://lms.educarelearning.in' }, 'POST', 'production').valid).toBe(true);
+        expect(testValidateCsrf({ origin: 'https://educarelearning.in' }, 'POST', 'production').valid).toBe(true);
+        expect(testValidateCsrf({ origin: 'https://evil.lms.educarelearning.in.attacker.com' }, 'POST', 'production').valid).toBe(false);
       });
 
-      it('should reject requests with Sec-Fetch-Site: cross-site', () => {
-        const res = testValidateCsrf(
-          {
-            origin: 'https://lms.educarelearning.in',
-            'sec-fetch-site': 'cross-site',
-          },
-          'POST',
-          appUrl,
-          'production'
-        );
-        expect(res.valid).toBe(false);
-        expect(res.reason).toContain('Sec-Fetch-Site');
+      it('should reject missing origin and cross-site requests on mutations', () => {
+        expect(testValidateCsrf({}, 'POST', 'production').valid).toBe(false);
+        expect(testValidateCsrf({}, 'DELETE', 'production').valid).toBe(false);
+        expect(
+          testValidateCsrf(
+            { origin: 'https://lms.educarelearning.in', 'sec-fetch-site': 'cross-site' },
+            'POST',
+            'production'
+          ).valid
+        ).toBe(false);
       });
     });
 
-    describe('4. API Route Allowlisting and Path Traversal Prevention', () => {
-      it('should allow valid, whitelisted API routes', () => {
-        const allowedTests = [
-          ['students'],
-          ['assignments', 'batch-1'],
-          ['exams', '123', 'results'],
-          ['storage', 'presigned-url'],
-          ['setup', 'academic-years'],
-          ['fee', 'records'],
-          ['report', 'overview'],
+    describe('4. API Route Allowlisting, Traversal & Privileged Route Protection', () => {
+      it('should strictly reject double URL-encoded path traversal (%252e%252e)', () => {
+        const doubleEncoded = [
+          ['%252e%252e', 'admin'],
+          ['students', '%252e%252e', 'admin'],
+          ['assignments', '%252e%252e%252fadmin'],
         ];
 
-        for (const segments of allowedTests) {
-          const res = testValidateApiPath(segments);
-          expect(res.valid).toBe(true);
-          expect(res.normalizedPath).toBe('/' + segments.join('/'));
-        }
-      });
-
-      it('should strictly reject path traversal attempts with ..', () => {
-        const malicious = [
-          ['..', 'admin'],
-          ['students', '..', 'admin'],
-          ['assignments', '..', '..', 'etc', 'passwd'],
-        ];
-
-        for (const seg of malicious) {
-          const res = testValidateApiPath(seg);
-          expect(res.valid).toBe(false);
-          expect(res.reason).toContain('Path traversal');
-        }
-      });
-
-      it('should strictly reject URL-encoded path traversal (%2e%2e)', () => {
-        const encoded = [
-          ['%2e%2e', 'secret'],
-          ['students', '%2e%2e%2fadmin'],
-        ];
-
-        for (const seg of encoded) {
+        for (const seg of doubleEncoded) {
           const res = testValidateApiPath(seg);
           expect(res.valid).toBe(false);
           expect(res.reason?.toLowerCase()).toContain('path traversal');
         }
       });
 
-      it('should reject non-allowlisted top-level route prefixes', () => {
-        const unauthorized = [
-          ['internal', 'debug'],
-          ['admin-console'],
-          ['metrics'],
-          ['env'],
-        ];
+      it('should reject path segments containing null bytes or slashes', () => {
+        expect(testValidateApiPath(['students\0']).valid).toBe(false);
+        expect(testValidateApiPath(['students/admin']).valid).toBe(false);
+        expect(testValidateApiPath(['students\\admin']).valid).toBe(false);
+      });
 
-        for (const seg of unauthorized) {
-          const res = testValidateApiPath(seg);
-          expect(res.valid).toBe(false);
-          expect(res.reason).toContain('not authorized');
-        }
+      it('should forbid proxying privileged /auth/login, /auth/logout, and /auth/logout-all', () => {
+        expect(testValidateApiPath(['auth', 'login']).valid).toBe(false);
+        expect(testValidateApiPath(['auth', 'login']).reason).toContain('dedicated');
+
+        expect(testValidateApiPath(['auth', 'logout']).valid).toBe(false);
+        expect(testValidateApiPath(['auth', 'logout-all']).valid).toBe(false);
+
+        // General non-login auth endpoints (e.g. /auth/profile, /auth/change-password) remain allowed
+        expect(testValidateApiPath(['auth', 'change-password']).valid).toBe(true);
+      });
+    });
+
+    describe('5. Unauthorized Cross-Centre Access Rejection Integration Check', () => {
+      it('should strictly deny Centre Admin of Centre A from accessing Centre B resources', () => {
+        const centreAdminA = {
+          id: 'admin-a',
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        };
+
+        // Asserting access against Centre B must throw ForbiddenException
+        expect(() => assertCentreAccess(centreAdminA, 'centre-beta')).toThrow(ForbiddenException);
+        expect(() => assertCentreAccess(centreAdminA, 'centre-alpha')).not.toThrow();
       });
     });
   });

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { INTERNAL_API_URL, extractTokenFromRequest } from '@/lib/bff-config';
+import { getInternalApiUrl, extractTokenFromRequest } from '@/lib/bff-config';
 
 export async function GET(request: NextRequest) {
   const token = extractTokenFromRequest(request);
@@ -11,8 +11,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  let internalApiUrl: string;
   try {
-    const upstreamRes = await fetch(`${INTERNAL_API_URL}/users/me`, {
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    return NextResponse.json(
+      { authenticated: false, message: 'Server configuration error' },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const upstreamRes = await fetch(`${internalApiUrl}/users/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',

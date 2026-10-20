@@ -1,11 +1,8 @@
-import { cookies } from "next/headers";
+import { getAuthTokenFromCookies } from "./auth-server";
 import { API_BASE_URL } from "./api";
 
 export async function fetchApiServer<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const cookieStore = await cookies();
-  const token =
-    cookieStore.get("__Host-AccessToken")?.value ||
-    cookieStore.get("AccessToken")?.value;
+  const token = await getAuthTokenFromCookies();
   
   const url = `${API_BASE_URL}${endpoint}`;
   const response = await fetch(url, {

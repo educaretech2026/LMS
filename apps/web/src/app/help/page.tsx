@@ -2,13 +2,10 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
 import { HelpCircle } from "lucide-react";
 import { HelpClient } from "./help-client";
-import { cookies } from "next/headers";
+import { getAuthTokenFromCookies } from "@/lib/auth-server";
 
 export default async function HelpPage() {
-  const cookieStore = await cookies();
-  const token =
-    cookieStore.get("__Host-AccessToken")?.value ||
-    cookieStore.get("AccessToken")?.value;
+  const token = await getAuthTokenFromCookies();
   let role = "";
   if (token) {
     try {

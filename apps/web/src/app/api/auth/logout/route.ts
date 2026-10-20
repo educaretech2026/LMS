@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
-  INTERNAL_API_URL,
+  getInternalApiUrl,
   extractTokenFromRequest,
   validateCsrf,
 } from '@/lib/bff-config';
@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
 
   if (token) {
     try {
-      await fetch(`${INTERNAL_API_URL}/auth/logout`, {
+      const internalApiUrl = getInternalApiUrl();
+      await fetch(`${internalApiUrl}/auth/logout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -28,7 +29,6 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch (err) {
-      // Log upstream error but continue clearing browser cookies
       console.error('Failed to notify upstream API during logout:', err);
     }
   }
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     message: 'Logged out successfully',
   });
 
-  // Clear both possible cookie names
+  // Clear host-only cookie
   response.cookies.set('__Host-AccessToken', '', {
     httpOnly: true,
     secure,
@@ -54,14 +54,17 @@ export async function POST(request: NextRequest) {
     expires: new Date(0),
   });
 
-  response.cookies.set('AccessToken', '', {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-    expires: new Date(0),
-  });
+  // In non-production, also clear legacy cookie
+  if (!isProduction) {
+    response.cookies.set('AccessToken', '', {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+      expires: new Date(0),
+    });
+  }
 
   return response;
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
-  INTERNAL_API_URL,
+  getInternalApiUrl,
   getAuthCookieName,
   getAuthCookieOptions,
   validateCsrf,
@@ -35,8 +35,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let internalApiUrl: string;
   try {
-    const upstreamRes = await fetch(`${INTERNAL_API_URL}/auth/login`, {
+    internalApiUrl = getInternalApiUrl();
+  } catch (configErr: any) {
+    console.error('BFF Configuration Error:', configErr?.message || configErr);
+    return NextResponse.json(
+      { success: false, message: 'Authentication service configuration error' },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const upstreamRes = await fetch(`${internalApiUrl}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,13 +1,10 @@
 import { fetchApiServer } from "@/lib/api-server";
 import { SyllabusClient } from "./syllabus-client";
-import { cookies } from "next/headers";
+import { getAuthTokenFromCookies } from "@/lib/auth-server";
 import { redirect } from "next/navigation";
 
 export default async function SyllabusPage() {
-  const cookieStore = await cookies();
-  const token =
-    cookieStore.get("__Host-AccessToken")?.value ||
-    cookieStore.get("AccessToken")?.value;
+  const token = await getAuthTokenFromCookies();
   let isStudent = false;
   if (token) {
     try {

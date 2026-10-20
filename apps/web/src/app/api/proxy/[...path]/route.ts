@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
-  INTERNAL_API_URL,
+  getInternalApiUrl,
   extractTokenFromRequest,
   validateCsrf,
   validateApiPath,
@@ -11,10 +11,20 @@ interface RouteContext {
   params: Promise<{ path: string[] }>;
 }
 
+const ALLOWED_HTTP_METHODS = ['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
 async function handleProxy(request: NextRequest, context: RouteContext) {
   const method = request.method.toUpperCase();
 
-  // 1. CSRF validation for state-changing methods
+  // 1. Method Authorization Check
+  if (!ALLOWED_HTTP_METHODS.includes(method)) {
+    return NextResponse.json(
+      { success: false, message: `HTTP method ${method} not allowed` },
+      { status: 405 }
+    );
+  }
+
+  // 2. CSRF validation for state-changing methods
   const csrfResult = validateCsrf(request);
   if (!csrfResult.valid) {
     return NextResponse.json(
@@ -23,7 +33,7 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 2. Validate API path against strict allowlist & path traversal checks
+  // 3. Validate API path against strict allowlist, traversal, and sensitive routes
   const { path } = await context.params;
   const pathValidation = validateApiPath(path);
   if (!pathValidation.valid || !pathValidation.normalizedPath) {
@@ -33,7 +43,7 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 3. Extract authenticated token from HttpOnly cookie
+  // 4. Extract authenticated token from HttpOnly cookie (strictly __Host- in prod)
   const token = extractTokenFromRequest(request);
   if (!token) {
     return NextResponse.json(
@@ -42,11 +52,22 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 4. Construct upstream destination URL safely
-  const search = request.nextUrl.search || '';
-  const upstreamUrl = `${INTERNAL_API_URL}${pathValidation.normalizedPath}${search}`;
+  // 5. Construct upstream destination URL safely
+  let internalApiUrl: string;
+  try {
+    internalApiUrl = getInternalApiUrl();
+  } catch (configErr: any) {
+    console.error('BFF Configuration Error:', configErr?.message || configErr);
+    return NextResponse.json(
+      { success: false, message: 'Server configuration error' },
+      { status: 500 }
+    );
+  }
 
-  // 5. Build sanitized upstream request headers
+  const search = request.nextUrl.search || '';
+  const upstreamUrl = `${internalApiUrl}${pathValidation.normalizedPath}${search}`;
+
+  // 6. Build sanitized upstream request headers
   // Never forward client-supplied Authorization or Cookie headers
   const forwardHeaders: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -104,14 +125,16 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
         expires: new Date(0),
       });
 
-      clientRes.cookies.set('AccessToken', '', {
-        httpOnly: true,
-        secure,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 0,
-        expires: new Date(0),
-      });
+      if (!isProduction) {
+        clientRes.cookies.set('AccessToken', '', {
+          httpOnly: true,
+          secure: false,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 0,
+          expires: new Date(0),
+        });
+      }
     }
 
     return clientRes;

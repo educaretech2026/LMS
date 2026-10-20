@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
-  INTERNAL_API_URL,
+  getInternalApiUrl,
   extractTokenFromRequest,
   validateCsrf,
 } from '@/lib/bff-config';
@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
 
   if (token) {
     try {
-      await fetch(`${INTERNAL_API_URL}/auth/logout-all`, {
+      const internalApiUrl = getInternalApiUrl();
+      await fetch(`${internalApiUrl}/auth/logout-all`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -52,14 +53,16 @@ export async function POST(request: NextRequest) {
     expires: new Date(0),
   });
 
-  response.cookies.set('AccessToken', '', {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-    expires: new Date(0),
-  });
+  if (!isProduction) {
+    response.cookies.set('AccessToken', '', {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+      expires: new Date(0),
+    });
+  }
 
   return response;
 }
