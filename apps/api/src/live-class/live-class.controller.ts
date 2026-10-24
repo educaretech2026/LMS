@@ -38,7 +38,7 @@ export class LiveClassController {
   @Post('public/:id/register')
   registerAttendee(
     @Param('id') id: string,
-    @Body() body: { name: string; email: string; phone?: string; organization?: string; honeypot?: string },
+    @Body() body: { name: string; email: string; phone: string; organization: string; honeypot?: string },
   ) {
     return this.liveClassService.registerAttendee(id, body);
   }

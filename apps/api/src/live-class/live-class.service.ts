@@ -323,6 +323,14 @@ export class LiveClassService {
       throw new BadRequestException('A valid email address is required.');
     }
 
+    if (!data.phone || !data.phone.trim()) {
+      throw new BadRequestException('Mobile or WhatsApp number is required.');
+    }
+
+    if (!data.organization || !data.organization.trim()) {
+      throw new BadRequestException('School, College, or Organization name is required.');
+    }
+
     const cls = await this.prisma.liveClass.findUnique({
       where: { id },
     });
