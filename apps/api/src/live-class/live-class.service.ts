@@ -136,6 +136,9 @@ export class LiveClassService {
     standardId?: string;
     centreId?: string;
     zoomLink?: string;
+    isPublic?: boolean;
+    description?: string;
+    backgroundImageUrl?: string;
   }, user?: any) {
     if (!data.title || !data.subject || !data.teacherName || !data.scheduledAt) {
       throw new BadRequestException('Required fields missing for live class.');
@@ -168,6 +171,9 @@ export class LiveClassService {
         scheduledAt: scheduledDate,
         duration: Number(data.duration),
         roomId: data.zoomLink || undefined,
+        isPublic: Boolean(data.isPublic),
+        description: data.description ? data.description.trim() : null,
+        backgroundImageUrl: data.backgroundImageUrl ? data.backgroundImageUrl.trim() : null,
         boardId: data.boardId || null,
         standardId: data.standardId || null,
         centreId: centreId || null,
@@ -198,6 +204,9 @@ export class LiveClassService {
     if (data.teacherName !== undefined) updateData.teacherName = data.teacherName;
     if (data.duration !== undefined) updateData.duration = Number(data.duration);
     if (data.zoomLink !== undefined) updateData.roomId = data.zoomLink;
+    if (data.isPublic !== undefined) updateData.isPublic = Boolean(data.isPublic);
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.backgroundImageUrl !== undefined) updateData.backgroundImageUrl = data.backgroundImageUrl;
     if (data.scheduledAt !== undefined) {
       const d = new Date(data.scheduledAt);
       if (isNaN(d.getTime())) throw new BadRequestException('Invalid scheduledAt date');
@@ -263,5 +272,126 @@ export class LiveClassService {
       this.prisma.liveClass.count({ where: { ...where, status: 'LIVE' } }),
     ]);
     return { total, live };
+  }
+
+  /**
+   * Public View: Retrieves public live class/webinar details.
+   * Does NOT leak the Google Meet URL before registration to prevent scraping.
+   */
+  async getPublicClass(id: string) {
+    const cls = await this.prisma.liveClass.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        subject: true,
+        teacherName: true,
+        description: true,
+        scheduledAt: true,
+        duration: true,
+        status: true,
+        isPublic: true,
+        backgroundImageUrl: true,
+        createdAt: true,
+      },
+    });
+
+    if (!cls || !cls.isPublic) {
+      throw new NotFoundException('Public live class / webinar not found or is private.');
+    }
+
+    return cls;
+  }
+
+  /**
+   * Public Registration: Captures attendee details and unlocks the Google Meet URL.
+   */
+  async registerAttendee(
+    id: string,
+    data: { name: string; email: string; phone?: string; organization?: string; honeypot?: string },
+  ) {
+    // Honeypot check for bots
+    if (data.honeypot && data.honeypot.trim().length > 0) {
+      return { success: true, meetUrl: 'https://meet.google.com', message: 'Registration confirmed.' };
+    }
+
+    if (!data.name || !data.name.trim()) {
+      throw new BadRequestException('Full name is required.');
+    }
+
+    if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
+      throw new BadRequestException('A valid email address is required.');
+    }
+
+    const cls = await this.prisma.liveClass.findUnique({
+      where: { id },
+    });
+
+    if (!cls || !cls.isPublic) {
+      throw new NotFoundException('Live class / webinar not found or is private.');
+    }
+
+    const trimmedName = data.name.trim().slice(0, 100);
+    const trimmedEmail = data.email.trim().toLowerCase().slice(0, 150);
+    const trimmedPhone = data.phone ? data.phone.trim().slice(0, 25) : null;
+    const trimmedOrg = data.organization ? data.organization.trim().slice(0, 100) : null;
+
+    // Check if attendee is already registered with this email
+    const existing = await this.prisma.liveClassRegistration.findFirst({
+      where: {
+        liveClassId: id,
+        email: trimmedEmail,
+      },
+    });
+
+    if (!existing) {
+      await this.prisma.liveClassRegistration.create({
+        data: {
+          liveClassId: id,
+          name: trimmedName,
+          email: trimmedEmail,
+          phone: trimmedPhone,
+          organization: trimmedOrg,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      meetUrl: cls.roomId,
+      title: cls.title,
+      scheduledAt: cls.scheduledAt,
+      status: cls.status,
+      message: 'Registration successful! You may now join the session.',
+    };
+  }
+
+  /**
+   * Admin View: Returns all registered attendees for a live class.
+   */
+  async getRegistrations(id: string, user?: any) {
+    const cls = await this.prisma.liveClass.findUnique({
+      where: { id },
+    });
+
+    if (!cls) {
+      throw new NotFoundException('Live class not found.');
+    }
+
+    if (user && !isSuperAdmin(user) && cls.centreId) {
+      assertCentreAccess(user, cls.centreId);
+    }
+
+    const registrations = await this.prisma.liveClassRegistration.findMany({
+      where: { liveClassId: id },
+      orderBy: { registeredAt: 'desc' },
+    });
+
+    return {
+      total: registrations.length,
+      classId: cls.id,
+      title: cls.title,
+      registrations,
+    };
   }
 }

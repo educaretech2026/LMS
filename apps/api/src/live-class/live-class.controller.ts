@@ -4,6 +4,7 @@ import { GoogleMeetService } from './google-meet.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('live-class')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,6 +24,30 @@ export class LiveClassController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   getStats(@Req() req: any) {
     return this.liveClassService.getStats(req.user);
+  }
+
+  // Public Endpoint: Retrieve public webinar/class info (no auth required)
+  @Public()
+  @Get('public/:id')
+  getPublicClass(@Param('id') id: string) {
+    return this.liveClassService.getPublicClass(id);
+  }
+
+  // Public Endpoint: Submit registration form & retrieve Google Meet access
+  @Public()
+  @Post('public/:id/register')
+  registerAttendee(
+    @Param('id') id: string,
+    @Body() body: { name: string; email: string; phone?: string; organization?: string; honeypot?: string },
+  ) {
+    return this.liveClassService.registerAttendee(id, body);
+  }
+
+  // Admin / Teacher: View all registered attendees for a live class
+  @Get(':id/registrations')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  getRegistrations(@Param('id') id: string, @Req() req: any) {
+    return this.liveClassService.getRegistrations(id, req.user);
   }
 
   @Get(':id')

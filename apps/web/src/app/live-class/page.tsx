@@ -6,7 +6,9 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { fetchApi } from "@/lib/api";
 import {
   Video, Plus, Calendar, Clock, Users, Play, X, Wifi, BookOpen,
-  RefreshCw, Trash2, Radio, CheckCircle2, AlertCircle,
+  RefreshCw, Trash2, Radio, CheckCircle2, AlertCircle, Globe,
+  Copy, Check, ExternalLink, Image as ImageIcon, UploadCloud,
+  Download, Search, Sparkles
 } from "lucide-react";
 
 /* ── Types ── */
@@ -19,6 +21,9 @@ interface ApiLiveClass {
   scheduledAt: string;
   duration: number;
   roomId: string;
+  isPublic?: boolean;
+  description?: string | null;
+  backgroundImageUrl?: string | null;
   board?: { id: string; name: string } | null;
   standard?: { id: string; name: string } | null;
   centre?: { id: string; name: string } | null;
@@ -26,13 +31,22 @@ interface ApiLiveClass {
 
 interface SetupOption { id: string; name: string }
 
+interface Registration {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  organization?: string | null;
+  registeredAt: string;
+}
+
 /* ── Page ── */
 export default function LiveClassPage() {
   const [classes, setClasses] = useState<ApiLiveClass[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeRoom, setActiveRoom] = useState<ApiLiveClass | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [selectedRegistrationsClass, setSelectedRegistrationsClass] = useState<ApiLiveClass | null>(null);
   const [stats, setStats] = useState({ total: 0, live: 0 });
   const { role, email } = useAuth();
 
@@ -84,8 +98,6 @@ export default function LiveClassPage() {
     setShowSchedule(false);
   };
 
-  const displayName = email ? `${email.split("@")[0]}` : (role?.toUpperCase() === "STUDENT" ? "Student" : "Teacher");
-
   /* ── Join Class ── */
   const handleJoin = (cls: ApiLiveClass) => {
     let url = cls.roomId;
@@ -110,8 +122,8 @@ export default function LiveClassPage() {
               <Video className="h-4.5 w-4.5 text-brand-blue" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-text-primary">Live Classes</h2>
-              <p className="text-xs text-text-muted mt-0.5">Powered by Google Meet</p>
+              <h2 className="text-base font-semibold text-text-primary">Live Classes & Webinars</h2>
+              <p className="text-xs text-text-muted mt-0.5">Powered by Google Meet • Public Webinar Support</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -127,7 +139,7 @@ export default function LiveClassPage() {
                 onClick={() => setShowSchedule(true)}
                 className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
               >
-                <Plus className="h-3.5 w-3.5" /> Schedule Class
+                <Plus className="h-3.5 w-3.5" /> Schedule Class / Webinar
               </button>
             )}
           </div>
@@ -148,7 +160,7 @@ export default function LiveClassPage() {
           {role?.toUpperCase() !== "STUDENT" && (
             <div className="grid grid-cols-3 gap-4">
               {[
-                { label: "Total Classes",   value: String(stats.total), icon: BookOpen, color: "text-brand-blue bg-brand-blue/8" },
+                { label: "Total Sessions",   value: String(stats.total), icon: BookOpen, color: "text-brand-blue bg-brand-blue/8" },
                 { label: "Live Now",         value: String(stats.live),  icon: Wifi,     color: "text-brand-red  bg-brand-red/8"  },
                 { label: "Scheduled Today",  value: String(scheduledClasses.length), icon: Calendar, color: "text-success bg-success/8" },
               ].map(({ label, value, icon: Icon, color }) => (
@@ -185,16 +197,17 @@ export default function LiveClassPage() {
                       onJoin={() => handleJoin(cls)}
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
+                      onViewRegistrations={() => setSelectedRegistrationsClass(cls)}
                     />
                   ))}
                 </Section>
               )}
 
               {/* Scheduled */}
-              <Section title="Upcoming Classes">
+              <Section title="Upcoming Sessions">
                 {scheduledClasses.length === 0 ? (
                   <EmptyState
-                    text={role?.toUpperCase() === "STUDENT" ? "No upcoming classes scheduled." : "No upcoming classes. Schedule one above!"}
+                    text={role?.toUpperCase() === "STUDENT" ? "No upcoming classes scheduled." : "No upcoming classes. Schedule a class or public webinar above!"}
                   />
                 ) : (
                   scheduledClasses.map(cls => (
@@ -205,6 +218,7 @@ export default function LiveClassPage() {
                       onJoin={() => handleJoin(cls)}
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
+                      onViewRegistrations={() => setSelectedRegistrationsClass(cls)}
                     />
                   ))
                 )}
@@ -212,7 +226,7 @@ export default function LiveClassPage() {
 
               {/* Ended */}
               {endedClasses.length > 0 && (
-                <Section title="Past Classes">
+                <Section title="Past Sessions">
                   {endedClasses.map(cls => (
                     <ClassCard
                       key={cls.id}
@@ -221,6 +235,7 @@ export default function LiveClassPage() {
                       onJoin={() => handleJoin(cls)}
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
+                      onViewRegistrations={() => setSelectedRegistrationsClass(cls)}
                     />
                   ))}
                 </Section>
@@ -228,24 +243,22 @@ export default function LiveClassPage() {
             </>
           )}
 
-          {/* Large Edu-Meet Banner */}
-          <div className="mt-8 rounded-3xl bg-gradient-to-br from-brand-blue-dark via-brand-blue to-brand-blue-light p-8 md:p-12 shadow-xl relative overflow-hidden flex flex-col items-center justify-center text-center">
-            {/* Background Decorations */}
+          {/* Public Webinar Info Card */}
+          <div className="mt-8 rounded-3xl bg-gradient-to-br from-indigo-950 via-brand-blue-dark to-brand-blue p-8 md:p-10 shadow-xl relative overflow-hidden flex flex-col items-center justify-center text-center">
             <div className="absolute inset-0 opacity-10 pointer-events-none">
               <div className="absolute -top-10 -right-10 w-64 h-64 rounded-full border-[32px] border-white" />
               <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full border-[16px] border-white" />
-              <div className="absolute top-1/2 left-1/4 w-96 h-96 rounded-full border-[4px] border-white -translate-y-1/2" />
             </div>
 
-            <div className="h-16 w-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-inner relative z-10 border border-white/30">
-              <Video className="h-8 w-8 text-white" />
+            <div className="h-14 w-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center mb-4 shadow-inner relative z-10 border border-white/20">
+              <Globe className="h-7 w-7 text-white" />
             </div>
 
-            <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white tracking-tight relative z-10 mb-3">
-              Edu-Meet is Rolling Out Soon! 🚀
+            <h3 className="text-xl md:text-2xl font-bold text-white tracking-tight relative z-10 mb-2">
+              Host Open Webinars & Public Live Streams
             </h3>
-            <p className="text-white/80 max-w-xl text-sm md:text-base font-medium relative z-10 leading-relaxed">
-              We are upgrading your live classes. Get ready for a seamless, lightning-fast, and integrated meeting experience built directly into your LMS. Stay tuned!
+            <p className="text-white/80 max-w-xl text-xs md:text-sm font-normal relative z-10 leading-relaxed">
+              Attach any Google Meet link, upload your custom branded background banner, and share the link with prospective students and attendees worldwide — zero login needed, with built-in attendee lead capture!
             </p>
           </div>
 
@@ -258,6 +271,14 @@ export default function LiveClassPage() {
           onClose={() => setShowSchedule(false)}
           onScheduled={handleScheduled}
           email={email}
+        />
+      )}
+
+      {/* Attendee Registrations Modal */}
+      {selectedRegistrationsClass && (
+        <RegistrationsModal
+          cls={selectedRegistrationsClass}
+          onClose={() => setSelectedRegistrationsClass(null)}
         />
       )}
     </DashboardLayout>
@@ -285,49 +306,79 @@ function EmptyState({ text }: { text: string }) {
 
 /* ── Class Card ── */
 function ClassCard({
-  cls, role, onJoin, onStatusChange, onDelete,
+  cls, role, onJoin, onStatusChange, onDelete, onViewRegistrations,
 }: {
   cls: ApiLiveClass;
   role: string | null;
   onJoin: () => void;
   onStatusChange: (id: string, status: "SCHEDULED" | "LIVE" | "ENDED") => void;
   onDelete: (id: string) => void;
+  onViewRegistrations: () => void;
 }) {
   const isLive = cls.status === "LIVE";
   const isEnded = cls.status === "ENDED";
   const isStudent = role?.toUpperCase() === "STUDENT";
+  const [copied, setCopied] = useState(false);
 
   const scheduledDate = new Date(cls.scheduledAt);
   const dateStr = scheduledDate.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
   const timeStr = scheduledDate.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
 
+  const handleCopyPublicLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const publicUrl = `${window.location.origin}/live/${cls.id}`;
+    navigator.clipboard.writeText(publicUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className={`bg-white rounded-xl border shadow-sm p-5 flex items-center gap-5 transition-all ${
-      isLive ? "border-brand-red/30" : isEnded ? "border-border-soft opacity-60" : "border-border-soft"
+    <div className={`bg-white rounded-xl border shadow-sm p-5 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-5 transition-all ${
+      isLive ? "border-brand-red/30 shadow-red-50/50" : isEnded ? "border-border-soft opacity-70" : "border-border-soft"
     }`}>
-      {/* Icon */}
-      <div className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center ${
-        isLive ? "bg-brand-red/10" : isEnded ? "bg-surface-3" : "bg-brand-blue/8"
-      }`}>
-        {isLive ? <Wifi className="h-5 w-5 text-brand-red" /> :
-         isEnded ? <CheckCircle2 className="h-5 w-5 text-text-muted" /> :
-         <Video className="h-5 w-5 text-brand-blue" />}
+      {/* Icon / Thumbnail */}
+      <div className="relative">
+        {cls.backgroundImageUrl ? (
+          <div className="h-12 w-12 shrink-0 rounded-xl overflow-hidden border border-border-soft bg-surface-2">
+            <img src={cls.backgroundImageUrl} alt={cls.title} className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <div className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center ${
+            isLive ? "bg-brand-red/10" : isEnded ? "bg-surface-3" : "bg-brand-blue/8"
+          }`}>
+            {isLive ? <Wifi className="h-5 w-5 text-brand-red" /> :
+             isEnded ? <CheckCircle2 className="h-5 w-5 text-text-muted" /> :
+             <Video className="h-5 w-5 text-brand-blue" />}
+          </div>
+        )}
+        {cls.isPublic && (
+          <div className="absolute -bottom-1 -right-1 bg-emerald-600 text-white rounded-full p-0.5 shadow" title="Public Webinar">
+            <Globe className="h-3 w-3" />
+          </div>
+        )}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-semibold text-text-primary truncate">{cls.title}</p>
+          {cls.isPublic && (
+            <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+              <Globe className="h-2.5 w-2.5" /> Public Webinar
+            </span>
+          )}
           {isLive && (
             <span className="flex items-center gap-1 rounded-full bg-brand-red/10 border border-brand-red/25 px-2 py-0.5 text-[10px] font-bold text-brand-red shrink-0">
-              <span className="h-1 w-1 rounded-full bg-brand-red animate-pulse" /> LIVE
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-red animate-pulse" /> LIVE
             </span>
           )}
           {isEnded && (
             <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[10px] font-semibold text-text-muted">ENDED</span>
           )}
         </div>
-        <p className="text-xs text-text-muted mt-0.5">{cls.subject}</p>
+        <p className="text-xs text-text-muted mt-0.5">
+          {cls.subject} • Host: <span className="font-medium text-text-secondary">{cls.teacherName}</span>
+        </p>
         <div className="flex items-center gap-3 mt-1.5 flex-wrap text-[11px] text-text-muted">
           <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{dateStr}, {timeStr}</span>
           <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{cls.duration} min</span>
@@ -338,8 +389,41 @@ function ClassCard({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 shrink-0">
-        {/* Admin controls */}
+      <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
+        {/* Public Webinar Actions for Admin/Teacher */}
+        {!isStudent && cls.isPublic && (
+          <>
+            <button
+              onClick={handleCopyPublicLink}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-surface-2 hover:bg-surface-3 px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors"
+              title="Copy Public Link"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+              <span>{copied ? "Copied!" : "Public Link"}</span>
+            </button>
+
+            <button
+              onClick={onViewRegistrations}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-surface-2 hover:bg-surface-3 px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors"
+              title="View Registered Attendees"
+            >
+              <Users className="h-3.5 w-3.5 text-brand-blue" />
+              <span>Attendees</span>
+            </button>
+
+            <a
+              href={`/live/${cls.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border-soft bg-surface-2 hover:bg-surface-3 text-text-muted hover:text-text-primary transition-colors"
+              title="Open Public Landing Page"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </>
+        )}
+
+        {/* Status controls */}
         {!isStudent && (
           <>
             {cls.status === "SCHEDULED" && (
@@ -361,6 +445,7 @@ function ClassCard({
             <button
               onClick={() => onDelete(cls.id)}
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border-soft bg-surface-2 hover:border-brand-red/30 hover:text-brand-red text-text-muted transition-colors"
+              title="Delete Class"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -402,6 +487,10 @@ function ScheduleModal({
   const [zoomLink, setZoomLink] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [duration, setDuration] = useState("60");
+  const [isPublic, setIsPublic] = useState(false);
+  const [description, setDescription] = useState("");
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -425,6 +514,37 @@ function ScheduleModal({
     }).catch(() => {});
   }, []);
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setError("Please select a valid image file (PNG, JPG, WebP).");
+      return;
+    }
+
+    setUploadingImage(true);
+    setError("");
+
+    try {
+      const { uploadUrl, finalUrl } = (await fetchApi(
+        `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
+      )) as any;
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      setBackgroundImageUrl(finalUrl);
+    } catch (err: any) {
+      setError("Failed to upload background image: " + err.message);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!title.trim() || !subject.trim() || !dateTime) {
       setError("Please fill in Title, Subject and Date & Time.");
@@ -443,6 +563,9 @@ function ScheduleModal({
           scheduledAt: new Date(dateTime).toISOString(),
           duration: Number(duration) || 60,
           zoomLink: zoomLink.trim() || undefined,
+          isPublic,
+          description: isPublic ? description.trim() : undefined,
+          backgroundImageUrl: isPublic ? backgroundImageUrl.trim() : undefined,
           boardId: boardId || undefined,
           standardId: standardId || undefined,
           centreId: centreId || undefined,
@@ -457,44 +580,125 @@ function ScheduleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-border-soft overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft">
-          <h3 className="text-sm font-semibold text-text-primary">Schedule New Class</h3>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-border-soft overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft bg-surface-1">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg bg-brand-blue/10 flex items-center justify-center">
+              <Calendar className="h-4 w-4 text-brand-blue" />
+            </div>
+            <h3 className="text-sm font-semibold text-text-primary">Schedule New Live Session</h3>
+          </div>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {error && (
             <p className="text-xs text-brand-red bg-brand-red/8 border border-brand-red/20 rounded-lg px-3 py-2">
               {error}
             </p>
           )}
 
+          {/* Public Webinar Toggle */}
+          <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-brand-blue/5 p-4 flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <div className="h-8 w-8 rounded-lg bg-brand-blue text-white flex items-center justify-center shrink-0 mt-0.5">
+                <Globe className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-text-primary">Public Webinar / Open Session</p>
+                <p className="text-[11px] text-text-muted mt-0.5">
+                  Anyone can join via public link without LMS login. Access is gated behind a registration form.
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer ml-3">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={e => setIsPublic(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-blue"></div>
+            </label>
+          </div>
+
           {/* Title */}
-          <Field label="Class Title *">
+          <Field label="Session Title *">
             <input type="text" value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Introduction to Algebra"
+              placeholder="e.g. Masterclass: Scoring 99% in NEET Physics"
               className="input-base" />
           </Field>
 
           {/* Subject */}
-          <Field label="Subject *">
+          <Field label="Subject / Topic *">
             <input type="text" value={subject} onChange={e => setSubject(e.target.value)}
-              placeholder="e.g. Mathematics"
+              placeholder="e.g. Physics / Mechanics"
               className="input-base" />
           </Field>
 
           {/* Google Meet Link */}
-          <Field label="Google Meet Link (Optional)">
+          <Field label="Google Meet Link">
             <input type="url" value={zoomLink} onChange={e => setZoomLink(e.target.value)}
-              placeholder="Leave empty to auto-generate"
+              placeholder="https://meet.google.com/xxx-yyyy-zzz (leave empty to auto-generate)"
               className="input-base" />
+            <p className="text-[10px] text-text-muted mt-1">
+              Attendees unlock this Google Meet link immediately after completing the public form.
+            </p>
           </Field>
 
-          {/* Board / Class / Centre */}
+          {/* Public Custom Background Image & Description */}
+          {isPublic && (
+            <div className="space-y-4 pt-2 border-t border-border-soft">
+              {/* Description */}
+              <Field label="Webinar Overview / Agenda">
+                <textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  placeholder="Share key takeaways, prerequisites, or topics covered during this live stream..."
+                  rows={3}
+                  className="input-base resize-none"
+                />
+              </Field>
+
+              {/* Background Image Upload */}
+              <Field label="Public Page Background Banner">
+                {backgroundImageUrl ? (
+                  <div className="relative rounded-xl overflow-hidden border border-border-soft aspect-video bg-surface-2 group">
+                    <img src={backgroundImageUrl} alt="Background preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <label className="cursor-pointer bg-white text-text-primary px-3 py-1.5 rounded-lg text-xs font-semibold shadow hover:bg-surface-2 transition-colors">
+                        Change Image
+                        <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setBackgroundImageUrl("")}
+                        className="bg-brand-red text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow hover:bg-brand-red-dark transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="border-2 border-dashed border-border-soft hover:border-brand-blue/50 rounded-xl p-5 flex flex-col items-center justify-center cursor-pointer bg-surface-1 hover:bg-surface-2 transition-colors group">
+                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={uploadingImage} />
+                    <div className="h-10 w-10 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue mb-2 group-hover:scale-105 transition-transform">
+                      {uploadingImage ? <RefreshCw className="h-5 w-5 animate-spin" /> : <UploadCloud className="h-5 w-5" />}
+                    </div>
+                    <p className="text-xs font-semibold text-text-primary">
+                      {uploadingImage ? "Uploading banner to cloud..." : "Click or drag banner image here"}
+                    </p>
+                    <p className="text-[11px] text-text-muted mt-0.5">PNG, JPG, or WebP (Recommended 1920x1080)</p>
+                  </label>
+                )}
+              </Field>
+            </div>
+          )}
+
+          {/* Board / Class / Centre (Only if internal or targeted) */}
           <div className="grid grid-cols-3 gap-3">
             <Field label="Board">
               <select value={boardId} onChange={e => setBoardId(e.target.value)} className="input-base">
@@ -538,12 +742,156 @@ function ScheduleModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || uploadingImage}
             className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
             {submitting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Calendar className="h-3.5 w-3.5" />}
-            {submitting ? "Scheduling..." : "Schedule Class"}
+            {submitting ? "Scheduling..." : isPublic ? "Publish Public Webinar" : "Schedule Class"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Registrations Modal ── */
+function RegistrationsModal({
+  cls, onClose,
+}: {
+  cls: ApiLiveClass;
+  onClose: () => void;
+}) {
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchApi<{ total: number; registrations: Registration[] }>(`/live-class/${cls.id}/registrations`)
+      .then(res => setRegistrations(res.registrations || []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [cls.id]);
+
+  const filtered = registrations.filter(r =>
+    r.name.toLowerCase().includes(search.toLowerCase()) ||
+    r.email.toLowerCase().includes(search.toLowerCase()) ||
+    (r.phone && r.phone.includes(search)) ||
+    (r.organization && r.organization.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const exportCsv = () => {
+    if (!registrations.length) return;
+    const headers = ["Name", "Email", "Phone", "Organization", "Registered At"];
+    const rows = registrations.map(r => [
+      `"${r.name.replace(/"/g, '""')}"`,
+      `"${r.email.replace(/"/g, '""')}"`,
+      `"${(r.phone || "").replace(/"/g, '""')}"`,
+      `"${(r.organization || "").replace(/"/g, '""')}"`,
+      `"${new Date(r.registeredAt).toLocaleString("en-IN")}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `attendees-${cls.title.replace(/[^a-zA-Z0-9]/g, "_")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-border-soft overflow-hidden flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft bg-surface-1 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <Users className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">Registered Attendees</h3>
+              <p className="text-xs text-text-muted">{cls.title} ({registrations.length} registered)</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportCsv}
+              disabled={registrations.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-white hover:bg-surface-2 px-3 py-1.5 text-xs font-semibold text-text-secondary disabled:opacity-50 transition-colors shadow-sm"
+            >
+              <Download className="h-3.5 w-3.5 text-emerald-600" /> Export CSV
+            </button>
+            <button onClick={onClose} className="text-text-muted hover:text-text-primary p-1">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Filter bar */}
+        <div className="px-6 py-3 border-b border-border-soft bg-surface-2/40 flex items-center gap-2 shrink-0">
+          <Search className="h-4 w-4 text-text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, email, phone, or organization..."
+            className="w-full bg-transparent border-none text-xs text-text-primary placeholder:text-text-muted focus:outline-none"
+          />
+        </div>
+
+        {/* Table content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {error && (
+            <p className="text-xs text-brand-red bg-brand-red/8 p-3 rounded-lg border border-brand-red/20 mb-4">
+              {error}
+            </p>
+          )}
+
+          {loading ? (
+            <div className="py-12 flex flex-col items-center justify-center">
+              <RefreshCw className="h-6 w-6 text-brand-blue animate-spin mb-2" />
+              <p className="text-xs text-text-muted">Loading attendee roster...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-12 text-center text-text-muted text-xs">
+              {search ? "No attendees matching your search." : "No attendees have registered for this webinar yet."}
+            </div>
+          ) : (
+            <div className="border border-border-soft rounded-xl overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-surface-2 border-b border-border-soft text-text-secondary uppercase tracking-wider text-[10px] font-semibold">
+                  <tr>
+                    <th className="px-4 py-3">Attendee</th>
+                    <th className="px-4 py-3">Phone</th>
+                    <th className="px-4 py-3">Organization / School</th>
+                    <th className="px-4 py-3">Registered At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-soft bg-white">
+                  {filtered.map(r => (
+                    <tr key={r.id} className="hover:bg-surface-1 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-text-primary">{r.name}</p>
+                        <p className="text-[11px] text-text-muted">{r.email}</p>
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary font-mono text-[11px]">
+                        {r.phone || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary">
+                        {r.organization || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-text-muted">
+                        {new Date(r.registeredAt).toLocaleString("en-IN", {
+                          month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

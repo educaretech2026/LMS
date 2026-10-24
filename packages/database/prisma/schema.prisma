@@ -605,6 +605,9 @@ model LiveClass {
   title       String
   subject     String
   teacherName String
+  description String?
+  isPublic    Boolean         @default(false)
+  backgroundImageUrl String?
   status      LiveClassStatus @default(SCHEDULED)
   scheduledAt DateTime
   duration    Int // in minutes
@@ -618,10 +621,28 @@ model LiveClass {
   standard Standard? @relation(fields: [standardId], references: [id])
   centre   Centre?   @relation(fields: [centreId], references: [id])
 
+  registrations LiveClassRegistration[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("live_classes")
+}
+
+model LiveClassRegistration {
+  id           String    @id @default(uuid())
+  liveClassId  String
+  name         String
+  email        String
+  phone        String?
+  organization String?
+  registeredAt DateTime  @default(now())
+
+  liveClass    LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@index([liveClassId])
+  @@index([email])
+  @@map("live_class_registrations")
 }
 
 enum LiveClassStatus {
