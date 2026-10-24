@@ -12,33 +12,32 @@
  */
 export function getInternalApiUrl(): string {
   const isProduction = process.env.NODE_ENV === 'production';
-  const configured = process.env.INTERNAL_API_URL;
+  const configured =
+    process.env.INTERNAL_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    (isProduction ? 'https://api.educarelearning.in/api' : 'http://localhost:3001/api');
 
   if (isProduction) {
     if (!configured || !configured.trim()) {
       throw new Error(
-        'FATAL: INTERNAL_API_URL is mandatory in production for secure BFF upstream proxying.'
+        'FATAL: INTERNAL_API_URL or NEXT_PUBLIC_API_URL is mandatory in production for secure BFF upstream proxying.'
       );
     }
     let parsed: URL;
     try {
       parsed = new URL(configured);
     } catch (e: any) {
-      throw new Error(`FATAL: INTERNAL_API_URL is not a valid URL: ${e?.message || e}`);
+      throw new Error(`FATAL: Resolved internal API URL is not valid: ${e?.message || e}`);
     }
     // Production requires valid HTTP/HTTPS scheme and valid host
     if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-      throw new Error('FATAL: INTERNAL_API_URL must use HTTPS protocol in production.');
+      throw new Error('FATAL: Internal API URL must use HTTPS protocol in production.');
     }
     return configured.trim().replace(/\/+$/, '');
   }
 
   // Development mode fallback
-  const devUrl =
-    configured ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:3001/api';
-  return devUrl.trim().replace(/\/+$/, '');
+  return configured.trim().replace(/\/+$/, '');
 }
 
 export const INTERNAL_API_URL = (function () {
