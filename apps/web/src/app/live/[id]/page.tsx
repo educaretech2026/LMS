@@ -4,12 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import logoImage from "@/logos/logo1.png";
-import {
-  Video, Calendar, Clock, User, Mail, Phone, Building,
-  CheckCircle2, Copy, Check, ExternalLink, AlertCircle,
-  ArrowRight, ShieldCheck, Sparkles, Radio, HelpCircle,
-  CalendarPlus, RefreshCw
-} from "lucide-react";
 
 interface PublicWebinar {
   id: string;
@@ -31,68 +25,6 @@ function getPublicApiUrl(): string {
   return cleanBase.endsWith("/api") ? cleanBase : `${cleanBase}/api`;
 }
 
-/* ─────────────────────────── Forge-style primitives ─────────────────────────── */
-
-function ForgeLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
-  return (
-    <label
-      htmlFor={htmlFor}
-      className="block text-[11px] font-bold uppercase tracking-widest mb-1.5"
-      style={{ color: "rgba(148,163,184,1)" }}
-    >
-      {children}
-    </label>
-  );
-}
-
-function ForgeInput({
-  id, type = "text", value, onChange, onBlur, placeholder, required, isError,
-}: {
-  id: string;
-  type?: string;
-  value: string;
-  onChange: (v: string) => void;
-  onBlur?: () => void;
-  placeholder?: string;
-  required?: boolean;
-  isError?: boolean;
-}) {
-  return (
-    <input
-      id={id}
-      type={type}
-      value={value}
-      required={required}
-      onChange={e => onChange(e.target.value)}
-      onBlur={onBlur}
-      placeholder={placeholder}
-      style={{
-        background: isError ? "rgba(238,27,36,0.06)" : "rgba(255,255,255,0.04)",
-        border: `1.5px solid ${isError ? "rgba(238,27,36,0.5)" : "rgba(255,255,255,0.12)"}`,
-        boxShadow: isError ? "0 0 0 3px rgba(238,27,36,0.08)" : "inset 0 1px 4px rgba(0,0,0,0.3)",
-        color: "white",
-        fontSize: "13px",
-        fontFamily: "inherit",
-        transition: "all 0.18s ease",
-      }}
-      className="w-full h-[42px] rounded-[10px] px-3.5 placeholder:text-slate-600 focus:outline-none focus:border-[#0162b1] focus:ring-0 focus:shadow-[0_0_0_3px_rgba(1,98,177,0.18)] focus:bg-[rgba(1,98,177,0.04)]"
-    />
-  );
-}
-
-function ForgeFieldIcon({ icon }: { icon: React.ReactNode }) {
-  return (
-    <div
-      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-      style={{ background: "rgba(1,98,177,0.18)", border: "1px solid rgba(1,98,177,0.28)" }}
-    >
-      {icon}
-    </div>
-  );
-}
-
-/* ─────────────────────────────── Main Page ─────────────────────────────── */
-
 export default function PublicLiveClassPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -109,39 +41,41 @@ export default function PublicLiveClassPage() {
   const [meetUrl, setMeetUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number; isStarted: boolean }>(
-    { days: 0, hours: 0, minutes: 0, seconds: 0, isStarted: false }
-  );
+  const [timeLeft, setTimeLeft] = useState<{
+    days: number; hours: number; minutes: number; seconds: number; isStarted: boolean;
+  }>({ days: 0, hours: 0, minutes: 0, seconds: 0, isStarted: false });
 
+  // Restore from localStorage
   useEffect(() => {
     if (!id) return;
     try {
-      const storedAccess = localStorage.getItem(`live_access_${id}`);
-      if (storedAccess) {
-        const parsed = JSON.parse(storedAccess);
-        if (parsed.meetUrl) {
-          setMeetUrl(parsed.meetUrl);
+      const stored = localStorage.getItem(`live_access_${id}`);
+      if (stored) {
+        const p = JSON.parse(stored);
+        if (p.meetUrl) {
+          setMeetUrl(p.meetUrl);
           setRegistered(true);
-          if (parsed.name) setFormData(prev => ({ ...prev, name: parsed.name, email: parsed.email || "", phone: parsed.phone || "", organization: parsed.organization || "" }));
+          if (p.name) setFormData(prev => ({ ...prev, name: p.name, email: p.email || "", phone: p.phone || "", organization: p.organization || "" }));
         }
       }
     } catch { /* ignore */ }
   }, [id]);
 
+  // Fetch webinar info
   useEffect(() => {
     if (!id) return;
     (async () => {
       try {
         setLoading(true);
-        setError(null);
         const res = await fetch(`${getPublicApiUrl()}/live-class/public/${id}`);
-        if (!res.ok) throw new Error(res.status === 404 ? "This live session was not found or is no longer open to the public." : "Unable to load session details. Please refresh.");
+        if (!res.ok) throw new Error(res.status === 404 ? "This session is not available to the public." : "Failed to load session. Please refresh.");
         setWebinar(await res.json());
       } catch (e: any) { setError(e.message); }
       finally { setLoading(false); }
     })();
   }, [id]);
 
+  // Countdown
   useEffect(() => {
     if (!webinar?.scheduledAt) return;
     const target = new Date(webinar.scheduledAt).getTime();
@@ -159,386 +93,403 @@ export default function PublicLiveClassPage() {
     e.preventDefault();
     setTouched({ name: true, email: true, phone: true, organization: true });
     const n = formData.name.trim(), em = formData.email.trim(), ph = formData.phone.trim(), org = formData.organization.trim();
-    if (!n) { setSubmitError("Please enter your full name."); return; }
-    if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setSubmitError("Please enter a valid email address."); return; }
-    if (!ph || ph.replace(/\D/g, "").length < 7) { setSubmitError("Please enter a valid WhatsApp / mobile number."); return; }
-    if (!org) { setSubmitError("Please enter your school, college, or organization name."); return; }
+    if (!n) { setSubmitError("Full name is required."); return; }
+    if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setSubmitError("A valid email address is required."); return; }
+    if (!ph || ph.replace(/\D/g, "").length < 7) { setSubmitError("A valid mobile number is required."); return; }
+    if (!org) { setSubmitError("Institution / organization name is required."); return; }
     setSubmitting(true); setSubmitError("");
     try {
-      const res = await fetch(`${getPublicApiUrl()}/live-class/public/${id}/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n, email: em, phone: ph, organization: org, honeypot: formData.honeypot }) });
+      const res = await fetch(`${getPublicApiUrl()}/live-class/public/${id}/register`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: n, email: em, phone: ph, organization: org, honeypot: formData.honeypot }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Registration failed. Please try again.");
-      setMeetUrl(data.meetUrl);
-      setRegistered(true);
-      localStorage.setItem(`live_access_${id}`, JSON.stringify({ meetUrl: data.meetUrl, name: n, email: em, phone: ph, organization: org, registeredAt: new Date().toISOString() }));
-    } catch (e: any) { setSubmitError(e.message || "An error occurred. Please try again."); }
+      setMeetUrl(data.meetUrl); setRegistered(true);
+      localStorage.setItem(`live_access_${id}`, JSON.stringify({ meetUrl: data.meetUrl, name: n, email: em, phone: ph, organization: org }));
+    } catch (e: any) { setSubmitError(e.message || "Something went wrong. Please try again."); }
     finally { setSubmitting(false); }
   };
 
-  const handleCopyLink = () => { if (!meetUrl) return; navigator.clipboard.writeText(meetUrl); setCopied(true); setTimeout(() => setCopied(false), 2500); };
-  const handleReset = () => { if (confirm("Register with a different attendee profile?")) { localStorage.removeItem(`live_access_${id}`); setRegistered(false); setMeetUrl(null); setFormData({ name: "", email: "", phone: "", organization: "", honeypot: "" }); setTouched({ name: false, email: false, phone: false, organization: false }); } };
+  const handleCopy = () => { if (!meetUrl) return; navigator.clipboard.writeText(meetUrl); setCopied(true); setTimeout(() => setCopied(false), 2500); };
+  const handleReset = () => { if (confirm("Register with a different profile?")) { localStorage.removeItem(`live_access_${id}`); setRegistered(false); setMeetUrl(null); setFormData({ name: "", email: "", phone: "", organization: "", honeypot: "" }); setTouched({ name: false, email: false, phone: false, organization: false }); } };
 
-  const googleCalendarUrl = useMemo(() => {
+  const calUrl = useMemo(() => {
     if (!webinar) return "";
     try {
       const s = new Date(webinar.scheduledAt), e2 = new Date(s.getTime() + (webinar.duration || 60) * 60000);
       const fmt = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
-      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(webinar.title)}&dates=${fmt(s)}/${fmt(e2)}&details=${encodeURIComponent((webinar.description || "") + "\n\nJoin: " + (meetUrl || window.location.href))}&location=${encodeURIComponent(meetUrl || "Google Meet")}`;
+      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(webinar.title)}&dates=${fmt(s)}/${fmt(e2)}&details=${encodeURIComponent((webinar.description || "") + "\n\nJoin: " + (meetUrl || ""))}&location=${encodeURIComponent(meetUrl || "Google Meet")}`;
     } catch { return ""; }
   }, [webinar, meetUrl]);
 
-  /* ── Loading ── */
+  // ─── Shared bg style ───
+  const bgStyle: React.CSSProperties = webinar?.backgroundImageUrl
+    ? { backgroundImage: `url("${webinar.backgroundImageUrl}")`, backgroundSize: "cover", backgroundPosition: "center right", backgroundRepeat: "no-repeat" }
+    : {};
+
+  // ─── Loading ───
   if (loading) return (
-    <div style={{ background: "linear-gradient(135deg,#061427 0%,#0a1e3d 50%,#04101e 100%)" }} className="min-h-screen flex flex-col items-center justify-center text-white relative overflow-hidden">
-      <div className="absolute -top-32 -left-20 w-[500px] h-[500px] rounded-full opacity-20 pointer-events-none" style={{ background: "radial-gradient(circle,#0162b1,transparent)" }} />
-      <div className="relative flex flex-col items-center gap-4 z-10">
-        <div className="relative w-14 h-14">
-          <div className="absolute inset-0 rounded-full border-[3px] border-white/10 border-t-[#0162b1] animate-spin" />
-          <div className="absolute inset-0 flex items-center justify-center"><Video className="h-5 w-5 text-[#1a7fd4]" /></div>
-        </div>
-        <p className="text-[11px] font-bold tracking-[0.25em] uppercase text-slate-400">Connecting to Educare Live</p>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "#040f1e" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px" }}>
+        <div style={{ width: "40px", height: "40px", borderRadius: "50%", border: "3px solid rgba(1,98,177,0.2)", borderTopColor: "#0162b1", animation: "spin 0.9s linear infinite" }} />
+        <p style={{ fontSize: "12px", color: "#475569", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600 }}>Loading…</p>
       </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
-  /* ── Error ── */
+  // ─── Error ───
   if (error || !webinar) return (
-    <div style={{ background: "linear-gradient(135deg,#061427 0%,#0a1e3d 50%,#04101e 100%)" }} className="min-h-screen flex items-center justify-center p-6 text-white">
-      <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(20px)" }} className="max-w-md w-full rounded-2xl p-8 text-center shadow-2xl">
-        <div style={{ background: "rgba(238,27,36,0.1)", border: "1px solid rgba(238,27,36,0.3)" }} className="h-14 w-14 rounded-xl flex items-center justify-center mx-auto mb-4">
-          <AlertCircle className="h-7 w-7" style={{ color: "#ee1b24" }} />
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#040f1e" }}>
+      <div style={{ maxWidth: "420px", width: "100%", background: "#0a1628", border: "1px solid rgba(238,27,36,0.25)", borderRadius: "16px", padding: "40px 32px", textAlign: "center" }}>
+        <div style={{ width: "52px", height: "52px", borderRadius: "12px", background: "rgba(238,27,36,0.1)", border: "1px solid rgba(238,27,36,0.25)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+          <svg width="24" height="24" fill="none" stroke="#ee1b24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         </div>
-        <h2 className="text-lg font-bold mb-2">Session Unavailable</h2>
-        <p className="text-sm text-slate-400 mb-6">{error || "This live session is private or no longer available."}</p>
-        <a href="/" style={{ background: "linear-gradient(135deg,#0162b1,#1a7fd4)", boxShadow: "0 4px 20px rgba(1,98,177,0.3)" }} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-semibold transition-opacity hover:opacity-90">Return to Educare LMS</a>
+        <h2 style={{ color: "white", fontWeight: 700, fontSize: "18px", marginBottom: "10px" }}>Session Unavailable</h2>
+        <p style={{ color: "#64748b", fontSize: "13px", lineHeight: 1.6, marginBottom: "28px" }}>{error || "This live session is private or no longer available."}</p>
+        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 24px", borderRadius: "8px", background: "#0162b1", color: "white", fontSize: "13px", fontWeight: 600, textDecoration: "none" }}>Return to Educare LMS</a>
       </div>
     </div>
   );
 
   const scheduledDate = new Date(webinar.scheduledAt);
-  const formattedDate = scheduledDate.toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const formattedTime = scheduledDate.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
-  const isLiveNow = webinar.status === "LIVE" || timeLeft.isStarted;
+  const fmtDate = scheduledDate.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "long", year: "numeric" });
+  const fmtTime = scheduledDate.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+  const isLive = webinar.status === "LIVE" || timeLeft.isStarted;
   const isEnded = webinar.status === "ENDED";
 
-  const nameTouched = touched.name && !formData.name.trim();
-  const emailTouched = touched.email && (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()));
-  const phoneTouched = touched.phone && (!formData.phone.trim() || formData.phone.replace(/\D/g, "").length < 7);
-  const orgTouched = touched.organization && !formData.organization.trim();
+  const fieldError = {
+    name: touched.name && !formData.name.trim(),
+    email: touched.email && (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())),
+    phone: touched.phone && (!formData.phone.trim() || formData.phone.replace(/\D/g, "").length < 7),
+    org: touched.organization && !formData.organization.trim(),
+  };
 
   return (
-    <div
-      className="min-h-screen relative flex flex-col overflow-x-hidden"
-      style={{
-        backgroundImage: webinar.backgroundImageUrl ? `url("${webinar.backgroundImageUrl}")` : undefined,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-        fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-      }}
-    >
-      {/* Background Overlay */}
-      <div className="absolute inset-0 pointer-events-none" style={{ background: webinar.backgroundImageUrl ? "linear-gradient(135deg,rgba(4,16,32,0.97) 0%,rgba(7,28,58,0.93) 60%,rgba(2,11,24,0.96) 100%)" : "linear-gradient(135deg,#061427 0%,#0a1e3d 55%,#04101e 100%)" }} />
-      {/* Ambient glow orbs */}
-      <div className="absolute top-0 left-0 w-[600px] h-[600px] opacity-[0.22] pointer-events-none" style={{ background: "radial-gradient(circle at 30% 30%,#0162b1,transparent 70%)" }} />
-      <div className="absolute bottom-0 right-0 w-[500px] h-[500px] opacity-[0.12] pointer-events-none" style={{ background: "radial-gradient(circle at 70% 70%,#ee1b24,transparent 70%)" }} />
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative", ...bgStyle }}>
 
-      {/* ── TOP HEADER / BRAND BAR ── */}
-      <header className="relative z-20 w-full" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(4,16,32,0.6)", backdropFilter: "blur(16px)" }}>
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          {/* Logo — LARGER */}
-          <div className="flex items-center gap-4">
-            <div
-              className="flex items-center justify-center overflow-hidden"
-              style={{ background: "white", borderRadius: "14px", padding: "8px 20px", boxShadow: "0 4px 24px rgba(1,98,177,0.22), 0 1px 4px rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.2)" }}
-            >
-              <Image src={logoImage} alt="Educare Group of Institutions" width={210} height={50} className="object-contain" style={{ height: "44px", width: "auto" }} priority />
-            </div>
-            <div className="hidden md:flex flex-col" style={{ borderLeft: "1px solid rgba(255,255,255,0.12)", paddingLeft: "16px" }}>
-              <span className="font-black text-white tracking-wide" style={{ fontSize: "13px" }}>Educare Live</span>
-              <span style={{ fontSize: "11px", color: "rgba(148,163,184,0.8)", fontWeight: 500 }}>Virtual Campus & Webinars</span>
+      {/* ── Directional overlay: dark on left → transparent on right ── */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: webinar.backgroundImageUrl
+          ? "linear-gradient(to right, rgba(4,15,30,0.97) 0%, rgba(4,15,30,0.95) 38%, rgba(4,15,30,0.75) 58%, rgba(4,15,30,0.25) 78%, transparent 100%)"
+          : "linear-gradient(135deg, #040f1e 0%, #071a34 100%)",
+      }} />
+
+      {/* ── HEADER ── */}
+      <header style={{ position: "relative", zIndex: 20, borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0px" }}>
+            <div style={{
+              background: "white", borderRadius: "12px", padding: "10px 22px",
+              boxShadow: "0 2px 16px rgba(1,98,177,0.18)", display: "flex", alignItems: "center"
+            }}>
+              <Image src={logoImage} alt="Educare Group of Institutions" width={200} height={48} style={{ height: "42px", width: "auto", objectFit: "contain" }} priority />
             </div>
           </div>
 
-          {/* Status pill */}
-          {isLiveNow ? (
-            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full font-bold animate-pulse" style={{ fontSize: "11px", background: "rgba(238,27,36,0.18)", border: "1px solid rgba(238,27,36,0.4)", color: "#fca5a5" }}>
-              <span className="w-2 h-2 rounded-full inline-block" style={{ background: "#ee1b24", boxShadow: "0 0 6px #ee1b24" }} />
+          {/* Status badge */}
+          {isLive ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 16px", borderRadius: "100px", background: "rgba(238,27,36,0.15)", border: "1px solid rgba(238,27,36,0.35)", color: "#fca5a5", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em" }}>
+              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ee1b24", display: "inline-block", animation: "pulse 1.4s ease-in-out infinite", boxShadow: "0 0 8px #ee1b24" }} />
               LIVE NOW
             </div>
           ) : isEnded ? (
-            <div className="px-4 py-1.5 rounded-full font-semibold" style={{ fontSize: "11px", background: "rgba(51,65,85,0.8)", border: "1px solid rgba(100,116,139,0.3)", color: "#94a3b8" }}>Session Concluded</div>
+            <div style={{ padding: "6px 16px", borderRadius: "100px", background: "rgba(30,41,59,0.8)", border: "1px solid rgba(71,85,105,0.4)", color: "#64748b", fontSize: "11px", fontWeight: 600 }}>
+              Session Ended
+            </div>
           ) : (
-            <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold" style={{ fontSize: "11px", background: "rgba(1,98,177,0.2)", border: "1px solid rgba(1,98,177,0.4)", color: "#93c5fd" }}>
-              <Sparkles className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />
-              Open Webinar
+            <div style={{ padding: "6px 16px", borderRadius: "100px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.35)", color: "#93c5fd", fontSize: "11px", fontWeight: 600 }}>
+              Upcoming Webinar
             </div>
           )}
         </div>
       </header>
 
-      {/* ── MAIN CONTENT ── */}
-      <main className="relative z-20 flex-1 w-full max-w-7xl mx-auto px-6 py-10 md:py-14">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
+      {/* ── MAIN ── */}
+      <main style={{ position: "relative", zIndex: 20, flex: 1, maxWidth: "1200px", margin: "0 auto", width: "100%", padding: "48px 32px" }}>
 
-          {/* ── LEFT: Session Info Panel ── */}
-          <div className="lg:col-span-7 space-y-7 text-white">
+        {/* Content sits on the LEFT ~55% — right side intentionally open for banner person */}
+        <div style={{ maxWidth: "620px" }}>
 
-            {/* Topic badges */}
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold tracking-widest uppercase" style={{ fontSize: "10px", background: "rgba(1,98,177,0.2)", border: "1px solid rgba(1,98,177,0.35)", color: "#93c5fd" }}>
-                <Radio className="h-3 w-3" style={{ color: "#1a7fd4" }} />{webinar.subject}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold" style={{ fontSize: "10px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", color: "#6ee7b7" }}>
-                <ShieldCheck className="h-3 w-3" />Verified LMS Session
-              </span>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-4xl sm:text-5xl md:text-[3.2rem] font-black leading-[1.1] tracking-tight drop-shadow-lg" style={{ color: "white" }}>
-              {webinar.title}
-            </h1>
-
-            {/* Description — Forge "Panel" style */}
-            {webinar.description && (
-              <div className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <div className="px-5 py-2.5 flex items-center gap-2" style={{ background: "rgba(1,98,177,0.12)", borderBottom: "1px solid rgba(1,98,177,0.2)" }}>
-                  <span className="font-bold tracking-widest uppercase" style={{ fontSize: "10px", color: "#1a7fd4" }}>Session Overview</span>
-                </div>
-                <div className="px-5 py-4">
-                  <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "#cbd5e1" }}>{webinar.description}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Forge-style Info Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Faculty */}
-              <div className="flex items-center gap-3.5 rounded-xl p-4 transition-all hover:border-white/20" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}>
-                <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 text-white" style={{ background: "linear-gradient(135deg,#0162b1,#014d8a)", boxShadow: "0 4px 12px rgba(1,98,177,0.35)" }}>
-                  <User className="h-4.5 w-4.5" />
-                </div>
-                <div>
-                  <p className="font-bold tracking-wider uppercase mb-0.5" style={{ fontSize: "9px", color: "#64748b" }}>Faculty / Speaker</p>
-                  <p className="font-bold text-sm text-white">{webinar.teacherName}</p>
-                </div>
-              </div>
-
-              {/* Duration */}
-              <div className="flex items-center gap-3.5 rounded-xl p-4 transition-all hover:border-white/20" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}>
-                <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 text-white" style={{ background: "linear-gradient(135deg,#059669,#0d9488)", boxShadow: "0 4px 12px rgba(5,150,105,0.35)" }}>
-                  <Clock className="h-4.5 w-4.5" />
-                </div>
-                <div>
-                  <p className="font-bold tracking-wider uppercase mb-0.5" style={{ fontSize: "9px", color: "#64748b" }}>Duration & Platform</p>
-                  <p className="font-bold text-sm text-white">{webinar.duration} Min · Google Meet</p>
-                </div>
-              </div>
-
-              {/* Date span full */}
-              <div className="sm:col-span-2 flex items-center gap-3.5 rounded-xl p-4 transition-all hover:border-white/20" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}>
-                <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 text-white" style={{ background: "linear-gradient(135deg,#d97706,#c2410c)", boxShadow: "0 4px 12px rgba(217,119,6,0.35)" }}>
-                  <Calendar className="h-4.5 w-4.5" />
-                </div>
-                <div>
-                  <p className="font-bold tracking-wider uppercase mb-0.5" style={{ fontSize: "9px", color: "#64748b" }}>Date & Time</p>
-                  <p className="font-bold text-sm text-white">{formattedDate} · {formattedTime} IST</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Countdown — Forge "metric tiles" */}
-            {!timeLeft.isStarted && !isEnded && (
-              <div>
-                <p className="font-bold uppercase tracking-[0.18em] mb-3 flex items-center gap-2" style={{ fontSize: "10px", color: "#64748b" }}>
-                  <Clock className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />
-                  Session Commences In
-                </p>
-                <div className="flex gap-2.5 sm:gap-3">
-                  {[{ label: "Days", value: timeLeft.days }, { label: "Hrs", value: timeLeft.hours }, { label: "Min", value: timeLeft.minutes }, { label: "Sec", value: timeLeft.seconds }].map(({ label, value }) => (
-                    <div key={label} className="flex-1 text-center rounded-xl py-3.5 px-2" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.07)" }}>
-                      <p className="font-black font-mono text-white" style={{ fontSize: "28px", lineHeight: 1, letterSpacing: "-0.04em" }}>{String(value).padStart(2, "0")}</p>
-                      <p className="font-bold uppercase tracking-widest mt-1" style={{ fontSize: "9px", color: "#475569" }}>{label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Subject tag */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#0162b1", display: "inline-block" }} />
+            {webinar.subject}
           </div>
 
-          {/* ── RIGHT: Forge Registration Panel ── */}
-          <div className="lg:col-span-5 lg:sticky lg:top-8">
-            <div
-              className="rounded-2xl overflow-hidden shadow-2xl"
-              style={{
-                background: "rgba(7,20,40,0.94)",
-                border: "1px solid rgba(255,255,255,0.13)",
-                backdropFilter: "blur(24px)",
-                boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)",
-              }}
-            >
+          {/* Title */}
+          <h1 style={{ color: "white", fontSize: "clamp(28px, 4vw, 46px)", fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.02em", marginBottom: "16px" }}>
+            {webinar.title}
+          </h1>
+
+          {/* Thin red accent line */}
+          <div style={{ width: "48px", height: "3px", background: "#ee1b24", borderRadius: "2px", marginBottom: "24px" }} />
+
+          {/* Description */}
+          {webinar.description && (
+            <p style={{ color: "#94a3b8", fontSize: "14px", lineHeight: 1.7, marginBottom: "28px", maxWidth: "520px" }}>
+              {webinar.description}
+            </p>
+          )}
+
+          {/* Meta info — compact horizontal list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "32px" }}>
+            {[
+              { label: "Speaker", value: webinar.teacherName },
+              { label: "Date & Time", value: `${fmtDate} · ${fmtTime} IST` },
+              { label: "Duration", value: `${webinar.duration} minutes · Google Meet` },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#0162b1", minWidth: "84px" }}>{label}</span>
+                <span style={{ width: "1px", height: "14px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+                <span style={{ fontSize: "13px", color: "#cbd5e1", fontWeight: 500 }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Countdown */}
+          {!timeLeft.isStarted && !isEnded && (
+            <div style={{ marginBottom: "36px" }}>
+              <p style={{ fontSize: "10px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "12px" }}>Starts in</p>
+              <div style={{ display: "flex", gap: "10px" }}>
+                {[
+                  { label: "Days", v: timeLeft.days },
+                  { label: "Hrs", v: timeLeft.hours },
+                  { label: "Min", v: timeLeft.minutes },
+                  { label: "Sec", v: timeLeft.seconds },
+                ].map(({ label, v }) => (
+                  <div key={label} style={{ textAlign: "center", minWidth: "64px" }}>
+                    <div style={{ background: "rgba(1,98,177,0.12)", border: "1px solid rgba(1,98,177,0.2)", borderRadius: "10px", padding: "12px 8px", marginBottom: "6px" }}>
+                      <span style={{ color: "white", fontSize: "26px", fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{String(v).padStart(2, "0")}</span>
+                    </div>
+                    <span style={{ fontSize: "9px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── REGISTRATION FORM / CONFIRMED CARD ── */}
+          <div style={{
+            background: "rgba(255,255,255,0.03)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "16px",
+            overflow: "hidden",
+          }}>
+
+            {/* Blue top accent line */}
+            <div style={{ height: "3px", background: "linear-gradient(90deg, #0162b1, #1a7fd4)" }} />
+
+            <div style={{ padding: "28px 28px 32px" }}>
+
               {!registered ? (
                 <>
-                  {/* Forge panel header */}
-                  <div className="px-6 pt-6 pb-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                    {/* Pill badge */}
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md mb-4 font-bold uppercase tracking-widest" style={{ fontSize: "10px", background: "rgba(1,98,177,0.18)", border: "1px solid rgba(1,98,177,0.35)", color: "#1a7fd4" }}>
-                      Free Admission
+                  <h2 style={{ color: "white", fontSize: "17px", fontWeight: 700, marginBottom: "4px" }}>Register to Join</h2>
+                  <p style={{ color: "#64748b", fontSize: "12px", marginBottom: "24px", lineHeight: 1.5 }}>
+                    Enter your details to receive the Google Meet access link.
+                  </p>
+
+                  {submitError && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", borderRadius: "8px", background: "rgba(238,27,36,0.08)", border: "1px solid rgba(238,27,36,0.25)", marginBottom: "18px" }}>
+                      <span style={{ width: "4px", height: "4px", borderRadius: "50%", background: "#ee1b24", flexShrink: 0 }} />
+                      <span style={{ fontSize: "12px", color: "#fca5a5", fontWeight: 500 }}>{submitError}</span>
                     </div>
-                    <h2 className="font-black text-white tracking-tight mb-1" style={{ fontSize: "22px" }}>Register to Join Live</h2>
-                    <p style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.6 }}>
-                      Complete the form below to receive your Google Meet access link.
-                    </p>
-                  </div>
+                  )}
 
-                  {/* Form body */}
-                  <div className="px-6 py-5">
-                    {submitError && (
-                      <div className="mb-4 flex items-center gap-2.5 px-3.5 py-3 rounded-xl" style={{ background: "rgba(238,27,36,0.1)", border: "1px solid rgba(238,27,36,0.28)", fontSize: "12px", color: "#fca5a5" }}>
-                        <AlertCircle className="h-4 w-4 shrink-0" style={{ color: "#ee1b24" }} />
-                        <span className="font-medium">{submitError}</span>
-                      </div>
-                    )}
+                  {/* Honeypot */}
+                  <input type="text" name="website" value={formData.honeypot} onChange={e => setFormData({ ...formData, honeypot: e.target.value })} style={{ display: "none" }} tabIndex={-1} autoComplete="off" />
 
-                    <form onSubmit={handleSubmit}>
-                      {/* Honeypot */}
-                      <input type="text" name="website" value={formData.honeypot} onChange={e => setFormData({ ...formData, honeypot: e.target.value })} className="hidden" tabIndex={-1} autoComplete="off" />
+                  <form onSubmit={handleSubmit}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
 
-                      <div className="space-y-4">
-                        {/* Full Name */}
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <ForgeFieldIcon icon={<User className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />} />
-                            <ForgeLabel htmlFor="reg-name">Full Name <span style={{ color: "#ee1b24" }}>*</span></ForgeLabel>
-                          </div>
-                          <ForgeInput id="reg-name" value={formData.name} onChange={v => setFormData({ ...formData, name: v })} onBlur={() => setTouched(t => ({ ...t, name: true }))} placeholder="e.g. Rahul Sharma" required isError={nameTouched} />
-                          {nameTouched && <p style={{ fontSize: "11px", color: "#f87171", marginTop: "5px" }}>Please enter your full name.</p>}
-                        </div>
-
-                        {/* Email */}
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <ForgeFieldIcon icon={<Mail className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />} />
-                            <ForgeLabel htmlFor="reg-email">Email Address <span style={{ color: "#ee1b24" }}>*</span></ForgeLabel>
-                          </div>
-                          <ForgeInput id="reg-email" type="email" value={formData.email} onChange={v => setFormData({ ...formData, email: v })} onBlur={() => setTouched(t => ({ ...t, email: true }))} placeholder="e.g. rahul@example.com" required isError={emailTouched} />
-                          {emailTouched && <p style={{ fontSize: "11px", color: "#f87171", marginTop: "5px" }}>Please enter a valid email address.</p>}
-                        </div>
-
-                        {/* Phone */}
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <ForgeFieldIcon icon={<Phone className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />} />
-                            <ForgeLabel htmlFor="reg-phone">WhatsApp / Mobile <span style={{ color: "#ee1b24" }}>*</span></ForgeLabel>
-                          </div>
-                          <ForgeInput id="reg-phone" type="tel" value={formData.phone} onChange={v => setFormData({ ...formData, phone: v })} onBlur={() => setTouched(t => ({ ...t, phone: true }))} placeholder="e.g. +91 98765 43210" required isError={phoneTouched} />
-                          {phoneTouched && <p style={{ fontSize: "11px", color: "#f87171", marginTop: "5px" }}>Please enter a valid mobile number.</p>}
-                        </div>
-
-                        {/* Organization */}
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <ForgeFieldIcon icon={<Building className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />} />
-                            <ForgeLabel htmlFor="reg-org">School / College / Organization <span style={{ color: "#ee1b24" }}>*</span></ForgeLabel>
-                          </div>
-                          <ForgeInput id="reg-org" value={formData.organization} onChange={v => setFormData({ ...formData, organization: v })} onBlur={() => setTouched(t => ({ ...t, organization: true }))} placeholder="e.g. Delhi Public School" required isError={orgTouched} />
-                          {orgTouched && <p style={{ fontSize: "11px", color: "#f87171", marginTop: "5px" }}>Please enter your institution name.</p>}
-                        </div>
+                      {/* Full Name */}
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label htmlFor="f-name" style={labelStyle}>Full Name <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <input
+                          id="f-name" type="text" required autoComplete="name"
+                          value={formData.name}
+                          onChange={e => setFormData({ ...formData, name: e.target.value })}
+                          onBlur={() => setTouched(t => ({ ...t, name: true }))}
+                          placeholder="Your full name"
+                          style={inputStyle(fieldError.name)}
+                        />
+                        {fieldError.name && <p style={errorHint}>Full name is required.</p>}
                       </div>
 
-                      {/* Submit button — Forge primary action */}
-                      <button
-                        type="submit"
-                        disabled={submitting}
-                        className="w-full mt-6 flex items-center justify-center gap-2.5 font-bold rounded-xl transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-                        style={{ height: "48px", fontSize: "13px", letterSpacing: "0.04em", background: "linear-gradient(135deg,#0162b1 0%,#1a7fd4 100%)", boxShadow: "0 4px 20px rgba(1,98,177,0.4), 0 1px 0 rgba(255,255,255,0.12) inset", color: "white" }}
-                      >
-                        {submitting ? (
-                          <>
-                            <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                            <span>Confirming Registration…</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>Register & Get Google Meet Link</span>
-                            <ArrowRight className="h-4 w-4" />
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  </div>
+                      {/* Email */}
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label htmlFor="f-email" style={labelStyle}>Email Address <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <input
+                          id="f-email" type="email" required autoComplete="email"
+                          value={formData.email}
+                          onChange={e => setFormData({ ...formData, email: e.target.value })}
+                          onBlur={() => setTouched(t => ({ ...t, email: true }))}
+                          placeholder="you@example.com"
+                          style={inputStyle(fieldError.email)}
+                        />
+                        {fieldError.email && <p style={errorHint}>A valid email is required.</p>}
+                      </div>
+
+                      {/* Phone */}
+                      <div>
+                        <label htmlFor="f-phone" style={labelStyle}>WhatsApp / Mobile <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <input
+                          id="f-phone" type="tel" required autoComplete="tel"
+                          value={formData.phone}
+                          onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                          onBlur={() => setTouched(t => ({ ...t, phone: true }))}
+                          placeholder="+91 98765 43210"
+                          style={inputStyle(fieldError.phone)}
+                        />
+                        {fieldError.phone && <p style={errorHint}>Valid mobile required.</p>}
+                      </div>
+
+                      {/* Organization */}
+                      <div>
+                        <label htmlFor="f-org" style={labelStyle}>School / College <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <input
+                          id="f-org" type="text" required
+                          value={formData.organization}
+                          onChange={e => setFormData({ ...formData, organization: e.target.value })}
+                          onBlur={() => setTouched(t => ({ ...t, organization: true }))}
+                          placeholder="Your institution"
+                          style={inputStyle(fieldError.org)}
+                        />
+                        {fieldError.org && <p style={errorHint}>Institution name required.</p>}
+                      </div>
+
+                    </div>
+
+                    {/* Submit button */}
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      style={{
+                        width: "100%", height: "46px", borderRadius: "10px", border: "none", cursor: submitting ? "not-allowed" : "pointer",
+                        background: submitting ? "rgba(1,98,177,0.5)" : "#0162b1",
+                        color: "white", fontSize: "13px", fontWeight: 700, letterSpacing: "0.04em",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                        transition: "background 0.2s, opacity 0.2s",
+                        boxShadow: "0 4px 16px rgba(1,98,177,0.35)",
+                      }}
+                    >
+                      {submitting ? (
+                        <>
+                          <span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+                          Confirming…
+                        </>
+                      ) : "Register & Get Meeting Link"}
+                    </button>
+                  </form>
                 </>
               ) : (
-                /* ── Unlocked / Confirmed Panel ── */
+                /* ── Confirmed State ── */
                 <>
-                  <div className="px-6 pt-6 pb-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="h-12 w-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(16,185,129,0.18)", border: "1px solid rgba(16,185,129,0.35)" }}>
-                        <CheckCircle2 className="h-7 w-7" style={{ color: "#34d399" }} />
-                      </div>
-                      <div>
-                        <span className="inline-block px-2 py-0.5 rounded font-bold uppercase tracking-widest mb-0.5" style={{ fontSize: "9px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", color: "#6ee7b7" }}>Pass Confirmed</span>
-                        <h2 className="font-black text-white" style={{ fontSize: "20px" }}>Registration Complete!</h2>
-                      </div>
+                  {/* Success header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "24px", paddingBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="22" height="22" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                     </div>
-                    <p style={{ fontSize: "12px", color: "#94a3b8" }}>Welcome, <span className="font-bold text-white">{formData.name || "Attendee"}</span>. Your attendee pass has been verified.</p>
+                    <div>
+                      <p style={{ fontSize: "10px", color: "#34d399", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "2px" }}>Registered</p>
+                      <h2 style={{ color: "white", fontSize: "17px", fontWeight: 700 }}>You're confirmed, {formData.name.split(" ")[0]}!</h2>
+                    </div>
                   </div>
 
-                  <div className="px-6 py-5 space-y-4">
-                    {meetUrl ? (
-                      <>
-                        <a href={meetUrl} target="_blank" rel="noreferrer"
-                          className="w-full flex items-center justify-center gap-2.5 rounded-xl font-bold transition-all hover:opacity-90 active:scale-[0.99]"
-                          style={{ height: "52px", fontSize: "14px", background: "linear-gradient(135deg,#059669,#0d9488)", boxShadow: "0 4px 20px rgba(5,150,105,0.4)", color: "white" }}>
-                          <Video className="h-5 w-5" />
-                          <span>Launch Google Meet</span>
-                          <ExternalLink className="h-4 w-4 opacity-70" />
-                        </a>
-                        <button onClick={handleCopyLink} className="w-full flex items-center justify-center gap-2 rounded-xl font-semibold transition-all hover:opacity-80" style={{ height: "40px", fontSize: "12px", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }}>
-                          {copied ? <Check className="h-4 w-4" style={{ color: "#34d399" }} /> : <Copy className="h-4 w-4" style={{ color: "#94a3b8" }} />}
-                          {copied ? "Link Copied to Clipboard!" : "Copy Google Meet Link"}
-                        </button>
-                      </>
-                    ) : (
-                      <div className="text-sm text-center rounded-xl py-4 px-5" style={{ background: "rgba(217,119,6,0.12)", border: "1px solid rgba(217,119,6,0.28)", color: "#fcd34d" }}>
-                        The faculty will share the Google Meet link shortly before start time. Please refresh.
-                      </div>
-                    )}
-
-                    {googleCalendarUrl && (
-                      <a href={googleCalendarUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 font-semibold underline underline-offset-4 transition-colors hover:opacity-80" style={{ fontSize: "12px", color: "#1a7fd4" }}>
-                        <CalendarPlus className="h-3.5 w-3.5" />Add to Google Calendar
+                  {/* Meet link or waiting */}
+                  {meetUrl ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <a
+                        href={meetUrl} target="_blank" rel="noreferrer"
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "46px", borderRadius: "10px", background: "#0162b1", color: "white", fontSize: "13px", fontWeight: 700, textDecoration: "none", boxShadow: "0 4px 16px rgba(1,98,177,0.35)", transition: "opacity 0.2s" }}
+                      >
+                        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        Join Google Meet
+                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                       </a>
-                    )}
 
-                    {/* Guidelines block */}
-                    <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                      <p className="flex items-center gap-1.5 font-bold mb-2.5" style={{ fontSize: "11px", color: "white" }}>
-                        <HelpCircle className="h-3.5 w-3.5" style={{ color: "#1a7fd4" }} />Webinar Guidelines
-                      </p>
-                      <ul className="space-y-1.5" style={{ fontSize: "11px", color: "#64748b" }}>
-                        <li className="flex items-start gap-1.5"><span style={{ color: "#0162b1" }}>—</span>Keep your microphone muted upon entry.</li>
-                        <li className="flex items-start gap-1.5"><span style={{ color: "#0162b1" }}>—</span>Use in-call chat for questions during Q&A.</li>
-                        <li className="flex items-start gap-1.5"><span style={{ color: "#0162b1" }}>—</span>Your access is saved — no need to register again on refresh.</li>
-                      </ul>
+                      <button
+                        onClick={handleCopy}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "40px", borderRadius: "10px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: copied ? "#34d399" : "#94a3b8", fontSize: "12px", fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}
+                      >
+                        {copied ? (
+                          <><svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Link Copied!</>
+                        ) : (
+                          <><svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy Meeting Link</>
+                        )}
+                      </button>
                     </div>
+                  ) : (
+                    <div style={{ padding: "14px 16px", borderRadius: "8px", background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.2)", color: "#fcd34d", fontSize: "12px", lineHeight: 1.6 }}>
+                      The meeting link will be available shortly before the session begins. Please refresh this page.
+                    </div>
+                  )}
 
-                    <button onClick={handleReset} className="flex items-center gap-1.5 mx-auto transition-colors hover:text-slate-300" style={{ fontSize: "11px", color: "#475569" }}>
-                      <RefreshCw className="h-3 w-3" />Register a different attendee
+                  {/* Calendar + switch */}
+                  <div style={{ marginTop: "18px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    {calUrl ? (
+                      <a href={calUrl} target="_blank" rel="noreferrer" style={{ fontSize: "12px", color: "#0162b1", fontWeight: 600, textDecoration: "none" }}>
+                        + Add to Calendar
+                      </a>
+                    ) : <span />}
+                    <button onClick={handleReset} style={{ fontSize: "11px", color: "#475569", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                      Different attendee?
                     </button>
+                  </div>
+
+                  {/* Guidelines */}
+                  <div style={{ marginTop: "20px", padding: "14px 16px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <p style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Session Guidelines</p>
+                    <ul style={{ fontSize: "11px", color: "#475569", lineHeight: 1.8, listStyle: "none", padding: 0, margin: 0 }}>
+                      {["Join with your microphone muted.", "Use in-call chat for questions.", "Your access is saved — just refresh to rejoin."].map(t => (
+                        <li key={t} style={{ display: "flex", gap: "8px" }}><span style={{ color: "#0162b1" }}>—</span>{t}</li>
+                      ))}
+                    </ul>
                   </div>
                 </>
               )}
             </div>
           </div>
-
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="relative z-20 text-center py-4 px-6" style={{ borderTop: "1px solid rgba(255,255,255,0.07)", background: "rgba(4,16,32,0.5)", backdropFilter: "blur(12px)", fontSize: "11px", color: "#475569" }}>
-        © {new Date().getFullYear()} Educare Group of Institutions. All rights reserved. Powered by Educare LMS.
+      {/* ── FOOTER ── */}
+      <footer style={{ position: "relative", zIndex: 20, borderTop: "1px solid rgba(255,255,255,0.06)", padding: "16px 32px", textAlign: "center", fontSize: "11px", color: "#334155" }}>
+        © {new Date().getFullYear()} Educare Group of Institutions · Powered by Educare LMS
       </footer>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        input::placeholder { color: #334155; }
+        input:focus { outline: none; }
+        a:hover { opacity: 0.85; }
+        button:hover:not(:disabled) { opacity: 0.88; }
+      `}</style>
     </div>
   );
 }
+
+/* ── Style helpers ── */
+const labelStyle: React.CSSProperties = {
+  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
+  textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "6px",
+};
+
+function inputStyle(isError?: boolean): React.CSSProperties {
+  return {
+    width: "100%", height: "40px", borderRadius: "8px", padding: "0 12px",
+    background: "rgba(255,255,255,0.04)",
+    border: `1px solid ${isError ? "rgba(238,27,36,0.45)" : "rgba(255,255,255,0.1)"}`,
+    color: "white", fontSize: "13px", fontWeight: 400, boxSizing: "border-box",
+    outline: "none", transition: "border 0.15s",
+  };
+}
+
+const errorHint: React.CSSProperties = {
+  fontSize: "11px", color: "#f87171", marginTop: "4px", fontWeight: 500,
+};
