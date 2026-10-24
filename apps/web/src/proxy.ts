@@ -15,6 +15,7 @@ export default function proxy(request: NextRequest) {
     request.nextUrl.pathname === '/features' || 
     request.nextUrl.pathname.startsWith('/admission') ||
     request.nextUrl.pathname.startsWith('/f/') ||
+    request.nextUrl.pathname.startsWith('/live') ||
     request.nextUrl.pathname.startsWith('/public');
 
   if (!token && !isPublicRoute) {

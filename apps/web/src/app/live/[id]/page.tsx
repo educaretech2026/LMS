@@ -25,6 +25,12 @@ interface PublicWebinar {
   createdAt: string;
 }
 
+function getPublicApiUrl(): string {
+  const rawUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.educarelearning.in/api";
+  const cleanBase = rawUrl.replace(/\/+$/, "");
+  return cleanBase.endsWith("/api") ? cleanBase : `${cleanBase}/api`;
+}
+
 export default function PublicLiveClassPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -83,7 +89,7 @@ export default function PublicLiveClassPage() {
       try {
         setLoading(true);
         setError(null);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+        const apiUrl = getPublicApiUrl();
         const res = await fetch(`${apiUrl}/live-class/public/${id}`);
         if (!res.ok) {
           if (res.status === 404) {
@@ -141,7 +147,7 @@ export default function PublicLiveClassPage() {
     setSubmitError("");
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const apiUrl = getPublicApiUrl();
       const res = await fetch(`${apiUrl}/live-class/public/${id}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
