@@ -32,33 +32,31 @@ export async function reconcileLegacyEnquiries(
   }> = [];
 
   for (const enquiry of unassigned) {
-    // Check if enquiry has authoritative origin metadata (e.g. source tag specifying verified centre)
-    let authoritativeCentreId: string | null = null;
-    if (enquiry.source && enquiry.source.startsWith('Centre:')) {
-      const parsedCentreId = enquiry.source.replace(/^Centre:\s*/, '').trim();
-      const centre = await client.centre.findUnique({ where: { id: parsedCentreId } });
-      if (centre && centre.status === 'ACTIVE') {
-        authoritativeCentreId = centre.id;
-      }
-    }
+    // Security Rule:
+    // 1. Free-text source (e.g. "Centre: centre-B", "Walk-in", "Website Form") can originate from client input
+    //    and is NEVER trusted as authoritative proof of originating centre ownership.
+    // 2. Staff assignment (assignedToId) represents post-intake operational CRM routing and does NOT establish origin.
+    // 3. Automatic backfill is permitted ONLY when authoritative persisted metadata or a verified relationship
+    //    unambiguously establishes the tenant.
+    // 4. Missing, contradictory, or ambiguous records MUST remain unassigned (centreId: null) and be resolved
+    //    strictly through explicit, auditable Super Admin manual reconciliation.
 
-    if (authoritativeCentreId) {
-      resolvedCount++;
-      if (!dryRun) {
-        await client.enquiry.update({
-          where: { id: enquiry.id },
-          data: { centreId: authoritativeCentreId },
-        });
-      }
-      continue;
-    }
-
-    // Staff assignment analysis: investigative context only, not proof of origin
     const staffCentres = enquiry.assignedTo
       ? (Array.from(
           new Set(enquiry.assignedTo.userCentres.map((uc: any) => uc.centreId).filter(Boolean)),
         ) as string[])
       : [];
+
+    let reason = 'Lacks authoritative server-persisted origin metadata; fails closed for Super Admin manual reconciliation.';
+    if (enquiry.source && enquiry.source.startsWith('Centre:')) {
+      reason = 'Free-text source tag detected, but source originates from client input and cannot establish tenant ownership.';
+    } else if (staffCentres.length === 1) {
+      reason = 'Assigned staff belongs to a single centre, but staff assignment is post-intake CRM routing and does not prove originating centre. Cannot authorize automatic backfill.';
+    } else if (staffCentres.length > 1) {
+      reason = 'Assigned staff is associated with multiple centres; cannot infer tenant ownership.';
+    } else if (!enquiry.assignedToId) {
+      reason = 'Unassigned enquiry lacking verified origin metadata.';
+    }
 
     ambiguousRecords.push({
       enquiryId: enquiry.id,
@@ -66,19 +64,14 @@ export async function reconcileLegacyEnquiries(
       contactNumber: enquiry.contactNumber,
       assignedToId: enquiry.assignedToId,
       suggestedCentreId: staffCentres.length === 1 ? staffCentres[0] : null,
-      reason:
-        staffCentres.length === 1
-          ? 'Assigned staff belongs to a single centre, but staff assignment is post-intake CRM routing and does not prove originating centre. Cannot authorize automatic backfill. Retained as unresolved (centreId: null) for Super Admin review.'
-          : staffCentres.length > 1
-          ? 'Assigned staff is associated with multiple centres; cannot infer tenant ownership.'
-          : 'No assigned staff or staff has no centre memberships; lacks authoritative originating metadata.',
+      reason,
     });
   }
 
   console.log('--- Enquiry Reconciliation Summary ---');
   console.log(`Total Inspected: ${unassigned.length}`);
-  console.log(`Resolved via Authoritative Originating Metadata: ${resolvedCount}`);
-  console.log(`Ambiguous (Failing Closed for Safety, Requires Super Admin Review): ${ambiguousRecords.length}`);
+  console.log(`Resolved via Authoritative Persisted Metadata: ${resolvedCount}`);
+  console.log(`Ambiguous (Failing Closed for Safety, Requires Super Admin Manual Reconciliation): ${ambiguousRecords.length}`);
 
   if (ambiguousRecords.length > 0) {
     console.warn('⚠️ The following enquiries could not be safely resolved and remain unassigned (failing closed):');

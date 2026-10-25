@@ -4,35 +4,37 @@
 
 This report documents the security audit, authorization remediation, and release-gate consistency review completed on the `fix/authorization-remediation` branch of the `educare_lms` repository.
 
-In response to the final release-gate review, every authorization rule, verification path, and script was audited against actual source code, Prisma models, migrations, and test runs:
+In response to the trusted enquiry origin review and final release-gate requirements, all authorization rules, verification paths, and backfill scripts were audited against actual source code, Prisma models, migrations, and test runs:
 
-1. **Test Suite Reconciliation (Section 8)**:
-   - **Discrepancy Source Identified**: The previous report noted 89 remediation tests and 298 security regression tests alongside a stated total of 402 passing tests ($89 + 298 = 387$). The difference of **15 passing tests** represents the baseline unit tests across the 15 other core test suites in `apps/api/src/` (`attendance`, `assignments`, `fee`, `sms`, `report`, `finance`, `enquiry`, and `app`).
-   - **Current Verified Total**: With 2 additional Turnstile security tests added in this verification cycle, the complete API test runner executes **17 test suites**, resulting in **404 passed tests, 0 failed, 0 skipped, 0 blocked** ($91 + 298 + 15 = 404$).
+1. **Trusted Enquiry Origin & Prevention of Forged Ownership (Section 4)**:
+   - **Client Inputs Untrusted**: Client-submitted `centreId`, `source`, and `assignedToId` on public endpoints (`POST /api/enquiry/public`) are treated as untrusted and cannot dictate tenant ownership.
+   - **Form-Derived Ownership**: Tenant ownership (`centreId`) is derived strictly server-side when a submission references a verified active `CustomForm` that has an active configured centre.
+   - **Separation of Attribution vs Ownership**: Legitimate marketing/intake attribution (`source`) is preserved as a descriptive text field (e.g. `'Website Form'`, `'Walk-in'`) but is **never** used to infer or assign tenant ownership.
+   - **Fail-Closed Unassigned Intake**: Generic public admissions (such as `/admission`) that lack a centre-configured form are preserved with `centreId = null`, isolated from single-centre staff, and surfaced solely to Super Admins.
 
-2. **Hardened Cloudflare Turnstile Verification (Section 6)**:
-   - **Frontend-Only Hostname Allowlist**: Removed `api.educarelearning.in` from the default hostname allowlist because the widget is rendered exclusively on public web frontends (`lms.educarelearning.in` and `educarelearning.in`).
-   - **Safe Hostname Normalization**: Strips URL schemes, ports, and trailing paths before comparing against the allowlist.
-   - **Mandatory Exact Action Validation**: Rejects tokens where the siteverify response omits `action` or where `action` does not strictly match `'admission_enquiry'`.
-   - **Zero Secret Exposure**: Tokens, secret keys, and client credentials are fully redacted and never logged or exposed in client error responses.
-   - **Fail-Closed Production Posture**: Rejects requests if `TURNSTILE_SECRET_KEY` is not configured in production environments.
+2. **Hardened Enquiry Reconciliation & Audited Manual Workflow (Section 5)**:
+   - **Elimination of Unsafe Script Backfills**: Removed all automatic assignment based on free-text `source.startsWith('Centre: ...')` and staff assignment in `backfill-enquiry-centres.ts`.
+   - **Fail-Closed Legacy Records**: Legacy enquiries lacking authoritative server-persisted relationships remain unassigned (`centreId = null`) in both dry-run and apply modes.
+   - **Audited Manual Reconciliation**: Implemented a dedicated Super Admin manual reconciliation workflow (`POST /api/enquiry/:id/reconcile`) that validates target centre status and creates non-repudiable audit logs via `AuditService`.
+   - **Zero Dry-Run Mutations**: Dry-run mode (`dryRun = true`) is guaranteed to perform zero database updates.
 
-3. **Elimination of Unsafe Enquiry Staff-Assignment Backfills (Section 7)**:
-   - **Business Invariant**: Public admission enquiries are submitted without centre binding (`centreId = null, status = NEW`). Staff assignments are post-intake operational CRM routing and do **not** constitute proof of geographic origin.
-   - **Script Hardening**: Removed `--trust-staff-assignment` as an automatic ownership-assignment mechanism in `backfill-enquiry-centres.ts`.
-   - **Authoritative Origin Requirement**: Centre ownership is assigned **only** when unambiguous, authoritative originating metadata is present in the record (e.g. `source.startsWith('Centre: <centreId>')`).
-   - **Fail-Closed Unresolved Records**: Records with staff assignment but no authoritative source metadata are preserved with `centreId = null` and surfaced exclusively to Super Admins (`GET /api/enquiry/unreconciled`) for manual reconciliation.
-   - **Dry-Run Integrity**: Dry-run mode (`dryRun = true`) is guaranteed to perform zero database mutations.
+3. **Decoupling Content Read/Playback from Management Rights (Section 6)**:
+   - **Public Read vs Management**: Explicit public publication (`isPublic = true`) allows marketing previews for prospective learners and enrolled students, but **never** confers edit, update, or deletion rights to non-super admins.
+   - **Super Admin Governance**: Only `SUPER_ADMIN` can set, modify, or delete `isPublic = true` or `isShared = true` materials. Centre Admins and Teachers can only manage private materials within their authorized centres and assigned subjects/standards.
 
-4. **Clarification of Content vs Management Permissions (Section 4)**:
-   - **Read/Playback vs Management Decoupling**: Separate permissions are enforced for public preview playback (`isPublic = true`), cross-centre institutional sharing (`isShared = true`), centre-specific access (`centreId = X`), and mutations (create, update, delete, share, publish).
-   - **Non-Super-Admin Mutation Prevention**: `isPublic = true` grants preview read access to learners, but **never** grants editing or deletion permissions to non-super admins. Only `SUPER_ADMIN` can set, modify, or delete public or globally shared study materials.
-   - **Private Institutional Content**: Non-public content requires student course enrolment and teacher subject/standard assignment.
+4. **Hardened Cloudflare Turnstile Verification (Section 7)**:
+   - **Frontend-Only Hostname Allowlist**: Restricted allowed hostnames to public frontends (`lms.educarelearning.in`, `educarelearning.in`), excluding `api.educarelearning.in`.
+   - **Hostname Normalization**: Strips URL schemes, ports, and trailing paths before allowlist evaluation.
+   - **Mandatory Exact Action Matching**: Strictly requires `action` to match `'admission_enquiry'`, rejecting omitted or mismatched actions.
+   - **Fail-Closed Production Posture**: Rejects requests if `TURNSTILE_SECRET_KEY` is missing in production environments; redacts secrets and raw tokens from logs and error payloads.
 
-5. **Proxy Trust and Distributed Rate Limiting (Section 5)**:
-   - **Strict Untrusted Connection Defense**: When an incoming TCP connection does not originate from a trusted proxy CIDR defined in `TRUSTED_PROXIES`, client-supplied forwarding headers (`X-Forwarded-For`, `CF-Connecting-IP`) are discarded, deriving rate-limit trackers strictly from `req.socket.remoteAddress`.
-   - **Fail-Closed Redis Storage**: If distributed Redis rate-limiting storage becomes unavailable, `StrictThrottlerGuard` throws `HTTP 503 Service Unavailable`, preventing unthrottled brute-force attempts during infrastructure degradation.
-   - **CIDR Caution**: Broad private CIDRs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) must be scoped in staging/production to the exact Kubernetes/VPC ingress subnet.
+5. **Test Suite Reconciliation & Verification (Section 9)**:
+   - **Full Repository Test Suite**: **17 test suites, 414 tests passed, 0 failed, 0 skipped, 0 blocked**.
+   - **Suite Composition**:
+     - Dedicated Remediation Suite (`authorization-remediation.spec.ts`): **101 tests passed** (including 10 new Scope J trusted origin and reconciliation tests).
+     - Security Regression Suite (`security-regression.spec.ts`): **298 tests passed**.
+     - Core Domain Unit Suites: **15 tests passed** across 15 suites.
+   - **Build & Schema**: Validated Prisma schema, generated Prisma client, and compiled NestJS API with 0 TypeScript errors.
 
 ---
 
@@ -41,7 +43,7 @@ In response to the final release-gate review, every authorization rule, verifica
 - **Git Branch**: `fix/authorization-remediation`
 - **Base Branch**: `main`
 - **Commit Author**: `nonstradamoz <nonstradamoz@users.noreply.github.com>`
-- **Working-Tree Status**: Clean, fully compiled, all 17 test suites passing (404/404 tests).
+- **Working-Tree Status**: Clean, fully compiled, all 17 test suites passing (414/414 tests).
 
 ---
 
@@ -49,133 +51,142 @@ In response to the final release-gate review, every authorization rule, verifica
 
 | File Path | Component | Rationale & Change Summary |
 | :--- | :--- | :--- |
-| `apps/api/src/enquiry/enquiry.service.ts` | Enquiry Service | Hardened Turnstile verification: removed `api.educarelearning.in` from allowlist, added hostname normalization, enforced mandatory exact action matching (`admission_enquiry`), and maintained zero-leak error handling. |
-| `packages/database/prisma/scripts/backfill-enquiry-centres.ts` | Reconciliation CLI | Eliminated `--trust-staff-assignment` automatic backfill. Restricts automatic centre assignment to authoritative originating metadata (`source: 'Centre: ...'`). Single-centre staff assignment is logged as an investigative suggestion only; dry-run executes 0 mutations. |
-| `apps/api/src/study-materials/study-materials.service.ts` | Study Material Service | Enforces strict separation between read/playback rights and management rights. `isPublic = true` allows learner read/playback but explicitly forbids update/delete by non-super admins. Governs `isShared` and `isPublic` mutations under `SUPER_ADMIN`. |
-| `apps/api/src/study-materials/study-materials.controller.ts` | Study Material Controller | Binds `getPlayUrl` to `StudyMaterialsService.getById(id, req.user)` to guarantee video stream downloads enforce identical tenant and role authorization boundaries. |
-| `apps/api/src/common/guards/strict-throttler.guard.ts` | Rate Limit Guard | Enforces socket-based tracking for untrusted direct connections, validates trusted proxy CIDRs, and implements fail-closed `HTTP 503` on Redis outages. |
-| `apps/api/src/common/authorization-remediation.spec.ts` | Test Suite | Added regression tests verifying Turnstile rejection when widget action is omitted, Turnstile rejection for non-frontend hostnames (`api.educarelearning.in`), and proof that staff assignment alone cannot backfill centre ownership. Suite expanded to 91 passing tests. |
-| `packages/database/prisma/schema.prisma` | Database Schema | Contains explicit `isPublic: Boolean @default(false)` attribute on `StudyMaterial` to decouple public marketing previews from institutional sharing. |
+| `apps/api/src/enquiry/enquiry.service.ts` | Enquiry Service | Derives `centreId` strictly from active verified `CustomForm` configurations; rejects conflicting client `centreId`; strips client-supplied `assignedToId`; isolates attribution `source` from tenant ownership; implements audited `reconcileEnquiry` for Super Admins. |
+| `apps/api/src/enquiry/enquiry.controller.ts` | Enquiry Controller | Added `POST :id/reconcile` endpoint restricted to `SUPER_ADMIN`; bound `GET unreconciled` to Super Admin user context. |
+| `apps/api/src/enquiry/enquiry.module.ts` | Enquiry Module | Imported `AuditModule` to enable audit recording during manual enquiry reconciliation. |
+| `packages/database/prisma/scripts/backfill-enquiry-centres.ts` | Reconciliation CLI | Eliminated automatic backfill from free-text `source` and staff assignment; guarantees ambiguous records remain `centreId = null` in both dry-run and apply modes. |
+| `apps/api/src/common/authorization-remediation.spec.ts` | Test Suite | Added Scope J containing 10 comprehensive regression tests for trusted origin derivation, forged input rejection, dry-run/apply safety, and Super Admin reconciliation. Suite expanded to 101 tests. |
+| `apps/api/src/study-materials/study-materials.service.ts` | Study Material Service | Decoupled `isPublic` (public read/preview) from mutation rights (Super Admin only). Governs `isShared` and `isPublic` flags. |
+| `apps/api/src/study-materials/study-materials.controller.ts` | Study Material Controller | Binds `getPlayUrl` to `StudyMaterialsService.getById(id, req.user)` to enforce tenant boundaries on streaming playback URLs. |
+| `apps/api/src/common/guards/strict-throttler.guard.ts` | Rate Limit Guard | Enforces socket-based tracking for direct untrusted connections, CIDR subnet matching, and fail-closed `HTTP 503` on Redis outages. |
+| `packages/database/prisma/schema.prisma` | Database Schema | Model contains `isPublic: Boolean @default(false)` on `StudyMaterial` and `centreId: String?` on `CustomForm`. |
 | `packages/database/prisma/migrations/20261025_add_studymaterial_is_public/migration.sql` | Migration SQL | Schema-guarded idempotent migration adding `"isPublic" BOOLEAN NOT NULL DEFAULT false` to `study_materials`. |
 
 ---
 
-## 4. Distinct Study-Material Permission Matrix: Read vs Management
+## 4. Final Source of Truth for Enquiry Ownership
 
-The following matrix defines the boundaries between viewing/playing content and managing/mutating content:
+### A. Threat Model & Forged Ownership Defense
+In multi-tenant CRM architectures, public enquiry endpoints (`POST /api/enquiry/public`) are exposed to unauthenticated users. If an endpoint accepts client-submitted `centreId`, `assignedToId`, or parses free-text `source` values (e.g. `source: "Centre: centre-B"`), attackers can:
+1. Force leads into a rival branch's CRM pipeline.
+2. Route prospects to specific compromised counsellor accounts.
+3. Poison backfill reconciliation scripts that scan metadata fields.
 
-### A. Read & Playback Access Matrix
+### B. Ownership Derivation Rules
+1. **Untrusted Client Inputs**:
+   - `centreId`: A client-submitted `centreId` is **never** accepted on public intake simply because the centre exists or is active.
+   - `assignedToId`: Always stripped and forced to `null` on public intake.
+   - `source`: Stored as pure attribution text (e.g. `'Website Form'`, `'Referral'`). It is **never** parsed for tenant keywords or used to infer `centreId`.
+2. **Authoritative Server Derivation via Verified Forms**:
+   - When a public submission provides `formId`:
+     - The server looks up `CustomForm` in the database.
+     - Verifies `form.isActive === true`.
+     - Verifies `form.centreId` exists and points to an `ACTIVE` centre.
+     - Derives `targetCentreId = form.centreId`.
+   - If client also supplies a conflicting `centreId`, the request is **rejected** with `HTTP 400 Bad Request ('Client-supplied centreId conflicts with verified form configuration.')`.
+3. **Preservation of Generic Admission Workflows**:
+   - Generic public forms (e.g. `/admission`) that do not reference a centre-bound form are created with `centreId = null, status = NEW`.
+   - Records remain safely unassigned and accessible only to Super Admins.
 
-| Content Scope | `SUPER_ADMIN` | `CENTRE_ADMIN` | `TEACHER` | Enrolled `STUDENT` (Matching Course) | Unenrolled `STUDENT` | `PUBLIC_LEARNER` / Unauthenticated |
+### C. Attribution vs Tenant Ownership Separation
+- **Source Attribution (`source: String?`)**: Represents the marketing channel or lead mechanism (e.g. `'Walk-in'`, `'Facebook Ad'`, `'Website Form'`). Available to counsellors for conversion analytics.
+- **Tenant Ownership (`centreId: String?`)**: Controls database row-level security and multi-tenant access scoping (`getAllEnquiries`, `getEnquirySummary`, `updateEnquiry`).
+
+---
+
+## 5. Hardened Ownership Reconciliation & Legacy Data Limitations
+
+### A. Script Rules (`backfill-enquiry-centres.ts`)
+1. **No Automatic Backfill from Free-Text `source`**:
+   - Records with `source.startsWith('Centre: ...')` are treated as untrusted client data and **not** backfilled.
+2. **No Automatic Backfill from Staff Assignment**:
+   - Staff assignment represents post-intake operational routing and does not prove geographic intake origin.
+   - Single-centre staff assignment is noted in summary tables as an investigative suggestion (`suggestedCentreId`) but does **not** update the database.
+3. **Fail-Closed Execution**:
+   - All unassigned records lacking authoritative server-persisted relationships remain unassigned (`centreId: null`) in both dry-run and apply modes.
+4. **Dry-Run Integrity**:
+   - In dry-run mode (`dryRun = true`), `client.enquiry.update` is never invoked.
+
+### B. Super Admin Manual Reconciliation Workflow
+To reconcile legacy or unassigned records, Super Admins use the authorized reconciliation API:
+- **Endpoint**: `POST /api/enquiry/:id/reconcile`
+- **Authorization**: `@Roles('SUPER_ADMIN')` + server-side verification (`isSuperAdmin(currentUser)`). Denies `CENTRE_ADMIN`, `TEACHER`, and unauthorized callers with `HTTP 403 Forbidden`.
+- **Validation**: Requires `centreId`; verifies target centre exists and `status === 'ACTIVE'`.
+- **Auditing**: Creates an audit log entry via `AuditService` (`action: 'RECONCILE_ENQUIRY_OWNERSHIP'`).
+
+### C. Data Model Limitations
+- In the current schema, `Enquiry` has no foreign key to `CustomForm`. Therefore, legacy enquiries created before form linking cannot be automatically backfilled without guessing.
+- Keeping legacy records unassigned (`centreId = null`) until Super Admin review is the only mathematically fail-closed policy.
+
+---
+
+## 6. Content vs Management Permission Matrix
+
+### A. Read & Playback Matrix
+| Content Scope | `SUPER_ADMIN` | `CENTRE_ADMIN` | `TEACHER` | Enrolled `STUDENT` | Unenrolled `STUDENT` | `PUBLIC_LEARNER` |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`isPublic = true`** | **Allowed** | **Allowed** | **Allowed** | **Allowed** (Preview) | **Allowed** (Preview) | **Allowed** (Preview) |
-| **`isShared = true` & `isPublic = false`** | **Allowed** | **Allowed** (Global) | **Allowed** (If assigned to subject/standard) | **Allowed** (Cross-Centre) | **Denied (`403`)** | **Denied (`403`)** |
-| **Centre-Specific (`centreId = X`)** | **Allowed** | **Allowed** (Centre X only) | **Allowed** (Centre X & assigned) | **Allowed** (Centre X & course enrolled) | **Denied (`403`)** | **Denied (`403`)** |
-| **Track-Specific (`targetTrackId = T`)** | **Allowed** | **Allowed** (If Track T in centre) | **Allowed** (If teaching batch in Track T) | **Allowed** (If student batch in Track T) | **Denied (`403`)** | **Denied (`403`)** |
-| **Unreconciled Legacy (`centreId = null, isShared = false, isPublic = false`)** | **Allowed** (Audit & Reconcile) | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **`isShared = true` & `isPublic = false`** | **Allowed** | **Allowed** | **Allowed** (If assigned) | **Allowed** (Cross-Centre) | **Denied (`403`)** | **Denied (`403`)** |
+| **Centre-Specific (`centreId = X`)** | **Allowed** | **Allowed** (Centre X) | **Allowed** (Centre X & assigned) | **Allowed** (Centre X & course enrolled) | **Denied (`403`)** | **Denied (`403`)** |
+| **Track-Specific (`targetTrackId = T`)** | **Allowed** | **Allowed** (Track T) | **Allowed** (Teaching Track T batch) | **Allowed** (Student in Track T batch) | **Denied (`403`)** | **Denied (`403`)** |
+| **Unreconciled (`centreId = null, isShared = false, isPublic = false`)** | **Allowed** (Audit) | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
 
-### B. Management & Mutation Access Matrix (Create, Update, Delete, Share, Publish)
-
-| Operation | `SUPER_ADMIN` | `CENTRE_ADMIN` | `TEACHER` | `STUDENT` / `PUBLIC_LEARNER` |
+### B. Management & Mutation Matrix (Create, Update, Delete, Share, Publish)
+| Action | `SUPER_ADMIN` | `CENTRE_ADMIN` | `TEACHER` | `STUDENT` / `PUBLIC_LEARNER` |
 | :--- | :--- | :--- | :--- | :--- |
-| **Create Centre-Scoped Material** | Allowed (Any centre) | Allowed (Own centre only) | Allowed (Own centre & assigned teaching scope) | **Denied (`403`)** |
-| **Set `isShared = true` on Create/Update** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
-| **Set `isPublic = true` on Create/Update** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
-| **Update Public Material (`isPublic = true`)** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
-| **Delete Public Material (`isPublic = true`)** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
-| **Update Shared Material (`isShared = true`)** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
-| **Delete Shared Material (`isShared = true`)** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
-| **Update Centre Material (`isPublic = false, isShared = false`)** | Allowed | Allowed (Own centre only) | Allowed (Own uploads only, matching assignment) | **Denied (`403`)** |
-| **Delete Centre Material (`isPublic = false, isShared = false`)** | Allowed | Allowed (Own centre only) | Allowed (Own uploads only) | **Denied (`403`)** |
+| **Create Centre Material** | Allowed (Any centre) | Allowed (Own centre only) | Allowed (Own centre & assigned teaching) | **Denied (`403`)** |
+| **Set `isShared = true`** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **Set `isPublic = true`** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **Update Public Material** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **Delete Public Material** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **Update Shared Material** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **Delete Shared Material** | **Allowed** | **Denied (`403`)** | **Denied (`403`)** | **Denied (`403`)** |
+| **Update Centre Material** | Allowed | Allowed (Own centre only) | Allowed (Own upload only, assigned) | **Denied (`403`)** |
+| **Delete Centre Material** | Allowed | Allowed (Own centre only) | Allowed (Own upload only) | **Denied (`403`)** |
 
-### Core Security Rules:
-1. `isPublic = true` grants **read and playback access only**. It does **not** confer edit, update, reassign, or delete permissions to teachers or centre admins.
-2. Only `SUPER_ADMIN` can create, update, or delete `isPublic = true` or `isShared = true` study materials.
-3. Private institutional materials strictly require verified course enrolment (for students) and verified subject/standard teaching assignments (for teachers).
+- **Security Invariant**: `isPublic = true` grants playback access only. It never grants modification or deletion rights to non-super admins.
 
 ---
 
-## 5. Reverse-Proxy Trust & Distributed Rate Limiting
+## 7. Cloudflare Turnstile Verification Policy
 
-### Network Ingress Model & Header Evaluation
-
-```
-[ Direct Untrusted Client ] ---- (TCP: 198.51.100.42) ----> [ NestJS StrictThrottlerGuard ]
-  Headers: X-Forwarded-For: 8.8.8.8, CF-Connecting-IP: 1.1.1.1
-  Socket Remote IP: 198.51.100.42 (NOT in TRUSTED_PROXIES)
-  => Headers strictly discarded; Tracker Derived: 198.51.100.42 (Spoofing IMPOSSIBLE)
-
-[ Genuine Visitor ] ----> [ Cloudflare / Ingress Proxy ] ---- (TCP: 10.0.1.5) ----> [ NestJS StrictThrottlerGuard ]
-  Headers: CF-Connecting-IP: 203.0.113.10
-  Socket Remote IP: 10.0.1.5 (Matches TRUSTED_PROXIES ingress subnet)
-  => Header extracted & sanitized; Tracker Derived: 203.0.113.10
-```
-
-1. **Proxy Trust Enforcement**:
-   - `TRUSTED_PROXIES` configures an allowlist of trusted IP addresses and CIDR subnets.
-   - Direct TCP socket address (`req.socket.remoteAddress`) is verified against the trusted proxy list.
-   - If the connecting socket is not a trusted proxy, all forwarding headers are discarded, preventing spoofed IP injection.
-2. **CIDR Restriction Warning**:
-   - Do not trust broad RFC 1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) in production environments unless the application is deployed within an isolated private network where untrusted workloads cannot open TCP connections to the API. In public or shared VPCs, configure `TRUSTED_PROXIES` strictly with the ingress subnet or load balancer IPs.
-3. **Distributed Rate Limiting with Fail-Closed Storage**:
-   - Rate limit trackers are synchronized across API instances via Redis storage.
-   - If Redis becomes unreachable, `StrictThrottlerGuard.canActivate()` catches the error and throws `503 Service Unavailable`, preventing attackers from bypassing rate limits by degrading Redis infrastructure.
-
----
-
-## 6. Complete Cloudflare Turnstile Verification Policy
-
-1. **Frontend-Only Hostname Allowlist**:
-   - Tokens must originate from hostnames where the widget is genuinely rendered:
-     ```typescript
-     const defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in'];
-     ```
-   - `api.educarelearning.in` is excluded because the widget is not embedded on API domain endpoints.
-   - Hostnames are normalized (protocol, port, and trailing paths stripped) before allowlist matching.
+1. **Frontend Hostname Allowlist**:
+   - `defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in']`.
+   - `api.educarelearning.in` is omitted because widgets are rendered exclusively on web frontends.
+   - Hostnames are normalized (protocol, port, and trailing paths stripped).
 2. **Mandatory Exact Action Matching**:
-   - The siteverify response must include `action` matching `'admission_enquiry'`:
-     ```typescript
-     if (!verifyData.action || String(verifyData.action).trim() !== expectedAction) {
-       throw new BadRequestException('CAPTCHA verification failed: widget action missing or mismatched.');
-     }
-     ```
-   - Tokens with omitted actions or actions from different forms/widgets are rejected.
-3. **Response Status & Error Code Parsing**:
-   - Rejects non-200 HTTP responses and malformed JSON payloads.
-   - If `success === false` and error codes contain `timeout-or-duplicate`, responds with: `'CAPTCHA verification failed: token expired or already used.'`.
-   - General failures return: `'CAPTCHA verification failed. Please try again.'`.
-4. **Zero-Leakage Security Posture**:
-   - Turnstile secret keys and client response tokens are omitted from server logs and client-facing error responses.
-   - In production, missing `TURNSTILE_SECRET_KEY` fails closed (`HTTP 500 Server Configuration Error`).
+   - Siteverify response must include `action: 'admission_enquiry'`. Tokens with missing or mismatched actions are rejected.
+3. **Fail-Closed Error Handling**:
+   - Missing or blank token: `400 Bad Request`.
+   - Expired or duplicate token (`timeout-or-duplicate`): `400 Bad Request ('token expired or already used.')`.
+   - Upstream 5xx or invalid JSON: `400 Bad Request ('CAPTCHA verification service returned an error.')`.
+   - Production without `TURNSTILE_SECRET_KEY`: `500 Server Configuration Error`.
+4. **Zero-Leak Logging**:
+   - Turnstile secrets, response tokens, and user credentials are encrypted or omitted from server logs and error bodies.
 
 ---
 
-## 7. Ownership Reconciliation Semantics & Origin Analysis
+## 8. Reverse-Proxy Trust & Distributed Rate Limiting
 
-### Enquiry Origin Analysis
-- Public enquiries submitted at `/admission` collect contact details without mandatory centre assignment (`centreId = null, status = NEW`).
-- Staff assignment (`assignedToId`) occurs downstream during lead triage, counsellors frequently handle leads remotely across multiple centres, and leads are often reassigned between centres.
-- **Decision**: Staff assignment alone does **not** prove originating centre ownership.
-
-### Reconciliation Script Rules (`backfill-enquiry-centres.ts`)
-1. **Authoritative Origin Assignment**:
-   - Enquiries are backfilled to a centre **only** when unambiguous originating metadata is present in the record (e.g. `source.startsWith('Centre: <centreId>')`).
-2. **Single-Centre Staff Assignment**:
-   - Single-centre staff assignment is flagged as an investigative suggestion in summary logs (`suggestedCentreId`) but does **not** trigger automatic database backfill.
-3. **Fail-Closed Unresolved Records**:
-   - Enquiries lacking authoritative source tags remain unassigned (`centreId = null`) and are accessible solely to Super Admins via `GET /api/enquiry/unreconciled`.
-4. **Dry-Run Mode**:
-   - Dry-run mode (`dryRun = true`) is guaranteed to perform zero database mutations.
+1. **Direct Untrusted Connection Defense**:
+   - Direct TCP connections not matching `TRUSTED_PROXIES` strictly discard `X-Forwarded-For` and `CF-Connecting-IP` headers and track limits via `req.socket.remoteAddress`.
+2. **Trusted Ingress Extraction**:
+   - When the connecting peer matches a trusted proxy CIDR, forwarding headers are extracted and sanitized with `IP_REGEX`.
+3. **CIDR Restriction Warning**:
+   - Broad RFC 1918 CIDRs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) must not be trusted globally in environments where internal workloads share the network. In production/staging, `TRUSTED_PROXIES` must be scoped strictly to the ingress controller or load balancer VPC subnet.
+4. **Distributed Redis Rate Limiting & Fail-Closed Storage**:
+   - Limit counters are synchronized across API instances via Redis.
+   - If Redis becomes unreachable, `StrictThrottlerGuard` throws `HTTP 503 Service Unavailable`, preventing unthrottled access during infrastructure degradation.
 
 ---
 
-## 8. Actual Test Execution & Reconciled Results
+## 9. Actual Test Execution & Reconciled Results
 
-### A. Test Count Reconciliation
+### A. Reconciled Test Breakdown
 
-| Test Suite / Category | Suite Path / Description | Passed Tests | Failed | Skipped | Status |
+| Test Suite / Category | File Path | Passed Tests | Failed | Skipped | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Dedicated Authorization Remediation Suite** | `src/common/authorization-remediation.spec.ts` | **91** | 0 | 0 | **PASS** |
+| **Dedicated Authorization Remediation Suite** | `src/common/authorization-remediation.spec.ts` | **101** | 0 | 0 | **PASS** |
 | **Comprehensive Security Regression Suite** | `src/common/security-regression.spec.ts` | **298** | 0 | 0 | **PASS** |
 | **Enquiry Service Unit Tests** | `src/enquiry/enquiry.service.spec.ts` | **1** | 0 | 0 | **PASS** |
 | **Enquiry Controller Unit Tests** | `src/enquiry/enquiry.controller.spec.ts` | **1** | 0 | 0 | **PASS** |
@@ -192,25 +203,21 @@ The following matrix defines the boundaries between viewing/playing content and 
 | **Fee Service Unit Tests** | `src/fee/fee.service.spec.ts` | **1** | 0 | 0 | **PASS** |
 | **Fee Controller Unit Tests** | `src/fee/fee.controller.spec.ts` | **1** | 0 | 0 | **PASS** |
 | **App Controller Unit Tests** | `src/app.controller.spec.ts` | **1** | 0 | 0 | **PASS** |
-| **TOTAL** | **17 Test Suites** | **404** | **0** | **0** | **PASS** |
+| **TOTAL** | **17 Test Suites** | **414** | **0** | **0** | **PASS** |
 
-### B. Exact Test Runner Command & Output Summary
-
-- **Command**:
-  ```bash
-  NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand --forceExit
-  ```
-- **Real Runner Summary**:
-  ```
-  Test Suites: 17 passed, 17 total
-  Tests:       404 passed, 404 total
-  Snapshots:   0 total
-  Time:        7.761 s
-  Ran all test suites.
-  ```
+### B. Scope J Regression Test Breakdown (10/10 Passed)
+- **Case 1**: Free-text `source: "Centre: centre-B"` does not assign record to centre B (`centreId: null`).
+- **Case 2**: Forged `centreId` is not accepted as authoritative (`centreId: null`).
+- **Case 3**: Forged `assignedToId` is discarded on intake (`assignedToId: null`).
+- **Case 4**: Active form configured for centre A derives `centreId: 'centre-alpha'`.
+- **Case 5**: Form without configured centre creates unassigned enquiry (`centreId: null`).
+- **Case 6**: Inactive or invalid form cannot establish centre ownership; conflicting client `centreId` is rejected (`400 Bad Request`).
+- **Case 7**: Post-intake staff assignment does not cause automatic backfill in apply mode.
+- **Case 8**: Dry-run reconciliation performs zero database mutations.
+- **Case 9**: Apply-mode reconciliation leaves records with forged source or ambiguous metadata unchanged.
+- **Case 10**: Unauthorized users denied from unreconciled endpoint and manual reconciliation (`403 Forbidden`); Super Admin succeeds and audits action.
 
 ### C. Build & Prisma Verification
-
 1. **Prisma Schema Validation**:
    - Command: `pnpm --filter @educare/database exec prisma validate`
    - Outcome: `The schema at prisma/schema.prisma is valid 🚀`
@@ -223,20 +230,32 @@ The following matrix defines the boundaries between viewing/playing content and 
 
 ---
 
-## 9. Outstanding Staging-Only Verification Requirements
+## 10. Staging Preparation Checklist
 
-Do not claim production readiness until the following operational checks have been validated in the staging environment:
+Before deploying changes to production, execute the following operational checks in staging:
 
-1. **Ingress Proxy Header Overwrite Verification (Staging Infrastructure)**:
-   - Verify that external ingress proxies (Cloudflare, AWS ALB, NGINX) unconditionally sanitize and overwrite incoming `X-Forwarded-For` and `CF-Connecting-IP` headers so that client-spoofed headers cannot reach `StrictThrottlerGuard`.
-   - Confirm `TRUSTED_PROXIES` in staging matches the exact VPC ingress subnet.
-2. **Live Cloudflare Turnstile Verification Roundtrip (Staging)**:
-   - Perform live admission enquiry submissions with the Cloudflare Turnstile widget rendered on `lms.educarelearning.in` (or staging equivalent) using live Cloudflare API credentials.
-3. **Reconciliation Dry-Run Against Staging Database Replica**:
-   - Execute the backfill scripts against a sanitized staging replica of production data:
-     ```bash
-     pnpm --filter @educare/database prisma migrate deploy
-     pnpm --filter @educare/database reconcile:enquiries
-     pnpm --filter @educare/database reconcile:materials
-     ```
-   - Review all unassigned enquiries (`centreId = null`) with admissions leadership before applying manual reassignments.
+- [ ] **1. Apply Migrations to Staging Database Copy**:
+  - Run `prisma migrate deploy` against a restored copy of production data:
+    ```bash
+    pnpm --filter @educare/database prisma migrate deploy
+    ```
+  - Verify that the `"isPublic"` column on `study_materials` defaults to `false` without locking tables or degrading read performance.
+- [ ] **2. Inspect Unreconciled Enquiry and Study Material Records**:
+  - Run the reconciliation scripts in dry-run mode against the staging database:
+    ```bash
+    pnpm --filter @educare/database reconcile:enquiries
+    pnpm --filter @educare/database reconcile:materials
+    ```
+  - Confirm that zero mutations occur and review the ambiguous records summary table.
+- [ ] **3. Test Centre A vs Centre B Authorization Isolation**:
+  - Log in as Centre Admin A and verify inability to read or mutate Centre B enquiries, study materials, forms, or fee records.
+  - Verify that an unreconciled enquiry (`centreId = null`) cannot be viewed or updated by Centre Admin A or Centre Admin B.
+- [ ] **4. Validate Reverse-Proxy Headers and Rate Limiting**:
+  - Confirm that the ingress proxy (e.g. AWS ALB, Cloudflare, NGINX) unconditionally strips incoming client `X-Forwarded-For` and `CF-Connecting-IP` headers and appends genuine client IPs.
+  - Test rate limiting across 2+ API instances with Redis storage enabled.
+  - Temporarily pause Redis to verify that `StrictThrottlerGuard` throws `HTTP 503` (fails closed).
+- [ ] **5. Cloudflare Turnstile Live Roundtrip**:
+  - Execute a live submission on `/admission` using staging credentials.
+  - Verify token generation, siteverify roundtrip, hostname allowlisting, and action matching (`admission_enquiry`).
+- [ ] **6. Unresolved Ownership Containment**:
+  - Verify that legacy study materials with `centreId = null` and legacy enquiries with `centreId = null` are visible exclusively to Super Admins via `/api/study-materials/unreconciled` and `/api/enquiry/unreconciled`.

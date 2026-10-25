@@ -319,6 +319,14 @@ describe('Authorization Remediation Regression Suite', () => {
       });
 
       it('Public enquiry cannot set assignedToId, status, internal notes or privileged fields', async () => {
+        mockPrisma.customForm = {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'form-a',
+            isActive: true,
+            centreId: 'centre-a',
+            centre: { id: 'centre-a', status: 'ACTIVE' },
+          }),
+        };
         mockPrisma.centre.findUnique.mockResolvedValue({ id: 'centre-a', status: 'ACTIVE' });
         mockPrisma.enquiry.create.mockImplementation((args: any) => Promise.resolve(args.data));
 
@@ -326,7 +334,7 @@ describe('Authorization Remediation Regression Suite', () => {
           studentName: 'Alice Johnson',
           contactNumber: '9876543210',
           email: 'alice@example.com',
-          centreId: 'centre-a',
+          formId: 'form-a',
           // Maliciously injected privileged fields:
           status: 'QUALIFIED',
           assignedToId: 'privileged-staff-id',
@@ -338,7 +346,7 @@ describe('Authorization Remediation Regression Suite', () => {
 
         // Expect hardcoded status: NEW and privileged fields stripped
         expect(created.status).toBe(EnquiryStatus.NEW);
-        expect(created.assignedToId).toBeUndefined();
+        expect(created.assignedToId).toBeNull();
         expect(created.notes).toBeUndefined();
         expect(created.studentName).toBe('Alice Johnson');
         expect(created.centreId).toBe('centre-a');
@@ -1005,12 +1013,23 @@ describe('Authorization Remediation Regression Suite', () => {
     });
 
     it('Public enquiry allows valid payload within limit and creates record with status = NEW and verified centreId', async () => {
+      mockPrisma.customForm = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'form-active',
+          isActive: true,
+          centreId: 'centre-active',
+          centre: { id: 'centre-active', status: 'ACTIVE' },
+        }),
+      };
+      mockPrisma.centre.findUnique.mockResolvedValue({ id: 'centre-active', status: 'ACTIVE' });
+      mockPrisma.enquiry.create.mockResolvedValue({ id: 'enq-1' });
+
       const result = await enquiryService.createPublicEnquiry({
         studentName: 'Aarav Sharma',
         parentName: 'Ramesh Sharma',
         contactNumber: '+91 98765 43210',
         email: 'aarav@example.com',
-        centreId: 'centre-active',
+        formId: 'form-active',
       });
 
       expect(result).toBeDefined();
@@ -1021,6 +1040,7 @@ describe('Authorization Remediation Regression Suite', () => {
             contactNumber: '+91 98765 43210',
             status: EnquiryStatus.NEW,
             centreId: 'centre-active',
+            assignedToId: null,
           }),
         }),
       );
@@ -1069,6 +1089,7 @@ describe('Authorization Remediation Regression Suite', () => {
             targetCourse: null,
             status: EnquiryStatus.NEW, // Forced to NEW
             centreId: null, // Inactive centre rejected -> null
+            assignedToId: null,
           },
         }),
       );
@@ -2463,7 +2484,8 @@ describe('Authorization Remediation Regression Suite', () => {
       };
 
       const result = await reconcileLegacyEnquiries(true, mockClient as any);
-      expect(result.resolvedCount).toBe(1);
+      expect(result.resolvedCount).toBe(0);
+      expect(result.ambiguousCount).toBe(1);
       expect(mockClient.enquiry.update).not.toHaveBeenCalled();
     });
 
@@ -2500,13 +2522,13 @@ describe('Authorization Remediation Regression Suite', () => {
       expect(mockClient.enquiry.update).not.toHaveBeenCalled();
     });
 
-    it('Reconciliation Script - Enquiry: Authoritative originating metadata resolves ownership and mutates in apply mode', async () => {
+    it('Reconciliation Script - Enquiry: Client-supplied free-text source tag does NOT authorize automatic backfill in apply mode', async () => {
       const syntheticEnquiries = [
         {
-          id: 'enq-authoritative-1',
-          studentName: 'Authoritative Origin Student',
+          id: 'enq-forged-source-1',
+          studentName: 'Forged Source Student',
           contactNumber: '9876543211',
-          source: 'Centre: centre-alpha', // Authoritative verified originating metadata
+          source: 'Centre: centre-alpha', // Untrusted free-text source tag
           assignedToId: null,
           assignedTo: null,
         },
@@ -2523,11 +2545,10 @@ describe('Authorization Remediation Regression Suite', () => {
       };
 
       const result = await reconcileLegacyEnquiries(false, mockClient as any);
-      expect(result.resolvedCount).toBe(1);
-      expect(mockClient.enquiry.update).toHaveBeenCalledWith({
-        where: { id: 'enq-authoritative-1' },
-        data: { centreId: 'centre-alpha' },
-      });
+      expect(result.resolvedCount).toBe(0);
+      expect(result.ambiguousCount).toBe(1);
+      expect(result.ambiguousRecords[0].reason).toContain('source originates from client input and cannot establish tenant ownership');
+      expect(mockClient.enquiry.update).not.toHaveBeenCalled();
     });
 
     it('Reconciliation Script - Study Material: Dry run executes 0 mutations', async () => {
@@ -2583,6 +2604,345 @@ describe('Authorization Remediation Regression Suite', () => {
         where: { id: 'mat-apply-1' },
         data: { centreId: 'centre-beta' },
       });
+    });
+  });
+
+  describe('Scope J: Trusted Enquiry Origin & Hardened Reconciliation', () => {
+    let mockPrisma: any;
+    let mockAuditService: any;
+    let enquiryService: EnquiryService;
+    let enquiryController: EnquiryController;
+
+    const superAdminUser = { id: 'super-admin-uuid', role: 'SUPER_ADMIN' };
+    const centreAdminUser = { id: 'admin-alpha-uuid', role: 'CENTRE_ADMIN', userCentres: [{ centreId: 'centre-alpha' }] };
+    const teacherUser = { id: 'teacher-uuid', role: 'TEACHER', userCentres: [{ centreId: 'centre-alpha' }] };
+
+    beforeEach(() => {
+      mockPrisma = {
+        enquiry: {
+          create: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: 'enq-new-uuid', ...args.data })),
+          findUnique: jest.fn(),
+          findMany: jest.fn(),
+          update: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.where.id, ...args.data })),
+        },
+        customForm: {
+          findUnique: jest.fn(),
+        },
+        centre: {
+          findUnique: jest.fn(),
+        },
+      };
+
+      mockAuditService = {
+        record: jest.fn(),
+      };
+
+      enquiryService = new EnquiryService(mockPrisma as any, mockAuditService as any);
+      enquiryController = new EnquiryController(enquiryService);
+    });
+
+    it('Case 1: A public enquiry submits source: "Centre: centre-B" while containing no verified origin metadata; record is NOT assigned to centre B', async () => {
+      const payload = {
+        studentName: 'Prospect Student',
+        contactNumber: '9876543210',
+        email: 'prospect@example.com',
+        source: 'Centre: centre-B', // Untrusted free-text source tag
+      };
+
+      const result = await enquiryService.createPublicEnquiry(payload);
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          studentName: 'Prospect Student',
+          contactNumber: '9876543210',
+          source: 'Centre: centre-B', // Preserved as attribution string only
+          centreId: null, // Tenant ownership is strictly unassigned
+          assignedToId: null,
+          status: 'NEW',
+        }),
+      });
+      expect(result.centreId).toBeNull();
+    });
+
+    it('Case 2: A public enquiry submits a forged centreId; requested centre is NOT accepted as authoritative', async () => {
+      // Mock that centre-B exists in database
+      mockPrisma.centre.findUnique.mockResolvedValue({ id: 'centre-B', status: 'ACTIVE' });
+
+      const payload = {
+        studentName: 'Prospect Student',
+        contactNumber: '9876543210',
+        centreId: 'centre-B', // Forged client-submitted centreId
+      };
+
+      const result = await enquiryService.createPublicEnquiry(payload);
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          studentName: 'Prospect Student',
+          centreId: null, // Untrusted client centreId is discarded
+          assignedToId: null,
+        }),
+      });
+      expect(result.centreId).toBeNull();
+    });
+
+    it('Case 3: A public enquiry submits a forged assignedToId; user is NOT assigned through that field', async () => {
+      const payload = {
+        studentName: 'Prospect Student',
+        contactNumber: '9876543210',
+        assignedToId: 'attacker-counselor-uuid', // Forged assigned staff
+      };
+
+      const result = await enquiryService.createPublicEnquiry(payload);
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          studentName: 'Prospect Student',
+          assignedToId: null, // Forged staff assignment is strictly discarded
+          centreId: null,
+        }),
+      });
+      expect(result.assignedToId).toBeNull();
+    });
+
+    it('Case 4: A valid active form configured for centre A derives centre ownership from verified form configuration', async () => {
+      mockPrisma.customForm.findUnique.mockResolvedValue({
+        id: 'form-centre-alpha',
+        isActive: true,
+        centreId: 'centre-alpha',
+        centre: { id: 'centre-alpha', status: 'ACTIVE' },
+      });
+
+      const payload = {
+        studentName: 'Verified Lead',
+        contactNumber: '9876543210',
+        formId: 'form-centre-alpha',
+      };
+
+      const result = await enquiryService.createPublicEnquiry(payload);
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          studentName: 'Verified Lead',
+          centreId: 'centre-alpha', // Derived from server-verified form configuration
+          assignedToId: null,
+        }),
+      });
+      expect(result.centreId).toBe('centre-alpha');
+    });
+
+    it('Case 5: A form without a configured centre creates an unassigned enquiry', async () => {
+      mockPrisma.customForm.findUnique.mockResolvedValue({
+        id: 'form-global-lead',
+        isActive: true,
+        centreId: null,
+      });
+
+      const payload = {
+        studentName: 'Global Lead',
+        contactNumber: '9876543210',
+        formId: 'form-global-lead',
+      };
+
+      const result = await enquiryService.createPublicEnquiry(payload);
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          studentName: 'Global Lead',
+          centreId: null, // Form has no centre, record remains unassigned
+        }),
+      });
+      expect(result.centreId).toBeNull();
+    });
+
+    it('Case 6: An inactive or invalid form cannot establish centre ownership, and conflicting client centreId is rejected', async () => {
+      // Inactive form
+      mockPrisma.customForm.findUnique.mockResolvedValueOnce({
+        id: 'form-inactive-lead',
+        isActive: false,
+        centreId: 'centre-alpha',
+      });
+
+      const resInactive = await enquiryService.createPublicEnquiry({
+        studentName: 'Inactive Lead',
+        contactNumber: '9876543210',
+        formId: 'form-inactive-lead',
+      });
+      expect(resInactive.centreId).toBeNull();
+
+      // Nonexistent form
+      mockPrisma.customForm.findUnique.mockResolvedValueOnce(null);
+      const resNonexistent = await enquiryService.createPublicEnquiry({
+        studentName: 'Nonexistent Form Lead',
+        contactNumber: '9876543210',
+        formId: 'form-nonexistent',
+      });
+      expect(resNonexistent.centreId).toBeNull();
+
+      // Conflicting client-supplied centreId with verified active form
+      mockPrisma.customForm.findUnique.mockResolvedValueOnce({
+        id: 'form-alpha-active',
+        isActive: true,
+        centreId: 'centre-alpha',
+        centre: { id: 'centre-alpha', status: 'ACTIVE' },
+      });
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Conflicting Lead',
+          contactNumber: '9876543210',
+          formId: 'form-alpha-active',
+          centreId: 'centre-beta', // Conflicts with form's centre-alpha
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('Case 7: A staff member assigned after intake cannot cause an existing enquiry to be automatically assigned to staff centre', async () => {
+      const syntheticEnquiry = {
+        id: 'enq-post-intake-staff',
+        studentName: 'Routed Prospect',
+        contactNumber: '9876543210',
+        source: 'Website Form',
+        centreId: null,
+        assignedToId: 'counselor-1',
+        assignedTo: {
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      };
+
+      const mockReconcileClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue([syntheticEnquiry]),
+          update: jest.fn(),
+        },
+      };
+
+      const result = await reconcileLegacyEnquiries(false, mockReconcileClient as any);
+      expect(result.resolvedCount).toBe(0);
+      expect(result.ambiguousCount).toBe(1);
+      expect(result.ambiguousRecords[0].suggestedCentreId).toBe('centre-alpha');
+      expect(result.ambiguousRecords[0].reason).toContain('staff assignment is post-intake CRM routing');
+      expect(mockReconcileClient.enquiry.update).not.toHaveBeenCalled();
+    });
+
+    it('Case 8: Dry-run reconciliation performs no database mutations', async () => {
+      const syntheticEnquiries = [
+        {
+          id: 'enq-dry-1',
+          studentName: 'Dry Run Prospect',
+          contactNumber: '9876543210',
+          source: 'Centre: centre-alpha',
+          assignedToId: 'staff-1',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }],
+          },
+        },
+      ];
+
+      const mockReconcileClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
+          update: jest.fn(),
+        },
+      };
+
+      const result = await reconcileLegacyEnquiries(true, mockReconcileClient as any);
+      expect(mockReconcileClient.enquiry.update).not.toHaveBeenCalled();
+      expect(result.total).toBe(1);
+    });
+
+    it('Case 9: Apply-mode reconciliation leaves records with forged or ambiguous origin metadata unchanged', async () => {
+      const syntheticEnquiries = [
+        {
+          id: 'enq-forged-1',
+          studentName: 'Forged Prospect',
+          contactNumber: '9876543210',
+          source: 'Centre: centre-B', // Forged free-text source
+          assignedToId: null,
+          assignedTo: null,
+        },
+        {
+          id: 'enq-ambiguous-2',
+          studentName: 'Multi Centre Staff Prospect',
+          contactNumber: '9876543211',
+          source: 'Walk-in',
+          assignedToId: 'staff-multi',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }, { centreId: 'centre-beta' }],
+          },
+        },
+      ];
+
+      const mockReconcileClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
+          update: jest.fn(),
+        },
+      };
+
+      const result = await reconcileLegacyEnquiries(false, mockReconcileClient as any);
+      expect(result.resolvedCount).toBe(0);
+      expect(result.ambiguousCount).toBe(2);
+      expect(mockReconcileClient.enquiry.update).not.toHaveBeenCalled();
+    });
+
+    it('Case 10: Unauthorized users cannot access unreconciled-enquiry endpoint or perform manual reconciliation, whereas Super Admin succeeds and audits', async () => {
+      // 1. Non-super admin cannot access unreconciled endpoint
+      await expect(enquiryService.getUnreconciledEnquiries(centreAdminUser)).rejects.toThrow(ForbiddenException);
+      await expect(enquiryService.getUnreconciledEnquiries(teacherUser)).rejects.toThrow(ForbiddenException);
+
+      // 2. Non-super admin cannot perform manual reconciliation
+      await expect(
+        enquiryService.reconcileEnquiry('enq-unreconciled-1', 'centre-alpha', centreAdminUser),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        enquiryService.reconcileEnquiry('enq-unreconciled-1', 'centre-alpha', teacherUser),
+      ).rejects.toThrow(ForbiddenException);
+
+      // 3. Super Admin reconciliation requires active valid centre
+      mockPrisma.centre.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        enquiryService.reconcileEnquiry('enq-unreconciled-1', 'centre-invalid', superAdminUser),
+      ).rejects.toThrow(BadRequestException);
+
+      mockPrisma.centre.findUnique.mockResolvedValueOnce({ id: 'centre-inactive', status: 'INACTIVE' });
+      await expect(
+        enquiryService.reconcileEnquiry('enq-unreconciled-1', 'centre-inactive', superAdminUser),
+      ).rejects.toThrow(BadRequestException);
+
+      // 4. Super Admin succeeds with active centre, updates record, and audits the ownership change
+      mockPrisma.centre.findUnique.mockResolvedValue({ id: 'centre-alpha', status: 'ACTIVE', name: 'Alpha Centre' });
+      mockPrisma.enquiry.findUnique.mockResolvedValue({
+        id: 'enq-unreconciled-1',
+        studentName: 'Unreconciled Student',
+        centreId: null,
+      });
+
+      const reconciled = await enquiryService.reconcileEnquiry(
+        'enq-unreconciled-1',
+        'centre-alpha',
+        superAdminUser,
+        'Approved after verified parent consultation',
+      );
+
+      expect(mockPrisma.enquiry.update).toHaveBeenCalledWith({
+        where: { id: 'enq-unreconciled-1' },
+        data: { centreId: 'centre-alpha' },
+        include: expect.any(Object),
+      });
+
+      expect(reconciled.centreId).toBe('centre-alpha');
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'super-admin-uuid',
+          userRole: 'SUPER_ADMIN',
+          action: 'RECONCILE_ENQUIRY_OWNERSHIP',
+          category: 'ENQUIRY',
+          entityType: 'Enquiry',
+          entityId: 'enq-unreconciled-1',
+          centreId: 'centre-alpha',
+          details: expect.objectContaining({
+            previousCentreId: null,
+            newCentreId: 'centre-alpha',
+            reason: 'Approved after verified parent consultation',
+          }),
+        }),
+      );
     });
   });
 });

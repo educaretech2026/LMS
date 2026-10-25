@@ -45,8 +45,19 @@ export class EnquiryController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN')
   @Get('unreconciled')
-  getUnreconciled() {
-    return this.enquiryService.getUnreconciledEnquiries();
+  getUnreconciled(@Req() req: any) {
+    return this.enquiryService.getUnreconciledEnquiries(req.user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @Post(':id/reconcile')
+  reconcile(
+    @Param('id') id: string,
+    @Body() body: { centreId: string; reason?: string },
+    @Req() req: any,
+  ) {
+    return this.enquiryService.reconcileEnquiry(id, body?.centreId, req.user, body?.reason);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

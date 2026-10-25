@@ -1,11 +1,23 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus } from '@educare/database';
 import { isSuperAdmin, getUserCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class EnquiryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly auditService?: AuditService,
+  ) {}
 
   /**
    * Public enquiry creation (e.g. from website admission form).
@@ -126,18 +138,34 @@ export class EnquiryService {
       }
     }
 
+    // Authoritative centre derivation:
+    // Only derive centreId if linked to a verified active CustomForm that has a configured active centre.
     let targetCentreId: string | null = null;
-    if (data.centreId) {
-      const centre = await this.prisma.centre.findUnique({
-        where: { id: String(data.centreId).trim() },
+    if (data.formId) {
+      const form = await (this.prisma as any).customForm?.findUnique?.({
+        where: { id: String(data.formId).trim() },
+        include: { centre: true },
       });
-      if (centre && centre.status === 'ACTIVE') {
-        targetCentreId = centre.id;
+
+      if (form && form.isActive && form.centreId) {
+        const centre = form.centre || (await this.prisma.centre.findUnique({
+          where: { id: form.centreId },
+        }));
+        if (centre && centre.status === 'ACTIVE') {
+          targetCentreId = centre.id;
+        }
+      }
+
+      // If client supplied a centreId that conflicts with verified form configuration, reject it
+      if (data.centreId && targetCentreId && String(data.centreId).trim() !== targetCentreId) {
+        throw new BadRequestException('Client-supplied centreId conflicts with verified form configuration.');
       }
     }
 
-    // Strictly whitelist prospective student contact fields
-    // Client-supplied status, assignedToId, notes, followUpDate are completely discarded
+    // Note: If no verified form configuration exists, client-supplied centreId, assignedToId,
+    // and free-text source values (e.g. "Centre: ...") are NEVER trusted to assign tenant ownership.
+    // Tenant ownership cannot be forged via public input. targetCentreId remains null.
+    // Client-supplied status, assignedToId, notes, followUpDate are completely discarded.
     return this.prisma.enquiry.create({
       data: {
         studentName,
@@ -151,6 +179,7 @@ export class EnquiryService {
         targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
         status: EnquiryStatus.NEW,
         centreId: targetCentreId,
+        assignedToId: null,
       },
     });
   }
@@ -349,9 +378,14 @@ export class EnquiryService {
 
   /**
    * Super Admin reconciliation tool:
-   * Returns legacy enquiries where centreId is null and suggests backfills based on assigned staff's centre.
+   * Returns legacy enquiries where centreId is null and includes staff assignment suggestions
+   * strictly for diagnostic review. All unassigned records fail closed.
    */
-  async getUnreconciledEnquiries() {
+  async getUnreconciledEnquiries(currentUser?: any) {
+    if (currentUser && !isSuperAdmin(currentUser)) {
+      throw new ForbiddenException('Only Super Admins can access unreconciled enquiries.');
+    }
+
     const unassigned = await this.prisma.enquiry.findMany({
       where: { centreId: null },
       include: {
@@ -368,22 +402,83 @@ export class EnquiryService {
 
     return unassigned.map((e) => {
       const assignedCentres = e.assignedTo?.userCentres || [];
-      const isUnambiguous = assignedCentres.length === 1;
+      const isSingleStaffCentre = assignedCentres.length === 1;
       return {
         id: e.id,
         studentName: e.studentName,
         contactNumber: e.contactNumber,
+        source: e.source,
         assignedToId: e.assignedToId,
         assignedToName: e.assignedTo ? `${e.assignedTo.firstName} ${e.assignedTo.lastName}` : null,
-        suggestedCentreId: isUnambiguous ? assignedCentres[0].centreId : null,
-        suggestedCentreName: isUnambiguous ? (assignedCentres[0].centre?.name || null) : null,
-        isAmbiguous: !isUnambiguous,
-        reason: isUnambiguous
-          ? 'Unambiguously inferred from assigned staff centre'
+        suggestedCentreId: isSingleStaffCentre ? assignedCentres[0].centreId : null,
+        suggestedCentreName: isSingleStaffCentre ? (assignedCentres[0].centre?.name || null) : null,
+        isAmbiguous: !isSingleStaffCentre,
+        reason: isSingleStaffCentre
+          ? 'Suggested from assigned staff centre (requires Super Admin manual confirmation)'
           : assignedCentres.length === 0
-          ? 'No assigned staff or staff has no centre'
+          ? 'No assigned staff or staff has no centre memberships'
           : 'Staff is assigned to multiple centres',
       };
     });
+  }
+
+  /**
+   * Manual enquiry reconciliation by Super Admin:
+   * Explicitly assigns an unassigned enquiry to a verified centre.
+   * Validates target centre, enforces Super Admin authorization, and creates an audit log.
+   */
+  async reconcileEnquiry(id: string, centreId: string, currentUser: any, reason?: string) {
+    if (!isSuperAdmin(currentUser)) {
+      throw new ForbiddenException('Only Super Admins can perform manual enquiry ownership reconciliation.');
+    }
+
+    if (!centreId || typeof centreId !== 'string') {
+      throw new BadRequestException('A valid centreId is required for reconciliation.');
+    }
+
+    const cleanCentreId = centreId.trim();
+    const centre = await this.prisma.centre.findUnique({
+      where: { id: cleanCentreId },
+    });
+
+    if (!centre || centre.status !== 'ACTIVE') {
+      throw new BadRequestException('The selected centre does not exist or is not active.');
+    }
+
+    const existing = await this.prisma.enquiry.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Enquiry not found.');
+    }
+
+    const updated = await this.prisma.enquiry.update({
+      where: { id },
+      data: { centreId: cleanCentreId },
+      include: {
+        centre: { select: { id: true, name: true, code: true } },
+        assignedTo: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (this.auditService) {
+      this.auditService.record({
+        userId: currentUser?.id,
+        userRole: 'SUPER_ADMIN',
+        action: 'RECONCILE_ENQUIRY_OWNERSHIP',
+        category: 'ENQUIRY',
+        entityType: 'Enquiry',
+        entityId: id,
+        centreId: cleanCentreId,
+        details: {
+          previousCentreId: existing.centreId,
+          newCentreId: cleanCentreId,
+          reason: reason || 'Manual Super Admin reconciliation',
+        },
+      });
+    }
+
+    return updated;
   }
 }
