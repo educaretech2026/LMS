@@ -105,6 +105,8 @@ model Centre {
   teacherAssignments TeacherAssignment[]
   feeRecords         FeeRecord[]
   auditLogs          AuditLog[]
+  enquiries          Enquiry[]
+  studyMaterials     StudyMaterial[]
 
   @@map("centres")
 }
@@ -506,6 +508,7 @@ model StudyMaterial {
   topicId        String?
   subtopicId     String?
   uploaderId     String?
+  centreId       String?
 
   targetTrackId String?
   targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])
@@ -518,6 +521,7 @@ model StudyMaterial {
   topic        Topic?       @relation(fields: [topicId], references: [id])
   subtopic     Subtopic?    @relation(fields: [subtopicId], references: [id])
   uploader     User?        @relation(fields: [uploaderId], references: [id])
+  centre       Centre?      @relation(fields: [centreId], references: [id], onDelete: SetNull)
   progress     StudyMaterialProgress[]
 
   @@map("study_materials")
@@ -911,6 +915,8 @@ model Enquiry {
 
   assignedToId String?
   assignedTo   User?   @relation(fields: [assignedToId], references: [id])
+  centreId     String?
+  centre       Centre? @relation(fields: [centreId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

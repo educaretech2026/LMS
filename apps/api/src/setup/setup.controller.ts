@@ -20,7 +20,7 @@ export class SetupController {
   }
 
   @Put('settings')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Roles('SUPER_ADMIN')
   async updateSettings(@Body() data: any) {
     return this.setupService.updateSettings(data);
   }

@@ -27,14 +27,14 @@ export class SupportController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('tickets')
   @ApiOperation({ summary: 'Get all support tickets (admin only)' })
-  getAllTickets() {
-    return this.supportService.getAllTickets();
+  getAllTickets(@Req() req: any) {
+    return this.supportService.getAllTickets(req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Put('tickets/:id/status')
   @ApiOperation({ summary: 'Update support ticket status' })
-  updateTicketStatus(@Param('id') id: string, @Body() body: { status: string }) {
-    return this.supportService.updateTicketStatus(id, body.status);
+  updateTicketStatus(@Param('id') id: string, @Body() body: { status: string }, @Req() req: any) {
+    return this.supportService.updateTicketStatus(id, body.status, req.user);
   }
 }

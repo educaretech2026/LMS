@@ -1,9 +1,8 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { EnquiryService } from './enquiry.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-
 import { Public } from '../common/decorators/public.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 
@@ -15,34 +14,42 @@ export class EnquiryController {
   @Public()
   @Post('public')
   createPublic(@Body() data: any) {
-    return this.enquiryService.createEnquiry({ ...data, source: data.source || 'Website Form' });
+    return this.enquiryService.createPublicEnquiry(data);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Post()
-  create(@Body() data: any) {
-    return this.enquiryService.createEnquiry(data);
+  create(@Body() data: any, @Req() req: any) {
+    return this.enquiryService.createEnquiry(data, req.user);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get()
-  getAll() {
-    return this.enquiryService.getAllEnquiries();
+  getAll(@Req() req: any) {
+    return this.enquiryService.getAllEnquiries(req.user);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Get('summary')
-  getSummary() {
-    return this.enquiryService.getEnquirySummary();
+  getSummary(@Req() req: any) {
+    return this.enquiryService.getEnquirySummary(req.user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @Get('unreconciled')
+  getUnreconciled() {
+    return this.enquiryService.getUnreconciledEnquiries();
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.enquiryService.updateEnquiry(id, data);
+  update(@Param('id') id: string, @Body() data: any, @Req() req: any) {
+    return this.enquiryService.updateEnquiry(id, data, req.user);
   }
 }
+

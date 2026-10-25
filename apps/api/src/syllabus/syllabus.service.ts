@@ -1,19 +1,67 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { SAFE_USER_SELECT } from '../common/utils/tenant.util';
+import { SAFE_USER_SELECT, isSuperAdmin, getUserCentreIds } from '../common/utils/tenant.util';
 
 @Injectable()
 export class SyllabusService {
   constructor(private prisma: PrismaService) {}
 
-  async getBatchSyllabusProgress(batchId: string) {
+  async assertBatchAccess(batchId: string, user: any, allowStudent = false) {
     const batch = await this.prisma.batch.findUnique({
       where: { id: batchId },
     });
-    
     if (!batch) {
       throw new NotFoundException('Batch not found');
     }
+
+    if (isSuperAdmin(user)) {
+      return batch;
+    }
+
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const normalizedRole = String(roleStr || '').toUpperCase().replace(/[\s_]+/g, '_');
+
+    if (allowStudent && (normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER')) {
+      const student = await this.prisma.studentProfile.findUnique({
+        where: { userId: user.id },
+        include: { enrollments: true },
+      });
+      if (!student || !student.enrollments.some(e => e.batchId === batchId)) {
+        throw new ForbiddenException('Access denied: You are not enrolled in this batch.');
+      }
+      return batch;
+    }
+
+    // For staff (CENTRE_ADMIN, TEACHER):
+    const centreIds = getUserCentreIds(user);
+    if (!centreIds || centreIds.length === 0 || !centreIds.includes(batch.centreId)) {
+      throw new ForbiddenException('Access denied: You are not authorized for this batch centre.');
+    }
+
+    if (normalizedRole === 'TEACHER') {
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId: user.id },
+        include: { assignments: true },
+      });
+      const assignments = teacherProfile?.assignments || [];
+      const hasAssignment = assignments.some(a => {
+        if (a.batchId && a.batchId === batchId) return true;
+        const assignedCentreId = a.centreId;
+        if (assignedCentreId && assignedCentreId !== batch.centreId) return false;
+        if (a.standardId && a.standardId !== batch.standardId) return false;
+        if (a.boardId && a.boardId !== batch.boardId) return false;
+        return true;
+      });
+      if (!hasAssignment) {
+        throw new ForbiddenException('Access denied: Teacher is not assigned to this batch.');
+      }
+    }
+
+    return batch;
+  }
+
+  async getBatchSyllabusProgress(batchId: string, user?: any) {
+    const batch = await this.assertBatchAccess(batchId, user, true);
 
     const syllabi = await this.prisma.syllabus.findMany({
       where: {
@@ -81,7 +129,20 @@ export class SyllabusService {
     });
   }
 
-  async updateChapterProgress(batchId: string, chapterId: string, status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED', userId: string) {
+  async updateChapterProgress(batchId: string, chapterId: string, status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED', userId: string, user?: any) {
+    const batch = await this.assertBatchAccess(batchId, user, false);
+
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+      include: { syllabus: true },
+    });
+    if (!chapter) {
+      throw new NotFoundException('Chapter not found');
+    }
+    if (chapter.syllabus.boardId !== batch.boardId || chapter.syllabus.standardId !== batch.standardId) {
+      throw new BadRequestException('Chapter does not belong to the batch syllabus');
+    }
+
     const progress = await this.prisma.batchChapterProgress.upsert({
       where: {
         batchId_chapterId: {
@@ -123,7 +184,20 @@ export class SyllabusService {
     return progress;
   }
 
-  async updateTopicProgress(batchId: string, topicId: string, status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED', userId: string) {
+  async updateTopicProgress(batchId: string, topicId: string, status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED', userId: string, user?: any) {
+    const batch = await this.assertBatchAccess(batchId, user, false);
+
+    const topic = await this.prisma.topic.findUnique({
+      where: { id: topicId },
+      include: { chapter: { include: { syllabus: true } } },
+    });
+    if (!topic) {
+      throw new NotFoundException('Topic not found');
+    }
+    if (topic.chapter.syllabus.boardId !== batch.boardId || topic.chapter.syllabus.standardId !== batch.standardId) {
+      throw new BadRequestException('Topic does not belong to the batch syllabus');
+    }
+
     const progress = await this.prisma.batchTopicProgress.upsert({
       where: {
         batchId_topicId: {
@@ -145,48 +219,64 @@ export class SyllabusService {
       }
     });
 
-    const topic = await this.prisma.topic.findUnique({ where: { id: topicId } });
-    if (topic) {
-      const allTopics = await this.prisma.topic.findMany({ where: { chapterId: topic.chapterId } });
-      const topicProgresses = await this.prisma.batchTopicProgress.findMany({
-        where: { batchId, topicId: { in: allTopics.map(t => t.id) } }
-      });
-      
-      const completedCount = topicProgresses.filter(tp => tp.status === 'COMPLETED').length;
-      const startedCount = topicProgresses.filter(tp => tp.status !== 'NOT_STARTED').length;
-      
-      let newChapterStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' = 'NOT_STARTED';
-      if (completedCount === allTopics.length && allTopics.length > 0) {
-        newChapterStatus = 'COMPLETED';
-      } else if (startedCount > 0) {
-        newChapterStatus = 'IN_PROGRESS';
-      }
-      
-      await this.prisma.batchChapterProgress.upsert({
-        where: { batchId_chapterId: { batchId, chapterId: topic.chapterId } },
-        create: {
-           batchId, chapterId: topic.chapterId, status: newChapterStatus, updatedBy: userId,
-           completedAt: newChapterStatus === 'COMPLETED' ? new Date() : null,
-        },
-        update: {
-           status: newChapterStatus, updatedBy: userId,
-           completedAt: newChapterStatus === 'COMPLETED' ? new Date() : null,
-        }
-      });
+    const allTopics = await this.prisma.topic.findMany({ where: { chapterId: topic.chapterId } });
+    const topicProgresses = await this.prisma.batchTopicProgress.findMany({
+      where: { batchId, topicId: { in: allTopics.map(t => t.id) } }
+    });
+    
+    const completedCount = topicProgresses.filter(tp => tp.status === 'COMPLETED').length;
+    const startedCount = topicProgresses.filter(tp => tp.status !== 'NOT_STARTED').length;
+    
+    let newChapterStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' = 'NOT_STARTED';
+    if (completedCount === allTopics.length && allTopics.length > 0) {
+      newChapterStatus = 'COMPLETED';
+    } else if (startedCount > 0) {
+      newChapterStatus = 'IN_PROGRESS';
     }
+    
+    await this.prisma.batchChapterProgress.upsert({
+      where: { batchId_chapterId: { batchId, chapterId: topic.chapterId } },
+      create: {
+          batchId, chapterId: topic.chapterId, status: newChapterStatus, updatedBy: userId,
+          completedAt: newChapterStatus === 'COMPLETED' ? new Date() : null,
+      },
+      update: {
+          status: newChapterStatus, updatedBy: userId,
+          completedAt: newChapterStatus === 'COMPLETED' ? new Date() : null,
+      }
+    });
 
     return progress;
   }
 
-  async getStudentSyllabusProgress(batchId: string, studentId: string) {
-    const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
-    if (!batch) throw new NotFoundException('Batch not found');
+  async getStudentSyllabusProgress(batchId: string, studentId: string, user?: any) {
+    const studentProfile = await this.prisma.studentProfile.findUnique({
+      where: { id: studentId },
+    });
+    if (!studentProfile) {
+      throw new NotFoundException('Student profile not found');
+    }
+
+    const roleStr = typeof user?.role === 'object' && user?.role !== null ? user?.role.name : user?.role;
+    const normalizedRole = String(roleStr || '').toUpperCase().replace(/[\s_]+/g, '_');
+
+    if (normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER') {
+      if (studentProfile.userId !== user?.id) {
+        throw new ForbiddenException('Access denied: You can only view your own student progress.');
+      }
+    }
+
+    const batch = await this.assertBatchAccess(batchId, user, true);
 
     const enrollment = await this.prisma.enrollment.findUnique({
       where: { studentProfileId_batchId: { studentProfileId: studentId, batchId } },
       include: { subjects: true }
     });
-    const subjectIds = enrollment?.subjects.map(s => s.id) || [];
+    if (!enrollment) {
+      throw new ForbiddenException('Student is not enrolled in this batch');
+    }
+
+    const subjectIds = enrollment.subjects.map(s => s.id);
 
     const syllabi = await this.prisma.syllabus.findMany({
       where: { boardId: batch.boardId, standardId: batch.standardId, subjectId: { in: subjectIds } },
@@ -208,12 +298,36 @@ export class SyllabusService {
     return syllabi;
   }
 
-  async recordStudentEvent(userId: string, data: any) {
+  async recordStudentEvent(userId: string, data: any, user?: any) {
     const student = await this.prisma.studentProfile.findUnique({ where: { userId } });
     if (!student) throw new NotFoundException('Student profile not found');
 
     const { batchId, topicId } = data;
-    if (!batchId || !topicId) return { success: false, message: "Missing required fields" };
+    if (!batchId || !topicId) {
+      throw new BadRequestException('Missing required fields: batchId and topicId');
+    }
+
+    // Verify caller is enrolled in the supplied batch
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { studentProfileId_batchId: { studentProfileId: student.id, batchId } },
+    });
+    if (!enrollment) {
+      throw new ForbiddenException('Access denied: Student is not enrolled in this batch.');
+    }
+
+    // Verify topic belongs to batch syllabus
+    const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
+    if (!batch) throw new NotFoundException('Batch not found');
+
+    const topic = await this.prisma.topic.findUnique({
+      where: { id: topicId },
+      include: { chapter: { include: { syllabus: true } } },
+    });
+    if (!topic) throw new NotFoundException('Topic not found');
+
+    if (topic.chapter.syllabus.boardId !== batch.boardId || topic.chapter.syllabus.standardId !== batch.standardId) {
+      throw new BadRequestException('Topic does not belong to the batch syllabus');
+    }
 
     // 1. Calculate Lecture & Material Progress
     const materials = await this.prisma.studyMaterial.findMany({ where: { topicId } });
@@ -300,7 +414,9 @@ export class SyllabusService {
     return { success: true, message: "Event recorded", completionPercentage };
   }
 
-  async getBatchAnalytics(batchId: string) {
+  async getBatchAnalytics(batchId: string, user?: any) {
+    await this.assertBatchAccess(batchId, user, false);
+
     const studentProgress = await this.prisma.studentTopicProgress.findMany({
       where: { batchId },
       include: {

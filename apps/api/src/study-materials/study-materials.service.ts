@@ -467,7 +467,22 @@ export class StudyMaterialService {
         }
       }
 
-      const effectiveUploaderId = (user && !isSuperAdmin(user)) ? user.id : (user?.id || data.uploaderId);
+      const effectiveUploaderId = user?.id || data.uploaderId;
+
+      let resolvedCentreId: string | null = null;
+      if (isSuperAdmin(user)) {
+        resolvedCentreId = data.centreId || null;
+      } else if (user) {
+        const authorizedCentres = getAuthorizedCentreIds(user);
+        if (data.centreId) {
+          if (!authorizedCentres.includes(data.centreId)) {
+            throw new ForbiddenException('You cannot create study material for another centre.');
+          }
+          resolvedCentreId = data.centreId;
+        } else if (authorizedCentres.length > 0) {
+          resolvedCentreId = authorizedCentres[0];
+        }
+      }
 
       if (data.url) {
         await this.checkStorageOwnership(data.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
@@ -551,6 +566,7 @@ export class StudyMaterialService {
           topicId: data.topicId || null,
           subtopicId: data.subtopicId || null,
           uploaderId: effectiveUploaderId,
+          centreId: resolvedCentreId,
           targetTrackId: data.targetTrackId || null,
         },
       });
