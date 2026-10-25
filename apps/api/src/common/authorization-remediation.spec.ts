@@ -2210,7 +2210,57 @@ describe('Authorization Remediation Regression Suite', () => {
         }),
       ).rejects.toThrow(
         expect.objectContaining({
-          message: 'CAPTCHA verification failed: widget action mismatch.',
+          message: 'CAPTCHA verification failed: widget action missing or mismatched.',
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('Rejects Turnstile token when widget action is omitted in siteverify response', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          hostname: 'lms.educarelearning.in',
+          // action missing
+        }),
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'NoAction User',
+          contactNumber: '9876543210',
+          turnstileToken: 'no-action-token',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'CAPTCHA verification failed: widget action missing or mismatched.',
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('Rejects Turnstile token when rendered on api.educarelearning.in (non-frontend domain)', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          hostname: 'api.educarelearning.in', // API domain must not be in default allowlist
+          action: 'admission_enquiry',
+        }),
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'ApiDomain User',
+          contactNumber: '9876543210',
+          turnstileToken: 'api-domain-token',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'CAPTCHA verification failed: origin hostname not authorized.',
         }),
       );
       expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
@@ -2394,6 +2444,7 @@ describe('Authorization Remediation Regression Suite', () => {
           id: 'enq-dry-1',
           studentName: 'Dry Run Student',
           contactNumber: '9876543211',
+          source: 'Centre: centre-alpha',
           assignedToId: 'staff-single',
           assignedTo: {
             userCentres: [{ centreId: 'centre-alpha' }],
@@ -2406,19 +2457,23 @@ describe('Authorization Remediation Regression Suite', () => {
           findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
           update: jest.fn().mockResolvedValue({}),
         },
+        centre: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'centre-alpha', status: 'ACTIVE' }),
+        },
       };
 
-      const result = await reconcileLegacyEnquiries(true, mockClient as any, { trustStaffAssignment: true });
+      const result = await reconcileLegacyEnquiries(true, mockClient as any);
       expect(result.resolvedCount).toBe(1);
       expect(mockClient.enquiry.update).not.toHaveBeenCalled();
     });
 
-    it('Reconciliation Script - Enquiry: Apply without --trust-staff-assignment treats post-intake assignments as ambiguous', async () => {
+    it('Reconciliation Script - Enquiry: Single-centre staff assignment alone does NOT authorize automatic backfill in apply mode', async () => {
       const syntheticEnquiries = [
         {
-          id: 'enq-unconfirmed-1',
-          studentName: 'Unconfirmed Student',
+          id: 'enq-staff-only-1',
+          studentName: 'Staff Assigned Student',
           contactNumber: '9876543211',
+          source: 'Website Form', // No verified centre tag
           assignedToId: 'staff-single',
           assignedTo: {
             userCentres: [{ centreId: 'centre-alpha' }],
@@ -2431,26 +2486,29 @@ describe('Authorization Remediation Regression Suite', () => {
           findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
           update: jest.fn().mockResolvedValue({}),
         },
+        centre: {
+          findUnique: jest.fn().mockResolvedValue(null),
+        },
       };
 
-      // In apply mode without trustStaffAssignment, records fail closed to manual review and 0 mutations occur
-      const result = await reconcileLegacyEnquiries(false, mockClient as any, { trustStaffAssignment: false });
+      // In apply mode, staff assignment alone does NOT mutate the record (fails closed for Super Admin review)
+      const result = await reconcileLegacyEnquiries(false, mockClient as any);
       expect(result.resolvedCount).toBe(0);
       expect(result.ambiguousCount).toBe(1);
-      expect(result.ambiguousRecords[0].reason).toContain('CRM workflows and does not guarantee originating centre');
+      expect(result.ambiguousRecords[0].suggestedCentreId).toBe('centre-alpha');
+      expect(result.ambiguousRecords[0].reason).toContain('staff assignment is post-intake CRM routing and does not prove originating centre');
       expect(mockClient.enquiry.update).not.toHaveBeenCalled();
     });
 
-    it('Reconciliation Script - Enquiry: Apply with --trust-staff-assignment mutates only verified single-centre records', async () => {
+    it('Reconciliation Script - Enquiry: Authoritative originating metadata resolves ownership and mutates in apply mode', async () => {
       const syntheticEnquiries = [
         {
-          id: 'enq-confirmed-1',
-          studentName: 'Confirmed Student',
+          id: 'enq-authoritative-1',
+          studentName: 'Authoritative Origin Student',
           contactNumber: '9876543211',
-          assignedToId: 'staff-single',
-          assignedTo: {
-            userCentres: [{ centreId: 'centre-alpha' }],
-          },
+          source: 'Centre: centre-alpha', // Authoritative verified originating metadata
+          assignedToId: null,
+          assignedTo: null,
         },
       ];
 
@@ -2459,12 +2517,15 @@ describe('Authorization Remediation Regression Suite', () => {
           findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
           update: jest.fn().mockResolvedValue({}),
         },
+        centre: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'centre-alpha', status: 'ACTIVE' }),
+        },
       };
 
-      const result = await reconcileLegacyEnquiries(false, mockClient as any, { trustStaffAssignment: true });
+      const result = await reconcileLegacyEnquiries(false, mockClient as any);
       expect(result.resolvedCount).toBe(1);
       expect(mockClient.enquiry.update).toHaveBeenCalledWith({
-        where: { id: 'enq-confirmed-1' },
+        where: { id: 'enq-authoritative-1' },
         data: { centreId: 'centre-alpha' },
       });
     });

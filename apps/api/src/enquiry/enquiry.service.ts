@@ -91,8 +91,8 @@ export class EnquiryService {
           throw new BadRequestException('CAPTCHA verification failed. Please try again.');
         }
 
-        // Hostname allowlist validation
-        const defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in', 'api.educarelearning.in'];
+        // Hostname allowlist validation (exclude API hostname since widget is rendered strictly on web frontends)
+        const defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in'];
         const configuredHostnames = process.env.TURNSTILE_ALLOWED_HOSTNAMES
           ? process.env.TURNSTILE_ALLOWED_HOSTNAMES.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
           : [];
@@ -102,15 +102,22 @@ export class EnquiryService {
           ...(process.env.NODE_ENV !== 'production' ? ['localhost', '127.0.0.1'] : []),
         ]);
 
-        const returnedHostname = String(verifyData.hostname || '').toLowerCase().trim();
+        let returnedHostname = String(verifyData.hostname || '').toLowerCase().trim();
+        if (returnedHostname.includes('://')) {
+          try {
+            returnedHostname = new URL(returnedHostname).hostname.toLowerCase().trim();
+          } catch {}
+        }
+        returnedHostname = returnedHostname.replace(/:\d+$/, '');
+
         if (!returnedHostname || !allowedHostnames.has(returnedHostname)) {
           throw new BadRequestException('CAPTCHA verification failed: origin hostname not authorized.');
         }
 
-        // Widget action validation
+        // Widget action validation: strictly require exact expected action (reject missing or mismatched action)
         const expectedAction = process.env.TURNSTILE_EXPECTED_ACTION || 'admission_enquiry';
-        if (verifyData.action && verifyData.action !== expectedAction) {
-          throw new BadRequestException('CAPTCHA verification failed: widget action mismatch.');
+        if (!verifyData.action || String(verifyData.action).trim() !== expectedAction) {
+          throw new BadRequestException('CAPTCHA verification failed: widget action missing or mismatched.');
         }
       } catch (err: any) {
         if (err instanceof BadRequestException || err instanceof HttpException) throw err;
