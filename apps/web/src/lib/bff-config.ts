@@ -187,6 +187,7 @@ export function validateCsrf(request: Request): { valid: boolean; reason?: strin
 export const ALLOWED_API_PREFIXES = [
   'assignments',
   'attendance',
+  'audit-logs',
   'auth',
   'centres',
   'courses',

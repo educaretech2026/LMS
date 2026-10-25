@@ -27,7 +27,8 @@ import {
   LogOut,
   CalendarCheck,
   ClipboardList,
-  MessagesSquare
+  MessagesSquare,
+  ShieldAlert,
 } from "lucide-react";
 
 const mainNav = [
@@ -51,6 +52,7 @@ const managementNav = [
   { label: "SMS", href: "/sms", icon: MessageSquare },
   { label: "Expense & Income", href: "/expense", icon: Banknote },
   { label: "Report", href: "/report", icon: BarChart2 },
+  { label: "Audit Logs", href: "/audit-logs", icon: ShieldAlert },
 ];
 
 const systemNav = [

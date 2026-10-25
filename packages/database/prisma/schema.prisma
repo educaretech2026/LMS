@@ -37,6 +37,7 @@ model User {
   doubtsAsked          Doubt[]         @relation("StudentDoubts")
   doubtsAssigned       Doubt[]         @relation("TeacherDoubts")
   doubtMessagesSent    DoubtMessage[]  @relation("DoubtMessageSender")
+  auditLogs            AuditLog[]
 
   @@map("users")
 }
@@ -103,6 +104,7 @@ model Centre {
   doubts      Doubt[]
   teacherAssignments TeacherAssignment[]
   feeRecords         FeeRecord[]
+  auditLogs          AuditLog[]
 
   @@map("centres")
 }
@@ -1419,5 +1421,56 @@ model DoubtMessage {
   createdAt           DateTime @default(now())
 
   @@map("doubt_messages")
+}
+
+// -----------------------------------------------------------------------------
+// AUDIT & SECURITY LOGS
+// -----------------------------------------------------------------------------
+
+enum AuditStatus {
+  SUCCESS
+  FAILURE
+  WARNING
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  
+  // Actor details (snapshot preserves history even if user is deleted)
+  userId      String?
+  userEmail   String?
+  userName    String?
+  userRole    String?
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Scope & Multi-tenancy
+  centreId    String?
+  centre      Centre?     @relation(fields: [centreId], references: [id], onDelete: SetNull)
+
+  // Event Classification
+  action      String      // e.g. "AUTH_LOGIN", "FEE_CREATE", "USER_ROLE_CHANGE", "SYSTEM_ERROR"
+  category    String      @default("GENERAL") // AUTH, FINANCIAL, ACADEMIC, SYSTEM, SECURITY
+  entityType  String?     // "User", "FeeRecord", "StudentProfile", "Notice", "System"
+  entityId    String?     // Target resource UUID
+
+  status      AuditStatus @default(SUCCESS)
+  statusCode  Int?        // HTTP status code (200, 401, 500, etc.)
+  executionMs Int?        // Request duration in milliseconds
+  
+  // Client Environment
+  ipAddress   String?
+  userAgent   String?
+
+  // Payload & Diff (Sanitized JSON)
+  details     Json?       // { oldValues, newValues, errorStack, queryParams, changes }
+
+  createdAt   DateTime    @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([centreId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("audit_logs")
 }
 

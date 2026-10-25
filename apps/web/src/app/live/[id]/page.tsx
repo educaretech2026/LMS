@@ -60,6 +60,7 @@ export default function PublicLiveClassPage() {
   const [registered, setRegistered] = useState(false);
   const [meetUrl, setMeetUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const [timeLeft, setTimeLeft] = useState<{
     days: number; hours: number; minutes: number; seconds: number; isStarted: boolean;
@@ -243,16 +244,35 @@ export default function PublicLiveClassPage() {
       </header>
 
       {/* ── MAIN ── */}
-      <main style={{ position: "relative", zIndex: 20, flex: 1, maxWidth: "1200px", margin: "0 auto", width: "100%", padding: "48px 32px" }}>
+      <main className="relative z-20 flex-1 max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+          
+          {/* Main Content Column */}
+          <div className="lg:col-span-7 max-w-[640px] w-full">
 
-        {/* Content sits on the LEFT ~55% — right side intentionally open for banner person */}
-        <div style={{ maxWidth: "620px" }}>
+            {/* ── Dedicated Mobile Landscape Poster Showcase ── */}
+            {webinar.backgroundImageUrl && (
+              <div
+                onClick={() => setLightboxOpen(true)}
+                className="block lg:hidden mb-6 rounded-2xl overflow-hidden border border-white/15 bg-slate-950/85 shadow-2xl relative cursor-pointer group"
+              >
+                <img
+                  src={webinar.backgroundImageUrl}
+                  alt={webinar.title}
+                  className="w-full h-auto max-h-[380px] object-contain mx-auto block transition-transform duration-300 group-hover:scale-[1.01]"
+                />
+                <div className="absolute bottom-2.5 right-2.5 px-3 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-medium flex items-center gap-1.5 shadow-lg">
+                  <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" /></svg>
+                  Tap to expand
+                </div>
+              </div>
+            )}
 
-          {/* Subject tag */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>
-            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#0162b1", display: "inline-block" }} />
-            {webinar.subject}
-          </div>
+            {/* Subject tag */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>
+              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#0162b1", display: "inline-block" }} />
+              {webinar.subject}
+            </div>
 
           {/* Title */}
           <h1 style={{ color: "white", fontSize: "clamp(28px, 4vw, 46px)", fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.02em", marginBottom: "16px" }}>
@@ -288,16 +308,16 @@ export default function PublicLiveClassPage() {
           {!timeLeft.isStarted && !isEnded && (
             <div style={{ marginBottom: "36px" }}>
               <p style={{ fontSize: "10px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "12px" }}>Starts in</p>
-              <div style={{ display: "flex", gap: "10px" }}>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 {[
                   { label: "Days", v: timeLeft.days },
                   { label: "Hrs", v: timeLeft.hours },
                   { label: "Min", v: timeLeft.minutes },
                   { label: "Sec", v: timeLeft.seconds },
                 ].map(({ label, v }) => (
-                  <div key={label} style={{ textAlign: "center", minWidth: "64px" }}>
-                    <div style={{ background: "rgba(1,98,177,0.12)", border: "1px solid rgba(1,98,177,0.2)", borderRadius: "10px", padding: "12px 8px", marginBottom: "6px" }}>
-                      <span style={{ color: "white", fontSize: "26px", fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{String(v).padStart(2, "0")}</span>
+                  <div key={label} style={{ textAlign: "center", minWidth: "54px" }} className="flex-1 sm:flex-initial sm:min-w-[64px]">
+                    <div style={{ background: "rgba(1,98,177,0.12)", border: "1px solid rgba(1,98,177,0.2)", borderRadius: "10px", padding: "12px 6px", marginBottom: "6px" }}>
+                      <span style={{ color: "white", fontSize: "24px", fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{String(v).padStart(2, "0")}</span>
                     </div>
                     <span style={{ fontSize: "9px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</span>
                   </div>
@@ -488,7 +508,59 @@ export default function PublicLiveClassPage() {
             </div>
           </div>
         </div>
+
+          {/* ── Desktop Right Column: Crisp Official Poster Showcase ── */}
+          {webinar.backgroundImageUrl && (
+            <div className="hidden lg:block lg:col-span-5 sticky top-24">
+              <div
+                onClick={() => setLightboxOpen(true)}
+                className="rounded-2xl overflow-hidden border border-white/15 bg-slate-950/75 backdrop-blur-xl shadow-2xl p-3 relative cursor-pointer group hover:border-[#0162b1]/60 transition-all duration-300"
+              >
+                <img
+                  src={webinar.backgroundImageUrl}
+                  alt={webinar.title}
+                  className="w-full h-auto max-h-[580px] object-contain rounded-xl mx-auto block transition-transform duration-300 group-hover:scale-[1.01]"
+                />
+                <div className="mt-3 px-2 py-1 flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="font-semibold text-white/90 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#ee1b24] animate-pulse" />
+                    Official Event Poster
+                  </span>
+                  <span className="text-[#60a5fa] font-medium flex items-center gap-1 group-hover:underline">
+                    Click to enlarge
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
       </main>
+
+      {/* ── Fullscreen Lightbox Modal ── */}
+      {lightboxOpen && webinar.backgroundImageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          <div className="max-w-5xl max-h-[92vh] overflow-auto flex items-center justify-center">
+            <img
+              src={webinar.backgroundImageUrl}
+              alt={webinar.title}
+              className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── BROAD ROLLING ACHIEVER POSTERS SHOWCASE ── */}
       {rankHolders.length > 0 && (
@@ -508,19 +580,11 @@ export default function PublicLiveClassPage() {
             alignItems: "center",
           }}
         >
-          {/* Left pinned title badge */}
+          {/* Left pinned title badge - responsive for small screens */}
           <div
+            className="hidden sm:flex flex-col justify-center shrink-0 border-r border-white/10 z-10 bg-[#040f1e]/95 h-[160px] px-4 sm:px-6"
             style={{
-              flexShrink: 0,
-              padding: "0 24px 0 28px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
               gap: "4px",
-              borderRight: "1px solid rgba(255, 255, 255, 0.1)",
-              zIndex: 3,
-              background: "rgba(4, 15, 30, 0.95)",
-              height: "160px",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
