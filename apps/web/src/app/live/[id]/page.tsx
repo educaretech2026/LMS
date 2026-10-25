@@ -60,7 +60,6 @@ export default function PublicLiveClassPage() {
   const [registered, setRegistered] = useState(false);
   const [meetUrl, setMeetUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const [timeLeft, setTimeLeft] = useState<{
     days: number; hours: number; minutes: number; seconds: number; isStarted: boolean;
@@ -252,19 +251,12 @@ export default function PublicLiveClassPage() {
 
             {/* ── Dedicated Mobile Landscape Poster Showcase ── */}
             {webinar.backgroundImageUrl && (
-              <div
-                onClick={() => setLightboxOpen(true)}
-                className="block lg:hidden mb-6 rounded-2xl overflow-hidden border border-white/15 bg-slate-950/85 shadow-2xl relative cursor-pointer group"
-              >
+              <div className="block lg:hidden mb-6 rounded-2xl overflow-hidden border border-white/15 bg-slate-950/85 shadow-2xl">
                 <img
                   src={webinar.backgroundImageUrl}
                   alt={webinar.title}
-                  className="w-full h-auto max-h-[380px] object-contain mx-auto block transition-transform duration-300 group-hover:scale-[1.01]"
+                  className="w-full h-auto max-h-[380px] object-contain mx-auto block"
                 />
-                <div className="absolute bottom-2.5 right-2.5 px-3 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-medium flex items-center gap-1.5 shadow-lg">
-                  <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" /></svg>
-                  Tap to expand
-                </div>
               </div>
             )}
 
@@ -512,23 +504,16 @@ export default function PublicLiveClassPage() {
           {/* ── Desktop Right Column: Crisp Official Poster Showcase ── */}
           {webinar.backgroundImageUrl && (
             <div className="hidden lg:block lg:col-span-5 sticky top-24">
-              <div
-                onClick={() => setLightboxOpen(true)}
-                className="rounded-2xl overflow-hidden border border-white/15 bg-slate-950/75 backdrop-blur-xl shadow-2xl p-3 relative cursor-pointer group hover:border-[#0162b1]/60 transition-all duration-300"
-              >
+              <div className="rounded-2xl overflow-hidden border border-white/15 bg-slate-950/75 backdrop-blur-xl shadow-2xl p-3">
                 <img
                   src={webinar.backgroundImageUrl}
                   alt={webinar.title}
-                  className="w-full h-auto max-h-[580px] object-contain rounded-xl mx-auto block transition-transform duration-300 group-hover:scale-[1.01]"
+                  className="w-full h-auto max-h-[580px] object-contain rounded-xl mx-auto block"
                 />
                 <div className="mt-3 px-2 py-1 flex items-center justify-between text-[11px] text-slate-400">
                   <span className="font-semibold text-white/90 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-[#ee1b24] animate-pulse" />
                     Official Event Poster
-                  </span>
-                  <span className="text-[#60a5fa] font-medium flex items-center gap-1 group-hover:underline">
-                    Click to enlarge
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                   </span>
                 </div>
               </div>
@@ -537,30 +522,6 @@ export default function PublicLiveClassPage() {
 
         </div>
       </main>
-
-      {/* ── Fullscreen Lightbox Modal ── */}
-      {lightboxOpen && webinar.backgroundImageUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
-          onClick={() => setLightboxOpen(false)}
-        >
-          <button
-            onClick={() => setLightboxOpen(false)}
-            className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-            aria-label="Close"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-          <div className="max-w-5xl max-h-[92vh] overflow-auto flex items-center justify-center">
-            <img
-              src={webinar.backgroundImageUrl}
-              alt={webinar.title}
-              className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        </div>
-      )}
 
       {/* ── BROAD ROLLING ACHIEVER POSTERS SHOWCASE ── */}
       {rankHolders.length > 0 && (
