@@ -23,6 +23,8 @@ import { StrictThrottlerGuard } from './guards/strict-throttler.guard';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import { PERMISSIONS_KEY } from './decorators/permissions.decorator';
 import { ROLES_KEY } from './decorators/roles.decorator';
+import { reconcileLegacyEnquiries } from '../../../../packages/database/prisma/scripts/backfill-enquiry-centres';
+import { reconcileLegacyStudyMaterials } from '../../../../packages/database/prisma/scripts/backfill-study-material-centres';
 
 describe('Authorization Remediation Regression Suite', () => {
   // Common Mock Actors
@@ -438,18 +440,14 @@ describe('Authorization Remediation Regression Suite', () => {
         expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: {
-              OR: [
+              OR: expect.arrayContaining([
+                { isPublic: true },
                 expect.objectContaining({
                   AND: expect.arrayContaining([
-                    {
-                      OR: [
-                        { syllabus: { standardId: 'std-10', boardId: 'board-cbse' } },
-                        { syllabusId: null },
-                      ],
-                    },
+                    { syllabus: { standardId: 'std-10', boardId: 'board-cbse' } },
                   ]),
                 }),
-              ],
+              ]),
             },
           }),
         );
@@ -1523,6 +1521,9 @@ describe('Authorization Remediation Regression Suite', () => {
           update: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.where.id, ...args.data })),
           delete: jest.fn().mockResolvedValue({ id: 'mat-deleted-id' }),
         },
+        studentProfile: {
+          findUnique: jest.fn(),
+        },
       };
 
       mockAuditService = {
@@ -1726,6 +1727,180 @@ describe('Authorization Remediation Regression Suite', () => {
 
       expect(mockStorageService.getPresignedDownloadUrl).not.toHaveBeenCalled();
     });
+
+    it('Shared material (isShared = true, isPublic = false) is denied to public learners', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-internal-shared',
+        title: 'Internal Cross-Centre Chemistry Notes',
+        centreId: 'centre-alpha',
+        isShared: true,
+        isPublic: false,
+        targetTrackId: null,
+      });
+
+      const publicLearner = {
+        id: 'user-public-learner',
+        role: { name: 'PUBLIC_LEARNER' },
+      };
+
+      await expect(
+        studyMaterialService.getById('mat-internal-shared', publicLearner),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: expect.stringContaining('Public learners can only access published public materials'),
+        }),
+      );
+
+      // Video playback for public learner on non-public material must also be forbidden
+      await expect(
+        studyMaterialController.getPlayUrl('mat-internal-shared', { user: publicLearner }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Published public material (isPublic = true) is accessible to public learners and students', async () => {
+      const publicMaterial = {
+        id: 'mat-public-preview',
+        title: 'Public Chemistry Sample Lecture',
+        url: 'materials/sample-chem.mp4',
+        centreId: null,
+        isShared: false,
+        isPublic: true,
+        targetTrackId: null,
+      };
+
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue(publicMaterial);
+
+      const publicLearner = {
+        id: 'user-public-learner',
+        role: { name: 'PUBLIC_LEARNER' },
+      };
+
+      const result = await studyMaterialService.getById('mat-public-preview', publicLearner);
+      expect(result).toBeDefined();
+      expect(result.id).toBe('mat-public-preview');
+
+      // Video playback also succeeds for public preview
+      const playRes = await studyMaterialController.getPlayUrl('mat-public-preview', { user: publicLearner });
+      expect(playRes.playUrl).toBe('https://r2.educare.local/signed-stream-url');
+    });
+
+    it('Non-super admin cannot set isPublic = true when creating material', async () => {
+      await expect(
+        studyMaterialService.create(
+          {
+            title: 'Unauthorized Public Material',
+            type: 'FILE',
+            isPublic: true,
+            boardId: 'board-cbse',
+            standardId: 'std-10',
+            subjectId: 'sub-math',
+          },
+          centreAdminA,
+        ),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'Only Super Admins can publish study materials for public preview.',
+        }),
+      );
+      expect(mockPrisma.studyMaterial.create).not.toHaveBeenCalled();
+    });
+
+    it('Non-super admin cannot set isPublic = true when updating material', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-centre-a',
+        title: 'Centre A Notes',
+        centreId: 'centre-a',
+        isShared: false,
+        isPublic: false,
+        uploaderId: centreAdminA.id,
+      });
+
+      await expect(
+        studyMaterialService.update('mat-centre-a', { isPublic: true }, centreAdminA),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'Only Super Admins can modify public-publication status.',
+        }),
+      );
+      expect(mockPrisma.studyMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it('Non-super admin cannot modify existing isPublic = true study material', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-public-locked',
+        title: 'Public Locked Notes',
+        centreId: 'centre-a',
+        isShared: false,
+        isPublic: true,
+        uploaderId: centreAdminA.id,
+      });
+
+      await expect(
+        studyMaterialService.update('mat-public-locked', { title: 'Hacked Title' }, centreAdminA),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'Only Super Admins can modify public study materials.',
+        }),
+      );
+      expect(mockPrisma.studyMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it('Student can access isShared = true material across centres only if enrolled in matching course', async () => {
+      const sharedMaterial = {
+        id: 'mat-shared-syllabus',
+        title: 'Shared 10th CBSE Math Formula Sheet',
+        centreId: 'centre-beta', // In Centre Beta
+        isShared: true,
+        isPublic: false,
+        targetTrackId: null,
+        syllabus: {
+          boardId: 'board-cbse',
+          standardId: 'std-10',
+          subjectId: 'sub-math',
+        },
+      };
+
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue(sharedMaterial);
+
+      // Student A is enrolled in Centre Alpha, CBSE Std 10 (matching syllabus)
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        userId: studentA.id,
+        enrollments: [
+          {
+            batch: {
+              centreId: 'centre-alpha', // Different centre!
+              boardId: 'board-cbse',
+              standardId: 'std-10',
+            },
+          },
+        ],
+      });
+
+      const allowedResult = await studyMaterialService.getById('mat-shared-syllabus', studentA);
+      expect(allowedResult).toBeDefined();
+
+      // Student B is enrolled in ICSE Std 12 (different syllabus)
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        userId: studentB.id,
+        enrollments: [
+          {
+            batch: {
+              centreId: 'centre-alpha',
+              boardId: 'board-icse',
+              standardId: 'std-12',
+            },
+          },
+        ],
+      });
+
+      await expect(
+        studyMaterialService.getById('mat-shared-syllabus', studentB),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: expect.stringContaining('You are not enrolled in the course corresponding to this material'),
+        }),
+      );
+    });
   });
 
   describe('Scope G — Reverse-Proxy-Safe Rate Limiting and StrictThrottlerGuard', () => {
@@ -1787,6 +1962,37 @@ describe('Authorization Remediation Regression Suite', () => {
       expect(tracker).toBe('198.51.100.99');
     });
 
+    it('Sanitizes malicious or malformed client IP header values and safely falls back', async () => {
+      const maliciousReq = {
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: {
+          'x-forwarded-for': '<script>alert(1)</script>, 10.0.0.1',
+        },
+      };
+
+      const tracker = await (guard as any).getTracker(maliciousReq);
+      // Malformed IP is rejected by regex and safe socket IP is used
+      expect(tracker).toBe('127.0.0.1');
+    });
+
+    it('Recognizes trusted reverse proxy configured as CIDR block in TRUSTED_PROXIES', async () => {
+      const originalEnv = process.env.TRUSTED_PROXIES;
+      process.env.TRUSTED_PROXIES = '10.0.0.0/8,172.16.0.0/12';
+
+      const cidrReq = {
+        socket: { remoteAddress: '10.1.2.3' },
+        headers: { 'x-forwarded-for': '203.0.113.88' },
+      };
+
+      const isTrusted = (guard as any).isSocketFromTrustedProxy('10.1.2.3', cidrReq);
+      expect(isTrusted).toBe(true);
+
+      const tracker = await (guard as any).getTracker(cidrReq);
+      expect(tracker).toBe('203.0.113.88');
+
+      process.env.TRUSTED_PROXIES = originalEnv;
+    });
+
     it('Exceeding rate limit throws HTTP 429 Too Many Requests and leaves database write uncalled', async () => {
       const mockStorage = {
         increment: jest.fn().mockResolvedValue({ totalHits: 6, timeToExpire: 55 }),
@@ -1813,6 +2019,38 @@ describe('Authorization Remediation Regression Suite', () => {
       await expect(
         strictGuard.canActivate(mockContext as any),
       ).rejects.toThrow();
+    });
+
+    it('When Redis rate limiter storage fails, fails closed with HTTP 503 Service Unavailable', async () => {
+      const brokenStorage = {
+        increment: jest.fn().mockRejectedValue(new Error('ECONNREFUSED: Redis connection lost')),
+      };
+      const resilientGuard = new StrictThrottlerGuard(
+        { throttlers: [{ limit: 5, ttl: 60000 }] },
+        brokenStorage as any,
+      );
+
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            socket: { remoteAddress: '198.51.100.77' },
+            headers: {},
+          }),
+          getResponse: () => ({
+            header: jest.fn(),
+          }),
+        }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      };
+
+      await expect(
+        resilientGuard.canActivate(mockContext as any),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          status: 503,
+        }),
+      );
     });
   });
 
@@ -1904,7 +2142,11 @@ describe('Authorization Remediation Regression Suite', () => {
       process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
       const mockFetch = jest.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ success: true }),
+        json: async () => ({
+          success: true,
+          hostname: 'lms.educarelearning.in',
+          action: 'admission_enquiry',
+        }),
       } as any);
       global.fetch = mockFetch;
 
@@ -1922,6 +2164,102 @@ describe('Authorization Remediation Regression Suite', () => {
           method: 'POST',
         }),
       );
+    });
+
+    it('Rejects Turnstile token when verification returns unauthorized origin hostname', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          hostname: 'evil-attacker-site.com',
+          action: 'admission_enquiry',
+        }),
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Frankie Hacker',
+          contactNumber: '9876543210',
+          turnstileToken: 'stolen-turnstile-token',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'CAPTCHA verification failed: origin hostname not authorized.',
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('Rejects Turnstile token when widget action does not match expected action', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          hostname: 'lms.educarelearning.in',
+          action: 'newsletter_signup', // Mismatched action
+        }),
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Gina Replayer',
+          contactNumber: '9876543210',
+          turnstileToken: 'replayed-action-token',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'CAPTCHA verification failed: widget action mismatch.',
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('Rejects expired or replayed Turnstile token with explicit timeout-or-duplicate error message', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: false,
+          'error-codes': ['timeout-or-duplicate'],
+        }),
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Henry Expired',
+          contactNumber: '9876543210',
+          turnstileToken: 'expired-token',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'CAPTCHA verification failed: token expired or already used.',
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('Rejects safely when verification service returns HTTP 502 or invalid JSON without leaking secrets', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => { throw new Error('Bad gateway HTML'); },
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Isabel BadGateway',
+          contactNumber: '9876543210',
+          turnstileToken: 'token-502',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'CAPTCHA verification service returned an error. Please try again.',
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
     });
   });
 
@@ -2048,6 +2386,142 @@ describe('Authorization Remediation Regression Suite', () => {
 
       expect(unreconciled).toHaveLength(6);
       expect(mockClient.studyMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it('Reconciliation Script - Enquiry: Dry run executes 0 mutations', async () => {
+      const syntheticEnquiries = [
+        {
+          id: 'enq-dry-1',
+          studentName: 'Dry Run Student',
+          contactNumber: '9876543211',
+          assignedToId: 'staff-single',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }],
+          },
+        },
+      ];
+
+      const mockClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const result = await reconcileLegacyEnquiries(true, mockClient as any, { trustStaffAssignment: true });
+      expect(result.resolvedCount).toBe(1);
+      expect(mockClient.enquiry.update).not.toHaveBeenCalled();
+    });
+
+    it('Reconciliation Script - Enquiry: Apply without --trust-staff-assignment treats post-intake assignments as ambiguous', async () => {
+      const syntheticEnquiries = [
+        {
+          id: 'enq-unconfirmed-1',
+          studentName: 'Unconfirmed Student',
+          contactNumber: '9876543211',
+          assignedToId: 'staff-single',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }],
+          },
+        },
+      ];
+
+      const mockClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      // In apply mode without trustStaffAssignment, records fail closed to manual review and 0 mutations occur
+      const result = await reconcileLegacyEnquiries(false, mockClient as any, { trustStaffAssignment: false });
+      expect(result.resolvedCount).toBe(0);
+      expect(result.ambiguousCount).toBe(1);
+      expect(result.ambiguousRecords[0].reason).toContain('CRM workflows and does not guarantee originating centre');
+      expect(mockClient.enquiry.update).not.toHaveBeenCalled();
+    });
+
+    it('Reconciliation Script - Enquiry: Apply with --trust-staff-assignment mutates only verified single-centre records', async () => {
+      const syntheticEnquiries = [
+        {
+          id: 'enq-confirmed-1',
+          studentName: 'Confirmed Student',
+          contactNumber: '9876543211',
+          assignedToId: 'staff-single',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }],
+          },
+        },
+      ];
+
+      const mockClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const result = await reconcileLegacyEnquiries(false, mockClient as any, { trustStaffAssignment: true });
+      expect(result.resolvedCount).toBe(1);
+      expect(mockClient.enquiry.update).toHaveBeenCalledWith({
+        where: { id: 'enq-confirmed-1' },
+        data: { centreId: 'centre-alpha' },
+      });
+    });
+
+    it('Reconciliation Script - Study Material: Dry run executes 0 mutations', async () => {
+      const syntheticMaterials = [
+        {
+          id: 'mat-dry-1',
+          title: 'Track Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: {
+            batches: [{ centreId: 'centre-alpha' }],
+          },
+          uploader: { role: { name: 'TEACHER' }, userCentres: [] },
+        },
+      ];
+
+      const mockClient = {
+        studyMaterial: {
+          findMany: jest.fn().mockResolvedValue(syntheticMaterials),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const result = await reconcileLegacyStudyMaterials(true, mockClient as any);
+      expect(result.resolvedCount).toBe(1);
+      expect(mockClient.studyMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it('Reconciliation Script - Study Material: Apply mode reconciles single-centre track records', async () => {
+      const syntheticMaterials = [
+        {
+          id: 'mat-apply-1',
+          title: 'Track Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: {
+            batches: [{ centreId: 'centre-beta' }],
+          },
+          uploader: { role: { name: 'TEACHER' }, userCentres: [] },
+        },
+      ];
+
+      const mockClient = {
+        studyMaterial: {
+          findMany: jest.fn().mockResolvedValue(syntheticMaterials),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const result = await reconcileLegacyStudyMaterials(false, mockClient as any);
+      expect(result.resolvedCount).toBe(1);
+      expect(mockClient.studyMaterial.update).toHaveBeenCalledWith({
+        where: { id: 'mat-apply-1' },
+        data: { centreId: 'centre-beta' },
+      });
     });
   });
 });

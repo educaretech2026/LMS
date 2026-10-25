@@ -73,15 +73,48 @@ export class EnquiryService {
         clearTimeout(timeoutId);
 
         if (!verifyRes.ok) {
+          throw new BadRequestException('CAPTCHA verification service returned an error. Please try again.');
+        }
+
+        let verifyData: any;
+        try {
+          verifyData = await verifyRes.json();
+        } catch {
+          throw new BadRequestException('CAPTCHA verification failed: invalid service response.');
+        }
+
+        if (!verifyData || !verifyData.success) {
+          const errorCodes = Array.isArray(verifyData?.['error-codes']) ? verifyData['error-codes'] : [];
+          if (errorCodes.includes('timeout-or-duplicate')) {
+            throw new BadRequestException('CAPTCHA verification failed: token expired or already used.');
+          }
           throw new BadRequestException('CAPTCHA verification failed. Please try again.');
         }
 
-        const verifyData: any = await verifyRes.json();
-        if (!verifyData || !verifyData.success) {
-          throw new BadRequestException('CAPTCHA verification failed. Please try again.');
+        // Hostname allowlist validation
+        const defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in', 'api.educarelearning.in'];
+        const configuredHostnames = process.env.TURNSTILE_ALLOWED_HOSTNAMES
+          ? process.env.TURNSTILE_ALLOWED_HOSTNAMES.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+          : [];
+        const allowedHostnames = new Set([
+          ...defaultHostnames,
+          ...configuredHostnames,
+          ...(process.env.NODE_ENV !== 'production' ? ['localhost', '127.0.0.1'] : []),
+        ]);
+
+        const returnedHostname = String(verifyData.hostname || '').toLowerCase().trim();
+        if (!returnedHostname || !allowedHostnames.has(returnedHostname)) {
+          throw new BadRequestException('CAPTCHA verification failed: origin hostname not authorized.');
+        }
+
+        // Widget action validation
+        const expectedAction = process.env.TURNSTILE_EXPECTED_ACTION || 'admission_enquiry';
+        if (verifyData.action && verifyData.action !== expectedAction) {
+          throw new BadRequestException('CAPTCHA verification failed: widget action mismatch.');
         }
       } catch (err: any) {
         if (err instanceof BadRequestException || err instanceof HttpException) throw err;
+        console.error('[Turnstile] Verification failure:', err?.name || 'Error', err?.message || 'Network failure');
         throw new BadRequestException('CAPTCHA verification failed or timed out. Please try again.');
       }
     }

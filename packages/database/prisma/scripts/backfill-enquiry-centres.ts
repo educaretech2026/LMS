@@ -2,8 +2,17 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export async function reconcileLegacyEnquiries(dryRun: boolean = true, client: any = prisma) {
-  console.log(`Starting legacy enquiry reconciliation (mode: ${dryRun ? 'DRY-RUN' : 'APPLY'})...`);
+export interface ReconcileOptions {
+  trustStaffAssignment?: boolean;
+}
+
+export async function reconcileLegacyEnquiries(
+  dryRun: boolean = true,
+  client: any = prisma,
+  options: ReconcileOptions = {},
+) {
+  const trustStaffAssignment = Boolean(options.trustStaffAssignment);
+  console.log(`Starting legacy enquiry reconciliation (mode: ${dryRun ? 'DRY-RUN' : 'APPLY'}, trustStaffAssignment: ${trustStaffAssignment})...`);
 
   const unassigned = await client.enquiry.findMany({
     where: { centreId: null },
@@ -40,15 +49,25 @@ export async function reconcileLegacyEnquiries(dryRun: boolean = true, client: a
     }
 
     const staffCentres = Array.from(
-      new Set(enquiry.assignedTo.userCentres.map((uc) => uc.centreId).filter(Boolean)),
+      new Set(enquiry.assignedTo.userCentres.map((uc: any) => uc.centreId).filter(Boolean)),
     );
 
     if (staffCentres.length === 1) {
-      resolvedCount++;
-      if (!dryRun) {
-        await client.enquiry.update({
-          where: { id: enquiry.id },
-          data: { centreId: staffCentres[0] },
+      if (trustStaffAssignment) {
+        resolvedCount++;
+        if (!dryRun) {
+          await client.enquiry.update({
+            where: { id: enquiry.id },
+            data: { centreId: staffCentres[0] },
+          });
+        }
+      } else {
+        ambiguousRecords.push({
+          enquiryId: enquiry.id,
+          studentName: enquiry.studentName,
+          contactNumber: enquiry.contactNumber,
+          assignedToId: enquiry.assignedToId,
+          reason: 'Assigned staff belongs to a single centre, but staff assignment occurs post-intake in CRM workflows and does not guarantee originating centre. Retained as unresolved (centreId: null) pending Super Admin confirmation.',
         });
       }
     } else {
@@ -67,7 +86,7 @@ export async function reconcileLegacyEnquiries(dryRun: boolean = true, client: a
 
   console.log('--- Enquiry Reconciliation Summary ---');
   console.log(`Total Inspected: ${unassigned.length}`);
-  console.log(`Resolved via Unambiguous Single Staff Centre: ${resolvedCount}`);
+  console.log(`Resolved via Single Staff Centre (Explicitly Trusted): ${resolvedCount}`);
   console.log(`Ambiguous (Failing Closed for Safety): ${ambiguousRecords.length}`);
 
   if (ambiguousRecords.length > 0) {
@@ -85,13 +104,17 @@ export async function reconcileLegacyEnquiries(dryRun: boolean = true, client: a
 
 if (require.main === module) {
   const isApply = process.argv.includes('--apply');
+  const trustStaffAssignment = process.argv.includes('--trust-staff-assignment');
   const dryRun = !isApply;
   if (dryRun) {
     console.log('Running in DRY-RUN mode by default. Pass --apply to persist changes.');
   } else {
     console.log('Applying changes to database...');
   }
-  reconcileLegacyEnquiries(dryRun)
+  if (!trustStaffAssignment) {
+    console.log('Notice: --trust-staff-assignment not passed. Staff assignment will not be assumed as proof of origin.');
+  }
+  reconcileLegacyEnquiries(dryRun, prisma, { trustStaffAssignment })
     .then(() => prisma.$disconnect())
     .catch((err) => {
       console.error('Error during enquiry reconciliation:', err);
