@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { SyllabusService } from './syllabus.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('syllabus')
+@Permissions('SYLLABUS')
 export class SyllabusController {
   constructor(private readonly syllabusService: SyllabusService) {}
 

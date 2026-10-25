@@ -3,10 +3,12 @@ import { FeeService } from './fee.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('fee')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+@Permissions('FEES')
 export class FeeController {
   constructor(private readonly feeService: FeeService) {}
 

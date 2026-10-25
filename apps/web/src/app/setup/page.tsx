@@ -29,8 +29,13 @@ import {
   Target,
   Users,
   X,
-  Award
+  Award,
+  Search,
+  Lock,
+  Check,
 } from "lucide-react";
+import { MODULE_PERMISSIONS, checkModulePermission } from "@/lib/permissions";
+
 
 function isStandardInBoard(s: any, bId: string) {
   if (!bId) return true;
@@ -335,15 +340,8 @@ function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [newRoleName, setNewRoleName] = useState("");
   const [isAdding, setIsAdding] = useState(false);
-
-  const modules = [
-    "Student Management",
-    "Staff Management",
-    "Fee Collection",
-    "Academics (Exams/Classes)",
-    "Reports & Analytics",
-    "System Settings"
-  ];
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
 
   useEffect(() => {
     fetchApi<any[]>('/setup/roles')
@@ -358,13 +356,13 @@ function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
   }, []);
 
   const handleAddRole = async () => {
-    if (!newRoleName) return;
+    if (!newRoleName.trim()) return;
     try {
       const created = await fetchApi<any>('/setup/roles', {
         method: 'POST',
-        body: JSON.stringify({ name: newRoleName })
+        body: JSON.stringify({ name: newRoleName.trim() })
       });
-      setRoles([...roles, created]);
+      setRoles([...roles, { ...created, permissions: [] }]);
       setNewRoleName("");
       setIsAdding(false);
     } catch (e: any) {
@@ -382,20 +380,26 @@ function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
     }
   };
 
-  const handleTogglePermission = async (roleId: string, moduleName: string, active: boolean) => {
+  const handleTogglePermission = async (roleId: string, moduleKey: string, active: boolean) => {
     try {
       await fetchApi(`/setup/roles/${roleId}/permissions`, {
         method: 'POST',
-        body: JSON.stringify({ module: moduleName, active })
+        body: JSON.stringify({ module: moduleKey, active })
       });
       // Optimistically update the state
       setRoles(roles.map(r => {
         if (r.id === roleId) {
           let perms = [...(r.permissions || [])];
           if (active) {
-            perms.push({ permission: { action: moduleName } });
+            perms.push({ permission: { action: moduleKey } });
           } else {
-            perms = perms.filter(p => p.permission.action !== moduleName);
+            const def = MODULE_PERMISSIONS.find(m => m.key === moduleKey);
+            const aliasSet = new Set([
+              moduleKey.toLowerCase(),
+              ...(def ? def.aliases.map(a => a.toLowerCase()) : []),
+              ...(def ? [def.label.toLowerCase()] : [])
+            ]);
+            perms = perms.filter(p => !aliasSet.has((p.permission?.action || p.action || "").toLowerCase()));
           }
           return { ...r, permissions: perms };
         }
@@ -406,68 +410,232 @@ function RolesPermissionsTab({ onError }: { onError: (msg: string) => void }) {
     }
   };
 
+  const handleBulkToggle = async (roleId: string, grantAll: boolean) => {
+    const modulesToSet = grantAll ? MODULE_PERMISSIONS.map(m => m.key) : [];
+    try {
+      await fetchApi(`/setup/roles/${roleId}/permissions/bulk`, {
+        method: 'POST',
+        body: JSON.stringify({ modules: modulesToSet })
+      });
+      setRoles(roles.map(r => {
+        if (r.id === roleId) {
+          return {
+            ...r,
+            permissions: grantAll ? MODULE_PERMISSIONS.map(m => ({ permission: { action: m.key } })) : []
+          };
+        }
+        return r;
+      }));
+    } catch (e: any) {
+      onError(e.message || "Failed to bulk update permissions.");
+    }
+  };
+
+  const categories = [
+    "ALL",
+    "Academic & Learning",
+    "Administration & Finance",
+    "System Configuration"
+  ];
+
+  const filteredModules = MODULE_PERMISSIONS.filter(m => {
+    const matchCat = categoryFilter === "ALL" || m.category === categoryFilter;
+    const matchSearch =
+      !searchTerm.trim() ||
+      m.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.key.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
   return (
     <div className="bg-white rounded-xl border border-border-soft shadow-sm overflow-hidden flex flex-col">
-      <div className="p-6 border-b border-border-soft flex items-center justify-between bg-surface-2/30">
+      {/* Header */}
+      <div className="p-6 border-b border-border-soft flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-2/30">
         <div>
-          <h3 className="text-sm font-bold text-text-primary">Roles & Permissions Matrix</h3>
-          <p className="text-xs text-text-muted mt-1">Control access to different modules based on staff roles.</p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-text-primary">Roles & Permissions Matrix</h3>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-brand-blue uppercase">
+              19 Modules
+            </span>
+          </div>
+          <p className="text-xs text-text-muted mt-1">
+            Configure authoritative granular module access for each staff role. Changes take effect immediately.
+          </p>
         </div>
+
         <div className="flex items-center gap-2">
           {isAdding ? (
-            <>
-              <input type="text" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="Role Name" className="h-8 rounded border border-border-soft px-2 text-xs" />
-              <button onClick={handleAddRole} className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newRoleName}
+                onChange={e => setNewRoleName(e.target.value)}
+                placeholder="Role Name"
+                className="h-8 rounded border border-border-soft px-2.5 text-xs text-text-primary focus:outline-hidden focus:ring-1 focus:ring-brand-blue"
+              />
+              <button
+                onClick={handleAddRole}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
+              >
                 Save
               </button>
-              <button onClick={() => setIsAdding(false)} className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors">
+              <button
+                onClick={() => setIsAdding(false)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-surface px-3 py-1.5 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors"
+              >
                 Cancel
               </button>
-            </>
+            </div>
           ) : (
-            <button onClick={() => setIsAdding(true)} className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors">
+            <button
+              onClick={() => setIsAdding(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-surface px-3.5 py-1.5 text-xs font-semibold text-text-primary border border-border-soft shadow-sm hover:bg-white transition-colors"
+            >
               <Plus className="h-3.5 w-3.5" /> New Role
             </button>
           )}
         </div>
       </div>
+
+      {/* Toolbar: Search & Category Pills */}
+      <div className="p-4 border-b border-border-soft flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search modules..."
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-border-soft bg-white text-text-primary placeholder:text-text-muted focus:outline-hidden focus:ring-1 focus:ring-brand-blue"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                categoryFilter === cat
+                  ? "bg-brand-blue text-white shadow-xs"
+                  : "bg-surface-2 text-text-muted hover:text-text-primary hover:bg-surface-2/80"
+              }`}
+            >
+              {cat === "ALL" ? "All Categories" : cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-white border-b border-border-soft">
-              <th className="px-6 py-4 text-left text-xs font-bold text-text-secondary">Modules</th>
-              {roles.map(role => (
-                <th key={role.id} className="px-4 py-4 text-center text-xs font-bold text-text-secondary">
-                  <div className="flex flex-col items-center gap-1">
-                    {role.name}
-                    {!['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER'].includes(role.name) && (
-                      <button onClick={() => handleDeleteRole(role.id)} className="text-danger hover:text-red-700 p-1 rounded hover:bg-danger/10 transition-colors" title="Delete Role">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </th>
-              ))}
+            <tr className="bg-surface-2/40 border-b border-border-soft text-left">
+              <th className="px-6 py-4 text-xs font-bold text-text-secondary min-w-[280px]">
+                Application Module
+              </th>
+              {roles.map(role => {
+                const grantedCount =
+                  role.name === "SUPER_ADMIN"
+                    ? MODULE_PERMISSIONS.length
+                    : MODULE_PERMISSIONS.filter(m =>
+                        checkModulePermission(
+                          role.permissions?.map((p: any) => p.permission?.action || p.action),
+                          m.key
+                        )
+                      ).length;
+
+                return (
+                  <th key={role.id} className="px-4 py-4 text-center text-xs font-bold text-text-secondary min-w-[150px]">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <span>{role.name}</span>
+                        {!['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER'].includes(role.name) && (
+                          <button
+                            onClick={() => handleDeleteRole(role.id)}
+                            className="text-danger hover:text-red-700 p-1 rounded hover:bg-danger/10 transition-colors"
+                            title="Delete Role"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Permission Count Pill */}
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-surface border border-border-soft text-text-muted">
+                        {grantedCount} / {MODULE_PERMISSIONS.length}
+                      </span>
+
+                      {/* Quick Bulk Actions for Editable Roles */}
+                      {role.name !== "SUPER_ADMIN" && (
+                        <div className="flex items-center gap-1 mt-1 text-[10px]">
+                          <button
+                            onClick={() => handleBulkToggle(role.id, true)}
+                            className="text-brand-blue hover:underline font-medium px-1"
+                            title="Grant all modules to this role"
+                          >
+                            Grant All
+                          </button>
+                          <span className="text-border-soft">|</span>
+                          <button
+                            onClick={() => handleBulkToggle(role.id, false)}
+                            className="text-text-muted hover:text-danger hover:underline font-medium px-1"
+                            title="Revoke all modules for this role"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-border-soft">
-            {modules.map(module => (
-              <tr key={module} className="hover:bg-surface-2/30">
-                <td className="px-6 py-4 font-semibold text-text-primary text-xs">{module}</td>
+            {filteredModules.map(module => (
+              <tr key={module.key} className="hover:bg-surface-2/20 transition-colors">
+                <td className="px-6 py-3.5">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-text-primary text-xs">
+                        {module.label}
+                      </span>
+                      <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded bg-surface border border-border-soft text-text-muted">
+                        {module.category.split(" ")[0]}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-text-muted mt-0.5 leading-tight">
+                      {module.description}
+                    </span>
+                  </div>
+                </td>
                 {roles.map(role => {
-                  const hasPermission = role.permissions?.some((p: any) => p.permission.action === module);
+                  const hasPermission = checkModulePermission(
+                    role.permissions?.map((p: any) => p.permission?.action || p.action),
+                    module.key
+                  );
                   const isChecked = role.name === "SUPER_ADMIN" || hasPermission;
+
                   return (
-                    <td key={role.id} className="px-4 py-4 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={isChecked}
-                        onChange={(e) => handleTogglePermission(role.id, module, e.target.checked)}
-                        disabled={role.name === "SUPER_ADMIN"}
-                        className="rounded border-border-soft text-brand-blue focus:ring-brand-blue/20 disabled:opacity-50 cursor-pointer"
-                      />
+                    <td key={role.id} className="px-4 py-3.5 text-center">
+                      {role.name === "SUPER_ADMIN" ? (
+                        <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200" title="Super Admin has immutable full access">
+                          <Lock className="w-3 h-3 text-emerald-500" />
+                          <span>All</span>
+                        </div>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => handleTogglePermission(role.id, module.key, e.target.checked)}
+                          className="w-4 h-4 rounded border-border-soft text-brand-blue focus:ring-brand-blue/20 cursor-pointer transition-colors"
+                        />
+                      )}
                     </td>
-                  )
+                  );
                 })}
               </tr>
             ))}

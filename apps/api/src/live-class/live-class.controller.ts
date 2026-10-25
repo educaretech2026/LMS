@@ -5,9 +5,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('live-class')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Permissions('LIVE_CLASSES')
 export class LiveClassController {
   constructor(
     private readonly liveClassService: LiveClassService,

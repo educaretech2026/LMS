@@ -13,10 +13,12 @@ import { QueryAuditLogsDto, PaginatedAuditLogs, AuditStatsResponse } from './aud
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+@Permissions('AUDIT_LOGS')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

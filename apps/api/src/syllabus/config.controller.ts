@@ -4,8 +4,11 @@ import { ProgressService } from './progress.service';
 import { PrismaService } from '../database/prisma.service';
 import { SyllabusConfiguration } from '@educare/database';
 
+import { Permissions } from '../common/decorators/permissions.decorator';
+
 @UseGuards(JwtAuthGuard)
 @Controller('syllabus-config')
+@Permissions('SYLLABUS')
 export class ConfigController {
   constructor(
     private progressService: ProgressService,

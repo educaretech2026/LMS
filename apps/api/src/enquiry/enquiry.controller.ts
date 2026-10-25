@@ -5,8 +5,10 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
 import { Public } from '../common/decorators/public.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('enquiry')
+@Permissions('ENQUIRY')
 export class EnquiryController {
   constructor(private readonly enquiryService: EnquiryService) {}
 

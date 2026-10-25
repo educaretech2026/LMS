@@ -310,7 +310,7 @@ export default function LiveClassPage() {
             </div>
 
             <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white tracking-tight relative z-10 mb-3">
-              Edu-Meet is Rolling Out Soon! 🚀
+              Edu-Meet is Rolling Out Soon!
             </h3>
             <p className="text-white/80 max-w-xl text-sm md:text-base font-medium relative z-10 leading-relaxed">
               We are upgrading your live classes. Get ready for a seamless, lightning-fast, and integrated meeting experience built directly into your LMS. Stay tuned!

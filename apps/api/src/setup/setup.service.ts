@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 import { StorageService } from '../storage/storage.service';
+import { MODULE_PERMISSIONS } from '../common/constants/permissions.constant';
 
 @Injectable()
 export class SetupService {
@@ -43,22 +44,86 @@ export class SetupService {
   }
 
   async toggleRolePermission(roleId: string, moduleName: string, active: boolean) {
-    let perm = await this.prisma.permission.findUnique({ where: { action: moduleName } });
-    if (!perm) {
-      perm = await this.prisma.permission.create({ data: { action: moduleName } });
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.name === 'SUPER_ADMIN') {
+      throw new BadRequestException('Cannot modify permissions for SUPER_ADMIN');
     }
 
+    // Resolve canonical definition and aliases
+    const def = MODULE_PERMISSIONS.find(
+      m => m.key === moduleName.toUpperCase() || m.label.toLowerCase() === moduleName.toLowerCase()
+    );
+    const canonicalKey = def ? def.key : moduleName;
+    const allMatchingActions = [
+      canonicalKey,
+      moduleName,
+      ...(def ? [def.label, ...def.aliases] : [])
+    ];
+
+    // Find any existing permission records matching these actions
+    const existingPerms = await this.prisma.permission.findMany({
+      where: { action: { in: allMatchingActions } },
+    });
+
     if (active) {
+      // Ensure canonical permission exists in database
+      let canonicalPerm = existingPerms.find(p => p.action === canonicalKey);
+      if (!canonicalPerm) {
+        canonicalPerm = await this.prisma.permission.upsert({
+          where: { action: canonicalKey },
+          create: { action: canonicalKey, description: def?.description || canonicalKey },
+          update: {},
+        });
+      }
+
+      await this.prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId, permissionId: canonicalPerm.id } },
+        create: { roleId, permissionId: canonicalPerm.id },
+        update: {},
+      });
+    } else {
+      // Deactivate: remove canonical and any legacy alias relations
+      if (existingPerms.length > 0) {
+        await this.prisma.rolePermission.deleteMany({
+          where: {
+            roleId,
+            permissionId: { in: existingPerms.map(p => p.id) },
+          },
+        });
+      }
+    }
+    return { success: true };
+  }
+
+  async bulkSetRolePermissions(roleId: string, moduleKeys: string[]) {
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.name === 'SUPER_ADMIN') {
+      throw new BadRequestException('Cannot modify permissions for SUPER_ADMIN');
+    }
+
+    // Delete all current permissions for this role
+    await this.prisma.rolePermission.deleteMany({ where: { roleId } });
+
+    // Add selected permissions
+    for (const key of moduleKeys) {
+      const def = MODULE_PERMISSIONS.find(m => m.key === key.toUpperCase());
+      const canonicalKey = def ? def.key : key;
+
+      const perm = await this.prisma.permission.upsert({
+        where: { action: canonicalKey },
+        create: { action: canonicalKey, description: def?.description || canonicalKey },
+        update: {},
+      });
+
       await this.prisma.rolePermission.upsert({
         where: { roleId_permissionId: { roleId, permissionId: perm.id } },
         create: { roleId, permissionId: perm.id },
-        update: {}
-      });
-    } else {
-      await this.prisma.rolePermission.deleteMany({
-        where: { roleId, permissionId: perm.id }
+        update: {},
       });
     }
+
     return { success: true };
   }
 

@@ -3,12 +3,14 @@ import { DoubtsService } from './doubts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { CreateDoubtDto } from './dto/create-doubt.dto';
 import { CreateDoubtMessageDto } from './dto/create-message.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
 @Controller('doubts')
+@Permissions('DOUBTS')
 export class DoubtsController {
   constructor(private readonly doubtsService: DoubtsService) {}
 

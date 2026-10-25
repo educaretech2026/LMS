@@ -29,7 +29,13 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
       },
     });
 
@@ -92,6 +98,8 @@ export class AuthService {
       );
     }
 
+    const permissions = user.role?.permissions?.map((p: any) => p.permission?.action).filter(Boolean) || [];
+
     return {
       access_token: this.jwtService.sign(payload),
       user: {
@@ -101,6 +109,7 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role.name,
         centreName,
+        permissions,
       }
     };
   }

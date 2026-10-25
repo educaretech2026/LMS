@@ -3,9 +3,11 @@ import { SmsService } from './sms.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('sms')
+@Permissions('SMS')
 export class SmsController {
   constructor(private readonly smsService: SmsService) {}
 
