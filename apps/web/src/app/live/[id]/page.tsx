@@ -490,166 +490,195 @@ export default function PublicLiveClassPage() {
         </div>
       </main>
 
-      {/* ── ROLLING RANK HOLDERS TICKER ── */}
+      {/* ── BROAD ROLLING ACHIEVER POSTERS SHOWCASE ── */}
       {rankHolders.length > 0 && (
         <section
-        aria-label="Student Achievers"
-        style={{
-          position: "relative",
-          zIndex: 20,
-          background: "rgba(4, 15, 30, 0.78)",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
-          borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
-          padding: "10px 0",
-          overflow: "hidden",
-          display: "flex",
-          alignItems: "center",
-        }}
-      >
-        {/* Left pinned title badge */}
-        <div
-          style={{
-            flexShrink: 0,
-            padding: "0 20px 0 24px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            borderRight: "1px solid rgba(255, 255, 255, 0.1)",
-            zIndex: 3,
-            background: "rgba(4, 15, 30, 0.92)",
-          }}
-        >
-          <span
-            style={{
-              width: "7px",
-              height: "7px",
-              borderRadius: "50%",
-              background: "#ee1b24",
-              boxShadow: "0 0 8px #ee1b24",
-              display: "inline-block",
-            }}
-          />
-          <span
-            style={{
-              fontSize: "10px",
-              fontWeight: 800,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: "#93c5fd",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Star Achievers
-          </span>
-        </div>
-
-        {/* Marquee viewport with gradient fade edges */}
-        <div
-          className="marquee-container"
+          aria-label="Star Achievers & Posters"
           style={{
             position: "relative",
-            flex: 1,
+            zIndex: 20,
+            background: "rgba(4, 15, 30, 0.84)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
+            padding: "16px 0",
             overflow: "hidden",
-            maskImage: "linear-gradient(to right, transparent, black 28px, black calc(100% - 28px), transparent)",
-            WebkitMaskImage: "linear-gradient(to right, transparent, black 28px, black calc(100% - 28px), transparent)",
+            display: "flex",
+            alignItems: "center",
           }}
         >
+          {/* Left pinned title badge */}
           <div
-            className="marquee-track"
             style={{
+              flexShrink: 0,
+              padding: "0 24px 0 28px",
               display: "flex",
-              alignItems: "center",
-              gap: "16px",
-              width: "max-content",
+              flexDirection: "column",
+              justifyContent: "center",
+              gap: "4px",
+              borderRight: "1px solid rgba(255, 255, 255, 0.1)",
+              zIndex: 3,
+              background: "rgba(4, 15, 30, 0.95)",
+              height: "160px",
             }}
           >
-            {/* Duplicated list creates a seamless infinite loop */}
-            {[...rankHolders, ...rankHolders].map((student, idx) => {
-              const accentColor = student.badgeColor || (idx % 2 === 0 ? "#0162b1" : "#ee1b24");
-              const initials = student.name
-                .split(" ")
-                .filter(Boolean)
-                .map((n) => n[0])
-                .slice(0, 2)
-                .join("")
-                .toUpperCase();
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "50%",
+                  background: "#ee1b24",
+                  boxShadow: "0 0 10px #ee1b24",
+                  display: "inline-block",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 800,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "#93c5fd",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Top Achievers
+              </span>
+            </div>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "white", whiteSpace: "nowrap" }}>
+              Hall of Fame
+            </span>
+            <span style={{ fontSize: "10px", color: "#64748b", whiteSpace: "nowrap" }}>
+              Educare Rank Holders
+            </span>
+          </div>
 
-              return (
-                <div
-                  key={`${student.id}-${idx}`}
-                  className="rank-card"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "5px 14px 5px 6px",
-                    borderRadius: "100px",
-                    background: "rgba(255, 255, 255, 0.03)",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
-                    backdropFilter: "blur(8px)",
-                    transition: "all 0.2s ease",
-                    cursor: "default",
-                  }}
-                >
-                  {/* Photo or Initials Avatar */}
+          {/* Marquee viewport with gradient fade edges */}
+          <div
+            className="marquee-container"
+            style={{
+              position: "relative",
+              flex: 1,
+              overflow: "hidden",
+              maskImage: "linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent)",
+              WebkitMaskImage: "linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent)",
+            }}
+          >
+            <div
+              className="marquee-track"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "20px",
+                width: "max-content",
+              }}
+            >
+              {/* Duplicated list creates a seamless continuous infinite loop */}
+              {[...rankHolders, ...rankHolders].map((poster, idx) => {
+                const accentColor = poster.badgeColor || (idx % 2 === 0 ? "#0162b1" : "#ee1b24");
+
+                return (
                   <div
+                    key={`${poster.id}-${idx}`}
+                    className="poster-card"
                     style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "50%",
+                      display: "inline-flex",
+                      flexDirection: "column",
+                      height: "160px",
+                      position: "relative",
+                      borderRadius: "12px",
                       overflow: "hidden",
-                      background: `linear-gradient(135deg, ${accentColor} 0%, #040f1e 100%)`,
-                      border: `1.5px solid ${accentColor}`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
+                      background: "rgba(255, 255, 255, 0.03)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      boxShadow: "0 6px 20px rgba(0, 0, 0, 0.35)",
+                      transition: "transform 0.2s ease, border-color 0.2s ease",
                       flexShrink: 0,
                     }}
                   >
-                    {student.imageUrl ? (
+                    {poster.imageUrl ? (
                       <img
-                        src={student.imageUrl}
-                        alt={student.name}
+                        src={poster.imageUrl}
+                        alt={poster.name || "Achiever Poster"}
                         loading="lazy"
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        style={{
+                          height: "160px",
+                          width: "auto",
+                          maxWidth: "280px",
+                          objectFit: "contain",
+                          display: "block",
+                          borderRadius: "12px",
+                        }}
                       />
                     ) : (
-                      <span style={{ fontSize: "11px", fontWeight: 700, color: "white", letterSpacing: "-0.02em" }}>
-                        {initials}
-                      </span>
+                      <div
+                        style={{
+                          width: "180px",
+                          height: "160px",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "16px",
+                          textAlign: "center",
+                          background: `linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(4,15,30,0.8) 100%)`,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "44px",
+                            height: "44px",
+                            borderRadius: "50%",
+                            background: accentColor === "#ee1b24" ? "rgba(238,27,36,0.15)" : "rgba(1,98,177,0.15)",
+                            border: `1.5px solid ${accentColor}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "white",
+                            fontWeight: 800,
+                            fontSize: "14px",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          ★
+                        </div>
+                        <span style={{ fontSize: "13px", fontWeight: 700, color: "white", lineHeight: 1.3 }}>
+                          {poster.name}
+                        </span>
+                        {poster.examOrCourse && (
+                          <span style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+                            {poster.examOrCourse}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Floating rank badge if available */}
+                    {poster.rankOrScore && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "8px",
+                          right: "8px",
+                          fontSize: "10px",
+                          fontWeight: 800,
+                          padding: "2px 8px",
+                          borderRadius: "100px",
+                          background: accentColor === "#ee1b24" ? "rgba(238,27,36,0.9)" : "rgba(1,98,177,0.9)",
+                          color: "white",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        {poster.rankOrScore}
+                      </div>
                     )}
                   </div>
-
-                  {/* Student Details */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "#f8fafc" }}>
-                      {student.name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        padding: "2px 8px",
-                        borderRadius: "100px",
-                        background: accentColor === "#ee1b24" ? "rgba(238,27,36,0.18)" : "rgba(1,98,177,0.22)",
-                        border: `1px solid ${accentColor === "#ee1b24" ? "rgba(238,27,36,0.4)" : "rgba(1,98,177,0.4)"}`,
-                        color: accentColor === "#ee1b24" ? "#fca5a5" : "#93c5fd",
-                        letterSpacing: "0.03em",
-                      }}
-                    >
-                      {student.rankOrScore}
-                    </span>
-                    <span style={{ fontSize: "11px", color: "#64748b" }}>
-                      {student.examOrCourse}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
         </section>
       )}
 
@@ -666,14 +695,14 @@ export default function PublicLiveClassPage() {
           100% { transform: translateX(-50%); }
         }
         .marquee-track {
-          animation: marquee 30s linear infinite;
+          animation: marquee 35s linear infinite;
         }
         .marquee-container:hover .marquee-track {
           animation-play-state: paused;
         }
-        .rank-card:hover {
-          background: rgba(255, 255, 255, 0.08) !important;
-          border-color: rgba(1, 98, 177, 0.5) !important;
+        .poster-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(1, 98, 177, 0.6) !important;
         }
         input::placeholder { color: #334155; }
         input:focus { outline: none; }

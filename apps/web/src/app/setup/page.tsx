@@ -19,6 +19,8 @@ import {
   BookOpen,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
+  ImageIcon,
   Folder,
   Book,
   FileBox,
@@ -1891,14 +1893,16 @@ function BatchesTab({ onError }: { onError: (msg: string) => void }) {
   );
 }
 
-/* ── STAR ACHIEVERS & HALL OF FAME TAB ── */
+/* ── STAR ACHIEVERS & POSTERS TAB ── */
 interface AchieverItem {
   id: string;
   name: string;
-  rankOrScore: string;
-  examOrCourse: string;
+  title?: string;
+  rankOrScore?: string;
+  examOrCourse?: string;
   imageUrl?: string;
   badgeColor?: string;
+  order: number;
   isActive: boolean;
 }
 
@@ -1915,6 +1919,7 @@ function StarAchieversTab() {
     examOrCourse: "",
     imageUrl: "",
     badgeColor: "#0162b1",
+    order: 1,
   });
 
   const loadAchievers = async () => {
@@ -1922,6 +1927,7 @@ function StarAchieversTab() {
     try {
       const data = await fetchApi<AchieverItem[]>("/setup/achievers");
       setAchievers(data || []);
+      setForm((prev) => ({ ...prev, order: (data?.length || 0) + 1 }));
     } catch (e: any) {
       console.error(e);
     } finally {
@@ -1933,26 +1939,39 @@ function StarAchieversTab() {
     loadAchievers();
   }, []);
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePosterUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     if (!file.type.startsWith("image/")) {
-      alert("Please select a valid image file.");
+      alert("Please select a valid image file (PNG, JPG, WebP).");
       return;
     }
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert("File size exceeds 8MB. Please choose a smaller poster image.");
+      return;
+    }
+
     setUploading(true);
     try {
       const { uploadUrl, finalUrl } = (await fetchApi(
         `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
       )) as any;
+
       await fetch(uploadUrl, {
         method: "PUT",
         headers: { "Content-Type": file.type },
         body: file,
       });
-      setForm((prev) => ({ ...prev, imageUrl: finalUrl }));
+
+      setForm((prev) => ({
+        ...prev,
+        imageUrl: finalUrl,
+        name: prev.name || file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "),
+      }));
     } catch (err: any) {
-      alert("Failed to upload image: " + err.message);
+      alert("Failed to upload poster to R2 storage: " + err.message);
     } finally {
       setUploading(false);
     }
@@ -1960,16 +1979,21 @@ function StarAchieversTab() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) {
-      alert("Please enter student name.");
+    if (!form.imageUrl && !form.name.trim()) {
+      alert("Please upload a poster image or provide a title.");
       return;
     }
+
     setSubmitting(true);
     try {
       await fetchApi("/setup/achievers", {
         method: "POST",
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          name: form.name.trim() || "Achiever Poster",
+        }),
       });
+
       setShowModal(false);
       setForm({
         name: "",
@@ -1977,12 +2001,38 @@ function StarAchieversTab() {
         examOrCourse: "",
         imageUrl: "",
         badgeColor: "#0162b1",
+        order: achievers.length + 2,
       });
       await loadAchievers();
     } catch (err: any) {
-      alert("Failed to save achiever: " + err.message);
+      alert("Failed to save poster: " + err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleMove = async (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= achievers.length) return;
+
+    const newAchievers = [...achievers];
+    const [moved] = newAchievers.splice(index, 1);
+    newAchievers.splice(targetIndex, 0, moved);
+
+    // Update locally for instant responsiveness
+    setAchievers(newAchievers);
+
+    try {
+      await fetchApi("/setup/achievers/order", {
+        method: "PUT",
+        body: JSON.stringify({
+          orderedIds: newAchievers.map((a) => a.id),
+        }),
+      });
+    } catch (err: any) {
+      console.error("Failed to reorder posters:", err);
+      // Reload on failure to restore consistency
+      await loadAchievers();
     }
   };
 
@@ -1998,141 +2048,176 @@ function StarAchieversTab() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove ${name} from Star Achievers?`)) return;
+    if (
+      !confirm(
+        `Are you sure you want to delete "${name}"?\n\nThe poster file will also be permanently deleted from Cloudflare R2 storage.`
+      )
+    ) {
+      return;
+    }
+
     try {
       await fetchApi(`/setup/achievers/${id}`, { method: "DELETE" });
       setAchievers((prev) => prev.filter((a) => a.id !== id));
     } catch (e: any) {
-      alert("Failed to delete achiever: " + e.message);
+      alert("Failed to delete poster: " + e.message);
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header card */}
+      {/* Header Card */}
       <div className="bg-white rounded-xl border border-border-soft p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600 border border-amber-200">
               <Award className="h-5 w-5" />
             </span>
-            <h2 className="text-base font-bold text-text-primary">Star Achievers & Hall of Fame</h2>
+            <h2 className="text-base font-bold text-text-primary">Achiever Posters & Hall of Fame</h2>
           </div>
           <p className="text-xs text-text-muted mt-1 max-w-xl">
-            Input rank holders and student toppers with photos. These roll dynamically along the bottom ticker banner across all public webinar pages.
+            Upload posters, flyers, and banners of rank holders. They are saved directly to your Cloudflare R2 bucket and roll in your configured order on all public webinar pages.
           </p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setForm((prev) => ({ ...prev, order: achievers.length + 1 }));
+            setShowModal(true);
+          }}
           className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors shrink-0"
         >
-          <Plus className="h-4 w-4" /> Add Star Achiever
+          <Plus className="h-4 w-4" /> Upload Achiever Poster
         </button>
       </div>
 
-      {/* Achievers list */}
+      {/* Posters List */}
       {loading ? (
         <div className="p-12 text-center text-text-muted text-sm">
-          Loading star achievers…
+          Loading achiever posters…
         </div>
       ) : achievers.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-border-soft p-12 text-center">
-          <Award className="h-10 w-10 text-text-muted mx-auto mb-3 opacity-40" />
-          <h3 className="text-sm font-semibold text-text-primary">No Star Achievers Added Yet</h3>
+          <ImageIcon className="h-10 w-10 text-text-muted mx-auto mb-3 opacity-40" />
+          <h3 className="text-sm font-semibold text-text-primary">No Achiever Posters Uploaded Yet</h3>
           <p className="text-xs text-text-muted mt-1 max-w-md mx-auto">
-            Click &ldquo;Add Star Achiever&rdquo; above to input student names, exam ranks, and photos. The rolling ticker on the webinar page will appear automatically once students are added.
+            Click &ldquo;Upload Achiever Poster&rdquo; above to upload your first flyer. The broader rolling showcase on webinar pages will activate automatically once posters exist.
           </p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue/10 text-brand-blue text-xs font-semibold hover:bg-brand-blue/20 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> Upload First Poster
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {achievers.map((item) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {achievers.map((item, index) => (
             <div
               key={item.id}
-              className={`bg-white rounded-xl border p-4 transition-all relative flex flex-col justify-between ${
-                item.isActive ? "border-border-soft shadow-sm" : "border-border-soft/60 opacity-60 bg-surface-2"
+              className={`bg-white rounded-xl border overflow-hidden transition-all flex flex-col justify-between ${
+                item.isActive ? "border-border-soft shadow-sm hover:shadow-md" : "border-border-soft/60 opacity-60 bg-surface-2"
               }`}
             >
-              <div className="flex items-start gap-3">
-                {/* Photo / Initials */}
-                <div
-                  className="w-12 h-12 rounded-full overflow-hidden shrink-0 flex items-center justify-center font-bold text-white text-sm"
-                  style={{
-                    background: item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1",
-                    border: `2px solid ${item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1"}`,
-                  }}
-                >
-                  {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                  ) : (
-                    item.name
-                      .split(" ")
-                      .filter(Boolean)
-                      .map((n) => n[0])
-                      .slice(0, 2)
-                      .join("")
-                      .toUpperCase()
+              {/* Poster Thumbnail / Preview */}
+              <div className="relative h-44 bg-slate-900 flex items-center justify-center overflow-hidden border-b border-border-soft">
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="w-full h-full object-cover transition-transform hover:scale-105 duration-200"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-slate-500 gap-1">
+                    <ImageIcon className="h-8 w-8" />
+                    <span className="text-[11px]">No image</span>
+                  </div>
+                )}
+
+                {/* Order Badge & Reorder Controls */}
+                <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/75 backdrop-blur-sm rounded-lg px-2 py-1 text-white border border-white/10 shadow">
+                  <span className="text-[11px] font-bold">#{index + 1}</span>
+                  <div className="flex items-center gap-0.5 ml-1 border-l border-white/20 pl-1">
+                    <button
+                      type="button"
+                      onClick={() => handleMove(index, "up")}
+                      disabled={index === 0}
+                      className="p-0.5 hover:text-brand-blue disabled:opacity-30 disabled:hover:text-white transition-colors"
+                      title="Move Up"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMove(index, "down")}
+                      disabled={index === achievers.length - 1}
+                      className="p-0.5 hover:text-brand-blue disabled:opacity-30 disabled:hover:text-white transition-colors"
+                      title="Move Down"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Badge Tag */}
+                {item.rankOrScore && (
+                  <div
+                    className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold shadow text-white"
+                    style={{
+                      background: item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1",
+                    }}
+                  >
+                    {item.rankOrScore}
+                  </div>
+                )}
+              </div>
+
+              {/* Poster Details */}
+              <div className="p-4 flex-1 flex flex-col justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-text-primary line-clamp-1">{item.name}</h4>
+                  {item.examOrCourse && (
+                    <p className="text-xs text-text-muted mt-0.5 line-clamp-1">{item.examOrCourse}</p>
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-text-primary truncate">{item.name}</h4>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                {/* Footer Actions */}
+                <div className="mt-4 pt-3 border-t border-border-soft flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleToggle(item.id)}
+                    className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+                      item.isActive ? "text-emerald-600 hover:text-emerald-700" : "text-text-muted hover:text-text-secondary"
+                    }`}
+                  >
                     <span
-                      className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{
-                        background: item.badgeColor === "#ee1b24" ? "rgba(238,27,36,0.12)" : "rgba(1,98,177,0.12)",
-                        color: item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1",
-                        border: `1px solid ${item.badgeColor === "#ee1b24" ? "rgba(238,27,36,0.25)" : "rgba(1,98,177,0.25)"}`,
-                      }}
-                    >
-                      {item.rankOrScore || "Top Rank"}
-                    </span>
-                    {item.examOrCourse && (
-                      <span className="text-[11px] text-text-muted truncate">
-                        {item.examOrCourse}
-                      </span>
-                    )}
-                  </div>
+                      className={`w-2 h-2 rounded-full ${item.isActive ? "bg-emerald-500" : "bg-slate-300"}`}
+                    />
+                    {item.isActive ? "Active on Webinars" : "Hidden"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item.id, item.name)}
+                    className="text-text-muted hover:text-brand-red p-1 rounded transition-colors"
+                    title="Delete poster and purge from R2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-              </div>
-
-              {/* Card Footer Actions */}
-              <div className="mt-4 pt-3 border-t border-border-soft flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={() => handleToggle(item.id)}
-                  className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
-                    item.isActive ? "text-emerald-600 hover:text-emerald-700" : "text-text-muted hover:text-text-secondary"
-                  }`}
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${item.isActive ? "bg-emerald-500" : "bg-slate-300"}`}
-                  />
-                  {item.isActive ? "Active on Webinars" : "Hidden"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleDelete(item.id, item.name)}
-                  className="text-text-muted hover:text-brand-red p-1 rounded transition-colors"
-                  title="Remove achiever"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Add Modal */}
+      {/* Upload Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border border-border-soft animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 border border-border-soft animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-border-soft">
               <div className="flex items-center gap-2">
                 <Award className="h-5 w-5 text-brand-blue" />
-                <h3 className="text-base font-bold text-text-primary">Add Star Achiever</h3>
+                <h3 className="text-base font-bold text-text-primary">Upload Achiever Poster</h3>
               </div>
               <button
                 onClick={() => setShowModal(false)}
@@ -2143,82 +2228,40 @@ function StarAchieversTab() {
             </div>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-              {/* Student Name */}
+              {/* Poster File Upload */}
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1">
-                  Student Full Name <span className="text-brand-red">*</span>
+                  Poster Image (R2 Storage) <span className="text-brand-red">*</span>
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Rahul S. Nair"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
-                />
-              </div>
-
-              {/* Rank / Score */}
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">
-                  Rank / Score / Achievement <span className="text-brand-red">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. AIR 42 or 99.85 %ile or State Rank 1"
-                  value={form.rankOrScore}
-                  onChange={(e) => setForm({ ...form, rankOrScore: e.target.value })}
-                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
-                />
-              </div>
-
-              {/* Exam / Stream */}
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">
-                  Exam / Course / Board
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. JEE Advanced 2026 or NEET-UG"
-                  value={form.examOrCourse}
-                  onChange={(e) => setForm({ ...form, examOrCourse: e.target.value })}
-                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
-                />
-              </div>
-
-              {/* Student Photo */}
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">
-                  Student Photo
-                </label>
-                <div className="flex items-center gap-3">
-                  {form.imageUrl ? (
-                    <div className="w-12 h-12 rounded-full overflow-hidden border border-border-soft relative shrink-0">
-                      <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setForm({ ...form, imageUrl: "" })}
-                        className="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-                        title="Remove photo"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : null}
-                  <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-border-soft rounded-lg text-xs font-medium text-text-secondary hover:bg-surface-2 cursor-pointer transition-colors">
-                    <Upload className="h-4 w-4 text-text-muted" />
-                    <span>{uploading ? "Uploading photo…" : form.imageUrl ? "Change Photo" : "Upload Student Photo"}</span>
+                {form.imageUrl ? (
+                  <div className="relative rounded-xl border border-border-soft overflow-hidden h-44 bg-slate-900 flex items-center justify-center mb-2">
+                    <img src={form.imageUrl} alt="Poster preview" className="w-full h-full object-contain" />
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, imageUrl: "" })}
+                      className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-full hover:bg-brand-red transition-colors"
+                      title="Remove image"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border-soft rounded-xl hover:border-brand-blue cursor-pointer transition-colors bg-surface-2 hover:bg-brand-blue/5">
+                    <Upload className="h-8 w-8 text-text-muted mb-2" />
+                    <span className="text-xs font-semibold text-text-primary">
+                      {uploading ? "Uploading to Cloudflare R2…" : "Click or drag poster file here"}
+                    </span>
+                    <span className="text-[11px] text-text-muted mt-0.5">PNG, JPG, WebP up to 8MB</span>
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={handlePhotoUpload}
+                      onChange={handlePosterUpload}
                       disabled={uploading}
                       className="hidden"
                     />
                   </label>
-                </div>
-                <div className="mt-1.5 flex items-center gap-2">
+                )}
+                <div className="mt-1 flex items-center gap-2">
                   <span className="text-[10px] text-text-muted">Or enter URL:</span>
                   <input
                     type="url"
@@ -2230,38 +2273,98 @@ function StarAchieversTab() {
                 </div>
               </div>
 
-              {/* Badge Color */}
+              {/* Poster Headline / Title */}
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1">
-                  Badge Color
+                  Poster Title / Headline <span className="text-brand-red">*</span>
                 </label>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-                    <input
-                      type="radio"
-                      name="badgeColor"
-                      value="#0162b1"
-                      checked={form.badgeColor === "#0162b1"}
-                      onChange={() => setForm({ ...form, badgeColor: "#0162b1" })}
-                    />
-                    <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#0162b1]" />
-                    <span>Educare Blue</span>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. JEE Advanced 2026 Toppers or Rahul S. Nair"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Exam / Stream */}
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
+                    Exam / Category
                   </label>
-                  <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-                    <input
-                      type="radio"
-                      name="badgeColor"
-                      value="#ee1b24"
-                      checked={form.badgeColor === "#ee1b24"}
-                      onChange={() => setForm({ ...form, badgeColor: "#ee1b24" })}
-                    />
-                    <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#ee1b24]" />
-                    <span>Educare Red</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. JEE Advanced / NEET"
+                    value={form.examOrCourse}
+                    onChange={(e) => setForm({ ...form, examOrCourse: e.target.value })}
+                    className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
+                  />
+                </div>
+
+                {/* Rank / Highlight */}
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
+                    Highlight / Rank Pill
                   </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. AIR 42 or 100% Pass"
+                    value={form.rankOrScore}
+                    onChange={(e) => setForm({ ...form, rankOrScore: e.target.value })}
+                    className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
+                  />
                 </div>
               </div>
 
-              {/* Buttons */}
+              {/* Order & Badge Color */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
+                    Display Order
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.order}
+                    onChange={(e) => setForm({ ...form, order: Number(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">
+                    Badge Color
+                  </label>
+                  <div className="flex items-center gap-3 h-10">
+                    <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                      <input
+                        type="radio"
+                        name="badgeColor"
+                        value="#0162b1"
+                        checked={form.badgeColor === "#0162b1"}
+                        onChange={() => setForm({ ...form, badgeColor: "#0162b1" })}
+                      />
+                      <span className="inline-block w-3 h-3 rounded-full bg-[#0162b1]" />
+                      <span>Blue</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                      <input
+                        type="radio"
+                        name="badgeColor"
+                        value="#ee1b24"
+                        checked={form.badgeColor === "#ee1b24"}
+                        onChange={() => setForm({ ...form, badgeColor: "#ee1b24" })}
+                      />
+                      <span className="inline-block w-3 h-3 rounded-full bg-[#ee1b24]" />
+                      <span>Red</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
               <div className="pt-3 border-t border-border-soft flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -2275,7 +2378,7 @@ function StarAchieversTab() {
                   disabled={submitting || uploading}
                   className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors disabled:opacity-50"
                 >
-                  {submitting ? "Saving…" : "Save Achiever"}
+                  {submitting ? "Saving…" : "Save Poster"}
                 </button>
               </div>
             </form>

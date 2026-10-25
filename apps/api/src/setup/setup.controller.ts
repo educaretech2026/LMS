@@ -32,8 +32,14 @@ export class SetupController {
 
   @Post('achievers')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
-  createAchiever(@Body() data: { name: string; rankOrScore: string; examOrCourse: string; imageUrl?: string; badgeColor?: string }) {
+  createAchiever(@Body() data: { name: string; rankOrScore?: string; examOrCourse?: string; imageUrl?: string; badgeColor?: string; order?: number }) {
     return this.setupService.createAchiever(data);
+  }
+
+  @Put('achievers/order')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  reorderAchievers(@Body('orderedIds') orderedIds: string[]) {
+    return this.setupService.reorderAchievers(orderedIds);
   }
 
   @Patch('achievers/:id/toggle')

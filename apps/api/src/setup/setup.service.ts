@@ -1,11 +1,16 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
+
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class SetupService {
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private storageService?: StorageService,
+  ) {}
 
   // Roles
   async getRoles() {
@@ -511,54 +516,73 @@ export class SetupService {
     });
   }
 
-  // Star Achievers / Rank Holders
+  // Star Achievers & Posters
   async getAchievers() {
     const list = await this.prisma.notice.findMany({
       where: { type: 'STAR_ACHIEVER' },
       orderBy: { createdAt: 'desc' },
     });
-    return list.map(item => {
+    const mapped = list.map(item => {
       let meta: any = {};
-      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '' }; }
+      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '', order: 999 }; }
       return {
         id: item.id,
         name: item.title,
+        title: item.title,
         rankOrScore: meta.rankOrScore || '',
         examOrCourse: meta.examOrCourse || '',
         imageUrl: item.imageUrl || undefined,
         badgeColor: meta.badgeColor || '#0162b1',
+        order: typeof meta.order === 'number' ? meta.order : 999,
         isActive: item.isActive,
         createdAt: item.createdAt,
       };
     });
+    mapped.sort((a, b) => a.order - b.order);
+    return mapped;
   }
 
   async getPublicAchievers() {
     const list = await this.prisma.notice.findMany({
       where: { type: 'STAR_ACHIEVER', isActive: true },
       orderBy: { createdAt: 'desc' },
+      take: 25,
     });
-    return list.map(item => {
+    const mapped = list.map(item => {
       let meta: any = {};
-      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '' }; }
+      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '', order: 999 }; }
       return {
         id: item.id,
         name: item.title,
+        title: item.title,
         rankOrScore: meta.rankOrScore || '',
         examOrCourse: meta.examOrCourse || '',
         imageUrl: item.imageUrl || undefined,
         badgeColor: meta.badgeColor || '#0162b1',
+        order: typeof meta.order === 'number' ? meta.order : 999,
       };
     });
+    mapped.sort((a, b) => a.order - b.order);
+    return mapped;
   }
 
-  async createAchiever(data: { name: string; rankOrScore: string; examOrCourse: string; imageUrl?: string; badgeColor?: string }) {
-    if (!data.name || !data.name.trim()) throw new BadRequestException('Student name is required');
+  async createAchiever(data: { name: string; rankOrScore?: string; examOrCourse?: string; imageUrl?: string; badgeColor?: string; order?: number }) {
+    if (!data.name || !data.name.trim()) throw new BadRequestException('Title or student name is required');
+    
+    // Auto-compute order if not passed
+    let order = Number(data.order);
+    if (!order || isNaN(order)) {
+      const existing = await this.prisma.notice.count({ where: { type: 'STAR_ACHIEVER' } });
+      order = existing + 1;
+    }
+
     const content = JSON.stringify({
       rankOrScore: data.rankOrScore?.trim() || '',
       examOrCourse: data.examOrCourse?.trim() || '',
       badgeColor: data.badgeColor || '#0162b1',
+      order,
     });
+
     const created = await this.prisma.notice.create({
       data: {
         title: data.name.trim(),
@@ -568,20 +592,41 @@ export class SetupService {
         isActive: true,
       },
     });
+
     return {
       id: created.id,
       name: created.title,
+      title: created.title,
       rankOrScore: data.rankOrScore || '',
       examOrCourse: data.examOrCourse || '',
       imageUrl: created.imageUrl || undefined,
       badgeColor: data.badgeColor || '#0162b1',
+      order,
       isActive: created.isActive,
     };
   }
 
+  async reorderAchievers(orderedIds: string[]) {
+    if (!Array.isArray(orderedIds)) throw new BadRequestException('orderedIds must be an array');
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      const item = await this.prisma.notice.findUnique({ where: { id } });
+      if (item) {
+        let meta: any = {};
+        try { meta = JSON.parse(item.content); } catch {}
+        meta.order = i + 1;
+        await this.prisma.notice.update({
+          where: { id },
+          data: { content: JSON.stringify(meta) },
+        });
+      }
+    }
+    return { success: true };
+  }
+
   async toggleAchieverActive(id: string) {
     const item = await this.prisma.notice.findUnique({ where: { id } });
-    if (!item) throw new NotFoundException('Achiever not found');
+    if (!item) throw new NotFoundException('Achiever poster not found');
     return this.prisma.notice.update({
       where: { id },
       data: { isActive: !item.isActive },
@@ -589,6 +634,18 @@ export class SetupService {
   }
 
   async deleteAchiever(id: string) {
+    const item = await this.prisma.notice.findUnique({ where: { id } });
+    if (!item) throw new NotFoundException('Achiever poster not found');
+
+    // Synchronized deletion: delete the image file from Cloudflare R2 bucket
+    if (item.imageUrl && this.storageService) {
+      try {
+        await this.storageService.deleteFile(item.imageUrl, true);
+      } catch (err) {
+        console.warn(`[SetupService] Could not delete image from R2 (${item.imageUrl}):`, err);
+      }
+    }
+
     return this.prisma.notice.delete({ where: { id } });
   }
 }

@@ -1,10 +1,11 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { cleanEnvValue } from '../common/config/env.loader';
 
 @Injectable()
 export class CloudflareService {
   async getDirectUploadUrl() {
-    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-    const token = process.env.CLOUDFLARE_STREAM_API_TOKEN;
+    const accountId = cleanEnvValue(process.env.CLOUDFLARE_ACCOUNT_ID);
+    const token = cleanEnvValue(process.env.CLOUDFLARE_STREAM_API_TOKEN);
 
     if (!accountId || !token) {
       throw new HttpException('Cloudflare credentials not configured', HttpStatus.INTERNAL_SERVER_ERROR);

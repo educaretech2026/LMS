@@ -302,21 +302,23 @@ export class LiveClassService {
 
     const achieverNotices = await this.prisma.notice.findMany({
       where: { type: 'STAR_ACHIEVER', isActive: true },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: 25,
     });
     const achievers = achieverNotices.map(item => {
       let meta: any = {};
-      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '' }; }
+      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '', order: 999 }; }
       return {
         id: item.id,
         name: item.title,
+        title: item.title,
         rankOrScore: meta.rankOrScore || '',
         examOrCourse: meta.examOrCourse || '',
         imageUrl: item.imageUrl || undefined,
         badgeColor: meta.badgeColor || '#0162b1',
+        order: typeof meta.order === 'number' ? meta.order : 999,
       };
     });
+    achievers.sort((a, b) => a.order - b.order);
 
     return { ...cls, achievers };
   }

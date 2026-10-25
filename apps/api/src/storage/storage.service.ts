@@ -5,6 +5,7 @@ import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, assertCentreAccess } from '../common/utils/tenant.util';
 import * as crypto from 'crypto';
 import * as path from 'path';
+import { cleanEnvValue } from '../common/config/env.loader';
 
 const ALLOWED_MIMES = new Set([
   'image/jpeg',
@@ -73,35 +74,91 @@ const EXTENSION_FAMILY_MIME_MAP: Record<string, string[]> = {
 
 @Injectable()
 export class StorageService {
-  private s3Client: S3Client;
-  private bucketName: string;
-  private publicUrl: string;
+  private s3Client!: S3Client;
+  private bucketName: string = 'educare';
+  private publicUrl: string = '';
+  private currentAccountId: string = '';
+  private currentAccessKeyId: string = '';
 
   constructor(@Optional() private prisma?: PrismaService) {
-    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-    const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
-    this.bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'educare-materials';
-    this.publicUrl = process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN || '';
-    
-    if (this.publicUrl && !this.publicUrl.startsWith('http')) {
-      this.publicUrl = `https://${this.publicUrl}`;
+    this.getClient();
+  }
+
+  /**
+   * Dynamically retrieves normalized and sanitized Cloudflare R2 configuration.
+   * Supports standard environment variable names as well as common alias formats.
+   */
+  public getConfig() {
+    const accountId = cleanEnvValue(
+      process.env.CLOUDFLARE_ACCOUNT_ID ||
+      process.env.CLOUDFLARE_R2_ACCOUNT_ID ||
+      process.env.R2_ACCOUNT_ID
+    );
+    const accessKeyId = cleanEnvValue(
+      process.env.CLOUDFLARE_R2_ACCESS_KEY_ID ||
+      process.env.R2_ACCESS_KEY_ID ||
+      process.env.CLOUDFLARE_ACCESS_KEY_ID
+    );
+    const secretAccessKey = cleanEnvValue(
+      process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY ||
+      process.env.R2_SECRET_ACCESS_KEY ||
+      process.env.CLOUDFLARE_SECRET_ACCESS_KEY
+    );
+    const bucketName = cleanEnvValue(
+      process.env.CLOUDFLARE_R2_BUCKET_NAME ||
+      process.env.R2_BUCKET_NAME ||
+      process.env.CLOUDFLARE_BUCKET_NAME ||
+      this.bucketName ||
+      'educare'
+    );
+    let publicUrl = cleanEnvValue(
+      process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN ||
+      process.env.R2_PUBLIC_DOMAIN ||
+      process.env.CLOUDFLARE_PUBLIC_DOMAIN ||
+      this.publicUrl ||
+      ''
+    );
+
+    if (publicUrl && !publicUrl.startsWith('http://') && !publicUrl.startsWith('https://')) {
+      publicUrl = `https://${publicUrl}`;
+    }
+    publicUrl = publicUrl.replace(/\/+$/, '');
+
+    const isConfigured = Boolean(accountId && accessKeyId && secretAccessKey);
+    return { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl, isConfigured };
+  }
+
+  /**
+   * Returns or lazily instantiates the S3Client connected to Cloudflare R2.
+   */
+  public getClient(): S3Client {
+    const config = this.getConfig();
+    if (config.isConfigured) {
+      if (
+        !this.s3Client ||
+        this.currentAccountId !== config.accountId ||
+        this.currentAccessKeyId !== config.accessKeyId
+      ) {
+        this.currentAccountId = config.accountId;
+        this.currentAccessKeyId = config.accessKeyId;
+        this.bucketName = config.bucketName;
+        this.publicUrl = config.publicUrl;
+        this.s3Client = new S3Client({
+          region: 'auto',
+          endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+          credentials: {
+            accessKeyId: config.accessKeyId,
+            secretAccessKey: config.secretAccessKey,
+          },
+        });
+      }
+      return this.s3Client;
     }
 
-    if (!accountId || !accessKeyId || !secretAccessKey) {
-      console.warn('⚠️ Cloudflare R2 credentials are not fully configured. File uploads will fail.');
-      // Initialize with dummy values so the app doesn't crash on startup, but throw when used.
+    if (!this.s3Client) {
       this.s3Client = new S3Client({ region: 'auto' });
-    } else {
-      this.s3Client = new S3Client({
-        region: 'auto',
-        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-        credentials: {
-          accessKeyId,
-          secretAccessKey,
-        },
-      });
     }
+    return this.s3Client;
   }
 
   /**
@@ -120,16 +177,17 @@ export class StorageService {
       try {
         const parsedUrl = new URL(rawKey);
         const allowedHosts: string[] = [];
-        if (this.publicUrl) {
+        const config = this.getConfig();
+
+        if (config.publicUrl) {
           try {
-            allowedHosts.push(new URL(this.publicUrl).host.toLowerCase());
+            allowedHosts.push(new URL(config.publicUrl).host.toLowerCase());
           } catch {
             // ignore
           }
         }
-        const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-        if (accountId) {
-          allowedHosts.push(`${accountId.toLowerCase()}.r2.cloudflarestorage.com`);
+        if (config.accountId) {
+          allowedHosts.push(`${config.accountId.toLowerCase()}.r2.cloudflarestorage.com`);
         }
 
         const urlHost = parsedUrl.host.toLowerCase();
@@ -215,8 +273,12 @@ export class StorageService {
       }
     }
 
-    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
-      throw new HttpException('Storage is not configured on the server.', HttpStatus.INTERNAL_SERVER_ERROR);
+    const config = this.getConfig();
+    if (!config.isConfigured) {
+      throw new HttpException(
+        'Storage is not configured on the server. Please check Cloudflare R2 environment variables (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY).',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
 
     let objectKey: string;
@@ -278,14 +340,16 @@ export class StorageService {
     const expiresIn = 900; // 15-minute short expiry for presigned upload URLs
 
     const command = new PutObjectCommand({
-      Bucket: this.bucketName,
+      Bucket: config.bucketName,
       Key: objectKey,
       ContentType: contentType,
     });
 
     try {
-      const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
-      const finalUrl = `${this.publicUrl}/${objectKey}`;
+      const uploadUrl = await getSignedUrl(this.getClient(), command, { expiresIn });
+      const finalUrl = config.publicUrl
+        ? `${config.publicUrl}/${objectKey}`
+        : `https://${config.bucketName}.r2.cloudflarestorage.com/${objectKey}`;
       return { uploadUrl, finalUrl, objectKey, maxSizeBytes, expiresIn };
     } catch (error: any) {
       console.error('Error generating pre-signed URL:', error);
@@ -299,7 +363,8 @@ export class StorageService {
    * @param expiresIn Seconds until the link expires
    */
   async getPresignedDownloadUrl(objectKey: string, expiresIn: number = 7200) {
-    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+    const config = this.getConfig();
+    if (!config.isConfigured) {
       throw new HttpException('Storage is not configured on the server.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
@@ -309,12 +374,12 @@ export class StorageService {
     }
 
     const command = new GetObjectCommand({
-      Bucket: this.bucketName,
+      Bucket: config.bucketName,
       Key: validatedKey,
     });
 
     try {
-      const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+      const downloadUrl = await getSignedUrl(this.getClient(), command, { expiresIn });
       return { downloadUrl };
     } catch (error: any) {
       console.error('Error generating pre-signed GET URL:', error);
@@ -330,7 +395,8 @@ export class StorageService {
     urlOrKey: string,
     customMaxSizeBytes?: number
   ): Promise<{ valid: boolean; actualSizeBytes: number }> {
-    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+    const config = this.getConfig();
+    if (!config.isConfigured) {
       throw new BadRequestException('Storage service is not configured to verify uploaded file size.');
     }
 
@@ -352,11 +418,11 @@ export class StorageService {
 
     try {
       const command = new HeadObjectCommand({
-        Bucket: this.bucketName,
+        Bucket: config.bucketName,
         Key: validatedKey,
       });
 
-      const head = await this.s3Client.send(command);
+      const head = await this.getClient().send(command);
       const actualSizeBytes = head.ContentLength || 0;
 
       if (actualSizeBytes > maxSizeBytes) {
@@ -480,7 +546,8 @@ export class StorageService {
       throw new BadRequestException('maxAgeHours must be a finite number between 1 and 720 hours (minimum 1 hour retention).');
     }
 
-    if (!process.env.CLOUDFLARE_ACCOUNT_ID || !this.prisma) {
+    const config = this.getConfig();
+    if (!config.isConfigured || !this.prisma) {
       return { scanned: 0, purged: 0 };
     }
 
@@ -496,13 +563,13 @@ export class StorageService {
 
         do {
           const listCmd: ListObjectsV2Command = new ListObjectsV2Command({
-            Bucket: this.bucketName,
+            Bucket: config.bucketName,
             Prefix: prefix,
             MaxKeys: 100,
             ContinuationToken: continuationToken,
           });
 
-          const listRes = await this.s3Client.send(listCmd);
+          const listRes = await this.getClient().send(listCmd);
           const contents = listRes.Contents || [];
           for (const item of contents) {
             if (!item.Key || !item.LastModified) continue;
@@ -783,7 +850,8 @@ export class StorageService {
    * @param forcePurge When true, bypasses in-use check (used for evicting oversized uploads)
    */
   async deleteFile(objectKey: string, forcePurge: boolean = false): Promise<boolean> {
-    if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+    const config = this.getConfig();
+    if (!config.isConfigured) {
       return false; // Skip if storage not configured
     }
 
@@ -807,11 +875,11 @@ export class StorageService {
 
     try {
       const command = new DeleteObjectCommand({
-        Bucket: this.bucketName,
+        Bucket: config.bucketName,
         Key: validatedKey,
       });
 
-      await this.s3Client.send(command);
+      await this.getClient().send(command);
       return true;
     } catch (error: any) {
       console.error('Error deleting file from R2:', error);
