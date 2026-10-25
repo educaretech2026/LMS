@@ -510,12 +510,6 @@ export default function PublicLiveClassPage() {
                   alt={webinar.title}
                   className="w-full h-auto max-h-[580px] object-contain rounded-xl mx-auto block"
                 />
-                <div className="mt-3 px-2 py-1 flex items-center justify-between text-[11px] text-slate-400">
-                  <span className="font-semibold text-white/90 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#ee1b24] animate-pulse" />
-                    Official Event Poster
-                  </span>
-                </div>
               </div>
             </div>
           )}
