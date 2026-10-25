@@ -4801,6 +4801,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           mockPrisma.studyMaterial.findUnique.mockResolvedValue({
             id: 'mat-superadmin-public',
             targetTrackId: null,
+            isShared: true,
             uploader: {
               role: { name: 'SUPER_ADMIN' },
               userCentres: []

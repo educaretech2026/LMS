@@ -4,7 +4,8 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM information_schema.columns
-        WHERE table_name = 'enquiries'
+        WHERE table_schema = CURRENT_SCHEMA
+        AND table_name = 'enquiries'
         AND column_name = 'centreId'
     ) THEN
         ALTER TABLE "enquiries" ADD COLUMN "centreId" TEXT;
@@ -17,7 +18,8 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM information_schema.table_constraints
-        WHERE constraint_name = 'enquiries_centreId_fkey'
+        WHERE constraint_schema = CURRENT_SCHEMA
+        AND constraint_name = 'enquiries_centreId_fkey'
     ) THEN
         ALTER TABLE "enquiries" ADD CONSTRAINT "enquiries_centreId_fkey" FOREIGN KEY ("centreId") REFERENCES "centres"("id") ON DELETE SET NULL ON UPDATE CASCADE;
     END IF;
@@ -29,7 +31,8 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM information_schema.columns
-        WHERE table_name = 'study_materials'
+        WHERE table_schema = CURRENT_SCHEMA
+        AND table_name = 'study_materials'
         AND column_name = 'centreId'
     ) THEN
         ALTER TABLE "study_materials" ADD COLUMN "centreId" TEXT;
@@ -42,7 +45,8 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM information_schema.table_constraints
-        WHERE constraint_name = 'study_materials_centreId_fkey'
+        WHERE constraint_schema = CURRENT_SCHEMA
+        AND constraint_name = 'study_materials_centreId_fkey'
     ) THEN
         ALTER TABLE "study_materials" ADD CONSTRAINT "study_materials_centreId_fkey" FOREIGN KEY ("centreId") REFERENCES "centres"("id") ON DELETE SET NULL ON UPDATE CASCADE;
     END IF;

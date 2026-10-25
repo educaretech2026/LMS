@@ -509,6 +509,7 @@ model StudyMaterial {
   subtopicId     String?
   uploaderId     String?
   centreId       String?
+  isShared       Boolean      @default(false)
 
   targetTrackId String?
   targetTrack   TargetTrack? @relation(fields: [targetTrackId], references: [id])

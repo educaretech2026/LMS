@@ -5,6 +5,8 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { Throttle } from '@nestjs/throttler';
+import { StrictThrottlerGuard } from '../common/guards/strict-throttler.guard';
 
 @Controller('enquiry')
 @Permissions('ENQUIRY')
@@ -12,9 +14,11 @@ export class EnquiryController {
   constructor(private readonly enquiryService: EnquiryService) {}
 
   @Public()
+  @UseGuards(StrictThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('public')
-  createPublic(@Body() data: any) {
-    return this.enquiryService.createPublicEnquiry(data);
+  createPublic(@Body() data: any, @Req() req: any) {
+    return this.enquiryService.createPublicEnquiry(data, req?.ip);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

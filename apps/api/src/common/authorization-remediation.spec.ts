@@ -17,6 +17,7 @@ import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus, SupportTicketStatus } from '@educare/database';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { StrictThrottlerGuard } from './guards/strict-throttler.guard';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import { PERMISSIONS_KEY } from './decorators/permissions.decorator';
 import { ROLES_KEY } from './decorators/roles.decorator';
@@ -680,6 +681,823 @@ describe('Authorization Remediation Regression Suite', () => {
         }),
       };
       expect(guard.canActivate(mockContext as any)).toBe(true);
+    });
+  });
+
+  describe('Priority 1: Fail-closed handling of legacy study materials', () => {
+    let mockPrisma: any;
+    let studyMaterialService: StudyMaterialService;
+
+    const studentAlpha = {
+      id: 'stud-user-alpha',
+      role: { name: 'STUDENT' },
+    };
+
+    const centreAdminAlpha = {
+      id: 'admin-user-alpha',
+      role: { name: 'CENTRE_ADMIN' },
+      userCentres: [{ centreId: 'centre-alpha' }],
+    };
+
+    const teacherAlpha = {
+      id: 'teacher-user-alpha',
+      role: { name: 'TEACHER' },
+      userCentres: [{ centreId: 'centre-alpha' }],
+    };
+
+    beforeEach(() => {
+      mockPrisma = {
+        studyMaterial: {
+          findUnique: jest.fn(),
+          findMany: jest.fn(),
+          create: jest.fn(),
+          delete: jest.fn(),
+        },
+        studentProfile: {
+          findUnique: jest.fn(),
+        },
+        teacherProfile: {
+          findUnique: jest.fn(),
+        },
+        academicYear: {
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+        },
+        syllabus: {
+          findUnique: jest.fn(),
+        },
+        targetTrack: {
+          findUnique: jest.fn(),
+        },
+      };
+      studyMaterialService = new StudyMaterialService(mockPrisma as any);
+    });
+
+    it('Null-centre legacy material (centreId = null, isShared = false) is denied to ordinary student -> HTTP 403 Forbidden', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'legacy-mat-1',
+        title: 'Unresolved Legacy Physics',
+        centreId: null,
+        isShared: false,
+        targetTrackId: null,
+        uploaderId: 'other-user',
+        uploader: {
+          role: { name: 'SUPER_ADMIN' },
+          userCentres: [],
+        },
+      });
+
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-alpha',
+        userId: studentAlpha.id,
+        enrollments: [
+          {
+            batch: { id: 'batch-1', centreId: 'centre-alpha' },
+          },
+        ],
+      });
+
+      await expect(
+        studyMaterialService.getById('legacy-mat-1', studentAlpha),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Null-centre legacy material (centreId = null, isShared = false) is denied to Centre Admin who did not upload it -> HTTP 403 Forbidden', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'legacy-mat-2',
+        title: 'Unresolved Legacy Chemistry',
+        centreId: null,
+        isShared: false,
+        targetTrackId: null,
+        uploaderId: 'other-staff',
+        uploader: {
+          role: { name: 'SUPER_ADMIN' },
+          userCentres: [],
+        },
+      });
+
+      await expect(
+        studyMaterialService.getById('legacy-mat-2', centreAdminAlpha),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Null-centre legacy material (centreId = null, isShared = false) is denied to Teacher who did not upload it -> HTTP 403 Forbidden', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'legacy-mat-3',
+        title: 'Unresolved Legacy Biology',
+        centreId: null,
+        isShared: false,
+        targetTrackId: null,
+        uploaderId: 'other-teacher',
+        uploader: {
+          role: { name: 'TEACHER' },
+          userCentres: [],
+        },
+      });
+
+      await expect(
+        studyMaterialService.getById('legacy-mat-3', teacherAlpha),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Null-centre material is accessible to its uploader (verified ownership rule)', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-self-uploaded',
+        title: 'My Self Uploaded Notes',
+        centreId: null,
+        isShared: false,
+        targetTrackId: null,
+        uploaderId: teacherAlpha.id,
+        uploader: {
+          role: { name: 'TEACHER' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      });
+
+      const res = await studyMaterialService.getById('mat-self-uploaded', teacherAlpha);
+      expect(res).toBeDefined();
+      expect(res.id).toBe('mat-self-uploaded');
+    });
+
+    it('Super Admin can access unreconciled legacy material via getById and getUnreconciled', async () => {
+      const unresolvedRecord = {
+        id: 'legacy-mat-super',
+        title: 'Unresolved Global Draft',
+        centreId: null,
+        isShared: false,
+        targetTrackId: null,
+      };
+
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue(unresolvedRecord);
+      mockPrisma.studyMaterial.findMany.mockResolvedValue([unresolvedRecord]);
+
+      const byId = await studyMaterialService.getById('legacy-mat-super', superAdmin);
+      expect(byId).toBeDefined();
+      expect(byId.id).toBe('legacy-mat-super');
+
+      const unreconciled = await studyMaterialService.getUnreconciled(superAdmin);
+      expect(unreconciled).toHaveLength(1);
+      expect(unreconciled[0].id).toBe('legacy-mat-super');
+    });
+
+    it('Non-Super Admin cannot access getUnreconciled -> HTTP 403 Forbidden', async () => {
+      await expect(
+        studyMaterialService.getUnreconciled(centreAdminAlpha),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        studyMaterialService.getUnreconciled(teacherAlpha),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        studyMaterialService.getUnreconciled(studentAlpha),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Explicitly shared material (isShared = true) is available to enrolled student across any centre', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'shared-mat-1',
+        title: 'National Foundation Concept Video',
+        centreId: null,
+        isShared: true,
+        targetTrackId: null,
+        syllabus: { boardId: 'board-cbse', standardId: 'std-10' },
+      });
+
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-alpha',
+        userId: studentAlpha.id,
+        enrollments: [
+          {
+            batch: {
+              id: 'batch-centre-a',
+              centreId: 'centre-alpha',
+              boardId: 'board-cbse',
+              standardId: 'std-10',
+            },
+          },
+        ],
+      });
+
+      const res = await studyMaterialService.getById('shared-mat-1', studentAlpha);
+      expect(res).toBeDefined();
+      expect(res.id).toBe('shared-mat-1');
+    });
+
+    it('Explicitly shared material (isShared = true) is available to Centre Admin globally', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'shared-mat-2',
+        title: 'HQ Global Faculty Handbook',
+        centreId: null,
+        isShared: true,
+        targetTrackId: null,
+        uploaderId: 'super-admin-id',
+      });
+
+      const res = await studyMaterialService.getById('shared-mat-2', centreAdminAlpha);
+      expect(res).toBeDefined();
+      expect(res.id).toBe('shared-mat-2');
+    });
+
+    it('Centre-specific material cannot be accessed from another centre by Centre Admin -> HTTP 403 Forbidden', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-centre-beta',
+        title: 'Centre Beta Internal Worksheet',
+        centreId: 'centre-beta',
+        isShared: false,
+        targetTrackId: null,
+        uploaderId: 'staff-beta',
+      });
+
+      await expect(
+        studyMaterialService.getById('mat-centre-beta', centreAdminAlpha),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Student cannot access unenrolled material even if centre matches -> HTTP 403 Forbidden', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-std-12',
+        title: 'Class 12 Advanced Calculus',
+        centreId: 'centre-alpha',
+        isShared: false,
+        targetTrackId: null,
+        syllabus: { boardId: 'board-cbse', standardId: 'std-12' },
+      });
+
+      mockPrisma.studentProfile.findUnique.mockResolvedValue({
+        id: 'sp-alpha',
+        userId: studentAlpha.id,
+        enrollments: [
+          {
+            batch: {
+              id: 'batch-std-10',
+              centreId: 'centre-alpha',
+              boardId: 'board-cbse',
+              standardId: 'std-10', // Enrolled in Standard 10, not 12
+            },
+          },
+        ],
+      });
+
+      await expect(
+        studyMaterialService.getById('mat-std-12', studentAlpha),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Non-super admin cannot set isShared = true when creating material (isShared forced to false)', async () => {
+      mockPrisma.academicYear.findMany.mockResolvedValue([{ id: 'ay-1', isActive: true }]);
+      mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1' });
+      mockPrisma.studyMaterial.create.mockImplementation((args: any) => Promise.resolve(args.data));
+
+      await studyMaterialService.create(
+        {
+          title: 'Attempted Global Share by Centre Admin',
+          syllabusId: 'syl-1',
+          isShared: true, // Non-super admin attempting to declare global content
+        },
+        centreAdminAlpha,
+      );
+
+      expect(mockPrisma.studyMaterial.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            isShared: false, // Must be strictly forced to false
+            centreId: 'centre-alpha',
+          }),
+        }),
+      );
+    });
+
+    it('Non-super admin cannot delete explicitly shared material -> HTTP 403 Forbidden', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'shared-mat-delete',
+        title: 'Protected Global Reference',
+        centreId: null,
+        isShared: true,
+        uploaderId: 'super-admin-user',
+      });
+
+      await expect(
+        studyMaterialService.delete('shared-mat-delete', centreAdminAlpha),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockPrisma.studyMaterial.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Priority 2: Public enquiry abuse protection & strict rate limiting', () => {
+    let mockPrisma: any;
+    let enquiryService: EnquiryService;
+
+    beforeEach(() => {
+      mockPrisma = {
+        enquiry: {
+          create: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: 'enq-new', ...args.data })),
+        },
+        centre: {
+          findUnique: jest.fn().mockImplementation((args: any) => {
+            if (args.where.id === 'centre-active') {
+              return Promise.resolve({ id: 'centre-active', status: 'ACTIVE' });
+            }
+            if (args.where.id === 'centre-inactive') {
+              return Promise.resolve({ id: 'centre-inactive', status: 'INACTIVE' });
+            }
+            return Promise.resolve(null);
+          }),
+        },
+      };
+      enquiryService = new EnquiryService(mockPrisma as any);
+    });
+
+    it('Public enquiry allows valid payload within limit and creates record with status = NEW and verified centreId', async () => {
+      const result = await enquiryService.createPublicEnquiry({
+        studentName: 'Aarav Sharma',
+        parentName: 'Ramesh Sharma',
+        contactNumber: '+91 98765 43210',
+        email: 'aarav@example.com',
+        centreId: 'centre-active',
+      });
+
+      expect(result).toBeDefined();
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            studentName: 'Aarav Sharma',
+            contactNumber: '+91 98765 43210',
+            status: EnquiryStatus.NEW,
+            centreId: 'centre-active',
+          }),
+        }),
+      );
+    });
+
+    it('Public enquiry rejects invalid payload (missing name or invalid phone number) with HTTP 400 Bad Request, without database write', async () => {
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: '',
+          contactNumber: '1234567890',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Test Student',
+          contactNumber: 'invalid-phone',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('Public enquiry discards client-supplied status, assignedToId, internal notes, and unverified centreId', async () => {
+      await enquiryService.createPublicEnquiry({
+        studentName: 'Sneha Patel',
+        contactNumber: '9876543210',
+        status: 'QUALIFIED', // Privileged status injection
+        assignedToId: 'user-sales-lead', // Privileged routing injection
+        notes: 'Secret discount offered', // Internal note injection
+        followUpDate: '2026-12-01',
+        centreId: 'centre-inactive', // Inactive centre injection
+      });
+
+      expect(mockPrisma.enquiry.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            studentName: 'Sneha Patel',
+            parentName: null,
+            contactNumber: '9876543210',
+            email: null,
+            address: null,
+            source: 'Website Form',
+            targetBoard: null,
+            targetStandard: null,
+            targetCourse: null,
+            status: EnquiryStatus.NEW, // Forced to NEW
+            centreId: null, // Inactive centre rejected -> null
+          },
+        }),
+      );
+    });
+
+    it('StrictThrottlerGuard extracts tracker strictly from socket.remoteAddress / req.ip without trusting forged X-Forwarded-For headers', async () => {
+      const guard = new StrictThrottlerGuard(
+        { throttlers: [{ limit: 5, ttl: 60000 }] } as any,
+        {} as any,
+        { getAllAndOverride: jest.fn() } as any,
+      );
+
+      const mockRequest = {
+        headers: {
+          'x-forwarded-for': '203.0.113.195, 198.51.100.17', // Attacker-forged proxy chain
+        },
+        socket: {
+          remoteAddress: '148.135.138.196', // Genuine TCP connection socket
+        },
+        ip: '148.135.138.196',
+      };
+
+      const tracker = await (guard as any).getTracker(mockRequest);
+      expect(tracker).toBe('148.135.138.196');
+      expect(tracker).not.toContain('203.0.113.195');
+    });
+
+    it('StrictThrottlerGuard throws HTTP 429 Too Many Requests when rate limit exceeded, leaving database unchanged', async () => {
+      const guard = new StrictThrottlerGuard(
+        { throttlers: [{ limit: 5, ttl: 60000 }] } as any,
+        {} as any,
+        { getAllAndOverride: jest.fn() } as any,
+      );
+
+      await expect(
+        (guard as any).throwThrottlingException({} as any),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          status: 429,
+        }),
+      );
+
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('When Turnstile is configured in production, missing or invalid token rejects with HTTP 400 Bad Request without writing to database', async () => {
+      const prevKey = process.env.TURNSTILE_SECRET_KEY;
+      process.env.TURNSTILE_SECRET_KEY = 'secret-test-turnstile-key';
+
+      try {
+        await expect(
+          enquiryService.createPublicEnquiry({
+            studentName: 'Bot Submitter',
+            contactNumber: '9999999999',
+            // turnstileToken omitted
+          }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+      } finally {
+        if (prevKey) {
+          process.env.TURNSTILE_SECRET_KEY = prevKey;
+        } else {
+          delete process.env.TURNSTILE_SECRET_KEY;
+        }
+      }
+    });
+  });
+
+  describe('Priority 3: Complete configuration authorization tests', () => {
+    let mockPrisma: any;
+    let setupService: SetupService;
+    let setupController: SetupController;
+    let configController: ConfigController;
+    let progressService: ProgressService;
+
+    beforeEach(() => {
+      mockPrisma = {
+        centre: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'c-1', name: 'Original Name', email: 'c@test.com', contactNo: '111' }),
+          update: jest.fn().mockImplementation((args: any) => Promise.resolve(args.data)),
+        },
+        academicYear: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'ay-1', name: '2026-2027', isActive: true }),
+          findUnique: jest.fn().mockResolvedValue({ id: 'ay-1', name: '2026-2027' }),
+          update: jest.fn().mockResolvedValue({ id: 'ay-1', isActive: true }),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        syllabusConfiguration: {
+          update: jest.fn().mockImplementation((args: any) => Promise.resolve(args.data)),
+        },
+        $transaction: jest.fn().mockImplementation((cb: any) => cb(mockPrisma)),
+      };
+
+      setupService = new SetupService(mockPrisma as any);
+      setupController = new SetupController(setupService);
+
+      progressService = {
+        getConfiguration: jest.fn().mockResolvedValue({
+          id: 'cfg-1',
+          lectureWeight: 0.25,
+          materialWeight: 0.25,
+          practiceWeight: 0.25,
+          testWeight: 0.25,
+        }),
+      } as any;
+
+      configController = new ConfigController(progressService, mockPrisma as any);
+    });
+
+    it('Centre Admin cannot update /setup/settings (RolesGuard blocks with HTTP 403/false)', () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return false;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: centreAdminA }),
+        }),
+      };
+
+      expect(guard.canActivate(mockContext as any)).toBe(false);
+      expect(mockPrisma.centre.update).not.toHaveBeenCalled();
+    });
+
+    it('Super Admin can perform an authorized /setup/settings update', async () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return false;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: superAdmin }),
+        }),
+      };
+
+      expect(guard.canActivate(mockContext as any)).toBe(true);
+
+      const res = await setupController.updateSettings({
+        centreName: 'Updated Centre Name',
+        contactEmail: 'updated@educare.com',
+      });
+
+      expect(res).toEqual({ success: true });
+      expect(mockPrisma.centre.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            name: 'Updated Centre Name',
+            email: 'updated@educare.com',
+          }),
+        }),
+      );
+    });
+
+    it('Non-Super Admin cannot mutate syllabus configuration (RolesGuard blocks with HTTP 403/false)', () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return false;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: centreAdminA }),
+        }),
+      };
+
+      expect(guard.canActivate(mockContext as any)).toBe(false);
+      expect(mockPrisma.syllabusConfiguration.update).not.toHaveBeenCalled();
+    });
+
+    it('Super Admin can perform a valid syllabus configuration update', async () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return false;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: superAdmin }),
+        }),
+      };
+
+      expect(guard.canActivate(mockContext as any)).toBe(true);
+
+      await configController.updateConfig({
+        lectureWeight: 0.4,
+        materialWeight: 0.2,
+        practiceWeight: 0.2,
+        testWeight: 0.2,
+      });
+
+      expect(mockPrisma.syllabusConfiguration.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cfg-1' },
+          data: {
+            lectureWeight: 0.4,
+            materialWeight: 0.2,
+            practiceWeight: 0.2,
+            testWeight: 0.2,
+          },
+        }),
+      );
+    });
+
+    it('Unauthenticated callers are rejected from mutating configuration endpoints (JwtAuthGuard rejects)', () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return false;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: undefined }),
+        }),
+      };
+
+      expect(guard.canActivate(mockContext as any)).toBe(false);
+      expect(mockPrisma.centre.update).not.toHaveBeenCalled();
+      expect(mockPrisma.syllabusConfiguration.update).not.toHaveBeenCalled();
+    });
+
+    it('Extra, unauthorized fields submitted to /setup/settings are ignored and not persisted', async () => {
+      await setupController.updateSettings({
+        centreName: 'Safe Name',
+        unauthorizedField: 'malicious-data',
+        isAdmin: true,
+        secretToken: 'stolen-secret',
+      });
+
+      expect(mockPrisma.centre.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            name: 'Safe Name',
+            email: 'c@test.com', // preserved original
+            contactNo: '111', // preserved original
+          },
+        }),
+      );
+    });
+
+    it('Extra, unauthorized fields submitted to /syllabus-config are stripped, and invalid payloads are rejected', async () => {
+      // 1. Valid field + unauthorized extra field: extra field is stripped
+      await configController.updateConfig({
+        lectureWeight: 0.5,
+        injectedRole: 'SUPER_ADMIN',
+        dropDatabase: true,
+      });
+
+      expect(mockPrisma.syllabusConfiguration.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            lectureWeight: 0.5, // Only allowed field persisted
+          },
+        }),
+      );
+
+      // 2. Only unauthorized fields: rejected with BadRequestException
+      mockPrisma.syllabusConfiguration.update.mockClear();
+      await expect(
+        configController.updateConfig({
+          injectedRole: 'SUPER_ADMIN',
+          dropDatabase: true,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrisma.syllabusConfiguration.update).not.toHaveBeenCalled();
+    });
+
+    it('Rejected configuration operations leave database state unchanged', async () => {
+      mockPrisma.centre.update.mockClear();
+      mockPrisma.syllabusConfiguration.update.mockClear();
+
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return false;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+
+      // Unauthorized caller
+      const unauthorizedCtx = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: centreAdminA }),
+        }),
+      };
+
+      const isAllowed = guard.canActivate(unauthorizedCtx as any);
+      expect(isAllowed).toBe(false);
+
+      expect(mockPrisma.centre.update).not.toHaveBeenCalled();
+      expect(mockPrisma.syllabusConfiguration.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Priority 4: Ownership reconciliation scripts validation', () => {
+    it('EnquiryService.getUnreconciledEnquiries resolves unambiguous single-centre staff enquiries and leaves multi-centre/unassigned enquiries fail-closed', async () => {
+      const mockPrisma = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'enq-unambiguous',
+              studentName: 'Student One',
+              contactNumber: '1111111111',
+              assignedToId: 'staff-single-centre',
+              assignedTo: {
+                firstName: 'Single',
+                lastName: 'Staff',
+                userCentres: [{ centreId: 'centre-alpha', centre: { name: 'Alpha Centre' } }],
+              },
+            },
+            {
+              id: 'enq-multi-centre',
+              studentName: 'Student Two',
+              contactNumber: '2222222222',
+              assignedToId: 'staff-multi-centre',
+              assignedTo: {
+                firstName: 'Multi',
+                lastName: 'Staff',
+                userCentres: [
+                  { centreId: 'centre-alpha', centre: { name: 'Alpha Centre' } },
+                  { centreId: 'centre-beta', centre: { name: 'Beta Centre' } },
+                ],
+              },
+            },
+            {
+              id: 'enq-unassigned',
+              studentName: 'Student Three',
+              contactNumber: '3333333333',
+              assignedToId: null,
+              assignedTo: null,
+            },
+          ]),
+        },
+      };
+
+      const enquiryService = new EnquiryService(mockPrisma as any);
+      const report = await enquiryService.getUnreconciledEnquiries();
+
+      expect(report).toHaveLength(3);
+      // Unambiguous: staff has exactly 1 centre
+      expect(report[0].id).toBe('enq-unambiguous');
+      expect(report[0].isAmbiguous).toBe(false);
+      expect(report[0].suggestedCentreId).toBe('centre-alpha');
+
+      // Ambiguous: staff has multiple centres
+      expect(report[1].id).toBe('enq-multi-centre');
+      expect(report[1].isAmbiguous).toBe(true);
+      expect(report[1].suggestedCentreId).toBeNull();
+
+      // Ambiguous: unassigned enquiry
+      expect(report[2].id).toBe('enq-unassigned');
+      expect(report[2].isAmbiguous).toBe(true);
+      expect(report[2].suggestedCentreId).toBeNull();
+    });
+
+    it('StudyMaterialService.getUnreconciled queries records with centreId = null and isShared = false for Super Admin, and denies others', async () => {
+      const mockPrisma = {
+        studyMaterial: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'mat-legacy-1',
+              title: 'Draft Material 1',
+              centreId: null,
+              isShared: false,
+            },
+            {
+              id: 'mat-legacy-2',
+              title: 'Draft Material 2',
+              centreId: null,
+              isShared: false,
+            },
+          ]),
+        },
+      };
+
+      const studyMaterialService = new StudyMaterialService(mockPrisma as any);
+
+      // Super Admin can retrieve unresolved records
+      const unreconciled = await studyMaterialService.getUnreconciled(superAdmin);
+      expect(unreconciled).toHaveLength(2);
+      expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            centreId: null,
+            isShared: false,
+          },
+        }),
+      );
+
+      // Non-super admins are rejected
+      await expect(
+        studyMaterialService.getUnreconciled(centreAdminA),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

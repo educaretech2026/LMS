@@ -231,12 +231,12 @@ export class StudyMaterialService {
     const isTeacher = normalizedRole === 'TEACHER';
     const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN';
 
+    const isExplicitlyShared = Boolean((material as any).isShared);
+    const materialCentreId = (material as any).centreId || null;
+
     if (isPublicLearner) {
-      const uploaderObj = material.uploader as any;
-      const roleStrUploader = typeof uploaderObj?.role === 'object' && uploaderObj?.role !== null ? uploaderObj?.role.name : uploaderObj?.role;
-      const isSuperAdminUploader = String(roleStrUploader || '').toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN';
-      if (material.targetTrackId || !isSuperAdminUploader) {
-        throw new ForbiddenException('Access denied: Public learners can only access publicly available materials.');
+      if (material.targetTrackId || !isExplicitlyShared) {
+        throw new ForbiddenException('Access denied: Public learners can only access explicitly shared materials.');
       }
     } else if (isStudent && user?.id) {
       const student = await this.prisma.studentProfile.findUnique({
@@ -251,32 +251,32 @@ export class StudyMaterialService {
       const trackCentres = (material.targetTrack?.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
       const hasTrackCentres = material.targetTrackId !== null && trackCentres.length > 0;
       const uploaderCentres = material.uploader?.userCentres?.map((uc: any) => uc.centreId) || [];
-      const uploaderObj = material.uploader as any;
-      const roleStrUploader = typeof uploaderObj?.role === 'object' && uploaderObj?.role !== null ? uploaderObj?.role.name : uploaderObj?.role;
-      const isSuperAdminUploader = String(roleStrUploader || '').toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN';
+
+      // A missing centreId must never imply global sharing. Fails closed to Super Admin review.
+      if (!isExplicitlyShared && !materialCentreId && !hasTrackCentres && uploaderCentres.length === 0) {
+        throw new ForbiddenException('Access denied: This study material has unresolved centre ownership and is restricted to administrator review.');
+      }
 
       const matchesEnrolment = student.enrollments.some(e => {
         if (!e.batch) return false;
 
-        // Centre check: if material has targetTrack, authoritative scope is trackCentres
-        if (hasTrackCentres) {
+        // Centre check:
+        if (isExplicitlyShared) {
+          // Explicitly shared material is globally accessible across all centres
+        } else if (hasTrackCentres) {
           if (!trackCentres.includes(e.batch.centreId)) return false;
         } else if (material.targetTrackId !== null && trackCentres.length === 0) {
           return false;
-        } else if (material.targetTrackId === null) {
-          if (isSuperAdminUploader) {
-            // Global superadmin material is allowed
-          } else if (uploaderCentres.length > 0) {
-            if (!uploaderCentres.includes(e.batch.centreId)) return false;
-          } else {
-            // Untracked material whose uploader has NO centre memberships must fail closed
-            return false;
-          }
+        } else if (materialCentreId) {
+          if (materialCentreId !== e.batch.centreId) return false;
+        } else if (uploaderCentres.length > 0) {
+          if (!uploaderCentres.includes(e.batch.centreId)) return false;
+        } else {
+          return false;
         }
 
         // Track ID check on this specific enrolment:
         // A student MUST have a matching trackId if material has targetTrackId!
-        // A null trackId on enrolment cannot bypass or access a targeted-track material.
         if (material.targetTrackId !== null) {
           if (!e.trackId || e.trackId !== material.targetTrackId) {
             return false;
@@ -313,19 +313,25 @@ export class StudyMaterialService {
       const isUploaderSelf = material.uploaderId === user.id;
 
       if (!isUploaderSelf) {
-        if (material.targetTrackId) {
+        if (isExplicitlyShared) {
+          // Explicitly shared material is globally visible to centre admins
+        } else if (materialCentreId) {
+          if (!authorizedCentres.includes(materialCentreId)) {
+            throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
+          }
+        } else if (material.targetTrackId) {
           const isTrackInCentre = trackCentres.some(cId => authorizedCentres.includes(cId));
           if (!isTrackInCentre) {
             throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
           }
-        } else {
+        } else if (uploaderCentres.length > 0) {
           const isUploaderInCentre = uploaderCentres.some(cId => authorizedCentres.includes(cId));
-          const uploaderObj = material.uploader as any;
-          const roleStrUploader = typeof uploaderObj?.role === 'object' && uploaderObj?.role !== null ? uploaderObj?.role.name : uploaderObj?.role;
-          const isSuperAdminUploader = String(roleStrUploader || '').toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN';
-          if (!isUploaderInCentre && !isSuperAdminUploader) {
+          if (!isUploaderInCentre) {
             throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
           }
+        } else {
+          // Unresolved record with null centre, no track centres, and no uploader centre links
+          throw new ForbiddenException('Access denied: This study material has unresolved centre ownership and is restricted to Super Admin review.');
         }
       }
     } else if (isTeacher && user?.id) {
@@ -334,9 +340,16 @@ export class StudyMaterialService {
         const authorizedCentres = getAuthorizedCentreIds(user);
         const trackCentres = (material.targetTrack?.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
         const uploaderCentres = material.uploader?.userCentres?.map((uc: any) => uc.centreId) || [];
-        const uploaderObj = material.uploader as any;
-        const roleStrUploader = typeof uploaderObj?.role === 'object' && uploaderObj?.role !== null ? uploaderObj?.role.name : uploaderObj?.role;
-        const isSuperAdminUploader = String(roleStrUploader || '').toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN';
+
+        if (!isExplicitlyShared && !materialCentreId && trackCentres.length === 0 && uploaderCentres.length === 0) {
+          throw new ForbiddenException('Access denied: This study material has unresolved centre ownership.');
+        }
+
+        if (!isExplicitlyShared) {
+          if (materialCentreId && !authorizedCentres.includes(materialCentreId)) {
+            throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
+          }
+        }
 
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
@@ -370,10 +383,18 @@ export class StudyMaterialService {
             }
           }
 
+          if (isExplicitlyShared) {
+            return true;
+          }
+
           if (material.targetTrackId !== null) {
             if (!trackCentres.includes(assignedCentreId)) return false;
-          } else if (!isSuperAdminUploader) {
-            if (uploaderCentres.length === 0 || !uploaderCentres.includes(assignedCentreId)) return false;
+          } else if (materialCentreId) {
+            if (materialCentreId !== assignedCentreId) return false;
+          } else if (uploaderCentres.length > 0) {
+            if (!uploaderCentres.includes(assignedCentreId)) return false;
+          } else {
+            return false;
           }
 
           return true;
@@ -554,6 +575,14 @@ export class StudyMaterialService {
         }
       }
 
+      let resolvedIsShared = false;
+      if (isSuperAdmin(user)) {
+        resolvedIsShared = Boolean(data.isShared);
+      } else {
+        // Non-super admins cannot create globally shared materials
+        resolvedIsShared = false;
+      }
+
       return await this.prisma.studyMaterial.create({
         data: {
           title: data.title,
@@ -567,6 +596,7 @@ export class StudyMaterialService {
           subtopicId: data.subtopicId || null,
           uploaderId: effectiveUploaderId,
           centreId: resolvedCentreId,
+          isShared: resolvedIsShared,
           targetTrackId: data.targetTrackId || null,
         },
       });
@@ -906,6 +936,10 @@ export class StudyMaterialService {
       if (!material) throw new NotFoundException('Study material not found');
 
       if (user && !isSuperAdmin(user)) {
+        if ((material as any).isShared) {
+          throw new ForbiddenException('Only Super Admins can delete explicitly shared materials.');
+        }
+
         const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
         const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
 
@@ -997,6 +1031,25 @@ export class StudyMaterialService {
         timeWatchedSecs: newTimeWatched,
         isCompleted: isCompleted || false
       }
+    });
+  }
+
+  async getUnreconciled(user?: any) {
+    if (!isSuperAdmin(user)) {
+      throw new ForbiddenException('Only Super Admins can inspect unreconciled study materials.');
+    }
+    return (this.prisma as any).studyMaterial.findMany({
+      where: {
+        centreId: null,
+        isShared: false,
+      },
+      include: {
+        uploader: { select: SAFE_USER_SELECT },
+        targetTrack: { include: { batches: true } },
+        syllabus: { include: { board: true, standard: true, subject: true } },
+        academicYear: true,
+      },
+      orderBy: { createdAt: 'desc' },
     });
   }
 }

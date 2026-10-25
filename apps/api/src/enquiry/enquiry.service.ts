@@ -11,33 +11,85 @@ export class EnquiryService {
    * Public enquiry creation (e.g. from website admission form).
    * Strictly whitelists allowed contact/interest fields.
    * Strips all internal / privileged fields (status, assignedToId, notes, followUpDate).
+   * Supports optional Cloudflare Turnstile token validation when TURNSTILE_SECRET_KEY is configured.
    */
-  async createPublicEnquiry(data: any) {
-    if (!data || !data.studentName || !data.contactNumber) {
-      throw new BadRequestException('Student name and contact number are required.');
+  async createPublicEnquiry(data: any, clientIp?: string) {
+    if (!data || typeof data !== 'object') {
+      throw new BadRequestException('Request body must be a valid JSON object.');
+    }
+
+    const studentName = String(data.studentName || '').trim();
+    const contactNumber = String(data.contactNumber || '').trim();
+
+    if (!studentName || studentName.length < 2 || studentName.length > 100) {
+      throw new BadRequestException('A valid student name between 2 and 100 characters is required.');
+    }
+
+    // Strip non-digit characters to validate phone length
+    const cleanedContact = contactNumber.replace(/[\s\-\(\)\+]/g, '');
+    if (!cleanedContact || cleanedContact.length < 7 || cleanedContact.length > 20 || !/^\d+$/.test(cleanedContact)) {
+      throw new BadRequestException('A valid contact phone number is required.');
+    }
+
+    // Validate email format if provided
+    let email: string | null = null;
+    if (data.email) {
+      const emailCandidate = String(data.email).trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailCandidate) || emailCandidate.length > 150) {
+        throw new BadRequestException('Invalid email address format.');
+      }
+      email = emailCandidate;
+    }
+
+    // Optional Cloudflare Turnstile verification if configured in environment
+    if (process.env.TURNSTILE_SECRET_KEY) {
+      const token = data.turnstileToken || data['cf-turnstile-response'];
+      if (!token) {
+        throw new BadRequestException('CAPTCHA verification token is missing.');
+      }
+      try {
+        const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            secret: process.env.TURNSTILE_SECRET_KEY,
+            response: token,
+            ...(clientIp ? { remoteip: clientIp } : {}),
+          }),
+        });
+        const verifyData: any = await verifyRes.json();
+        if (!verifyData.success) {
+          throw new BadRequestException('CAPTCHA verification failed. Please try again.');
+        }
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException('CAPTCHA verification service error.');
+      }
     }
 
     let targetCentreId: string | null = null;
     if (data.centreId) {
       const centre = await this.prisma.centre.findUnique({
-        where: { id: data.centreId },
+        where: { id: String(data.centreId).trim() },
       });
       if (centre && centre.status === 'ACTIVE') {
         targetCentreId = centre.id;
       }
     }
 
+    // Strictly whitelist prospective student contact fields
+    // Client-supplied status, assignedToId, notes, followUpDate are completely discarded
     return this.prisma.enquiry.create({
       data: {
-        studentName: String(data.studentName).trim(),
-        parentName: data.parentName ? String(data.parentName).trim() : null,
-        contactNumber: String(data.contactNumber).trim(),
-        email: data.email ? String(data.email).trim() : null,
-        address: data.address ? String(data.address).trim() : null,
-        source: data.source ? String(data.source).trim() : 'Website Form',
-        targetBoard: data.targetBoard ? String(data.targetBoard).trim() : null,
-        targetStandard: data.targetStandard ? String(data.targetStandard).trim() : null,
-        targetCourse: data.targetCourse ? String(data.targetCourse).trim() : null,
+        studentName,
+        parentName: data.parentName ? String(data.parentName).trim().slice(0, 100) : null,
+        contactNumber,
+        email,
+        address: data.address ? String(data.address).trim().slice(0, 300) : null,
+        source: data.source ? String(data.source).trim().slice(0, 100) : 'Website Form',
+        targetBoard: data.targetBoard ? String(data.targetBoard).trim().slice(0, 100) : null,
+        targetStandard: data.targetStandard ? String(data.targetStandard).trim().slice(0, 100) : null,
+        targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
         status: EnquiryStatus.NEW,
         centreId: targetCentreId,
       },

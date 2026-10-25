@@ -27,6 +27,12 @@ export class StudyMaterialController {
     return this.studyMaterialService.getByTopic(topicId, req.user);
   }
 
+  @Get('unreconciled')
+  @Roles('SUPER_ADMIN')
+  getUnreconciled(@Req() req: any) {
+    return this.studyMaterialService.getUnreconciled(req.user);
+  }
+
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   create(@Body() data: any, @Req() req: any) {
