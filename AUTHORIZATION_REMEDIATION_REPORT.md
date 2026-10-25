@@ -61,6 +61,8 @@ In response to the trusted enquiry origin review and final release-gate requirem
 | `apps/api/src/common/guards/strict-throttler.guard.ts` | Rate Limit Guard | Enforces socket-based tracking for direct untrusted connections, CIDR subnet matching, and fail-closed `HTTP 503` on Redis outages. |
 | `packages/database/prisma/schema.prisma` | Database Schema | Model contains `isPublic: Boolean @default(false)` on `StudyMaterial` and `centreId: String?` on `CustomForm`. |
 | `packages/database/prisma/migrations/20261025_add_studymaterial_is_public/migration.sql` | Migration SQL | Schema-guarded idempotent migration adding `"isPublic" BOOLEAN NOT NULL DEFAULT false` to `study_materials`. |
+| `packages/database/prisma/migrations/20261025_add_custom_form_centre/migration.sql` | Migration SQL | Reviewed, non-destructive, schema-guarded idempotent migration ensuring `"centreId" TEXT` exists on `custom_forms` with foreign key `custom_forms_centreId_fkey` (`ON DELETE SET NULL ON UPDATE CASCADE`), preserving existing form records with null centre ownership without inferring from names or user inputs. |
+| `packages/database/prisma/migrations/migration_lock.toml` | Migration Lock | Specifies PostgreSQL provider for Prisma migration engine consistency. |
 
 ---
 
@@ -117,6 +119,38 @@ To reconcile legacy or unassigned records, Super Admins use the authorized recon
 ### C. Data Model Limitations
 - In the current schema, `Enquiry` has no foreign key to `CustomForm`. Therefore, legacy enquiries created before form linking cannot be automatically backfilled without guessing.
 - Keeping legacy records unassigned (`centreId = null`) until Super Admin review is the only mathematically fail-closed policy.
+
+### D. CustomForm Centre Ownership Migration & Disposable Database Verification
+1. **Migration Audit & Path**:
+   - In `packages/database/prisma/schema.prisma`, `CustomForm` defines:
+     ```prisma
+     centreId   String?
+     centre     Centre?  @relation(fields: [centreId], references: [id], onDelete: SetNull)
+     ```
+   - In the initial baseline migration (`20260901_init/migration.sql`), lines 825-836 define `"centreId" TEXT` on `"custom_forms"`, and line 1303 defines the foreign key constraint `"custom_forms_centreId_fkey"`.
+   - To guarantee complete forward-compatibility and non-destructive deployment across any environment where the database was initialized without the initial migration or updated incrementally, reviewed migration `packages/database/prisma/migrations/20261025_add_custom_form_centre/migration.sql` was created.
+   - **Non-Destructive & Schema-Guarded Implementation**:
+     - Uses PostgreSQL `information_schema.columns` checks (`table_schema = CURRENT_SCHEMA`, `table_name = 'custom_forms'`, `column_name = 'centreId'`) to add `"centreId" TEXT` only if it does not already exist.
+     - Uses `information_schema.table_constraints` checks (`constraint_name = 'custom_forms_centreId_fkey'`) to add `CONSTRAINT "custom_forms_centreId_fkey" FOREIGN KEY ("centreId") REFERENCES "centres"("id") ON DELETE SET NULL ON UPDATE CASCADE` only if it does not already exist.
+     - Preserves all existing `custom_forms` rows; leaves unverified centre ownership strictly `NULL`; strictly refrains from inferring centre ownership from form names or client inputs.
+2. **Disposable PostgreSQL Database Test Results**:
+   - Spun up an isolated, disposable PostgreSQL 14 cluster locally on port `5433` (disposable cluster path in artifacts, zero remote/production connection used).
+   - Executed migration deployment:
+     ```bash
+     DATABASE_URL="postgresql://testuser@127.0.0.1:5433/test_educare" pnpm --filter @educare/database exec prisma migrate deploy
+     ```
+   - **Result**: All 10 migrations in `prisma/migrations` applied successfully (`10 migrations found in prisma/migrations`, `All migrations have been successfully applied.`).
+   - Inspected table schema using `psql \d custom_forms`:
+     - Verified column: `"centreId" text` (nullable).
+     - Verified foreign key constraint: `"custom_forms_centreId_fkey" FOREIGN KEY ("centreId") REFERENCES centres(id) ON UPDATE CASCADE ON DELETE SET NULL`.
+   - Ran a second `prisma migrate deploy` to test idempotence:
+     - **Result**: `No pending migrations to apply.` (100% idempotent; clean execution).
+   - Terminated disposable PostgreSQL process and removed temporary cluster data.
+3. **Regression Test Verification**:
+   - Scope J Cases 4, 5, and 6 in `apps/api/src/common/authorization-remediation.spec.ts` prove:
+     - **Case 4**: An active centre-bound form (`centreId: 'centre-alpha'`) correctly derives enquiry `centreId = 'centre-alpha'`.
+     - **Case 5**: A form without verified centre ownership (`centreId: null`) creates an unassigned enquiry (`centreId = null`).
+     - **Case 6**: An inactive form or invalid form ID cannot establish centre ownership (`centreId = null`), and conflicting client-supplied `centreId` is rejected with `400 Bad Request`.
 
 ---
 
@@ -240,6 +274,7 @@ Before deploying changes to production, execute the following operational checks
     pnpm --filter @educare/database prisma migrate deploy
     ```
   - Verify that the `"isPublic"` column on `study_materials` defaults to `false` without locking tables or degrading read performance.
+  - Verify that `"centreId"` on `custom_forms` exists as a nullable text column with the foreign key constraint `custom_forms_centreId_fkey` to `centres(id)`, preserving all existing forms with unverified centre ownership set to `NULL`.
 - [ ] **2. Inspect Unreconciled Enquiry and Study Material Records**:
   - Run the reconciliation scripts in dry-run mode against the staging database:
     ```bash
