@@ -300,7 +300,25 @@ export class LiveClassService {
       throw new NotFoundException('Public live class / webinar not found or is private.');
     }
 
-    return cls;
+    const achieverNotices = await this.prisma.notice.findMany({
+      where: { type: 'STAR_ACHIEVER', isActive: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    const achievers = achieverNotices.map(item => {
+      let meta: any = {};
+      try { meta = JSON.parse(item.content); } catch { meta = { rankOrScore: item.content, examOrCourse: '' }; }
+      return {
+        id: item.id,
+        name: item.title,
+        rankOrScore: meta.rankOrScore || '',
+        examOrCourse: meta.examOrCourse || '',
+        imageUrl: item.imageUrl || undefined,
+        badgeColor: meta.badgeColor || '#0162b1',
+      };
+    });
+
+    return { ...cls, achievers };
   }
 
   /**

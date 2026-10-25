@@ -17,12 +17,32 @@ interface PublicWebinar {
   isPublic: boolean;
   backgroundImageUrl?: string | null;
   createdAt: string;
+  achievers?: RankHolder[];
 }
 
 function getPublicApiUrl(): string {
   const rawUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.educarelearning.in/api";
   const cleanBase = rawUrl.replace(/\/+$/, "");
   return cleanBase.endsWith("/api") ? cleanBase : `${cleanBase}/api`;
+}
+
+/**
+ * ── RANK HOLDERS & ACHIEVERS TICKER DATA ──
+ * Add, edit, or remove students here.
+ * - name: Student's full name
+ * - rankOrScore: e.g. "AIR 42", "99.85 %ile", "State Rank 1"
+ * - examOrCourse: e.g. "JEE Advanced", "NEET-UG", "KEAM"
+ * - imageUrl: (Optional) URL or path to student's photo (e.g. "/students/rahul.jpg" or "https://...")
+ *             If left empty or omitted, a clean initial avatar is automatically generated.
+ * - badgeColor: (Optional) "#0162b1" (blue) | "#ee1b24" (red)
+ */
+export interface RankHolder {
+  id: string;
+  name: string;
+  rankOrScore: string;
+  examOrCourse: string;
+  imageUrl?: string;
+  badgeColor?: "#0162b1" | "#ee1b24" | string;
 }
 
 export default function PublicLiveClassPage() {
@@ -158,6 +178,7 @@ export default function PublicLiveClassPage() {
   const fmtTime = scheduledDate.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
   const isLive = webinar.status === "LIVE" || timeLeft.isStarted;
   const isEnded = webinar.status === "ENDED";
+  const rankHolders = webinar.achievers || [];
 
   const fieldError = {
     name: touched.name && !formData.name.trim(),
@@ -469,6 +490,169 @@ export default function PublicLiveClassPage() {
         </div>
       </main>
 
+      {/* ── ROLLING RANK HOLDERS TICKER ── */}
+      {rankHolders.length > 0 && (
+        <section
+        aria-label="Student Achievers"
+        style={{
+          position: "relative",
+          zIndex: 20,
+          background: "rgba(4, 15, 30, 0.78)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+          borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
+          padding: "10px 0",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        {/* Left pinned title badge */}
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "0 20px 0 24px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            borderRight: "1px solid rgba(255, 255, 255, 0.1)",
+            zIndex: 3,
+            background: "rgba(4, 15, 30, 0.92)",
+          }}
+        >
+          <span
+            style={{
+              width: "7px",
+              height: "7px",
+              borderRadius: "50%",
+              background: "#ee1b24",
+              boxShadow: "0 0 8px #ee1b24",
+              display: "inline-block",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "10px",
+              fontWeight: 800,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#93c5fd",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Star Achievers
+          </span>
+        </div>
+
+        {/* Marquee viewport with gradient fade edges */}
+        <div
+          className="marquee-container"
+          style={{
+            position: "relative",
+            flex: 1,
+            overflow: "hidden",
+            maskImage: "linear-gradient(to right, transparent, black 28px, black calc(100% - 28px), transparent)",
+            WebkitMaskImage: "linear-gradient(to right, transparent, black 28px, black calc(100% - 28px), transparent)",
+          }}
+        >
+          <div
+            className="marquee-track"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              width: "max-content",
+            }}
+          >
+            {/* Duplicated list creates a seamless infinite loop */}
+            {[...rankHolders, ...rankHolders].map((student, idx) => {
+              const accentColor = student.badgeColor || (idx % 2 === 0 ? "#0162b1" : "#ee1b24");
+              const initials = student.name
+                .split(" ")
+                .filter(Boolean)
+                .map((n) => n[0])
+                .slice(0, 2)
+                .join("")
+                .toUpperCase();
+
+              return (
+                <div
+                  key={`${student.id}-${idx}`}
+                  className="rank-card"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "5px 14px 5px 6px",
+                    borderRadius: "100px",
+                    background: "rgba(255, 255, 255, 0.03)",
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    backdropFilter: "blur(8px)",
+                    transition: "all 0.2s ease",
+                    cursor: "default",
+                  }}
+                >
+                  {/* Photo or Initials Avatar */}
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      background: `linear-gradient(135deg, ${accentColor} 0%, #040f1e 100%)`,
+                      border: `1.5px solid ${accentColor}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {student.imageUrl ? (
+                      <img
+                        src={student.imageUrl}
+                        alt={student.name}
+                        loading="lazy"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "white", letterSpacing: "-0.02em" }}>
+                        {initials}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Student Details */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "#f8fafc" }}>
+                      {student.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: "100px",
+                        background: accentColor === "#ee1b24" ? "rgba(238,27,36,0.18)" : "rgba(1,98,177,0.22)",
+                        border: `1px solid ${accentColor === "#ee1b24" ? "rgba(238,27,36,0.4)" : "rgba(1,98,177,0.4)"}`,
+                        color: accentColor === "#ee1b24" ? "#fca5a5" : "#93c5fd",
+                        letterSpacing: "0.03em",
+                      }}
+                    >
+                      {student.rankOrScore}
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>
+                      {student.examOrCourse}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        </section>
+      )}
+
       {/* ── FOOTER ── */}
       <footer style={{ position: "relative", zIndex: 20, borderTop: "1px solid rgba(255,255,255,0.06)", padding: "16px 32px", textAlign: "center", fontSize: "11px", color: "#334155" }}>
         © {new Date().getFullYear()} Educare Group of Institutions · Powered by Educare LMS
@@ -477,6 +661,20 @@ export default function PublicLiveClassPage() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .marquee-track {
+          animation: marquee 30s linear infinite;
+        }
+        .marquee-container:hover .marquee-track {
+          animation-play-state: paused;
+        }
+        .rank-card:hover {
+          background: rgba(255, 255, 255, 0.08) !important;
+          border-color: rgba(1, 98, 177, 0.5) !important;
+        }
         input::placeholder { color: #334155; }
         input:focus { outline: none; }
         a:hover { opacity: 0.85; }

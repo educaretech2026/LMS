@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Query, Delete, Param, UseGuards, Put, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Delete, Param, UseGuards, Put, Patch, Req } from '@nestjs/common';
 import { SetupService } from './setup.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('setup')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -20,6 +21,37 @@ export class SetupController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   async updateSettings(@Body() data: any) {
     return this.setupService.updateSettings(data);
+  }
+
+  // Star Achievers
+  @Get('achievers')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  getAchievers() {
+    return this.setupService.getAchievers();
+  }
+
+  @Post('achievers')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  createAchiever(@Body() data: { name: string; rankOrScore: string; examOrCourse: string; imageUrl?: string; badgeColor?: string }) {
+    return this.setupService.createAchiever(data);
+  }
+
+  @Patch('achievers/:id/toggle')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  toggleAchiever(@Param('id') id: string) {
+    return this.setupService.toggleAchieverActive(id);
+  }
+
+  @Delete('achievers/:id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  deleteAchiever(@Param('id') id: string) {
+    return this.setupService.deleteAchiever(id);
+  }
+
+  @Public()
+  @Get('public/achievers')
+  getPublicAchievers() {
+    return this.setupService.getPublicAchievers();
   }
 
   @Get('roles')

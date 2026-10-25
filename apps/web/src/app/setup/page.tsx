@@ -26,7 +26,8 @@ import {
   AlertTriangle,
   Target,
   Users,
-  X
+  X,
+  Award
 } from "lucide-react";
 
 function isStandardInBoard(s: any, bId: string) {
@@ -99,6 +100,7 @@ export default function SetupPage() {
     { id: "Fee Structure", icon: CreditCard },
     { id: "SMS Templates", icon: MessageSquare },
     { id: "Exam Configuration", icon: FileText },
+    { id: "Star Achievers", icon: Award },
   ];
 
   return (
@@ -155,6 +157,7 @@ export default function SetupPage() {
               {activeTab === "Fee Structure" && <FeeStructureTab />}
               {activeTab === "SMS Templates" && <SmsTemplatesTab />}
               {activeTab === "Exam Configuration" && <ExamConfigTab />}
+              {activeTab === "Star Achievers" && <StarAchieversTab />}
             </div>
           </div>
         </div>
@@ -1884,6 +1887,401 @@ function BatchesTab({ onError }: { onError: (msg: string) => void }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/* ── STAR ACHIEVERS & HALL OF FAME TAB ── */
+interface AchieverItem {
+  id: string;
+  name: string;
+  rankOrScore: string;
+  examOrCourse: string;
+  imageUrl?: string;
+  badgeColor?: string;
+  isActive: boolean;
+}
+
+function StarAchieversTab() {
+  const [achievers, setAchievers] = useState<AchieverItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [form, setForm] = useState({
+    name: "",
+    rankOrScore: "",
+    examOrCourse: "",
+    imageUrl: "",
+    badgeColor: "#0162b1",
+  });
+
+  const loadAchievers = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchApi<AchieverItem[]>("/setup/achievers");
+      setAchievers(data || []);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAchievers();
+  }, []);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const { uploadUrl, finalUrl } = (await fetchApi(
+        `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
+      )) as any;
+      await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      setForm((prev) => ({ ...prev, imageUrl: finalUrl }));
+    } catch (err: any) {
+      alert("Failed to upload image: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      alert("Please enter student name.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await fetchApi("/setup/achievers", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      setShowModal(false);
+      setForm({
+        name: "",
+        rankOrScore: "",
+        examOrCourse: "",
+        imageUrl: "",
+        badgeColor: "#0162b1",
+      });
+      await loadAchievers();
+    } catch (err: any) {
+      alert("Failed to save achiever: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggle = async (id: string) => {
+    try {
+      await fetchApi(`/setup/achievers/${id}/toggle`, { method: "PATCH" });
+      setAchievers((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a))
+      );
+    } catch (e: any) {
+      alert("Failed to toggle status: " + e.message);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to remove ${name} from Star Achievers?`)) return;
+    try {
+      await fetchApi(`/setup/achievers/${id}`, { method: "DELETE" });
+      setAchievers((prev) => prev.filter((a) => a.id !== id));
+    } catch (e: any) {
+      alert("Failed to delete achiever: " + e.message);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header card */}
+      <div className="bg-white rounded-xl border border-border-soft p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600 border border-amber-200">
+              <Award className="h-5 w-5" />
+            </span>
+            <h2 className="text-base font-bold text-text-primary">Star Achievers & Hall of Fame</h2>
+          </div>
+          <p className="text-xs text-text-muted mt-1 max-w-xl">
+            Input rank holders and student toppers with photos. These roll dynamically along the bottom ticker banner across all public webinar pages.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark transition-colors shrink-0"
+        >
+          <Plus className="h-4 w-4" /> Add Star Achiever
+        </button>
+      </div>
+
+      {/* Achievers list */}
+      {loading ? (
+        <div className="p-12 text-center text-text-muted text-sm">
+          Loading star achievers…
+        </div>
+      ) : achievers.length === 0 ? (
+        <div className="bg-white rounded-xl border border-dashed border-border-soft p-12 text-center">
+          <Award className="h-10 w-10 text-text-muted mx-auto mb-3 opacity-40" />
+          <h3 className="text-sm font-semibold text-text-primary">No Star Achievers Added Yet</h3>
+          <p className="text-xs text-text-muted mt-1 max-w-md mx-auto">
+            Click &ldquo;Add Star Achiever&rdquo; above to input student names, exam ranks, and photos. The rolling ticker on the webinar page will appear automatically once students are added.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {achievers.map((item) => (
+            <div
+              key={item.id}
+              className={`bg-white rounded-xl border p-4 transition-all relative flex flex-col justify-between ${
+                item.isActive ? "border-border-soft shadow-sm" : "border-border-soft/60 opacity-60 bg-surface-2"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                {/* Photo / Initials */}
+                <div
+                  className="w-12 h-12 rounded-full overflow-hidden shrink-0 flex items-center justify-center font-bold text-white text-sm"
+                  style={{
+                    background: item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1",
+                    border: `2px solid ${item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1"}`,
+                  }}
+                >
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  ) : (
+                    item.name
+                      .split(" ")
+                      .filter(Boolean)
+                      .map((n) => n[0])
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-text-primary truncate">{item.name}</h4>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{
+                        background: item.badgeColor === "#ee1b24" ? "rgba(238,27,36,0.12)" : "rgba(1,98,177,0.12)",
+                        color: item.badgeColor === "#ee1b24" ? "#ee1b24" : "#0162b1",
+                        border: `1px solid ${item.badgeColor === "#ee1b24" ? "rgba(238,27,36,0.25)" : "rgba(1,98,177,0.25)"}`,
+                      }}
+                    >
+                      {item.rankOrScore || "Top Rank"}
+                    </span>
+                    {item.examOrCourse && (
+                      <span className="text-[11px] text-text-muted truncate">
+                        {item.examOrCourse}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card Footer Actions */}
+              <div className="mt-4 pt-3 border-t border-border-soft flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggle(item.id)}
+                  className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+                    item.isActive ? "text-emerald-600 hover:text-emerald-700" : "text-text-muted hover:text-text-secondary"
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${item.isActive ? "bg-emerald-500" : "bg-slate-300"}`}
+                  />
+                  {item.isActive ? "Active on Webinars" : "Hidden"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDelete(item.id, item.name)}
+                  className="text-text-muted hover:text-brand-red p-1 rounded transition-colors"
+                  title="Remove achiever"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border border-border-soft animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-border-soft">
+              <div className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-brand-blue" />
+                <h3 className="text-base font-bold text-text-primary">Add Star Achiever</h3>
+              </div>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-text-muted hover:text-text-primary p-1 rounded-lg"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+              {/* Student Name */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
+                  Student Full Name <span className="text-brand-red">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Rahul S. Nair"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              {/* Rank / Score */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
+                  Rank / Score / Achievement <span className="text-brand-red">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. AIR 42 or 99.85 %ile or State Rank 1"
+                  value={form.rankOrScore}
+                  onChange={(e) => setForm({ ...form, rankOrScore: e.target.value })}
+                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              {/* Exam / Stream */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
+                  Exam / Course / Board
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. JEE Advanced 2026 or NEET-UG"
+                  value={form.examOrCourse}
+                  onChange={(e) => setForm({ ...form, examOrCourse: e.target.value })}
+                  className="w-full px-3 py-2 border border-border-soft rounded-lg text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              {/* Student Photo */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
+                  Student Photo
+                </label>
+                <div className="flex items-center gap-3">
+                  {form.imageUrl ? (
+                    <div className="w-12 h-12 rounded-full overflow-hidden border border-border-soft relative shrink-0">
+                      <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, imageUrl: "" })}
+                        className="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                        title="Remove photo"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : null}
+                  <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-border-soft rounded-lg text-xs font-medium text-text-secondary hover:bg-surface-2 cursor-pointer transition-colors">
+                    <Upload className="h-4 w-4 text-text-muted" />
+                    <span>{uploading ? "Uploading photo…" : form.imageUrl ? "Change Photo" : "Upload Student Photo"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      disabled={uploading}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="text-[10px] text-text-muted">Or enter URL:</span>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={form.imageUrl}
+                    onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                    className="flex-1 text-[11px] px-2 py-1 border border-border-soft rounded text-text-primary outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Badge Color */}
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">
+                  Badge Color
+                </label>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                    <input
+                      type="radio"
+                      name="badgeColor"
+                      value="#0162b1"
+                      checked={form.badgeColor === "#0162b1"}
+                      onChange={() => setForm({ ...form, badgeColor: "#0162b1" })}
+                    />
+                    <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#0162b1]" />
+                    <span>Educare Blue</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                    <input
+                      type="radio"
+                      name="badgeColor"
+                      value="#ee1b24"
+                      checked={form.badgeColor === "#ee1b24"}
+                      onChange={() => setForm({ ...form, badgeColor: "#ee1b24" })}
+                    />
+                    <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#ee1b24]" />
+                    <span>Educare Red</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="pt-3 border-t border-border-soft flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting || uploading}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors disabled:opacity-50"
+                >
+                  {submitting ? "Saving…" : "Save Achiever"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
