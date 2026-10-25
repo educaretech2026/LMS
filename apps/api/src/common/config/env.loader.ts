@@ -18,18 +18,23 @@ export function cleanEnvValue(val: string | undefined): string {
 
 /**
  * Automatically discovers and loads .env files into process.env if not already populated.
- * Works across local dev, turbo monorepo root, apps/api directory, and production dist builds.
+ * Recursively scans upward from process.cwd() and __dirname up to 6 parent directories.
  */
 export function loadEnv(): void {
-  const candidateDirs = [
-    process.cwd(),
-    path.resolve(process.cwd(), 'apps/api'),
-    path.resolve(process.cwd(), '../..'),
-    path.resolve(__dirname, '../../..'),
-    path.resolve(__dirname, '../../../../'),
-    path.resolve(__dirname, '../../'),
-    path.resolve(process.cwd(), 'packages/database'),
-  ];
+  const startDirs = [process.cwd(), __dirname];
+  const candidateDirs = new Set<string>();
+
+  for (const start of startDirs) {
+    let curr = path.resolve(start);
+    for (let i = 0; i < 6; i++) {
+      candidateDirs.add(curr);
+      candidateDirs.add(path.join(curr, 'apps', 'api'));
+      candidateDirs.add(path.join(curr, 'packages', 'database'));
+      const parent = path.dirname(curr);
+      if (parent === curr) break;
+      curr = parent;
+    }
+  }
 
   const candidateFiles = ['.env', '.env.local', '.env.production'];
 
@@ -47,14 +52,24 @@ export function loadEnv(): void {
     }
   }
 
-  // Also clean any quotes from existing Cloudflare env variables
+  // Also sanitize and strip any quotes from existing Cloudflare & service env variables
   const keysToClean = [
     'CLOUDFLARE_ACCOUNT_ID',
+    'CLOUDFLARE_R2_ACCOUNT_ID',
+    'R2_ACCOUNT_ID',
     'CLOUDFLARE_STREAM_API_TOKEN',
     'CLOUDFLARE_R2_ACCESS_KEY_ID',
+    'R2_ACCESS_KEY_ID',
+    'CLOUDFLARE_ACCESS_KEY_ID',
     'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
+    'R2_SECRET_ACCESS_KEY',
+    'CLOUDFLARE_SECRET_ACCESS_KEY',
     'CLOUDFLARE_R2_BUCKET_NAME',
+    'R2_BUCKET_NAME',
+    'CLOUDFLARE_BUCKET_NAME',
     'CLOUDFLARE_R2_PUBLIC_DOMAIN',
+    'R2_PUBLIC_DOMAIN',
+    'CLOUDFLARE_PUBLIC_DOMAIN',
     'LIVEKIT_WS_URL',
     'LIVEKIT_API_KEY',
     'LIVEKIT_API_SECRET',

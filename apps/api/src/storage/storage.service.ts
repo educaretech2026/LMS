@@ -5,7 +5,7 @@ import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, assertCentreAccess } from '../common/utils/tenant.util';
 import * as crypto from 'crypto';
 import * as path from 'path';
-import { cleanEnvValue } from '../common/config/env.loader';
+import { cleanEnvValue, loadEnv } from '../common/config/env.loader';
 
 const ALLOWED_MIMES = new Set([
   'image/jpeg',
@@ -273,10 +273,19 @@ export class StorageService {
       }
     }
 
-    const config = this.getConfig();
+    let config = this.getConfig();
     if (!config.isConfigured) {
+      loadEnv();
+      config = this.getConfig();
+    }
+    if (!config.isConfigured) {
+      const missing: string[] = [];
+      if (!config.accountId) missing.push('CLOUDFLARE_ACCOUNT_ID');
+      if (!config.accessKeyId) missing.push('CLOUDFLARE_R2_ACCESS_KEY_ID');
+      if (!config.secretAccessKey) missing.push('CLOUDFLARE_R2_SECRET_ACCESS_KEY');
+
       throw new HttpException(
-        'Storage is not configured on the server. Please check Cloudflare R2 environment variables (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY).',
+        `Storage is not configured on the server. Missing: ${missing.join(', ')}. Please ensure these are set in .env on the backend server and that the backend API process is restarted.`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
