@@ -199,30 +199,30 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 
 ---
 
-## 9. Rollback Plan & Database Disaster Recovery
+## 9. Rollback Plan & Forward-Fix Recovery Strategy
 
 If issues arise following migration or deployment in staging or production:
 
-1. **Database Snapshot / Backup**:
-   - Prior to running `prisma migrate deploy`, take a full snapshot:
+1. **Atomic Snapshot Restore (Disaster Recovery)**:
+   - Prior to running `prisma migrate deploy`, take a consistent full snapshot:
      ```bash
      pg_dump -h <DB_HOST> -p 5432 -U educare -d educare_db -Fc -f educare_db_pre_remediation.dump
      ```
-2. **Migration Rollback Steps**:
-   - If `20261025_add_custom_form_centre` must be rolled back:
+   - If immediate rollback is necessary before operational transactions occur, restore atomically to restore schema and migration ledger consistency:
+     ```bash
+     pg_restore -h <DB_HOST> -p 5432 -U educare -d educare_db --clean --if-exists educare_db_pre_remediation.dump
+     ```
+
+2. **Forward-Fix Migration Strategy (Preserving Migration History)**:
+   - **Prohibition on Destructive History Edits**: Manual deletion of rows from `_prisma_migrations` (`DELETE FROM "_prisma_migrations"`) is strictly prohibited in production and staging environments. Deleting migration records causes checksum drift, desynchronizes deployment pipelines, and breaks future `prisma migrate deploy` invocations.
+   - **Forward-Fix Procedure**: If a schema change must be reversed post-deployment, create and apply a forward-fix migration (e.g. `20261026_revert_custom_form_centre/migration.sql`):
      ```sql
+     -- Revert constraint and column via forward migration
      ALTER TABLE "custom_forms" DROP CONSTRAINT IF EXISTS "custom_forms_centreId_fkey";
      ALTER TABLE "custom_forms" DROP COLUMN IF EXISTS "centreId";
-     DELETE FROM "_prisma_migrations" WHERE "migration_name" = '20261025_add_custom_form_centre';
      ```
-   - If `20261025_add_studymaterial_is_public` must be rolled back:
-     ```sql
-     ALTER TABLE "study_materials" DROP COLUMN IF EXISTS "isPublic";
-     DELETE FROM "_prisma_migrations" WHERE "migration_name" = '20261025_add_studymaterial_is_public';
-     ```
-3. **Database Restore Command**:
-   ```bash
-   pg_restore -h <DB_HOST> -p 5432 -U educare -d educare_db --clean --if-exists educare_db_pre_remediation.dump
-   ```
-4. **Application Rollback**:
-   - Revert deployment to commit preceding `fix/authorization-remediation` (`main` branch HEAD).
+   - Apply the forward-fix via `prisma migrate deploy`. This preserves an immutable, auditable migration history across all environments.
+
+3. **Application Version Rollback**:
+   - Revert the API container/process to the prior commit preceding `fix/authorization-remediation`.
+   - Because all schema changes in this remediation are strictly additive and non-breaking (all new columns are nullable or have safe defaults like `false`), the prior application version remains fully operational against the updated schema.

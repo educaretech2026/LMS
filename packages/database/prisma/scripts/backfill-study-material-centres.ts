@@ -133,6 +133,13 @@ export async function reconcileLegacyStudyMaterials(dryRun: boolean = true, clie
 if (require.main === module) {
   const isApply = process.argv.includes('--apply');
   const dryRun = !isApply;
+  if (isApply) {
+    const dbUrl = process.env.DATABASE_URL || '';
+    if (dbUrl.includes('148.135.138.196') && process.env.ALLOW_PRODUCTION_RECONCILIATION !== 'true') {
+      console.error('FATAL SAFETY GUARD: Target database URL points to production host (148.135.138.196). Apply mode is prohibited without explicit ALLOW_PRODUCTION_RECONCILIATION=true confirmation.');
+      process.exit(1);
+    }
+  }
   if (dryRun) {
     console.log('Running in DRY-RUN mode by default. Pass --apply to persist changes.');
   } else {
