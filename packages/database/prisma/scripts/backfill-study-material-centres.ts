@@ -130,20 +130,106 @@ export async function reconcileLegacyStudyMaterials(dryRun: boolean = true, clie
   };
 }
 
-if (require.main === module) {
-  const isApply = process.argv.includes('--apply');
-  const dryRun = !isApply;
-  if (isApply) {
-    const dbUrl = process.env.DATABASE_URL || '';
-    if (dbUrl.includes('148.135.138.196') && process.env.ALLOW_PRODUCTION_RECONCILIATION !== 'true') {
-      console.error('FATAL SAFETY GUARD: Target database URL points to production host (148.135.138.196). Apply mode is prohibited without explicit ALLOW_PRODUCTION_RECONCILIATION=true confirmation.');
-      process.exit(1);
-    }
+function assertSafeCliReconciliationTarget(argv: string[]): boolean {
+  const isApply = argv.includes('--apply');
+  if (!isApply) {
+    return true; // Default dry-run
   }
+
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl || !rawUrl.trim()) {
+    console.error('FATAL RECONCILIATION VIOLATION: DATABASE_URL is missing or empty.');
+    process.exit(1);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    console.error('FATAL RECONCILIATION VIOLATION: DATABASE_URL is malformed and could not be parsed.');
+    process.exit(1);
+  }
+
+  const hostname = (parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  const database = (parsed.pathname || '').replace(/^\//, '').split('?')[0].trim();
+  const port = parsed.port ? parseInt(parsed.port, 10) : 5432;
+  const sslMode = parsed.searchParams.get('sslmode');
+  const sanitizedTarget = `host: ${hostname}, port: ${port}, db: ${database}, ssl: ${sslMode || 'none'}`;
+
+  // Unconditional block on production systems - no environment variable bypass permitted
+  const knownProductionIps = ['148.135.138.196'];
+  const knownProductionHosts = [
+    'api.educarelearning.in',
+    'db.educarelearning.in',
+    'database.educarelearning.in',
+    'postgres.educarelearning.in',
+    'lms.educarelearning.in',
+    'prod-db.educarelearning.in',
+    'prod.educarelearning.in',
+  ];
+
+  const isProductionTarget =
+    knownProductionIps.includes(hostname) ||
+    knownProductionHosts.includes(hostname) ||
+    (hostname.includes('educarelearning.in') && !hostname.includes('staging')) ||
+    database === 'educare_prod' ||
+    database === 'educare_production';
+
+  if (isProductionTarget) {
+    console.error(
+      `FATAL RECONCILIATION VIOLATION: Database target (${sanitizedTarget}) is a production system. Automatic CLI reconciliation mutations are strictly prohibited on production databases. Use authenticated Super Admin API workflows.`,
+    );
+    process.exit(1);
+  }
+
+  const isLocal =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '0.0.0.0' ||
+    hostname === 'staging-db' ||
+    hostname === 'postgres' ||
+    hostname === 'db';
+
+  const approvedStagingHostsEnv = process.env.APPROVED_STAGING_HOSTS
+    ? process.env.APPROVED_STAGING_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    : [];
+
+  const isApprovedStaging =
+    isLocal ||
+    approvedStagingHostsEnv.includes(hostname) ||
+    hostname.includes('staging') ||
+    database.includes('staging') ||
+    database === 'educare_db' ||
+    database === 'test_educare';
+
+  if (!isApprovedStaging) {
+    console.error(
+      `FATAL RECONCILIATION VIOLATION: Database target (${sanitizedTarget}) is not an approved staging database. Apply mode is blocked.`,
+    );
+    process.exit(1);
+  }
+
+  // Require explicit CLI confirmation matching the exact database name
+  const confirmArg = argv.find((a) => a.startsWith('--confirm-staging-target='));
+  const confirmedDb = confirmArg ? confirmArg.split('=')[1]?.trim() : null;
+
+  if (!confirmedDb || confirmedDb !== database) {
+    console.error(
+      `FATAL RECONCILIATION VIOLATION: Apply mode requires explicit target confirmation via CLI argument --confirm-staging-target=${database}. Write aborted.`,
+    );
+    process.exit(1);
+  }
+
+  return false; // Apply mode verified
+}
+
+if (require.main === module) {
+  const dryRun = assertSafeCliReconciliationTarget(process.argv);
   if (dryRun) {
-    console.log('Running in DRY-RUN mode by default. Pass --apply to persist changes.');
+    console.log('Running in DRY-RUN mode by default. Pass --apply and --confirm-staging-target=<db_name> to persist changes.');
   } else {
-    console.log('Applying changes to database...');
+    console.log('Applying changes to verified staging database...');
   }
   reconcileLegacyStudyMaterials(dryRun)
     .then(() => prisma.$disconnect())

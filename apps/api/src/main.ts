@@ -6,8 +6,46 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { assertValidTargetForEnvironment } from './common/config/database-target.validator';
+
+function runPreflightSafetyChecks() {
+  const isProd = process.env.NODE_ENV === 'production';
+  const isStag = process.env.NODE_ENV === 'staging' || process.env.APP_ENV === 'staging';
+
+  if (!isProd && !isStag) {
+    return; // Allow permissive development defaults
+  }
+
+  const envLabel = isProd ? 'production' : 'staging';
+
+  // 1. Strict Fail-Closed Database Target Verification (blocks prod IPs, unapproved hosts, cleartext SSL)
+  assertValidTargetForEnvironment(process.env.DATABASE_URL);
+
+  // 2. REDIS_URL presence
+  if (!process.env.REDIS_URL || !process.env.REDIS_URL.trim()) {
+    throw new Error(`FATAL: REDIS_URL is mandatory in ${envLabel} for secure session enforcement and distributed rate limiting.`);
+  }
+
+  // 3. JWT_SECRET strength
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret || jwtSecret.trim().length < 32) {
+    throw new Error(`FATAL: JWT_SECRET in ${envLabel} must be configured and be at least 32 characters long.`);
+  }
+  const insecureDefaults = ['secret', 'changeme', 'development', 'supersecret', '12345678'];
+  if (insecureDefaults.includes(jwtSecret.trim().toLowerCase())) {
+    throw new Error(`FATAL: JWT_SECRET in ${envLabel} cannot use known insecure defaults.`);
+  }
+
+  // 4. TURNSTILE_SECRET_KEY
+  if (!process.env.TURNSTILE_SECRET_KEY || !process.env.TURNSTILE_SECRET_KEY.trim()) {
+    throw new Error(`FATAL: TURNSTILE_SECRET_KEY is mandatory in ${envLabel} for public form protection.`);
+  }
+}
 
 async function bootstrap() {
+  // Execute preflight checks BEFORE any NestJS module, provider, or database connection is initialized!
+  runPreflightSafetyChecks();
+
   const app = await NestFactory.create(AppModule);
 
   // SEC-09: HTTP security headers with Content Security Policy
@@ -30,48 +68,6 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false,
     }),
   );
-
-  function runPreflightSafetyChecks() {
-    const isProd = process.env.NODE_ENV === 'production';
-    const isStag = process.env.NODE_ENV === 'staging' || process.env.APP_ENV === 'staging';
-
-    if (!isProd && !isStag) {
-      return; // Allow permissive development defaults
-    }
-
-    const envLabel = isProd ? 'production' : 'staging';
-
-    // 1. DATABASE_URL presence and host safety
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl || !dbUrl.trim()) {
-      throw new Error(`FATAL: DATABASE_URL is mandatory in ${envLabel}.`);
-    }
-    if (isStag && dbUrl.includes('148.135.138.196')) {
-      throw new Error('FATAL: Staging environment DATABASE_URL points to unauthorized production host (148.135.138.196). Startup aborted to protect production data.');
-    }
-
-    // 2. REDIS_URL presence
-    if (!process.env.REDIS_URL || !process.env.REDIS_URL.trim()) {
-      throw new Error(`FATAL: REDIS_URL is mandatory in ${envLabel} for secure session enforcement and distributed rate limiting.`);
-    }
-
-    // 3. JWT_SECRET strength
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret || jwtSecret.trim().length < 32) {
-      throw new Error(`FATAL: JWT_SECRET in ${envLabel} must be configured and be at least 32 characters long.`);
-    }
-    const insecureDefaults = ['secret', 'changeme', 'development', 'supersecret', '12345678'];
-    if (insecureDefaults.includes(jwtSecret.trim().toLowerCase())) {
-      throw new Error(`FATAL: JWT_SECRET in ${envLabel} cannot use known insecure defaults.`);
-    }
-
-    // 4. TURNSTILE_SECRET_KEY
-    if (!process.env.TURNSTILE_SECRET_KEY || !process.env.TURNSTILE_SECRET_KEY.trim()) {
-      throw new Error(`FATAL: TURNSTILE_SECRET_KEY is mandatory in ${envLabel} for public form protection.`);
-    }
-  }
-
-  runPreflightSafetyChecks();
 
   // SEC-06: Strict CORS allowlist with credentials - exclude localhost in production
   const isProduction = process.env.NODE_ENV === 'production';

@@ -9,7 +9,7 @@
 - **Final Release Gate Recommendation**: **PASS WITH BLOCKERS**
 
 ### Summary of Recommendation
-The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, and cross-centre isolation checks have **PASSED** completely against an isolated staging PostgreSQL database cluster, with 414/414 passing API tests and clean Next.js and Expo mobile builds.
+The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, and cross-centre isolation checks have **PASSED** completely against an isolated staging PostgreSQL database cluster, with 434/434 passing API tests across 18 suites and clean Next.js and Expo mobile builds.
 
 However, deployment to production remains **BLOCKED** until the following infrastructure separation requirements are fulfilled in the external staging environment:
 1. **Isolated Staging Database & Credentials**: `packages/database/.env` currently references a remote database IP (`148.135.138.196:5432`) that corresponds to the live/production server. Staging database migrations were strictly validated against a local isolated PostgreSQL instance (`127.0.0.1:5433`). The remote database was protected from mutations during preflight.
@@ -176,7 +176,8 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | **Prisma Client Generation** | `pnpm --filter @educare/database db:generate` | **PASS** | Generated client v5.19.1 in 321ms. |
 | **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **101/101 tests passed** (including Scope J cases 1–10). |
 | **Security Regression Suite** | `pnpm --filter api test -- security-regression.spec.ts` | **PASS** | **298/298 tests passed**. |
-| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **17 test suites, 414 tests passed, 0 failed, 0 skipped**. |
+| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **20/20 tests passed** (covers production IP/hostname rejection, allowlists, zero-leak credentials, lifecycle ordering, bypass removal). |
+| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 434 tests passed, 0 failed, 0 skipped**. |
 | **API Production Build** | `pnpm --filter api build` | **PASS** | Clean `nest build` compilation (0 TypeScript errors). |
 | **Web Production Build** | `pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
 | **Mobile Typecheck** | `pnpm --filter mobile typecheck` | **PASS** | Expo React Native `tsc --noEmit` passed with 0 errors. |
@@ -185,17 +186,29 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 
 ---
 
-## 8. Issues Found & Required Fixes
+## 8. Issues Found, Implemented Hardening & Required External Fixes
 
-1. **Remote Target Ambiguity (CRITICAL)**:
-   - `packages/database/.env` contains `148.135.138.196:5432`, which hosts the live/production LMS API (`http://148.135.138.196:3000/api`).
-   - **Fix Required**: Deploy an isolated staging database instance (e.g. `staging-db.educare.internal`) and update staging configuration files accordingly. Do not run migrations against `148.135.138.196` without a confirmed backup and maintenance window.
+### A. Implemented Safety Hardening (Code Level)
+1. **Fail-Closed Target Verification (`database-target.validator.ts`)**:
+   - Implemented RFC URL parsing that strips credentials before logging (zero log leakage).
+   - Rejects production IPs (`148.135.138.196`) and hostnames (`api.educarelearning.in`, `db.educarelearning.in`, `educarelearning.in`) unconditionally in non-production environments.
+   - Requires explicit allowlisting (`STAGING_DATABASE_HOST` or `STAGING_DATABASE_ALLOWLIST`) and TLS (`sslmode=require`) for remote staging targets.
+   - Detects conflicting/ambiguous environment identities (e.g. `NODE_ENV=production` while `APP_ENV=staging`).
+2. **NestJS Pre-Instantiation Startup Ordering**:
+   - Reordered `bootstrap()` in `apps/api/src/main.ts` so `runPreflightSafetyChecks()` executes **prior** to `NestFactory.create(AppModule)`, preventing `PrismaService.onModuleInit()` from connecting to an unverified target.
+   - Added secondary defense-in-depth target validation in `PrismaService.onModuleInit()` before `this.$connect()`.
+3. **Reconciliation Script Safeguards**:
+   - Removed generic `ALLOW_PRODUCTION_RECONCILIATION=true` environment override.
+   - Unconditionally blocks mutations against production targets.
+   - Requires explicit `--apply` AND `--confirm-staging-target=<db_name>` flag matching the target database name.
+
+### B. Remaining External Infrastructure Requirements (Blockers)
+1. **Remote Target Separation (CRITICAL)**:
+   - Deploy an isolated staging database instance (e.g. `staging-db.educare.internal` or managed RDS/Cloud SQL) and populate `STAGING_DATABASE_ALLOWLIST`. Do not run migrations against `148.135.138.196`.
 2. **Missing Staging Redis Configuration**:
-   - `REDIS_URL` is omitted from staging environment configurations, forcing single-instance fallback.
-   - **Fix Required**: Provision a staging Redis 7 instance and configure `REDIS_URL` with authentication password in `docker-compose.yml` or the staging container orchestrator.
+   - Provision an isolated, authenticated Redis 7 instance and configure `REDIS_URL`.
 3. **Turnstile Staging Hostname Configuration**:
-   - Staging frontends (e.g. `staging.educarelearning.in`) will be rejected by Turnstile validation unless explicitly added to `allowedHostnames` or approved in Cloudflare.
-   - **Fix Required**: Once staging domain is finalized, add it to `defaultHostnames` in `apps/api/src/enquiry/enquiry.service.ts` and configure a dedicated staging Turnstile sitekey.
+   - Configure a dedicated staging Turnstile sitekey and secret in Cloudflare for `staging.educarelearning.in` and add it to `allowedHostnames`.
 
 ---
 

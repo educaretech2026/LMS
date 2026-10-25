@@ -15,7 +15,7 @@
 >   - Confirmed schema constraints (`custom_forms.centreId` FK, `study_materials.isPublic`, `study_materials.isShared`).
 >   - Confirmed zero-write dry-run reconciliation for enquiries and study materials.
 >   - Confirmed 11 cross-centre authorization scenarios across 8 roles.
->   - Confirmed 414/414 passing API tests, Next.js web build (39 routes), and Expo mobile typecheck.
+>   - Confirmed 434/434 passing API tests across 18 test suites, Next.js web build (39 routes), and Expo mobile typecheck.
 > - **Pending Recommendations (External Staging Infrastructure)**:
 >   - Provisioning of external isolated staging PostgreSQL database and authenticated Redis 7 server.
 >   - Provisioning of dedicated Cloudflare R2 staging bucket and staging Turnstile widget credentials.
@@ -193,37 +193,42 @@ EXPO_PUBLIC_API_URL="https://staging-api.educarelearning.in/api"
 
 ## 5. Startup & Preflight Safety Checks (Task 4)
 
-To prevent misconfigured deployments and protect production data from accidental mutations, safe preflight validations have been implemented:
+To prevent misconfigured deployments and protect production data from accidental mutations, fail-closed preflight validations have been implemented:
 
-### A. API Runtime Preflight (`apps/api/src/main.ts`)
-The `runPreflightSafetyChecks()` function executes immediately during `bootstrap()` before initializing listeners:
-1. **Target Isolation Assertion**:
-   When `NODE_ENV === 'staging'` or `APP_ENV === 'staging'`, `DATABASE_URL` is checked for the production IP (`148.135.138.196`). If detected, the API terminates immediately:
-   ```
-   FATAL: Staging environment DATABASE_URL points to unauthorized production host (148.135.138.196). Startup aborted to protect production data.
-   ```
-2. **Redis Mandate**:
-   In both `production` and `staging`, `REDIS_URL` is verified. If missing, startup throws:
-   ```
-   FATAL: REDIS_URL is mandatory in staging for secure session enforcement and distributed rate limiting.
-   ```
-3. **Cryptographic Secret Verification**:
-   Validates `JWT_SECRET` is at least 32 characters long and does not match known default passwords (`'secret'`, `'changeme'`, `'development'`).
-4. **Turnstile Secret Check**:
-   Ensures `TURNSTILE_SECRET_KEY` is configured so public enquiry routes fail closed rather than serving unprotected intake.
+### A. Fail-Closed Target Verification (`apps/api/src/common/config/database-target.validator.ts`)
+A dedicated validation module parses connection strings, strips credentials completely (zero log leakage), and verifies database targets before any connection can be opened:
+1. **Target Isolation Assertion & Protocol Verification**:
+   - Parses the URI using RFC-compliant URL parsing.
+   - Forbids cleartext protocols (`http:`, etc.) for database targets; requires `postgresql:` or `postgres:`.
+   - Rejects empty, missing, or malformed hostnames and database names.
+2. **Production Target Rejection**:
+   - Rejects production IP addresses (`148.135.138.196`) and production hostnames (`api.educarelearning.in`, `db.educarelearning.in`, `educarelearning.in`, etc.) unconditionally when running in non-production environments.
+3. **Fail-Closed Allowlist Policy for Staging**:
+   - In staging (`NODE_ENV === 'staging'` or `APP_ENV === 'staging'`), loopback hosts (`localhost`, `127.0.0.1`, `::1`) are permitted for local integration testing.
+   - Remote targets in staging **MUST** be explicitly allowlisted via `STAGING_DATABASE_HOST` or `STAGING_DATABASE_ALLOWLIST` (comma-separated). Unapproved remote hosts are rejected before a connection is attempted.
+   - Remote staging targets **MUST** specify `sslmode=require` or `sslmode=verify-full`.
+4. **Conflicting Environment Detection**:
+   - Detects ambiguous configurations (e.g. `NODE_ENV=production` while `APP_ENV=staging`, or vice-versa) and terminates immediately.
+5. **Zero-Leak Credential Policy**:
+   - Error messages and logs strictly redact all passwords, usernames, and query strings. Only parsed host, port, and database name are referenced in diagnostic messages.
 
-### B. Reconciliation Script Guard (`backfill-enquiry-centres.ts` & `backfill-study-material-centres.ts`)
-A strict check was added to both scripts when `--apply` is passed:
-```ts
-if (isApply) {
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.includes('148.135.138.196') && process.env.ALLOW_PRODUCTION_RECONCILIATION !== 'true') {
-    console.error('FATAL SAFETY GUARD: Target database URL points to production host (148.135.138.196). Apply mode is prohibited without explicit ALLOW_PRODUCTION_RECONCILIATION=true confirmation.');
-    process.exit(1);
-  }
-}
-```
-**Zero-Leak Guarantee**: Error messages never log connection strings, tokens, or usernames.
+### B. Startup Execution Ordering & Lifecycle Guards
+A critical architectural vulnerability in NestJS is that `PrismaService.onModuleInit()` executes during `NestFactory.create(AppModule)`. Any preflight guard placed after `NestFactory.create` executes too late—the database connection has already been opened.
+1. **Pre-Instantiation Guard (`apps/api/src/main.ts`)**:
+   `runPreflightSafetyChecks()` is invoked at the very first line of `bootstrap()` **BEFORE** `await NestFactory.create(AppModule)`. If the target is invalid or unapproved, the process exits with code 1 before any Nest provider, module, or database connection is initialized.
+2. **Defense-in-Depth Connection Hook (`apps/api/src/database/prisma.service.ts`)**:
+   `PrismaService.onModuleInit()` calls `assertValidTargetForEnvironment(process.env.DATABASE_URL)` directly before `await this.$connect()`. Even if `main.ts` is bypassed (e.g. in standalone script contexts importing `PrismaService`), database connections to forbidden targets fail closed.
+3. **Redis, JWT & Turnstile Mandates**:
+   - `REDIS_URL` is mandatory in staging for distributed rate limiting and token revocation.
+   - `JWT_SECRET` must be high-entropy and >= 32 characters.
+   - `TURNSTILE_SECRET_KEY` must be configured.
+
+### C. Dangerous Bypass Removal & Reconciliation Guards (`backfill-enquiry-centres.ts` & `backfill-study-material-centres.ts`)
+Previously, reconciliation scripts supported a generic `ALLOW_PRODUCTION_RECONCILIATION=true` environment variable that could be accidentally inherited from shell profiles or CI workflows:
+1. **Generic Bypass Removed**: `ALLOW_PRODUCTION_RECONCILIATION` has been completely eliminated. Production targets (`148.135.138.196` and production hostnames) are **UNCONDITIONALLY FORBIDDEN** from CLI mutation scripts.
+2. **Dry-Run by Default**: Reconciliation scripts execute in dry-run mode unless `--apply` is explicitly passed.
+3. **Explicit Staging Confirmation Flag Required**: To execute writes in staging, the caller must supply both `--apply` **AND** `--confirm-staging-target=<target_database_name>`. The flag value must exactly match the parsed database name from `DATABASE_URL`. Any mismatch or omission halts execution with an error code.
+4. **Zero-Leak Guarantee**: Error messages never log connection strings, tokens, passwords, or usernames.
 
 ---
 
@@ -342,8 +347,8 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 ```
 
 ### Verified Test Runner Output:
-- **Test Suites**: **17 passed, 17 total**
-- **Tests**: **414 passed, 414 total**
+- **Test Suites**: **18 passed, 18 total**
+- **Tests**: **434 passed, 434 total**
 - **Skipped Tests**: **0**
 - **Failed Tests**: **0**
 - **Snapshots**: **0**
@@ -353,6 +358,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | :--- | :--- | :-: | :-: |
 | **Dedicated Authorization Remediation Suite** | `apps/api/src/common/authorization-remediation.spec.ts` | **101** | **PASS** |
 | **Comprehensive Security Regression Suite** | `apps/api/src/common/security-regression.spec.ts` | **298** | **PASS** |
+| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **20** | **PASS** |
 | **Enquiry Controller Suite** | `apps/api/src/enquiry/enquiry.controller.spec.ts` | **1** | **PASS** |
 | **Enquiry Service Suite** | `apps/api/src/enquiry/enquiry.service.spec.ts` | **1** | **PASS** |
 | **Assignments Controller Suite** | `apps/api/src/assignments/assignments.controller.spec.ts` | **1** | **PASS** |
@@ -368,7 +374,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | **Fee Controller Suite** | `apps/api/src/fee/fee.controller.spec.ts` | **1** | **PASS** |
 | **Fee Service Suite** | `apps/api/src/fee/fee.service.spec.ts` | **1** | **PASS** |
 | **App Controller Suite** | `apps/api/src/app.controller.spec.ts` | **1** | **PASS** |
-| **TOTAL** | **17 Test Suites** | **414** | **PASS** |
+| **TOTAL** | **18 Test Suites** | **434** | **PASS** |
 
 ---
 
