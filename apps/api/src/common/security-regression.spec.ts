@@ -5090,7 +5090,11 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         it('should allow teacher to access material they uploaded regardless of centre', async () => {
           mockPrisma.studyMaterial.findUnique.mockResolvedValue({
             id: 'mat-self-uploaded',
-            uploaderId: dualCentreTeacher.id
+            uploaderId: dualCentreTeacher.id,
+            uploader: {
+              role: { name: 'TEACHER' },
+              userCentres: [{ centreId: 'centre-alpha' }],
+            },
           });
 
           const res = await studyMaterialService.getById('mat-self-uploaded', dualCentreTeacher);

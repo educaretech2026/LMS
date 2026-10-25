@@ -7,7 +7,9 @@ import { SupportController } from '../support/support.controller';
 import { EnquiryService } from '../enquiry/enquiry.service';
 import { EnquiryController } from '../enquiry/enquiry.controller';
 import { StudyMaterialService } from '../study-materials/study-materials.service';
+import { StudyMaterialController } from '../study-materials/study-materials.controller';
 import { EstudyService } from '../estudy/estudy.service';
+import { AuditService } from '../audit/audit.service';
 import { SyllabusService } from '../syllabus/syllabus.service';
 import { ConfigController } from '../syllabus/config.controller';
 import { SetupController } from '../setup/setup.controller';
@@ -944,28 +946,23 @@ describe('Authorization Remediation Regression Suite', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('Non-super admin cannot set isShared = true when creating material (isShared forced to false)', async () => {
+    it('Non-super admin cannot set isShared = true when creating material -> rejected with HTTP 403 Forbidden', async () => {
       mockPrisma.academicYear.findMany.mockResolvedValue([{ id: 'ay-1', isActive: true }]);
       mockPrisma.syllabus.findUnique.mockResolvedValue({ id: 'syl-1' });
-      mockPrisma.studyMaterial.create.mockImplementation((args: any) => Promise.resolve(args.data));
+      mockPrisma.studyMaterial.create = jest.fn();
 
-      await studyMaterialService.create(
-        {
-          title: 'Attempted Global Share by Centre Admin',
-          syllabusId: 'syl-1',
-          isShared: true, // Non-super admin attempting to declare global content
-        },
-        centreAdminAlpha,
-      );
+      await expect(
+        studyMaterialService.create(
+          {
+            title: 'Attempted Global Share by Centre Admin',
+            syllabusId: 'syl-1',
+            isShared: true, // Non-super admin attempting to declare global content
+          },
+          centreAdminAlpha,
+        ),
+      ).rejects.toThrow(ForbiddenException);
 
-      expect(mockPrisma.studyMaterial.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            isShared: false, // Must be strictly forced to false
-            centreId: 'centre-alpha',
-          }),
-        }),
-      );
+      expect(mockPrisma.studyMaterial.create).not.toHaveBeenCalled();
     });
 
     it('Non-super admin cannot delete explicitly shared material -> HTTP 403 Forbidden', async () => {
@@ -1500,4 +1497,558 @@ describe('Authorization Remediation Regression Suite', () => {
       ).rejects.toThrow(ForbiddenException);
     });
   });
+
+  describe('Scope F — Global Sharing Permissions and Lifecycle Hardening', () => {
+    let mockPrisma: any;
+    let mockAuditService: any;
+    let studyMaterialService: StudyMaterialService;
+    let mockStorageService: any;
+    let studyMaterialController: StudyMaterialController;
+
+    beforeEach(() => {
+      mockPrisma = {
+        academicYear: {
+          findMany: jest.fn().mockResolvedValue([{ id: 'ay-active-1', isActive: true }]),
+          findUnique: jest.fn().mockResolvedValue({ id: 'ay-active-1', isActive: true }),
+          findFirst: jest.fn().mockResolvedValue({ id: 'ay-active-1', isActive: true }),
+        },
+        syllabus: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'syl-math-1', subjectId: 'sub-1', standardId: 'std-10', boardId: 'brd-1' }),
+          findFirst: jest.fn().mockResolvedValue({ id: 'syl-math-1', subjectId: 'sub-1', standardId: 'std-10', boardId: 'brd-1' }),
+        },
+        studyMaterial: {
+          create: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: 'mat-created-id', ...args.data })),
+          findUnique: jest.fn(),
+          findFirst: jest.fn().mockResolvedValue(null),
+          update: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.where.id, ...args.data })),
+          delete: jest.fn().mockResolvedValue({ id: 'mat-deleted-id' }),
+        },
+      };
+
+      mockAuditService = {
+        record: jest.fn(),
+      };
+
+      mockStorageService = {
+        extractAndValidateObjectKey: jest.fn((k: string) => k),
+        validateAndEnforceObjectSize: jest.fn().mockResolvedValue(undefined),
+        getPresignedDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://r2.educare.local/signed-stream-url' }),
+      };
+
+      studyMaterialService = new StudyMaterialService(mockPrisma as any, mockStorageService as any, mockAuditService as any);
+      studyMaterialController = new StudyMaterialController(studyMaterialService, mockStorageService as any, {} as any);
+    });
+
+    it('Non-super admin cannot set isShared = true via StudyMaterialService.create -> rejected with HTTP 403 and leaves DB untouched', async () => {
+      await expect(
+        studyMaterialService.create(
+          {
+            title: 'Unauthorized Global Material',
+            syllabusId: 'syl-math-1',
+            isShared: true,
+          },
+          centreAdminA,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockPrisma.studyMaterial.create).not.toHaveBeenCalled();
+    });
+
+    it('Non-super admin cannot bypass sharing restriction via EstudyService.createMaterial -> rejected with HTTP 403', async () => {
+      const estudyService = new EstudyService(mockPrisma as any, studyMaterialService);
+
+      await expect(
+        estudyService.createMaterial(
+          {
+            title: 'Attempted Global Estudy Material',
+            syllabusId: 'syl-math-1',
+            isShared: true,
+          },
+          centreAdminA,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockPrisma.studyMaterial.create).not.toHaveBeenCalled();
+    });
+
+    it('Super Admin can set isShared = true on creation and records audit log', async () => {
+      const created = await studyMaterialService.create(
+        {
+          title: 'Authorized Global Syllabus Guide',
+          syllabusId: 'syl-math-1',
+          isShared: true,
+        },
+        superAdmin,
+      );
+
+      expect(created).toBeDefined();
+      expect(created.isShared).toBe(true);
+      expect(mockPrisma.studyMaterial.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            isShared: true,
+          }),
+        }),
+      );
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'CREATE_SHARED_STUDY_MATERIAL',
+          userRole: 'SUPER_ADMIN',
+          details: expect.objectContaining({ isShared: true }),
+        }),
+      );
+    });
+
+    it('Non-super admin cannot update isShared status on existing material -> rejected with HTTP 403 and leaves DB untouched', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-local-1',
+        title: 'Local Worksheet',
+        centreId: 'centre-alpha',
+        isShared: false,
+        uploaderId: centreAdminA.id,
+      });
+
+      await expect(
+        studyMaterialService.update(
+          'mat-local-1',
+          { isShared: true },
+          centreAdminA,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockPrisma.studyMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it('Non-super admin cannot mutate an existing globally shared material -> rejected with HTTP 403', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-shared-global',
+        title: 'Global Curriculum Standard',
+        centreId: null,
+        isShared: true,
+        uploaderId: superAdmin.id,
+      });
+
+      await expect(
+        studyMaterialService.update(
+          'mat-shared-global',
+          { title: 'Attempted Malicious Update' },
+          centreAdminA,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockPrisma.studyMaterial.update).not.toHaveBeenCalled();
+    });
+
+    it('Super Admin can update isShared and centreId on material and records audit log', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-reconciled-1',
+        title: 'Reconciled Material',
+        centreId: null,
+        isShared: false,
+        uploaderId: superAdmin.id,
+      });
+
+      const updated = await studyMaterialService.update(
+        'mat-reconciled-1',
+        { isShared: true, centreId: 'centre-alpha' },
+        superAdmin,
+      );
+
+      expect(mockPrisma.studyMaterial.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'mat-reconciled-1' },
+          data: expect.objectContaining({
+            isShared: true,
+            centreId: 'centre-alpha',
+          }),
+        }),
+      );
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE_STUDY_MATERIAL_SHARING',
+          userRole: 'SUPER_ADMIN',
+        }),
+      );
+    });
+
+    it('Unresolved legacy material (centreId = null, isShared = false) is denied to ordinary uploader without verified centre', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-unresolved-uploaded',
+        title: 'Unresolved Orphan Notes',
+        centreId: null,
+        isShared: false,
+        targetTrackId: null,
+        uploaderId: centreAdminA.id,
+        uploader: {
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [], // No verified centre link
+        },
+      });
+
+      await expect(
+        studyMaterialService.getById('mat-unresolved-uploaded', centreAdminA),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Uploader ownership does not bypass cross-centre boundary (Centre Admin uploading to Centre B cannot read from Centre A)', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-centre-beta-owned',
+        title: 'Centre B Specific Paper',
+        centreId: 'centre-beta',
+        isShared: false,
+        uploaderId: centreAdminA.id,
+        uploader: {
+          role: { name: 'CENTRE_ADMIN' },
+          userCentres: [{ centreId: 'centre-alpha' }],
+        },
+      });
+
+      // centreAdminA only belongs to centre-alpha, so cannot access centre-beta material even if uploaderId matches
+      await expect(
+        studyMaterialService.getById('mat-centre-beta-owned', centreAdminA),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('Private video playback (getPlayUrl) applies the exact same tenant access rules', async () => {
+      mockPrisma.studyMaterial.findUnique.mockResolvedValue({
+        id: 'mat-restricted-video',
+        title: 'Restricted Centre B Lecture',
+        url: 'materials/lecture-b.mp4',
+        centreId: 'centre-beta',
+        isShared: false,
+        uploaderId: 'user-b-admin',
+      });
+
+      // Calling getPlayUrl for unauthorized user throws ForbiddenException and does not generate presigned download URL
+      await expect(
+        studyMaterialController.getPlayUrl('mat-restricted-video', { user: centreAdminA }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockStorageService.getPresignedDownloadUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Scope G — Reverse-Proxy-Safe Rate Limiting and StrictThrottlerGuard', () => {
+    let guard: StrictThrottlerGuard;
+
+    beforeEach(() => {
+      guard = new StrictThrottlerGuard();
+    });
+
+    it('Direct connection from untrusted IP with forged X-Forwarded-For derives tracker strictly from socket.remoteAddress', async () => {
+      const untrustedDirectReq = {
+        socket: { remoteAddress: '198.51.100.42' },
+        headers: { 'x-forwarded-for': '8.8.8.8, 1.1.1.1' },
+      };
+
+      const tracker = await (guard as any).getTracker(untrustedDirectReq);
+      expect(tracker).toBe('198.51.100.42');
+      expect(tracker).not.toBe('8.8.8.8');
+    });
+
+    it('Connection from trusted reverse proxy derives tracker from forwarded client IP', async () => {
+      const trustedProxyReq = {
+        socket: { remoteAddress: '127.0.0.1' }, // Local loopback trusted proxy
+        headers: { 'x-forwarded-for': '203.0.113.10' },
+      };
+
+      const tracker = await (guard as any).getTracker(trustedProxyReq);
+      expect(tracker).toBe('203.0.113.10');
+    });
+
+    it('Different client IPs behind trusted proxy produce distinct tracker IDs', async () => {
+      const client1Req = {
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: { 'x-forwarded-for': '203.0.113.11' },
+      };
+      const client2Req = {
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: { 'x-forwarded-for': '203.0.113.12' },
+      };
+
+      const tracker1 = await (guard as any).getTracker(client1Req);
+      const tracker2 = await (guard as any).getTracker(client2Req);
+
+      expect(tracker1).toBe('203.0.113.11');
+      expect(tracker2).toBe('203.0.113.12');
+      expect(tracker1).not.toBe(tracker2);
+    });
+
+    it('Cloudflare proxy header (cf-connecting-ip) is honored when socket connection is trusted', async () => {
+      const cfReq = {
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: {
+          'cf-connecting-ip': '198.51.100.99',
+          'x-forwarded-for': '198.51.100.99, 10.0.0.1',
+        },
+      };
+
+      const tracker = await (guard as any).getTracker(cfReq);
+      expect(tracker).toBe('198.51.100.99');
+    });
+
+    it('Exceeding rate limit throws HTTP 429 Too Many Requests and leaves database write uncalled', async () => {
+      const mockStorage = {
+        increment: jest.fn().mockResolvedValue({ totalHits: 6, timeToExpire: 55 }),
+      };
+      const strictGuard = new StrictThrottlerGuard(
+        { throttlers: [{ limit: 5, ttl: 60000 }] },
+        mockStorage as any,
+      );
+
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            socket: { remoteAddress: '198.51.100.55' },
+            headers: {},
+          }),
+          getResponse: () => ({
+            header: jest.fn(),
+          }),
+        }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      };
+
+      await expect(
+        strictGuard.canActivate(mockContext as any),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Scope H — Production Turnstile Bot Protection Policy', () => {
+    let mockPrisma: any;
+    let enquiryService: EnquiryService;
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      process.env = { ...originalEnv };
+      mockPrisma = {
+        enquiry: {
+          create: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: 'enq-ok', ...args.data })),
+        },
+        centre: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'centre-alpha', status: 'ACTIVE' }),
+        },
+      };
+      enquiryService = new EnquiryService(mockPrisma as any);
+    });
+
+    afterAll(() => {
+      process.env = originalEnv;
+    });
+
+    it('In production, missing TURNSTILE_SECRET_KEY throws HTTP 500 Server Configuration Error (fails closed)', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.TURNSTILE_SECRET_KEY;
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Alice Smith',
+          contactNumber: '9876543210',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          status: 500,
+        }),
+      );
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('When TURNSTILE_SECRET_KEY is configured, missing token throws HTTP 400 Bad Request', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Bob Builder',
+          contactNumber: '9876543210',
+          // Missing turnstileToken
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('When Turnstile verification rejects token (success: false), throws HTTP 400 Bad Request', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: false, 'error-codes': ['invalid-input-response'] }),
+      } as any);
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Charlie Brown',
+          contactNumber: '9876543210',
+          turnstileToken: 'invalid-bot-token',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('When Turnstile verification times out or network fails, fails closed with HTTP 400 without leaking token/secret', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockRejectedValue(new Error('Network timeout after 5000ms'));
+
+      await expect(
+        enquiryService.createPublicEnquiry({
+          studentName: 'Dave Smith',
+          contactNumber: '9876543210',
+          turnstileToken: 'timeout-token',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
+    });
+
+    it('When Turnstile token is valid, creates enquiry and sends verification strictly to Cloudflare siteverify', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as any);
+      global.fetch = mockFetch;
+
+      const res = await enquiryService.createPublicEnquiry({
+        studentName: 'Emma Watson',
+        contactNumber: '9876543210',
+        turnstileToken: 'valid-turnstile-token',
+      });
+
+      expect(res).toBeDefined();
+      expect(mockPrisma.enquiry.create).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+  });
+
+  describe('Scope I — Realistic Ownership-Reconciliation Simulation (Synthetic Scenarios)', () => {
+    it('Enquiry Reconciliation: resolves single-centre staff, fails closed for multi-centre and unassigned staff', async () => {
+      const syntheticEnquiries = [
+        {
+          id: 'enq-syn-1',
+          studentName: 'Single Centre Student',
+          contactNumber: '9876543211',
+          assignedToId: 'staff-single',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }],
+          },
+        },
+        {
+          id: 'enq-syn-2',
+          studentName: 'Multi Centre Student',
+          contactNumber: '9876543212',
+          assignedToId: 'staff-multi',
+          assignedTo: {
+            userCentres: [{ centreId: 'centre-alpha' }, { centreId: 'centre-beta' }],
+          },
+        },
+        {
+          id: 'enq-syn-3',
+          studentName: 'Unassigned Student',
+          contactNumber: '9876543213',
+          assignedToId: null,
+          assignedTo: null,
+        },
+      ];
+
+      const mockClient = {
+        enquiry: {
+          findMany: jest.fn().mockResolvedValue(syntheticEnquiries),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const enquiryService = new EnquiryService(mockClient as any);
+      const report = await enquiryService.getUnreconciledEnquiries();
+
+      // Check classification
+      expect(report).toHaveLength(3);
+      expect(report[0].isAmbiguous).toBe(false);
+      expect(report[0].suggestedCentreId).toBe('centre-alpha');
+
+      expect(report[1].isAmbiguous).toBe(true);
+      expect(report[1].suggestedCentreId).toBeNull();
+
+      expect(report[2].isAmbiguous).toBe(true);
+      expect(report[2].suggestedCentreId).toBeNull();
+
+      // In dry run inspection, DB update is never called
+      expect(mockClient.enquiry.update).not.toHaveBeenCalled();
+    });
+
+    it('Study Material Reconciliation: resolves single-centre tracks and uploaders, fails closed for ambiguous records', async () => {
+      const syntheticMaterials = [
+        {
+          id: 'mat-syn-1',
+          title: 'Single Centre Track Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: {
+            batches: [{ centreId: 'centre-alpha' }, { centreId: 'centre-alpha' }],
+          },
+          uploader: { role: { name: 'TEACHER' }, userCentres: [] },
+        },
+        {
+          id: 'mat-syn-2',
+          title: 'Multi Centre Track Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: {
+            batches: [{ centreId: 'centre-alpha' }, { centreId: 'centre-beta' }],
+          },
+          uploader: { role: { name: 'TEACHER' }, userCentres: [] },
+        },
+        {
+          id: 'mat-syn-3',
+          title: 'Super Admin Unassigned Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: null,
+          uploader: { role: { name: 'SUPER_ADMIN' }, userCentres: [] },
+        },
+        {
+          id: 'mat-syn-4',
+          title: 'Single Centre Teacher Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: null,
+          uploader: { role: { name: 'TEACHER' }, userCentres: [{ centreId: 'centre-gamma' }] },
+        },
+        {
+          id: 'mat-syn-5',
+          title: 'Multi Centre Teacher Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: null,
+          uploader: { role: { name: 'TEACHER' }, userCentres: [{ centreId: 'centre-alpha' }, { centreId: 'centre-beta' }] },
+        },
+        {
+          id: 'mat-syn-6',
+          title: 'Broken Orphan Material',
+          centreId: null,
+          isShared: false,
+          targetTrack: null,
+          uploader: null,
+        },
+      ];
+
+      const mockClient = {
+        studyMaterial: {
+          findMany: jest.fn().mockResolvedValue(syntheticMaterials),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const studyMaterialService = new StudyMaterialService(mockClient as any);
+      const unreconciled = await studyMaterialService.getUnreconciled(superAdmin);
+
+      expect(unreconciled).toHaveLength(6);
+      expect(mockClient.studyMaterial.update).not.toHaveBeenCalled();
+    });
+  });
 });
+

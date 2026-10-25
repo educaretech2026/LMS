@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Req, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Req, HttpException, HttpStatus } from '@nestjs/common';
 import { StudyMaterialService } from './study-materials.service';
 import { StorageService } from '../storage/storage.service';
 import { CloudflareService } from '../cloudflare/cloudflare.service';
@@ -37,6 +37,12 @@ export class StudyMaterialController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   create(@Body() data: any, @Req() req: any) {
     return this.studyMaterialService.create({ ...data, uploaderId: req.user.id }, req.user);
+  }
+
+  @Patch(':id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  update(@Param('id') id: string, @Body() data: any, @Req() req: any) {
+    return this.studyMaterialService.update(id, data, req.user);
   }
 
   @Delete(':id')

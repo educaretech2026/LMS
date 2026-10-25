@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus } from '@educare/database';
 import { isSuperAdmin, getUserCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
@@ -41,13 +41,25 @@ export class EnquiryService {
       email = emailCandidate;
     }
 
-    // Optional Cloudflare Turnstile verification if configured in environment
+    // Production Turnstile bot protection policy
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isTurnstileRequired = isProduction || process.env.TURNSTILE_REQUIRED === 'true';
+
+    if (isTurnstileRequired && !process.env.TURNSTILE_SECRET_KEY) {
+      throw new HttpException(
+        'Server configuration error: Turnstile bot protection is required in production but TURNSTILE_SECRET_KEY is not configured.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+
     if (process.env.TURNSTILE_SECRET_KEY) {
       const token = data.turnstileToken || data['cf-turnstile-response'];
       if (!token) {
         throw new BadRequestException('CAPTCHA verification token is missing.');
       }
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -56,14 +68,21 @@ export class EnquiryService {
             response: token,
             ...(clientIp ? { remoteip: clientIp } : {}),
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
+        if (!verifyRes.ok) {
+          throw new BadRequestException('CAPTCHA verification failed. Please try again.');
+        }
+
         const verifyData: any = await verifyRes.json();
-        if (!verifyData.success) {
+        if (!verifyData || !verifyData.success) {
           throw new BadRequestException('CAPTCHA verification failed. Please try again.');
         }
       } catch (err: any) {
-        if (err instanceof BadRequestException) throw err;
-        throw new BadRequestException('CAPTCHA verification service error.');
+        if (err instanceof BadRequestException || err instanceof HttpException) throw err;
+        throw new BadRequestException('CAPTCHA verification failed or timed out. Please try again.');
       }
     }
 
@@ -317,7 +336,7 @@ export class EnquiryService {
         assignedToId: e.assignedToId,
         assignedToName: e.assignedTo ? `${e.assignedTo.firstName} ${e.assignedTo.lastName}` : null,
         suggestedCentreId: isUnambiguous ? assignedCentres[0].centreId : null,
-        suggestedCentreName: isUnambiguous ? assignedCentres[0].centre.name : null,
+        suggestedCentreName: isUnambiguous ? (assignedCentres[0].centre?.name || null) : null,
         isAmbiguous: !isUnambiguous,
         reason: isUnambiguous
           ? 'Unambiguously inferred from assigned staff centre'

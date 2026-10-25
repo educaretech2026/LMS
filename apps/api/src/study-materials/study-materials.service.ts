@@ -1,13 +1,15 @@
 import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { AuditService } from '../audit/audit.service';
 import { isSuperAdmin, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
 export class StudyMaterialService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly storageService?: StorageService
+    @Optional() private readonly storageService?: StorageService,
+    @Optional() private readonly auditService?: AuditService,
   ) {
     if (this.storageService && !(this.storageService as any).prisma && this.prisma) {
       (this.storageService as any).prisma = this.prisma;
@@ -310,47 +312,52 @@ export class StudyMaterialService {
       const authorizedCentres = getAuthorizedCentreIds(user);
       const trackCentres = (material.targetTrack?.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
       const uploaderCentres = material.uploader?.userCentres?.map((uc: any) => uc.centreId) || [];
-      const isUploaderSelf = material.uploaderId === user.id;
 
-      if (!isUploaderSelf) {
-        if (isExplicitlyShared) {
-          // Explicitly shared material is globally visible to centre admins
-        } else if (materialCentreId) {
-          if (!authorizedCentres.includes(materialCentreId)) {
-            throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
-          }
-        } else if (material.targetTrackId) {
-          const isTrackInCentre = trackCentres.some(cId => authorizedCentres.includes(cId));
-          if (!isTrackInCentre) {
-            throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
-          }
-        } else if (uploaderCentres.length > 0) {
-          const isUploaderInCentre = uploaderCentres.some(cId => authorizedCentres.includes(cId));
-          if (!isUploaderInCentre) {
-            throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
-          }
-        } else {
-          // Unresolved record with null centre, no track centres, and no uploader centre links
-          throw new ForbiddenException('Access denied: This study material has unresolved centre ownership and is restricted to Super Admin review.');
+      // Unresolved records cannot be accessed by ordinary centre admins even if they uploaded it
+      if (!isExplicitlyShared && !materialCentreId && trackCentres.length === 0 && uploaderCentres.length === 0) {
+        throw new ForbiddenException('Access denied: This study material has unresolved centre ownership and is restricted to Super Admin review.');
+      }
+
+      if (isExplicitlyShared) {
+        // Explicitly shared material is globally visible to centre admins
+      } else if (materialCentreId) {
+        if (!authorizedCentres.includes(materialCentreId)) {
+          throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
+        }
+      } else if (material.targetTrackId) {
+        const isTrackInCentre = trackCentres.some(cId => authorizedCentres.includes(cId));
+        if (!isTrackInCentre) {
+          throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
+        }
+      } else if (uploaderCentres.length > 0) {
+        const isUploaderInCentre = uploaderCentres.some(cId => authorizedCentres.includes(cId));
+        if (!isUploaderInCentre) {
+          throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
         }
       }
     } else if (isTeacher && user?.id) {
+      const authorizedCentres = getAuthorizedCentreIds(user);
+      const trackCentres = (material.targetTrack?.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
+      const uploaderCentres = material.uploader?.userCentres?.map((uc: any) => uc.centreId) || [];
+
+      // Unresolved records cannot be accessed by ordinary teachers even if they uploaded it
+      if (!isExplicitlyShared && !materialCentreId && trackCentres.length === 0 && uploaderCentres.length === 0) {
+        throw new ForbiddenException('Access denied: This study material has unresolved centre ownership and is restricted to Super Admin review.');
+      }
+
+      if (!isExplicitlyShared) {
+        if (materialCentreId && !authorizedCentres.includes(materialCentreId)) {
+          throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
+        }
+      }
+
       const isUploader = material.uploaderId === user.id;
-      if (!isUploader) {
-        const authorizedCentres = getAuthorizedCentreIds(user);
-        const trackCentres = (material.targetTrack?.batches || []).map((b: any) => b.centreId).filter(Boolean) as string[];
-        const uploaderCentres = material.uploader?.userCentres?.map((uc: any) => uc.centreId) || [];
-
-        if (!isExplicitlyShared && !materialCentreId && trackCentres.length === 0 && uploaderCentres.length === 0) {
-          throw new ForbiddenException('Access denied: This study material has unresolved centre ownership.');
+      if (isUploader) {
+        // Uploader must still belong to an authorized centre for this material
+        if (!isExplicitlyShared && materialCentreId && !authorizedCentres.includes(materialCentreId)) {
+          throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
         }
-
-        if (!isExplicitlyShared) {
-          if (materialCentreId && !authorizedCentres.includes(materialCentreId)) {
-            throw new ForbiddenException('Access denied: You do not have access to study materials from another centre.');
-          }
-        }
-
+      } else {
         const teacherProfile = await this.prisma.teacherProfile.findUnique({
           where: { userId: user.id },
           include: { assignments: { include: { batch: true } } },
@@ -579,11 +586,13 @@ export class StudyMaterialService {
       if (isSuperAdmin(user)) {
         resolvedIsShared = Boolean(data.isShared);
       } else {
-        // Non-super admins cannot create globally shared materials
+        if (data.isShared) {
+          throw new ForbiddenException('Only Super Admins can designate study materials as globally shared.');
+        }
         resolvedIsShared = false;
       }
 
-      return await this.prisma.studyMaterial.create({
+      const created = await this.prisma.studyMaterial.create({
         data: {
           title: data.title,
           type: data.type,
@@ -600,6 +609,20 @@ export class StudyMaterialService {
           targetTrackId: data.targetTrackId || null,
         },
       });
+
+      if (resolvedIsShared && this.auditService) {
+        this.auditService.record({
+          userId: user?.id,
+          userRole: 'SUPER_ADMIN',
+          action: 'CREATE_SHARED_STUDY_MATERIAL',
+          category: 'STUDY_MATERIAL',
+          entityType: 'StudyMaterial',
+          entityId: created.id,
+          details: { title: created.title, isShared: true },
+        });
+      }
+
+      return created;
     } catch (error: any) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
@@ -928,6 +951,100 @@ export class StudyMaterialService {
     }
 
     return false;
+  }
+
+  async update(id: string, updateData: any, user?: any) {
+    try {
+      const material = await this.getById(id, user);
+      if (!material) throw new NotFoundException('Study material not found');
+
+      if (user && !isSuperAdmin(user)) {
+        if (updateData.isShared !== undefined && Boolean(updateData.isShared) !== Boolean((material as any).isShared)) {
+          throw new ForbiddenException('Only Super Admins can modify global-sharing status.');
+        }
+        if ((material as any).isShared) {
+          throw new ForbiddenException('Only Super Admins can modify globally shared materials.');
+        }
+
+        const roleStr = typeof user.role === 'object' && user.role !== null ? user.role.name : user.role;
+        const normalizedRole = String(roleStr || '').toUpperCase().replace(/\s+/g, '_');
+
+        if (normalizedRole === 'TEACHER') {
+          if (material.uploaderId !== user.id) {
+            throw new ForbiddenException('Teachers can only update study materials they uploaded.');
+          }
+        } else if (normalizedRole === 'CENTRE_ADMIN') {
+          const authorizedCentres = getAuthorizedCentreIds(user);
+          const belongsToCentre = (material as any).centreId && authorizedCentres.includes((material as any).centreId);
+          if (!belongsToCentre && material.uploaderId !== user.id) {
+            throw new ForbiddenException('Centre Admins cannot update materials from other centres.');
+          }
+        } else {
+          throw new ForbiddenException('You are not authorized to update study materials.');
+        }
+
+        if (updateData.centreId && updateData.centreId !== (material as any).centreId) {
+          const authorizedCentres = getAuthorizedCentreIds(user);
+          if (!authorizedCentres.includes(updateData.centreId)) {
+            throw new ForbiddenException('Cannot reassign material to an unauthorized centre.');
+          }
+        }
+      }
+
+      const effectiveUploaderId = material.uploaderId || user?.id;
+
+      if (updateData.url && updateData.url !== material.url) {
+        await this.checkStorageOwnership(updateData.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
+        if (this.storageService?.validateAndEnforceObjectSize) {
+          await this.storageService.validateAndEnforceObjectSize(updateData.url, 100 * 1024 * 1024);
+        }
+      }
+      if (updateData.thumbnailUrl && updateData.thumbnailUrl !== material.thumbnailUrl) {
+        await this.checkStorageOwnership(updateData.thumbnailUrl, 'thumbnailUrl', effectiveUploaderId, user ? isSuperAdmin(user) : false);
+        if (this.storageService?.validateAndEnforceObjectSize) {
+          await this.storageService.validateAndEnforceObjectSize(updateData.thumbnailUrl, 20 * 1024 * 1024);
+        }
+      }
+
+      const resolvedIsShared = isSuperAdmin(user)
+        ? (updateData.isShared !== undefined ? Boolean(updateData.isShared) : (material as any).isShared)
+        : (material as any).isShared;
+
+      const updated = await this.prisma.studyMaterial.update({
+        where: { id },
+        data: {
+          ...(updateData.title ? { title: updateData.title } : {}),
+          ...(updateData.type ? { type: updateData.type } : {}),
+          ...(updateData.url ? { url: updateData.url } : {}),
+          ...(updateData.thumbnailUrl ? { thumbnailUrl: updateData.thumbnailUrl } : {}),
+          ...(updateData.chapterId !== undefined ? { chapterId: updateData.chapterId } : {}),
+          ...(updateData.topicId !== undefined ? { topicId: updateData.topicId } : {}),
+          ...(updateData.subtopicId !== undefined ? { subtopicId: updateData.subtopicId } : {}),
+          ...(updateData.centreId !== undefined && isSuperAdmin(user) ? { centreId: updateData.centreId } : {}),
+          isShared: resolvedIsShared,
+        },
+      });
+
+      if (this.auditService && (updateData.isShared !== undefined || updateData.centreId !== undefined)) {
+        this.auditService.record({
+          userId: user?.id,
+          userRole: isSuperAdmin(user) ? 'SUPER_ADMIN' : 'STAFF',
+          action: 'UPDATE_STUDY_MATERIAL_SHARING',
+          category: 'STUDY_MATERIAL',
+          entityType: 'StudyMaterial',
+          entityId: id,
+          details: { isShared: resolvedIsShared, centreId: updated.centreId },
+        });
+      }
+
+      return updated;
+    } catch (error: any) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException || error instanceof BadRequestException) {
+        throw error;
+      }
+      console.error(error);
+      throw new HttpException('Failed to update study material', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   async delete(id: string, user?: any) {

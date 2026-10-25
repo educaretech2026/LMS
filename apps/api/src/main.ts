@@ -34,6 +34,20 @@ async function bootstrap() {
   // SEC-06: Strict CORS allowlist with credentials - exclude localhost in production
   const isProduction = process.env.NODE_ENV === 'production';
 
+  // Reverse proxy trust configuration (restricted to intended infrastructure)
+  const trustedProxies = process.env.TRUSTED_PROXIES;
+  if (trustedProxies) {
+    const expressApp = app.getHttpAdapter().getInstance();
+    if (trustedProxies.trim() === 'loopback') {
+      expressApp.set('trust proxy', 'loopback');
+    } else {
+      const proxyList = trustedProxies.split(',').map((p) => p.trim()).filter(Boolean);
+      expressApp.set('trust proxy', proxyList);
+    }
+  } else if (!isProduction) {
+    app.getHttpAdapter().getInstance().set('trust proxy', 'loopback');
+  }
+
   if (isProduction && !process.env.REDIS_URL) {
     throw new Error('FATAL: REDIS_URL is mandatory in production for secure session enforcement and distributed rate limiting.');
   }
