@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
-import logoImage from "@/logos/logo1.png";
+import logoImage from "@/logos/logo1-clean.png";
 
 interface PublicWebinar {
   id: string;
@@ -182,12 +182,24 @@ export default function PublicLiveClassPage() {
         <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
           {/* Logo */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0px" }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
             <div style={{
-              background: "white", borderRadius: "12px", padding: "10px 22px",
-              boxShadow: "0 2px 16px rgba(1,98,177,0.18)", display: "flex", alignItems: "center"
+              background: "white",
+              borderRadius: "12px",
+              padding: "8px 18px",
+              boxShadow: "0 2px 16px rgba(1,98,177,0.18)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}>
-              <Image src={logoImage} alt="Educare Group of Institutions" width={200} height={48} style={{ height: "42px", width: "auto", objectFit: "contain" }} priority />
+              <Image
+                src={logoImage}
+                alt="Educare Group of Institutions"
+                width={240}
+                height={58}
+                style={{ height: "50px", width: "auto", objectFit: "contain", display: "block" }}
+                priority
+              />
             </div>
           </div>
 
