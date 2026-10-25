@@ -15,6 +15,11 @@ import { SetupService } from '../setup/setup.service';
 import { ProgressService } from '../syllabus/progress.service';
 import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus, SupportTicketStatus } from '@educare/database';
+import { PermissionsGuard } from './guards/permissions.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { IS_PUBLIC_KEY } from './decorators/public.decorator';
+import { PERMISSIONS_KEY } from './decorators/permissions.decorator';
+import { ROLES_KEY } from './decorators/roles.decorator';
 
 describe('Authorization Remediation Regression Suite', () => {
   // Common Mock Actors
@@ -635,6 +640,46 @@ describe('Authorization Remediation Regression Suite', () => {
       await expect(
         syllabusService.updateChapterProgress('batch-1', 'chap-1', 'COMPLETED', teacherA.id, teacherA),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('Public Route Bypass in Global PermissionsGuard and RolesGuard', () => {
+    it('PermissionsGuard allows @Public() endpoints without requiring user or permissions', () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return true;
+          if (key === PERMISSIONS_KEY) return ['LIVE_CLASSES'];
+          return null;
+        }),
+      };
+      const guard = new PermissionsGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: undefined }),
+        }),
+      };
+      expect(guard.canActivate(mockContext as any)).toBe(true);
+    });
+
+    it('RolesGuard allows @Public() endpoints without requiring user or roles', () => {
+      const reflector = {
+        getAllAndOverride: jest.fn((key) => {
+          if (key === IS_PUBLIC_KEY) return true;
+          if (key === ROLES_KEY) return ['SUPER_ADMIN'];
+          return null;
+        }),
+      };
+      const guard = new RolesGuard(reflector as any);
+      const mockContext = {
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: jest.fn().mockReturnValue({
+          getRequest: jest.fn().mockReturnValue({ user: undefined }),
+        }),
+      };
+      expect(guard.canActivate(mockContext as any)).toBe(true);
     });
   });
 });
