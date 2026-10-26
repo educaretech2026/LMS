@@ -45,6 +45,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  get isConnected(): boolean {
+    return this.isAvailable;
+  }
+
   /**
    * Whitelists a session by storing its JTI in a set for the user.
    * Returns true on success, or false if mandatory Redis session creation fails.

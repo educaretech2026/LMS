@@ -226,7 +226,7 @@ async function bootstrap() {
     ],
   });
 
-  app.setGlobalPrefix('api', { exclude: ['/', 'health'] });
+  app.setGlobalPrefix('api', { exclude: ['/', 'health', 'health/live', 'health/ready', 'livez', 'readyz'] });
   app.use(cookieParser());
 
   app.useGlobalPipes(
