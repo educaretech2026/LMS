@@ -147,7 +147,7 @@ const DEFAULT_RULES: AdmissionRule[] = [
     subsections: [
       { id: "s-5-1", title: "Instalment Deadlines", content: "Tuition instalments must be remitted on or before the 10th of the designated term month." },
       { id: "s-5-2", title: "Non-Refundable Registration", content: "Registration and orientation materials fees are non-refundable once courses begin." },
-      { id: "s-5-3", title: "Campus Reallocation", content: "Transfers between Mannanam and Kalathipady are subject to batch vacancy." },
+      { id: "s-5-3", title: "Campus Reallocation", content: "Transfers between institutional campuses are accommodated subject to batch quota vacancy." },
     ],
   },
 ];
@@ -187,7 +187,7 @@ export default function AdmissionPage() {
     city: "",
     address: "",
     centreId: "",
-    preferredCampus: "Mannanam Campus",
+    preferredCampus: "Main Campus",
     targetBoard: "CBSE",
     targetStandard: "Class 11",
     targetCourse: "Entrance (NEET/JEE)",
@@ -254,7 +254,7 @@ export default function AdmissionPage() {
             return {
               ...prev,
               centreId: prev.centreId || firstCentre?.id || "",
-              preferredCampus: prev.preferredCampus || firstCentre?.name || "Mannanam Campus",
+              preferredCampus: prev.preferredCampus || firstCentre?.name || "Main Campus",
               targetBoard: prev.targetBoard || firstBoard?.name || "CBSE",
               targetStandard: prev.targetStandard || firstStandard?.name || "Class 11",
               targetCourse: prev.targetCourse || firstTrackOrCourse,
@@ -703,7 +703,7 @@ export default function AdmissionPage() {
                     city: "",
                     address: "",
                     centreId: "",
-                    preferredCampus: "Mannanam Campus",
+                    preferredCampus: "Main Campus",
                     targetBoard: "CBSE",
                     targetStandard: "Class 11",
                     targetCourse: "Entrance (NEET/JEE)",
@@ -1007,13 +1007,13 @@ export default function AdmissionPage() {
                     ) : (
                       [
                         {
-                          name: "Mannanam Campus",
-                          desc: "2nd Flr Gurukrupa Complex, Mannanam Jn.",
+                          name: "Main Campus",
+                          desc: "Institutional Classroom / Offline Centre",
                           type: "Classroom / Offline",
                         },
                         {
-                          name: "Kalathipady Campus",
-                          desc: "2nd Flr Castle Charis, Near Pallikoodam",
+                          name: "City Campus",
+                          desc: "Classroom Tuition & Coaching Centre",
                           type: "Classroom / Offline",
                         },
                         {

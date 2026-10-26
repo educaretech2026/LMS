@@ -1212,7 +1212,7 @@ export const DEFAULT_ADMISSION_RULES = [
       {
         id: "sub-5-3",
         title: "Inter-Campus Transfer Protocol",
-        content: "Transfers between Mannanam and Kalathipady campuses are accommodated subject to batch quota vacancy.",
+        content: "Transfers between institutional campuses are accommodated subject to batch quota vacancy.",
       },
     ],
   },
