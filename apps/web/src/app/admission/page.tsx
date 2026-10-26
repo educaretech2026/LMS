@@ -529,7 +529,7 @@ export default function AdmissionPage() {
       const signer = formData.signerName.trim() || (formData.signerRole === "PARENT" ? formData.parentName : formData.studentName);
 
       if (academicOptions?.turnstileRequired && !turnstileToken) {
-        alert("Please complete the bot verification check before submitting.");
+        alert("Please complete the bot verification security check before submitting. If the verification box did not load, please check if an ad-blocker is active or click 'Retry Verification'.");
         setSubmitting(false);
         return;
       }
@@ -1630,7 +1630,7 @@ export default function AdmissionPage() {
                 </div>
 
                 {/* Cloudflare Turnstile Bot Protection */}
-                {academicOptions?.turnstileRequired !== false && (
+                {academicOptions?.turnstileRequired && (
                   <div className="pt-2">
                     <TurnstileCaptcha
                       siteKey={academicOptions?.turnstileSiteKey || undefined}
