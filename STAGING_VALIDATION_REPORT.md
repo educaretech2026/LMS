@@ -9,7 +9,7 @@
 - **Final Release Gate Status**: **CODE-LEVEL RELEASE CANDIDATE VERIFIED (EXTERNAL CLOUD DRILLS DEFERRED)**
 
 ### Summary of Recommendation
-The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, cross-centre isolation checks, fail-closed target guards, safe migration runner, and Redis startup preflights have **PASSED** completely at the code and local harness levels, with 448/448 passing API tests across 18 suites, clean Next.js production builds (39/39 routes), and valid Prisma schemas.
+The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, cross-centre isolation checks, fail-closed target guards, safe migration runner, and Redis startup preflights have **PASSED** completely at the code and local harness levels, with 466/466 passing API tests across 18 suites, clean Next.js production builds (39/39 routes), and valid Prisma schemas.
 
 However, deployment to production remains **BLOCKED** and external staging cloud drills are **DEFERRED** until the following infrastructure separation requirements are fulfilled in the external staging environment:
 1. **Isolated Staging Database & Credentials**: `packages/database/.env` currently references a remote database IP (`148.135.138.196:5432`) that corresponds to the live/production server. Staging database migrations were strictly validated against an isolated disposable PostgreSQL instance without touching production.
@@ -180,8 +180,8 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | **Prisma Client Generation** | `pnpm --filter @educare/database db:generate` | **PASS** | Generated client v5.19.1 in 321ms. |
 | **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **103/103 tests passed** (including Scope H Turnstile staging hostname cases). |
 | **Security Regression Suite** | `pnpm --filter api test -- security-regression.spec.ts` | **PASS** | **298/298 tests passed**. |
-| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **27/27 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, runtime mode vs deployment tier separation, URL-encoded decoding, trailing dots, double URL encoding, conflicting DIRECT_URL, DNS alias resolution to production IP, zero-leak credentials, lifecycle ordering, bypass removal). |
-| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 448 tests passed, 0 failed, 0 skipped** (includes 6 AppController health probe tests). |
+| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **45/45 tests passed** (covers production IP/hostname/IPv6 rejection in DATABASE_URL and DIRECT_URL under staging/dev/test, host allowlists, TLS enforcement, runtime mode vs deployment tier separation, URL-encoded decoding, trailing dots, double URL encoding, DNS alias resolution to production IP, zero-leak credentials, subprocess isolation, lifecycle ordering, bypass removal). |
+| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 466 tests passed, 0 failed, 0 skipped** (includes 6 AppController health probe tests and 45 database target validator tests). |
 | **API Production Build** | `pnpm --filter api build` | **PASS** | Clean `nest build` compilation (0 TypeScript errors). |
 | **Web Production Build (Staging Mode)** | `NODE_ENV=production APP_ENV=staging pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
 | **Mobile Typecheck** | `pnpm --filter mobile typecheck` | **PASS** | Expo React Native `tsc --noEmit` passed with 0 errors. |
@@ -209,14 +209,23 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 
 ---
 
-## 9. Rollback Plan & Forward-Fix Recovery Strategy
+## 9. Staging Deployment Workflows & Recovery Strategies
 
-If issues arise following migration or deployment in staging or production:
+If deploying or recovering infrastructure in staging or production:
 
-### A. Isolated Separate Target Restore & Controlled Cutover (Zero Split-Brain)
+### Workflow 1: Initial Staging Deployment (Dedicated Clean Database)
+> [!NOTE]
+> **Fresh Database Deployment Invariant**:
+> On a newly provisioned, clean staging database (`educare_staging`), no live client traffic or active write sessions exist. The database does **not** need to be made read-only before initial migrations.
+> - Safe migration execution is strictly governed by `safe-migrate-deploy.ts` (invoked via `pnpm --filter @educare/database db:deploy`).
+> - The runner independently validates `DATABASE_URL` and `DIRECT_URL` before invoking Prisma.
+> - Unsafe targets (production IPs/hosts), unapproved staging hosts, or non-TLS remote connections fail closed before any database connection or subprocess spawn occurs.
+> - Baseline seeding (`prisma db seed`) is executed only after all 10 schema migrations successfully apply to the clean target.
+
+### Workflow 2: Disaster Recovery & Rollback (Existing Populated Database)
 > [!IMPORTANT]
 > **Correction on In-Place Restoration & Split-Brain Writes**:
-> In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails midway due to active connections, lock timeouts, or foreign key dependencies, the database is left in a corrupted or half-dropped state.
+> In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active populated database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails midway due to active connections, lock timeouts, or foreign key dependencies, the database is left in a corrupted or half-dropped state.
 > Furthermore, taking a snapshot *before* write quiescence allows in-flight writes to be omitted from the dump, and updating `DATABASE_URL` during a slow rolling restart causes split-brain writes where old and new replicas simultaneously mutate different databases.
 
 **Controlled Cutover Runbook (Zero Split-Brain)**:
@@ -259,11 +268,13 @@ If issues arise following migration or deployment in staging or production:
 6. **Phase 6: Verification & Forensic Quarantine**:
    Verify `GET /health/ready` and smoke test write paths. Retain the quarantined original database in read-only status for post-mortem analysis; do not delete immediately.
 
-### B. Zero-Downtime Application Version Rollback (Preferred)
+### Alternative Rollback Options
+
+#### A. Zero-Downtime Application Version Rollback (Preferred)
 - Revert the API container to the prior release tag.
 - **Backward-Compatibility Invariant**: All migrations on branch `fix/authorization-remediation` add nullable columns (`custom_forms.centreId String?`) or columns with database-level defaults (`study_materials.isPublic Boolean @default(false)`). Older application code generated with prior Prisma clients ignores the additional columns and executes safely without requiring immediate schema alterations or downtime.
 
-### C. Non-Destructive Forward-Fix Migration
+#### B. Non-Destructive Forward-Fix Migration
 > [!WARNING]
 > **Preventing Data Loss**:
 > Directly executing `ALTER TABLE "custom_forms" DROP COLUMN "centreId"` permanently destroys any centre-ownership mappings recorded during the active deployment window.
@@ -309,12 +320,12 @@ AUDIT AUTHORITY:       Antigravity Security & Release Auditor
 ----------------------------------------------------------------------------------------
 VERIFICATION CRITERIA & EVIDENCE SUMMARY:
 ----------------------------------------------------------------------------------------
-[PASS] Automated API Suite:        18 / 18 Test Suites Passed (448 / 448 Tests, 0 Failed)
+[PASS] Automated API Suite:        18 / 18 Test Suites Passed (466 / 466 Tests, 0 Failed)
 [PASS] Security Regression Suite:  298 / 298 Tests Passed (SEC-01 through SEC-25)
 [PASS] Authorization Remediation:  103 / 103 Tests Passed (Scopes A through H)
-[PASS] Database Target Safety:     27 / 27 Tests Passed (Fail-closed host allowlists, DNS)
+[PASS] Database Target Safety:     45 / 45 Tests Passed (Fail-closed host allowlists, DNS, independent DIRECT_URL & subprocess isolation)
 [PASS] Health & Readiness Probes:  6 / 6 Tests Passed (Separated /health/live & /health/ready)
-[PASS] Safe Migration Runner:      Controlled Test Matrix Rejections Verified (safe-migrate-deploy.ts)
+[PASS] Safe Migration Runner:      Independent DATABASE_URL & DIRECT_URL Target Validation & Subprocess Isolation Verified (safe-migrate-deploy.ts)
 [PASS] Web Application Build:      Next.js 16.4.2 Production Build Clean (39/39 routes)
 [PASS] Database Migration Ledger:  10 / 10 Migrations Applied on Disposable Test DB
 [PASS] Mobile Application Build:   Expo React Native Typecheck Passed (0 errors)

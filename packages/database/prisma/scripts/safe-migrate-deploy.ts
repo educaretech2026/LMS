@@ -1,20 +1,21 @@
 /**
  * Safe Prisma Migration Deploy Runner
  *
- * Independently validates the target database BEFORE Prisma CLI is invoked.
+ * Independently validates target databases BEFORE Prisma CLI is invoked.
  * Enforces fail-closed safety checks:
- * 1. Blocks production IPs (148.135.138.196, IPv6 mapped, hex representations)
- * 2. Blocks production hostnames and production database names
- * 3. Requires server host allowlisting in deployed staging
- * 4. Enforces TLS (sslmode=require) on remote targets
- * 5. Validates conflicting DIRECT_URL / SHADOW_DATABASE_URL
- * 6. Never logs credentials or full connection strings
+ * 1. Blocks production IPs (148.135.138.196, IPv6 mapped, hex representations) in all environments
+ * 2. Blocks production hostnames and production database names in all environments
+ * 3. Validates DATABASE_URL and DIRECT_URL independently before any subprocess execution
+ * 4. Requires server host allowlisting for all targets in deployed staging
+ * 5. Enforces TLS (sslmode=require) on remote targets in staging
+ * 6. Validates SHADOW_DATABASE_URL if present
+ * 7. Never logs credentials or full connection strings
  */
 
 import { spawnSync } from 'child_process';
 import * as dns from 'dns';
 
-function parseDatabaseTarget(rawUrl: string | undefined): {
+export interface DatabaseTargetInfo {
   protocol: string;
   hostname: string;
   port: number;
@@ -24,9 +25,15 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
   isApprovedStagingTarget: boolean;
   sslMode: string | null;
   sanitizedTarget: string;
-} {
+}
+
+export function parseDatabaseTarget(
+  rawUrl: string | undefined,
+  varName = 'DATABASE_URL',
+  env: NodeJS.ProcessEnv = process.env,
+): DatabaseTargetInfo {
   if (!rawUrl || !rawUrl.trim()) {
-    throw new Error('DATABASE_URL is missing or empty.');
+    throw new Error(`${varName} is missing or empty.`);
   }
 
   const clean = rawUrl.trim();
@@ -34,11 +41,11 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
   try {
     parsed = new URL(clean);
   } catch {
-    throw new Error('DATABASE_URL is malformed and could not be parsed as a valid connection URL.');
+    throw new Error(`${varName} is malformed and could not be parsed as a valid connection URL.`);
   }
 
   if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
-    throw new Error(`Invalid database protocol "${parsed.protocol}". Expected "postgresql:" or "postgres:".`);
+    throw new Error(`Invalid database protocol "${parsed.protocol}" in ${varName}. Expected "postgresql:" or "postgres:".`);
   }
 
   let rawHostname = (parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
@@ -55,12 +62,12 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
   hostname = hostname.trim().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
 
   if (!hostname) {
-    throw new Error('DATABASE_URL contains an empty or invalid hostname.');
+    throw new Error(`${varName} contains an empty or invalid hostname.`);
   }
 
   const port = parsed.port ? parseInt(parsed.port, 10) : 5432;
   if (isNaN(port) || port <= 0 || port > 65535) {
-    throw new Error('DATABASE_URL contains an invalid port number.');
+    throw new Error(`${varName} contains an invalid port number.`);
   }
 
   let rawDb = (parsed.pathname || '').replace(/^\//, '').split('?')[0].trim();
@@ -76,7 +83,7 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
   }
 
   if (!database) {
-    throw new Error('DATABASE_URL does not specify a database name in its path.');
+    throw new Error(`${varName} does not specify a database name in its path.`);
   }
 
   const sslMode = parsed.searchParams.get('sslmode');
@@ -90,8 +97,8 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
     hostname === 'postgres' ||
     hostname === 'db';
 
-  const configuredProdIps = process.env.PRODUCTION_DATABASE_IPS
-    ? process.env.PRODUCTION_DATABASE_IPS.split(',').map((ip) => ip.trim().toLowerCase()).filter(Boolean)
+  const configuredProdIps = env.PRODUCTION_DATABASE_IPS
+    ? env.PRODUCTION_DATABASE_IPS.split(',').map((ip) => ip.trim().toLowerCase()).filter(Boolean)
     : [];
   const knownProductionIps = [
     '148.135.138.196',
@@ -102,8 +109,8 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
     ...configuredProdIps,
   ];
 
-  const configuredProdHosts = process.env.PRODUCTION_DATABASE_HOSTS
-    ? process.env.PRODUCTION_DATABASE_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+  const configuredProdHosts = env.PRODUCTION_DATABASE_HOSTS
+    ? env.PRODUCTION_DATABASE_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
     : [];
   const knownProductionHosts = [
     'educarelearning.in',
@@ -117,8 +124,8 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
     ...configuredProdHosts,
   ];
 
-  const configuredProdDbs = process.env.PRODUCTION_DATABASE_NAMES
-    ? process.env.PRODUCTION_DATABASE_NAMES.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
+  const configuredProdDbs = env.PRODUCTION_DATABASE_NAMES
+    ? env.PRODUCTION_DATABASE_NAMES.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
     : [];
   const knownProductionDbs = ['educare_prod', 'educare_production', ...configuredProdDbs];
 
@@ -129,14 +136,14 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
     knownProductionDbs.includes(database);
 
   const isDeployedStaging =
-    process.env.DEPLOYED_STAGING === 'true' ||
-    process.env.STAGING_DEPLOYED === 'true' ||
-    process.env.REQUIRE_REMOTE_STAGING_DB === 'true';
+    env.DEPLOYED_STAGING === 'true' ||
+    env.STAGING_DEPLOYED === 'true' ||
+    env.REQUIRE_REMOTE_STAGING_DB === 'true';
 
   const approvedStagingHostsEnv = [
-    ...(process.env.APPROVED_STAGING_HOSTS ? process.env.APPROVED_STAGING_HOSTS.split(',') : []),
-    ...(process.env.STAGING_DATABASE_ALLOWLIST ? process.env.STAGING_DATABASE_ALLOWLIST.split(',') : []),
-    ...(process.env.STAGING_DATABASE_HOST ? [process.env.STAGING_DATABASE_HOST] : []),
+    ...(env.APPROVED_STAGING_HOSTS ? env.APPROVED_STAGING_HOSTS.split(',') : []),
+    ...(env.STAGING_DATABASE_ALLOWLIST ? env.STAGING_DATABASE_ALLOWLIST.split(',') : []),
+    ...(env.STAGING_DATABASE_HOST ? [env.STAGING_DATABASE_HOST] : []),
   ].map((h) => h.trim().toLowerCase().replace(/\.+$/, '')).filter(Boolean);
 
   const isHostApproved =
@@ -162,12 +169,20 @@ function parseDatabaseTarget(rawUrl: string | undefined): {
   };
 }
 
-async function verifyDnsSafety(hostname: string): Promise<void> {
+export async function verifyDnsSafety(
+  hostname: string,
+  targetLabel = 'Target',
+  lookupFn?: (host: string, opts: any) => Promise<Array<{ address: string; family: number }>>,
+): Promise<void> {
+  const cleanHost = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
   const isLocal =
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname === '0.0.0.0';
+    cleanHost === 'localhost' ||
+    cleanHost === '127.0.0.1' ||
+    cleanHost === '::1' ||
+    cleanHost === '0.0.0.0' ||
+    cleanHost === 'staging-db' ||
+    cleanHost === 'postgres' ||
+    cleanHost === 'db';
   if (isLocal) return;
 
   const prodIps = [
@@ -175,15 +190,21 @@ async function verifyDnsSafety(hostname: string): Promise<void> {
     '::ffff:148.135.138.196',
     '::ffff:9487:8ac4',
     '0:0:0:0:0:ffff:9487:8ac4',
+    '0000:0000:0000:0000:0000:ffff:9487:8ac4',
   ];
 
   try {
-    const records = await dns.promises.lookup(hostname, { all: true });
+    let records: Array<{ address: string; family: number }> = [];
+    if (lookupFn) {
+      records = await lookupFn(cleanHost, { all: true });
+    } else {
+      records = (await dns.promises.lookup(cleanHost, { all: true })) as any;
+    }
     for (const rec of records) {
       const addr = rec.address.toLowerCase().trim().replace(/^\[|\]$/g, '');
       if (prodIps.includes(addr)) {
         throw new Error(
-          `DNS SPOOFING DETECTED: Hostname "${hostname}" resolves to production IP "${addr}". Migration execution aborted.`,
+          `DNS SPOOFING DETECTED: ${targetLabel} hostname "${cleanHost}" resolves to production IP "${addr}". Migration execution aborted.`,
         );
       }
     }
@@ -194,71 +215,171 @@ async function verifyDnsSafety(hostname: string): Promise<void> {
   }
 }
 
-async function main() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.error('FATAL: DATABASE_URL environment variable is missing.');
-    process.exit(1);
-  }
+/**
+ * Validates all configured migration target URLs independently before Prisma CLI is launched.
+ * Ensures that neither DATABASE_URL, DIRECT_URL, nor SHADOW_DATABASE_URL can target production
+ * or bypass staging allowlists.
+ */
+export async function assertSafeMigrationTargets(
+  env: NodeJS.ProcessEnv = process.env,
+  lookupFn?: (host: string, opts: any) => Promise<Array<{ address: string; family: number }>>,
+): Promise<{
+  databaseTarget: DatabaseTargetInfo;
+  directTarget?: DatabaseTargetInfo;
+  shadowTarget?: DatabaseTargetInfo;
+}> {
+  const nodeEnv = (env.NODE_ENV || 'development').toLowerCase();
+  const appEnv = (env.APP_ENV || '').toLowerCase();
 
-  const target = parseDatabaseTarget(databaseUrl);
-  console.log(`[SafeMigrate] Validating migration target: ${target.sanitizedTarget}`);
-
-  if (target.isProductionTarget) {
-    console.error(
-      `FATAL MIGRATION SAFETY VIOLATION: Database target (${target.sanitizedTarget}) is identified as a production system. Automated migration deploy is strictly forbidden.`,
+  // 1. Ambiguity & Contradiction Guards
+  if (
+    appEnv === 'production' &&
+    (nodeEnv === 'staging' || env.DEPLOYED_STAGING === 'true' || env.STAGE === 'staging')
+  ) {
+    throw new Error(
+      'FATAL MIGRATION SAFETY VIOLATION: Contradictory environment: APP_ENV indicates production tier while staging mode is declared. Migration deploy aborted.',
     );
-    process.exit(1);
+  }
+  if (appEnv === 'production' && nodeEnv === 'development') {
+    throw new Error(
+      'FATAL MIGRATION SAFETY VIOLATION: Contradictory environment: APP_ENV=production cannot run with unoptimized NODE_ENV=development runtime. Migration deploy aborted.',
+    );
   }
 
-  const nodeEnv = (process.env.NODE_ENV || 'development').toLowerCase();
-  const appEnv = (process.env.APP_ENV || '').toLowerCase();
   const isStagingTier = appEnv === 'staging' || (!appEnv && nodeEnv === 'staging');
 
+  // 2. Validate DATABASE_URL (Mandatory)
+  const databaseUrl = env.DATABASE_URL;
+  if (!databaseUrl || !databaseUrl.trim()) {
+    throw new Error('FATAL MIGRATION SAFETY VIOLATION: DATABASE_URL environment variable is missing or empty.');
+  }
+
+  const databaseTarget = parseDatabaseTarget(databaseUrl, 'DATABASE_URL', env);
+
+  // Unconditional block on production target in all environments for automated migrations
+  if (databaseTarget.isProductionTarget) {
+    throw new Error(
+      `FATAL MIGRATION SAFETY VIOLATION: DATABASE_URL (${databaseTarget.sanitizedTarget}) is identified as a production system. Automated migration deploy is strictly forbidden.`,
+    );
+  }
+
   if (isStagingTier) {
-    if (!target.isApprovedStagingTarget) {
-      console.error(
-        `FATAL MIGRATION SAFETY VIOLATION: Database target (${target.sanitizedTarget}) is not on the staging host allowlist. Migration aborted.`,
+    if (!databaseTarget.isApprovedStagingTarget) {
+      throw new Error(
+        `FATAL MIGRATION SAFETY VIOLATION: DATABASE_URL (${databaseTarget.sanitizedTarget}) is not on the staging host allowlist. Migration aborted.`,
       );
-      process.exit(1);
     }
 
-    if (!target.isLocal && target.sslMode !== 'require' && target.sslMode !== 'verify-full' && target.sslMode !== 'verify-ca') {
-      console.error(
-        `FATAL MIGRATION SAFETY VIOLATION: Remote staging target (${target.sanitizedTarget}) must enforce sslmode=require. Cleartext migrations are prohibited.`,
+    if (
+      !databaseTarget.isLocal &&
+      databaseTarget.sslMode !== 'require' &&
+      databaseTarget.sslMode !== 'verify-full' &&
+      databaseTarget.sslMode !== 'verify-ca'
+    ) {
+      throw new Error(
+        `FATAL MIGRATION SAFETY VIOLATION: Remote staging DATABASE_URL (${databaseTarget.sanitizedTarget}) must enforce sslmode=require (or verify-full). Cleartext migrations are prohibited.`,
       );
-      process.exit(1);
     }
 
-    if (process.env.DIRECT_URL) {
-      const directTarget = parseDatabaseTarget(process.env.DIRECT_URL);
-      if (directTarget.isProductionTarget) {
-        console.error(
-          `FATAL MIGRATION SAFETY VIOLATION: DIRECT_URL (${directTarget.sanitizedTarget}) is pointing to production. Migration aborted.`,
+    await verifyDnsSafety(databaseTarget.hostname, 'DATABASE_URL', lookupFn);
+  }
+
+  // 3. Validate DIRECT_URL (Independent validation - never assumes DATABASE_URL validation applies)
+  let directTarget: DatabaseTargetInfo | undefined;
+  if (env.DIRECT_URL && env.DIRECT_URL.trim()) {
+    directTarget = parseDatabaseTarget(env.DIRECT_URL, 'DIRECT_URL', env);
+
+    // Reject production target in EVERY environment (staging, development, test)
+    if (directTarget.isProductionTarget) {
+      throw new Error(
+        `FATAL MIGRATION SAFETY VIOLATION: DIRECT_URL (${directTarget.sanitizedTarget}) is identified as a production system. Automated migration deploy is strictly forbidden.`,
+      );
+    }
+
+    if (isStagingTier) {
+      if (!directTarget.isApprovedStagingTarget) {
+        throw new Error(
+          `FATAL MIGRATION SAFETY VIOLATION: DIRECT_URL (${directTarget.sanitizedTarget}) is not on the staging host allowlist. Migration aborted.`,
         );
-        process.exit(1);
       }
+
+      if (
+        !directTarget.isLocal &&
+        directTarget.sslMode !== 'require' &&
+        directTarget.sslMode !== 'verify-full' &&
+        directTarget.sslMode !== 'verify-ca'
+      ) {
+        throw new Error(
+          `FATAL MIGRATION SAFETY VIOLATION: Remote staging DIRECT_URL (${directTarget.sanitizedTarget}) must enforce sslmode=require (or verify-full). Cleartext migrations are prohibited.`,
+        );
+      }
+
+      await verifyDnsSafety(directTarget.hostname, 'DIRECT_URL', lookupFn);
+    }
+  }
+
+  // 4. Validate SHADOW_DATABASE_URL if present
+  let shadowTarget: DatabaseTargetInfo | undefined;
+  if (env.SHADOW_DATABASE_URL && env.SHADOW_DATABASE_URL.trim()) {
+    shadowTarget = parseDatabaseTarget(env.SHADOW_DATABASE_URL, 'SHADOW_DATABASE_URL', env);
+
+    if (shadowTarget.isProductionTarget) {
+      throw new Error(
+        `FATAL MIGRATION SAFETY VIOLATION: SHADOW_DATABASE_URL (${shadowTarget.sanitizedTarget}) is identified as a production system. Automated migration deploy is strictly forbidden.`,
+      );
     }
 
-    await verifyDnsSafety(target.hostname);
+    if (isStagingTier && !shadowTarget.isApprovedStagingTarget) {
+      throw new Error(
+        `FATAL MIGRATION SAFETY VIOLATION: SHADOW_DATABASE_URL (${shadowTarget.sanitizedTarget}) is not on the staging host allowlist. Migration aborted.`,
+      );
+    }
+  }
+
+  return { databaseTarget, directTarget, shadowTarget };
+}
+
+/**
+ * Main migration deploy execution wrapper.
+ * Guarantees that validation runs and completes BEFORE any migration subprocess is spawned.
+ */
+export async function runSafeMigrateDeploy(
+  env: NodeJS.ProcessEnv = process.env,
+  spawnFn: (command: string, args: string[], options: any) => any = spawnSync,
+): Promise<number> {
+  const { databaseTarget, directTarget, shadowTarget } = await assertSafeMigrationTargets(env);
+
+  console.log(`[SafeMigrate] Validating migration target: ${databaseTarget.sanitizedTarget}`);
+  if (directTarget) {
+    console.log(`[SafeMigrate] Validating direct migration target: ${directTarget.sanitizedTarget}`);
+  }
+  if (shadowTarget) {
+    console.log(`[SafeMigrate] Validating shadow migration target: ${shadowTarget.sanitizedTarget}`);
   }
 
   console.log(`[SafeMigrate] Preflight check passed. Launching "prisma migrate deploy"...`);
 
-  const result = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+  const result = spawnFn('npx', ['prisma', 'migrate', 'deploy'], {
     stdio: 'inherit',
-    env: process.env,
+    env,
   });
 
-  if (result.status !== 0) {
+  if (result && typeof result.status === 'number' && result.status !== 0) {
     console.error(`[SafeMigrate] Prisma migrate deploy exited with code ${result.status}`);
-    process.exit(result.status || 1);
+    return result.status;
   }
 
   console.log(`[SafeMigrate] All migrations deployed successfully.`);
+  return 0;
 }
 
-main().catch((err) => {
-  console.error(`[SafeMigrate] Uncaught error:`, err?.message || err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runSafeMigrateDeploy()
+    .then((code) => {
+      if (code !== 0) process.exit(code);
+    })
+    .catch((err) => {
+      console.error(err?.message || err);
+      process.exit(1);
+    });
+}

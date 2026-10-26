@@ -180,6 +180,8 @@ export function assertValidTargetForEnvironment(
   envOptions?: {
     nodeEnv?: string;
     appEnv?: string;
+    directUrl?: string;
+    shadowUrl?: string;
   },
 ): DatabaseTargetInfo {
   const nodeEnv = (envOptions?.nodeEnv ?? process.env.NODE_ENV ?? 'development').toLowerCase();
@@ -210,22 +212,22 @@ export function assertValidTargetForEnvironment(
 
   const targetInfo = parseDatabaseTarget(rawUrl);
 
-  if (isStagingTier) {
-    // 1. Must NOT be a production target
-    if (targetInfo.isProductionTarget) {
-      throw new Error(
-        `Staging safety violation: Database target (${targetInfo.sanitizedTarget}) is identified as a production system. Staging cannot connect to production.`,
-      );
-    }
+  // Non-production guard: Reject production database target in non-production environments
+  if (!isProductionTier && targetInfo.isProductionTarget) {
+    throw new Error(
+      `Staging safety violation: Database target (${targetInfo.sanitizedTarget}) is identified as a production system. Non-production environments cannot connect to production.`,
+    );
+  }
 
-    // 2. Must be an approved staging target (fail-closed on unknown host)
+  if (isStagingTier) {
+    // 1. Must be an approved staging target (fail-closed on unknown host)
     if (!targetInfo.isApprovedStagingTarget) {
       throw new Error(
         `Staging safety violation: Database target (${targetInfo.sanitizedTarget}) is not on the staging host/database allowlist. Startup aborted.`,
       );
     }
 
-    // 3. Remote staging targets must enforce TLS
+    // 2. Remote staging targets must enforce TLS
     if (
       !targetInfo.isLocal &&
       targetInfo.sslMode !== 'require' &&
@@ -258,25 +260,52 @@ export function assertValidTargetForEnvironment(
     }
   }
 
-  // 4. Conflicting Database URL Environment Variables Guard
+  // 4. Conflicting Database URL Environment Variables Guard (DIRECT_URL & SHADOW_DATABASE_URL)
   // In Prisma, DIRECT_URL and SHADOW_DATABASE_URL can override DATABASE_URL.
-  // Ensure neither points to a production target when running in staging mode.
-  if (isStagingTier) {
-    if (process.env.DIRECT_URL && process.env.DIRECT_URL.trim()) {
-      const directTarget = parseDatabaseTarget(process.env.DIRECT_URL);
-      if (directTarget.isProductionTarget) {
+  // Validate DIRECT_URL independently: never assume DATABASE_URL validation applies to DIRECT_URL.
+  const rawDirectUrl = envOptions?.directUrl ?? process.env.DIRECT_URL;
+  if (rawDirectUrl && rawDirectUrl.trim()) {
+    const directTarget = parseDatabaseTarget(rawDirectUrl);
+
+    // Reject production in ANY non-production environment (staging, development, test)
+    if (!isProductionTier && directTarget.isProductionTarget) {
+      throw new Error(
+        `Staging safety violation: DIRECT_URL (${directTarget.sanitizedTarget}) is pointing to a production system while running in non-production mode. Startup aborted.`,
+      );
+    }
+
+    // In staging tier, enforce staging allowlist and TLS
+    if (isStagingTier) {
+      if (!directTarget.isApprovedStagingTarget) {
         throw new Error(
-          `Staging safety violation: DIRECT_URL (${directTarget.sanitizedTarget}) is pointing to a production system while running in staging mode. Startup aborted.`,
+          `Staging safety violation: DIRECT_URL (${directTarget.sanitizedTarget}) is not on the staging host/database allowlist. Startup aborted.`,
+        );
+      }
+      if (
+        !directTarget.isLocal &&
+        directTarget.sslMode !== 'require' &&
+        directTarget.sslMode !== 'verify-full' &&
+        directTarget.sslMode !== 'verify-ca'
+      ) {
+        throw new Error(
+          `Staging safety violation: Remote staging DIRECT_URL (${directTarget.sanitizedTarget}) must specify sslmode=require (or verify-full). Cleartext connections are prohibited.`,
         );
       }
     }
-    if (process.env.SHADOW_DATABASE_URL && process.env.SHADOW_DATABASE_URL.trim()) {
-      const shadowTarget = parseDatabaseTarget(process.env.SHADOW_DATABASE_URL);
-      if (shadowTarget.isProductionTarget) {
-        throw new Error(
-          `Staging safety violation: SHADOW_DATABASE_URL (${shadowTarget.sanitizedTarget}) is pointing to a production system while running in staging mode. Startup aborted.`,
-        );
-      }
+  }
+
+  const rawShadowUrl = envOptions?.shadowUrl ?? process.env.SHADOW_DATABASE_URL;
+  if (rawShadowUrl && rawShadowUrl.trim()) {
+    const shadowTarget = parseDatabaseTarget(rawShadowUrl);
+    if (!isProductionTier && shadowTarget.isProductionTarget) {
+      throw new Error(
+        `Staging safety violation: SHADOW_DATABASE_URL (${shadowTarget.sanitizedTarget}) is pointing to a production system while running in non-production mode. Startup aborted.`,
+      );
+    }
+    if (isStagingTier && !shadowTarget.isApprovedStagingTarget) {
+      throw new Error(
+        `Staging safety violation: SHADOW_DATABASE_URL (${shadowTarget.sanitizedTarget}) is not on the staging host/database allowlist. Startup aborted.`,
+      );
     }
   }
 

@@ -437,7 +437,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 
 ### Verified Test Runner Output:
 - **Test Suites**: **18 passed, 18 total**
-- **Tests**: **448 passed, 448 total**
+- **Tests**: **466 passed, 466 total**
 - **Skipped Tests**: **0**
 - **Failed Tests**: **0**
 - **Snapshots**: **0**
@@ -448,12 +448,13 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 - Staging Turnstile hostname matrix & runtime/tier decoupling tests (cb8c087): **+4 tests -> 441 tests**
 - DNS alias resolution & conflicting `DIRECT_URL` guard tests (72ceb88): **+2 tests -> 443 tests**
 - Separated liveness & readiness health probe tests (68e364f): **+5 tests -> 448 tests**
+- Independent `DIRECT_URL` & safe migration runner subprocess isolation tests: **+18 tests -> 466 tests**
 
 | Suite Name | File Location | Tests | Status |
 | :--- | :--- | :-: | :-: |
 | **Dedicated Authorization Remediation Suite** | `apps/api/src/common/authorization-remediation.spec.ts` | **103** | **PASS** |
 | **Comprehensive Security Regression Suite** | `apps/api/src/common/security-regression.spec.ts` | **298** | **PASS** |
-| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **27** | **PASS** |
+| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **45** | **PASS** |
 | **Application & Health Probes Controller Suite** | `apps/api/src/app.controller.spec.ts` | **6** | **PASS** |
 | **Enquiry Controller Suite** | `apps/api/src/enquiry/enquiry.controller.spec.ts` | **1** | **PASS** |
 | **Enquiry Service Suite** | `apps/api/src/enquiry/enquiry.service.spec.ts` | **1** | **PASS** |
@@ -469,7 +470,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | **Report Service Suite** | `apps/api/src/report/report.service.spec.ts` | **1** | **PASS** |
 | **Fee Controller Suite** | `apps/api/src/fee/fee.controller.spec.ts` | **1** | **PASS** |
 | **Fee Service Suite** | `apps/api/src/fee/fee.service.spec.ts` | **1** | **PASS** |
-| **TOTAL** | **18 Test Suites** | **448** | **PASS** |
+| **TOTAL** | **18 Test Suites** | **466** | **PASS** |
 
 ---
 
@@ -496,32 +497,76 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
   - [ ] Secret manager injected with values matching `.env.staging.template`.
   - [ ] Confirmed zero production IPs (`148.135.138.196`) or production credentials present.
 
-### Phase 2: Deployment Execution Steps
-- [ ] **1. Build & Release Candidate Verification**:
-  - [ ] Verify Git HEAD matches certified commit (`f089d41`).
-  - [ ] Run full automated test suite: `pnpm --filter api test -- --runInBand --forceExit` (448/448 pass).
+### Phase 2: Workflow 1 — Initial Staging Deployment (Dedicated Clean Database)
+> [!NOTE]
+> On a newly provisioned, clean staging database, no client traffic or active writes exist. The database does **not** need to be made read-only before initial migration.
+- [ ] **1. Code Release Candidate Verification**:
+  - [ ] Verify Git HEAD matches certified release commit.
+  - [ ] Run full automated test suite: `NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand --forceExit` (466/466 pass).
   - [ ] Run Next.js production build: `NODE_ENV=production APP_ENV=staging pnpm --filter web build`.
-- [ ] **2. Pre-Migration Baseline & Quiescence**:
-  - [ ] Quiesce writes on target: `ALTER DATABASE educare_staging SET default_transaction_read_only = on;`.
-  - [ ] Terminate active backends: `SELECT pg_terminate_backend(pid)...`.
-  - [ ] Take authoritative pre-deploy backup: `pg_dump -Fc -f educare_staging_quiesced_pre_deploy.dump`.
-  - [ ] Verify backup integrity: `pg_restore --list educare_staging_quiesced_pre_deploy.dump > /dev/null`.
-- [ ] **3. Migration Deployment via Safe Runner**:
-  - [ ] Unlock database writes: `ALTER DATABASE educare_staging SET default_transaction_read_only = off;`.
-  - [ ] Execute safe migration deploy:
+  - [ ] Run mobile typecheck: `pnpm --filter mobile typecheck`.
+  - [ ] Run Prisma validation: `pnpm --filter @educare/database exec prisma validate`.
+- [ ] **2. Execute Safe Migration Deployment**:
+  - [ ] Run safe migration deploy script (independently validates `DATABASE_URL` and `DIRECT_URL` before Prisma execution):
     ```bash
     pnpm --filter @educare/database db:deploy
     ```
   - [ ] Verify all 10 migrations in ledger:
     ```bash
-    psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging -c "SELECT migration_name FROM _prisma_migrations;"
+    psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging -c "SELECT migration_name FROM _prisma_migrations ORDER BY finished_at ASC;"
     ```
-- [ ] **4. Staging Data Seeding**:
+- [ ] **3. Baseline Data Seeding**:
   - [ ] Execute baseline staging seed: `pnpm --filter @educare/database exec prisma db seed`.
-- [ ] **5. Container Replica Rollout**:
+- [ ] **4. Container Replica Rollout**:
   - [ ] Deploy API and Web container replicas with `NODE_ENV=production` and `APP_ENV=staging`.
 
-### Phase 3: Post-Deployment Verification & Smoke Tests
+### Phase 3: Workflow 2 — Disaster Recovery & Rollback (Existing Populated Database)
+> [!IMPORTANT]
+> When rolling back or restoring an active/populated database, strict writer quiescence, reconnection prevention, and a verified final backup are mandatory to prevent data loss or split-brain writes.
+- [ ] **1. Write Quiescence & Reconnection Prevention**:
+  - [ ] Activate ingress maintenance mode (stop incoming mutation traffic).
+  - [ ] Enforce database read-only state:
+    ```sql
+    ALTER DATABASE educare_staging SET default_transaction_read_only = on;
+    ```
+  - [ ] Terminate active mutation sessions:
+    ```sql
+    SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
+    WHERE datname = 'educare_staging' AND pid <> pg_backend_pid();
+    ```
+- [ ] **2. Authoritative Final Quiesced Backup**:
+  - [ ] Take binary snapshot strictly AFTER write quiescence:
+    ```bash
+    pg_dump -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_quiesced_final.dump
+    ```
+  - [ ] Verify backup archive integrity:
+    ```bash
+    pg_restore --list educare_staging_quiesced_final.dump > /dev/null
+    test -s educare_staging_quiesced_final.dump && echo "Backup verified valid and non-empty."
+    ```
+- [ ] **3. Isolated Fresh Target Provisioning & Restore**:
+  - [ ] Create dedicated fresh database target:
+    ```bash
+    createdb -h <STAGING_DB_HOST> -p 5432 -U educare_staging educare_staging_restored
+    ```
+  - [ ] Restore dump into fresh target:
+    ```bash
+    pg_restore -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_quiesced_final.dump
+    ```
+- [ ] **4. Restoration Integrity Verification**:
+  - [ ] Verify ledger and table counts:
+    ```bash
+    psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "_prisma_migrations";'
+    psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
+    ```
+- [ ] **5. Coordinated Target Switch & Synchronous Transition**:
+  - [ ] Update `DATABASE_URL` in secrets manager / repoint PgBouncer connection pooler.
+  - [ ] Restart all container replicas synchronously (`kubectl rollout restart deployment/api` or scale-to-zero) to kill open connections to the source database.
+- [ ] **6. Post-Cutover Verification & Forensic Quarantine**:
+  - [ ] Verify `GET /health/ready` on restored instance.
+  - [ ] Retain original database in read-only quarantine for audit; do not delete.
+
+### Phase 4: Post-Deployment Verification & Smoke Tests
 - [ ] **1. Health Probes**:
   - [ ] `GET /health/live` returns HTTP 200 `{"status":"ok"}`.
   - [ ] `GET /health/ready` returns HTTP 200 confirming PostgreSQL and Redis connections.
@@ -534,7 +579,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
   - [ ] Log in as Centre Admin A; confirm zero visibility into Centre B students, fees, or enquiries.
   - [ ] Verify unassigned enquiries (`centreId: null`) are inaccessible to Centre Admins.
 
-### Phase 4: Release Approval Criteria & Rollback Triggers
+### Phase 5: Release Approval Criteria & Rollback Triggers
 - **Automatic Rollback Triggers (Halt & Quiesce Immediately)**:
   - Any connection attempt or log entry referencing production IP `148.135.138.196`.
   - Failure of readiness probe `GET /health/ready` after container startup.
@@ -543,5 +588,6 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 - **Go / No-Go Approval Sign-off**:
   - [ ] Infrastructure Lead: External cloud database, Redis, and R2 isolation confirmed.
   - [ ] Security Lead: Zero-production fallback verified; Turnstile & JWT secrets verified.
-  - [ ] QA / Release Manager: All 448 automated tests passed; post-deployment smoke tests passed.
+  - [ ] QA / Release Manager: All 466 automated tests passed; post-deployment smoke tests passed.
+
 

@@ -4,6 +4,10 @@ import {
   assertSafeReconciliationTarget,
   verifyHostDnsSafety,
 } from './database-target.validator';
+import {
+  assertSafeMigrationTargets,
+  runSafeMigrateDeploy,
+} from '../../../../../packages/database/prisma/scripts/safe-migrate-deploy';
 
 describe('Database Target & Environment Safety Validator', () => {
   const originalEnv = { ...process.env };
@@ -244,9 +248,59 @@ describe('Database Target & Environment Safety Validator', () => {
 
       expect(() =>
         assertValidTargetForEnvironment(validStagingUrl, { appEnv: 'staging' }),
-      ).toThrow(/DIRECT_URL .* is pointing to a production system while running in staging mode/);
+      ).toThrow(/DIRECT_URL .* is pointing to a production system/);
 
       delete process.env.DIRECT_URL;
+    });
+
+    it('should reject production IP in DIRECT_URL under development configuration', () => {
+      const devDbUrl = 'postgresql://user:pass@127.0.0.1:5432/educare_dev';
+      expect(() =>
+        assertValidTargetForEnvironment(devDbUrl, {
+          nodeEnv: 'development',
+          directUrl: 'postgresql://user:pass@148.135.138.196:5432/educare_prod',
+        }),
+      ).toThrow(/DIRECT_URL .* is pointing to a production system/);
+    });
+
+    it('should reject production IP in DIRECT_URL under test configuration', () => {
+      const testDbUrl = 'postgresql://user:pass@127.0.0.1:5432/educare_test';
+      expect(() =>
+        assertValidTargetForEnvironment(testDbUrl, {
+          nodeEnv: 'test',
+          directUrl: 'postgresql://user:pass@148.135.138.196:5432/educare_prod',
+        }),
+      ).toThrow(/DIRECT_URL .* is pointing to a production system/);
+    });
+
+    it('should reject unapproved remote DIRECT_URL under staging configuration', () => {
+      const validStagingUrl = 'postgresql://user:pass@staging-db.educarelearning.in:5432/educare_staging?sslmode=require';
+      expect(() =>
+        assertValidTargetForEnvironment(validStagingUrl, {
+          appEnv: 'staging',
+          directUrl: 'postgresql://user:pass@unapproved-host.internal:5432/staging_db?sslmode=require',
+        }),
+      ).toThrow(/DIRECT_URL .* is not on the staging host\/database allowlist/);
+    });
+
+    it('should reject remote DIRECT_URL without sslmode=require under staging configuration', () => {
+      const validStagingUrl = 'postgresql://user:pass@staging-db.educarelearning.in:5432/educare_staging?sslmode=require';
+      expect(() =>
+        assertValidTargetForEnvironment(validStagingUrl, {
+          appEnv: 'staging',
+          directUrl: 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db',
+        }),
+      ).toThrow(/Remote staging DIRECT_URL .* must specify sslmode=require/);
+    });
+
+    it('should allow valid allowlisted DIRECT_URL with TLS under staging configuration', () => {
+      const validStagingUrl = 'postgresql://user:pass@staging-db.educarelearning.in:5432/educare_staging?sslmode=require';
+      const validDirectUrl = 'postgresql://user:pass@staging-db.educarelearning.in:5432/educare_staging?sslmode=require';
+      const result = assertValidTargetForEnvironment(validStagingUrl, {
+        appEnv: 'staging',
+        directUrl: validDirectUrl,
+      });
+      expect(result.isApprovedStagingTarget).toBe(true);
     });
 
     it('should detect and reject DNS alias/CNAME spoofing resolving to production IP via verifyHostDnsSafety', async () => {
@@ -346,4 +400,205 @@ describe('Database Target & Environment Safety Validator', () => {
       }
     });
   });
+
+  describe('5. Safe Migration Deploy Runner & Subprocess Isolation (safe-migrate-deploy.ts)', () => {
+    it('should REJECT missing or empty DATABASE_URL', async () => {
+      await expect(assertSafeMigrationTargets({ DATABASE_URL: '' })).rejects.toThrow(
+        /DATABASE_URL environment variable is missing or empty/,
+      );
+      await expect(assertSafeMigrationTargets({})).rejects.toThrow(
+        /DATABASE_URL environment variable is missing or empty/,
+      );
+    });
+
+    it('should REJECT malformed DATABASE_URL', async () => {
+      await expect(
+        assertSafeMigrationTargets({ DATABASE_URL: 'invalid-url' }),
+      ).rejects.toThrow(/DATABASE_URL is malformed/);
+    });
+
+    it('should REJECT production IP in DATABASE_URL under any environment', async () => {
+      const prodDb = 'postgresql://user:pass@148.135.138.196:5432/educare_staging';
+
+      // Under staging
+      await expect(
+        assertSafeMigrationTargets({ APP_ENV: 'staging', DATABASE_URL: prodDb }),
+      ).rejects.toThrow(/DATABASE_URL .* is identified as a production system/);
+
+      // Under development
+      await expect(
+        assertSafeMigrationTargets({ NODE_ENV: 'development', DATABASE_URL: prodDb }),
+      ).rejects.toThrow(/DATABASE_URL .* is identified as a production system/);
+
+      // Under test
+      await expect(
+        assertSafeMigrationTargets({ NODE_ENV: 'test', DATABASE_URL: prodDb }),
+      ).rejects.toThrow(/DATABASE_URL .* is identified as a production system/);
+    });
+
+    it('should REJECT production hostname in DATABASE_URL', async () => {
+      const prodHostUrl = 'postgresql://user:pass@db.educarelearning.in:5432/app_db?sslmode=require';
+      await expect(
+        assertSafeMigrationTargets({ APP_ENV: 'staging', DATABASE_URL: prodHostUrl }),
+      ).rejects.toThrow(/DATABASE_URL .* is identified as a production system/);
+    });
+
+    it('should REJECT production IP in DIRECT_URL under staging, development, and test configurations', async () => {
+      const validStagingDb = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db?sslmode=require';
+      const prodDirectUrl = 'postgresql://user:pass@148.135.138.196:5432/staging_db?sslmode=require';
+
+      // 1. Under staging
+      await expect(
+        assertSafeMigrationTargets({
+          APP_ENV: 'staging',
+          DATABASE_URL: validStagingDb,
+          DIRECT_URL: prodDirectUrl,
+        }),
+      ).rejects.toThrow(/DIRECT_URL .* is identified as a production system/);
+
+      // 2. Under development
+      await expect(
+        assertSafeMigrationTargets({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/dev_db',
+          DIRECT_URL: prodDirectUrl,
+        }),
+      ).rejects.toThrow(/DIRECT_URL .* is identified as a production system/);
+
+      // 3. Under test
+      await expect(
+        assertSafeMigrationTargets({
+          NODE_ENV: 'test',
+          DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/test_db',
+          DIRECT_URL: prodDirectUrl,
+        }),
+      ).rejects.toThrow(/DIRECT_URL .* is identified as a production system/);
+    });
+
+    it('should REJECT unapproved remote DIRECT_URL under staging', async () => {
+      const validStagingDb = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db?sslmode=require';
+      const unapprovedDirect = 'postgresql://user:pass@unapproved-host.internal:5432/staging_db?sslmode=require';
+
+      await expect(
+        assertSafeMigrationTargets({
+          APP_ENV: 'staging',
+          DATABASE_URL: validStagingDb,
+          DIRECT_URL: unapprovedDirect,
+        }),
+      ).rejects.toThrow(/DIRECT_URL .* is not on the staging host allowlist/);
+    });
+
+    it('should REJECT remote DIRECT_URL without sslmode=require under staging', async () => {
+      const validStagingDb = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db?sslmode=require';
+      const cleartextDirect = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db';
+
+      await expect(
+        assertSafeMigrationTargets({
+          APP_ENV: 'staging',
+          DATABASE_URL: validStagingDb,
+          DIRECT_URL: cleartextDirect,
+        }),
+      ).rejects.toThrow(/Remote staging DIRECT_URL .* must enforce sslmode=require/);
+    });
+
+    it('should REJECT contradictory environment configurations in migration deploy', async () => {
+      const validDb = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db?sslmode=require';
+
+      await expect(
+        assertSafeMigrationTargets({
+          APP_ENV: 'production',
+          NODE_ENV: 'staging',
+          DATABASE_URL: validDb,
+        }),
+      ).rejects.toThrow(/Contradictory environment: APP_ENV indicates production tier while staging mode is declared/);
+
+      await expect(
+        assertSafeMigrationTargets({
+          APP_ENV: 'production',
+          NODE_ENV: 'development',
+          DATABASE_URL: validDb,
+        }),
+      ).rejects.toThrow(/Contradictory environment: APP_ENV=production cannot run with unoptimized NODE_ENV=development runtime/);
+    });
+
+    it('should ALLOW valid allowlisted staging targets for both DATABASE_URL and DIRECT_URL', async () => {
+      const validStagingDb = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db?sslmode=require';
+      const validDirect = 'postgresql://user:pass@staging-db.educarelearning.in:5432/staging_db?sslmode=require';
+
+      const mockLookup = jest.fn().mockResolvedValue([{ address: '10.0.1.20', family: 4 }]);
+
+      const result = await assertSafeMigrationTargets(
+        {
+          APP_ENV: 'staging',
+          DATABASE_URL: validStagingDb,
+          DIRECT_URL: validDirect,
+        },
+        mockLookup,
+      );
+
+      expect(result.databaseTarget.isApprovedStagingTarget).toBe(true);
+      expect(result.directTarget?.isApprovedStagingTarget).toBe(true);
+      expect(result.databaseTarget.sslMode).toBe('require');
+      expect(result.directTarget?.sslMode).toBe('require');
+    });
+
+    it('should ALLOW local disposable database targets when DEPLOYED_STAGING is not active', async () => {
+      const localDb = 'postgresql://tester@127.0.0.1:54331/disposable_db';
+      const localDirect = 'postgresql://tester@127.0.0.1:54331/disposable_db';
+
+      const result = await assertSafeMigrationTargets({
+        APP_ENV: 'staging',
+        DATABASE_URL: localDb,
+        DIRECT_URL: localDirect,
+      });
+
+      expect(result.databaseTarget.isLocal).toBe(true);
+      expect(result.databaseTarget.isApprovedStagingTarget).toBe(true);
+      expect(result.directTarget?.isLocal).toBe(true);
+    });
+
+    it('should REJECT local loopback targets when DEPLOYED_STAGING=true is set', async () => {
+      const localDb = 'postgresql://tester@127.0.0.1:54331/disposable_db';
+
+      await expect(
+        assertSafeMigrationTargets({
+          APP_ENV: 'staging',
+          DEPLOYED_STAGING: 'true',
+          DATABASE_URL: localDb,
+        }),
+      ).rejects.toThrow(/DATABASE_URL .* is not on the staging host allowlist/);
+    });
+
+    it('PROOF: should NEVER invoke Prisma migration subprocess when target validation fails', async () => {
+      const mockSpawn = jest.fn();
+      const failingEnv = {
+        APP_ENV: 'staging',
+        DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/staging_db',
+        DIRECT_URL: 'postgresql://user:pass@148.135.138.196:5432/prod_db', // Rejected!
+      };
+
+      await expect(runSafeMigrateDeploy(failingEnv, mockSpawn)).rejects.toThrow(
+        /DIRECT_URL .* is identified as a production system/,
+      );
+
+      // CRITICAL PROOF: Subprocess was NEVER spawned!
+      expect(mockSpawn).not.toHaveBeenCalled();
+    });
+
+    it('PROOF: should invoke Prisma migration subprocess ONLY after all validations pass', async () => {
+      const mockSpawn = jest.fn().mockReturnValue({ status: 0 });
+      const passingEnv = {
+        DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/local_disposable_db',
+      };
+
+      const exitCode = await runSafeMigrateDeploy(passingEnv, mockSpawn);
+
+      expect(exitCode).toBe(0);
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      expect(mockSpawn).toHaveBeenCalledWith('npx', ['prisma', 'migrate', 'deploy'], expect.objectContaining({
+        stdio: 'inherit',
+      }));
+    });
+  });
 });
+
