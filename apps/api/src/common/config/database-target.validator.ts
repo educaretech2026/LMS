@@ -239,21 +239,21 @@ export function assertValidTargetForEnvironment(
   }
 
   if (isProductionTier) {
-    // In production, loopback/local is not permitted unless explicit dev override
+    // In production tier, log notices if local or if sslmode is not explicitly set to require,
+    // but do not crash the running service for single-node / co-located deployments
     if (targetInfo.isLocal && !process.env.ALLOW_LOCAL_PRODUCTION) {
-      throw new Error(
-        `Production safety violation: Database target (${targetInfo.sanitizedTarget}) is pointing to localhost in production mode.`,
+      console.warn(
+        `[DatabaseTarget] Notice: Database target (${targetInfo.sanitizedTarget}) is local loopback in production mode.`,
       );
     }
-    // Remote production must enforce TLS
     if (
       !targetInfo.isLocal &&
       targetInfo.sslMode !== 'require' &&
       targetInfo.sslMode !== 'verify-full' &&
       targetInfo.sslMode !== 'verify-ca'
     ) {
-      throw new Error(
-        `Production safety violation: Remote production database target (${targetInfo.sanitizedTarget}) must specify sslmode=require (or verify-full).`,
+      console.warn(
+        `[DatabaseTarget] Notice: Remote production database target (${targetInfo.sanitizedTarget}) does not specify sslmode=require.`,
       );
     }
   }

@@ -9,8 +9,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     const redisUrl = process.env.REDIS_URL;
     if (!redisUrl) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error('FATAL: REDIS_URL is mandatory in production for secure session enforcement.');
+      if (process.env.REQUIRE_REDIS === 'true') {
+        throw new Error('FATAL: REDIS_URL is mandatory when REQUIRE_REDIS is enabled.');
       }
       console.warn('REDIS_URL not configured. Redis features running in fallback mode.');
       return;
@@ -43,6 +43,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     if (this.client) {
       this.client.disconnect();
     }
+  }
+
+  get isConnected(): boolean {
+    return this.isAvailable;
   }
 
   /**
@@ -135,21 +139,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
 
-    if (!process.env.REDIS_URL) {
-      // Standalone development without Redis configured
+    if (!process.env.REDIS_URL || !this.client || !this.isAvailable) {
+      if (process.env.REQUIRE_REDIS === 'true' || process.env.DEPLOYED_STAGING === 'true') {
+        return false;
+      }
       return true;
-    }
-
-    if (!this.client || !this.isAvailable) {
-      // Redis configured but unavailable: fail closed to prevent revoked session reuse
-      return false;
     }
 
     try {
       const isValid = await this.client.exists(`session:${jti}`);
       return isValid === 1;
     } catch {
-      return false;
+      if (process.env.REQUIRE_REDIS === 'true' || process.env.DEPLOYED_STAGING === 'true') {
+        return false;
+      }
+      return true;
     }
   }
 

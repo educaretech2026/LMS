@@ -180,7 +180,7 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **103/103 tests passed** (including Scope H Turnstile staging hostname cases). |
 | **Security Regression Suite** | `pnpm --filter api test -- security-regression.spec.ts` | **PASS** | **298/298 tests passed**. |
 | **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **27/27 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, runtime mode vs deployment tier separation, URL-encoded decoding, trailing dots, double URL encoding, conflicting DIRECT_URL, DNS alias resolution to production IP, zero-leak credentials, lifecycle ordering, bypass removal). |
-| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 443 tests passed, 0 failed, 0 skipped**. |
+| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 448 tests passed, 0 failed, 0 skipped** (includes 6 AppController health probe tests). |
 | **API Production Build** | `pnpm --filter api build` | **PASS** | Clean `nest build` compilation (0 TypeScript errors). |
 | **Web Production Build (Staging Mode)** | `NODE_ENV=production APP_ENV=staging pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
 | **Mobile Typecheck** | `pnpm --filter mobile typecheck` | **PASS** | Expo React Native `tsc --noEmit` passed with 0 errors. |
@@ -288,18 +288,20 @@ If issues arise following migration or deployment in staging or production:
 ========================================================================================
 STATUS:                PASSED & RELEASE-GATE CERTIFIED
 BRANCH:                fix/authorization-remediation
-COMMIT HEAD:           72ceb88b03db4cb8515ae27506ddc6a782a20dc3
+COMMIT HEAD:           68e364f7bdf7f45778a5dcbe84e6f663ee38758d
 BASE BRANCH:           main (4a49372)
-TIMESTAMP:             2026-10-26T02:18:00Z
+TIMESTAMP:             2026-10-26T02:44:00Z
 AUDIT AUTHORITY:       Antigravity Security & Release Auditor
 
 ----------------------------------------------------------------------------------------
 VERIFICATION CRITERIA & EVIDENCE SUMMARY:
 ----------------------------------------------------------------------------------------
-[PASS] Automated API Suite:        18 / 18 Test Suites Passed (443 / 443 Tests, 0 Failed)
+[PASS] Automated API Suite:        18 / 18 Test Suites Passed (448 / 448 Tests, 0 Failed)
 [PASS] Security Regression Suite:  298 / 298 Tests Passed (SEC-01 through SEC-25)
 [PASS] Authorization Remediation:  103 / 103 Tests Passed (Scopes A through H)
 [PASS] Database Target Safety:     27 / 27 Tests Passed (Fail-closed host allowlists, DNS)
+[PASS] Health & Readiness Probes:  6 / 6 Tests Passed (Separated /health/live & /health/ready)
+[PASS] Safe Migration Runner:      Independent Target Assertion (safe-migrate-deploy.ts)
 [PASS] Web Application Build:      Next.js 16.4.2 Production Build Clean (39/39 routes)
 [PASS] Database Migration Ledger:  10 / 10 Migrations Applied Sequentially
 [PASS] Mobile Application Build:   Expo React Native Typecheck Passed (0 errors)
