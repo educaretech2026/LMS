@@ -423,17 +423,22 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 
 ### Verified Test Runner Output:
 - **Test Suites**: **18 passed, 18 total**
-- **Tests**: **441 passed, 441 total**
+- **Tests**: **443 passed, 443 total**
 - **Skipped Tests**: **0**
 - **Failed Tests**: **0**
 - **Snapshots**: **0**
 
-### Reconciled Suite Breakdown:
+### Reconciled Suite Breakdown & Evolution:
+- Baseline on `main` branch before authorization remediation: **380 tests**
+- Scope A–H Authorization & Staging Remediation additions: **437 tests**
+- Staging Turnstile hostname matrix & runtime/tier decoupling tests (cb8c087): **+4 tests -> 441 tests**
+- DNS alias resolution & conflicting `DIRECT_URL` guard tests: **+2 tests -> 443 tests**
+
 | Suite Name | File Location | Tests | Status |
 | :--- | :--- | :-: | :-: |
 | **Dedicated Authorization Remediation Suite** | `apps/api/src/common/authorization-remediation.spec.ts` | **103** | **PASS** |
 | **Comprehensive Security Regression Suite** | `apps/api/src/common/security-regression.spec.ts` | **298** | **PASS** |
-| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **25** | **PASS** |
+| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **27** | **PASS** |
 | **Enquiry Controller Suite** | `apps/api/src/enquiry/enquiry.controller.spec.ts` | **1** | **PASS** |
 | **Enquiry Service Suite** | `apps/api/src/enquiry/enquiry.service.spec.ts` | **1** | **PASS** |
 | **Assignments Controller Suite** | `apps/api/src/assignments/assignments.controller.spec.ts` | **1** | **PASS** |
@@ -448,7 +453,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | **Report Service Suite** | `apps/api/src/report/report.service.spec.ts` | **1** | **PASS** |
 | **Fee Controller Suite** | `apps/api/src/fee/fee.controller.spec.ts` | **1** | **PASS** |
 | **Fee Service Suite** | `apps/api/src/fee/fee.service.spec.ts` | **1** | **PASS** |
-| **TOTAL** | **18 Test Suites** | **441** | **PASS** |
+| **TOTAL** | **18 Test Suites** | **443** | **PASS** |
 
 ---
 

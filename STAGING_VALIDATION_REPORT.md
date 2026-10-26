@@ -161,7 +161,10 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 - **Fail-Closed Redis Behavior**: When Redis becomes unreachable, `StrictThrottlerGuard` throws `HTTP 503 Service Unavailable`, preventing unmetered traffic during cache failures.
 
 ### B. Cloudflare Turnstile Integration Policy
-- **Frontend Allowed Hostnames**: `defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in']`.
+- **Frontend Allowed Hostnames**: 
+  - Production defaults: `['lms.educarelearning.in', 'educarelearning.in']`.
+  - Staging defaults (active when `APP_ENV=staging` or `NODE_ENV=staging`): `['staging.educarelearning.in', 'lms.staging.educarelearning.in']`.
+  - Dynamically extensible via comma-separated `TURNSTILE_ALLOWED_HOSTNAMES`.
 - **Action Verification**: Strictly matches `action: 'admission_enquiry'`. Tokens with omitted or mismatched actions are rejected with `HTTP 400 Bad Request`.
 - **Error Handling**: Replays, expired tokens (`timeout-or-duplicate`), and missing tokens fail closed.
 - **Credential Redaction**: Secrets and tokens are omitted from application logs and client error responses.
@@ -176,8 +179,8 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | **Prisma Client Generation** | `pnpm --filter @educare/database db:generate` | **PASS** | Generated client v5.19.1 in 321ms. |
 | **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **103/103 tests passed** (including Scope H Turnstile staging hostname cases). |
 | **Security Regression Suite** | `pnpm --filter api test -- security-regression.spec.ts` | **PASS** | **298/298 tests passed**. |
-| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **25/25 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, runtime mode vs deployment tier separation, URL-encoded decoding, zero-leak credentials, lifecycle ordering, bypass removal). |
-| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 441 tests passed, 0 failed, 0 skipped**. |
+| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **27/27 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, runtime mode vs deployment tier separation, URL-encoded decoding, trailing dots, double URL encoding, conflicting DIRECT_URL, DNS alias resolution to production IP, zero-leak credentials, lifecycle ordering, bypass removal). |
+| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 443 tests passed, 0 failed, 0 skipped**. |
 | **API Production Build** | `pnpm --filter api build` | **PASS** | Clean `nest build` compilation (0 TypeScript errors). |
 | **Web Production Build (Staging Mode)** | `NODE_ENV=production APP_ENV=staging pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
 | **Mobile Typecheck** | `pnpm --filter mobile typecheck` | **PASS** | Expo React Native `tsc --noEmit` passed with 0 errors. |

@@ -6,9 +6,9 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import { assertValidTargetForEnvironment } from './common/config/database-target.validator';
+import { assertValidTargetForEnvironment, parseDatabaseTarget, verifyHostDnsSafety } from './common/config/database-target.validator';
 
-function runPreflightSafetyChecks() {
+async function runPreflightSafetyChecks() {
   const nodeEnv = (process.env.NODE_ENV || 'development').toLowerCase();
   const appEnv = (process.env.APP_ENV || '').toLowerCase();
 
@@ -23,9 +23,10 @@ function runPreflightSafetyChecks() {
   const isDeployedStaging = isStag && (process.env.DEPLOYED_STAGING === 'true' || nodeEnv === 'production');
 
   // 1. Strict Fail-Closed Database Target Verification (blocks prod IPs, unapproved hosts, cleartext SSL)
-  assertValidTargetForEnvironment(process.env.DATABASE_URL);
+  const targetInfo = assertValidTargetForEnvironment(process.env.DATABASE_URL);
+  await verifyHostDnsSafety(targetInfo.hostname);
 
-  // 2. REDIS_URL presence and deployed staging check
+  // 2. REDIS_URL presence, deployed staging check, and active ping test
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl || !redisUrl.trim()) {
     throw new Error(`FATAL: REDIS_URL is mandatory in ${envLabel} for secure session enforcement and distributed rate limiting.`);
@@ -34,6 +35,29 @@ function runPreflightSafetyChecks() {
     const redisLower = redisUrl.toLowerCase();
     if (redisLower.includes('localhost') || redisLower.includes('127.0.0.1') || redisLower.includes('::1')) {
       throw new Error('FATAL: Deployed staging cannot use localhost fallback for REDIS_URL. Dedicated authenticated staging Redis instance is required.');
+    }
+  }
+
+  // Active ping test in deployed staging / production to ensure Redis is reachable and operational
+  if (isDeployedStaging || (isProd && process.env.NODE_ENV !== 'test')) {
+    const Redis = (await import('ioredis')).default;
+    const testClient = new Redis(redisUrl, {
+      lazyConnect: true,
+      connectTimeout: 3000,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+      enableOfflineQueue: false,
+    });
+    try {
+      await testClient.connect();
+      const pong = await testClient.ping();
+      if (pong !== 'PONG') {
+        throw new Error(`Unexpected PING response: ${pong}`);
+      }
+    } catch (err: any) {
+      throw new Error(`FATAL: Redis connection preflight check failed in ${envLabel} (${err.message || err}). Remote authenticated Redis is mandatory.`);
+    } finally {
+      testClient.disconnect();
     }
   }
 
@@ -54,16 +78,29 @@ function runPreflightSafetyChecks() {
 
   // 5. Cloudflare R2 bucket separation for staging
   if (isStag) {
-    const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME;
-    if (bucket && (bucket.trim() === 'educare' || bucket.trim() === 'educare-prod')) {
-      throw new Error(`FATAL: Staging environment cannot use production Cloudflare R2 bucket "${bucket}". Dedicated staging bucket (e.g. "educare-staging") is required.`);
+    const bucket = (
+      process.env.CLOUDFLARE_R2_BUCKET_NAME ||
+      process.env.R2_BUCKET_NAME ||
+      process.env.CLOUDFLARE_BUCKET_NAME ||
+      ''
+    ).trim();
+    if (!bucket || bucket === 'educare' || bucket === 'educare-prod') {
+      throw new Error(`FATAL: Staging environment cannot use production Cloudflare R2 bucket "${bucket || 'default educare'}". Dedicated staging bucket (e.g. "educare-staging") is required.`);
+    }
+  }
+
+  // 6. LiveKit isolation for staging
+  if (isStag && process.env.LIVEKIT_WS_URL) {
+    const wsLower = process.env.LIVEKIT_WS_URL.toLowerCase();
+    if (wsLower.includes('educarelms-prod') || wsLower.includes('livekit-prod')) {
+      throw new Error(`FATAL: Staging environment cannot use production LiveKit endpoint "${process.env.LIVEKIT_WS_URL}". Dedicated staging LiveKit instance is required.`);
     }
   }
 }
 
 async function bootstrap() {
   // Execute preflight checks BEFORE any NestJS module, provider, or database connection is initialized!
-  runPreflightSafetyChecks();
+  await runPreflightSafetyChecks();
 
   const app = await NestFactory.create(AppModule);
 

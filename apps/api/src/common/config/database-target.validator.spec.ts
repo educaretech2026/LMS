@@ -2,6 +2,7 @@ import {
   parseDatabaseTarget,
   assertValidTargetForEnvironment,
   assertSafeReconciliationTarget,
+  verifyHostDnsSafety,
 } from './database-target.validator';
 
 describe('Database Target & Environment Safety Validator', () => {
@@ -218,11 +219,58 @@ describe('Database Target & Environment Safety Validator', () => {
         assertValidTargetForEnvironment(encodedProdUrl, { appEnv: 'staging' }),
       ).toThrow(/identified as a production system/);
 
+      // Double URL-encoded production IP %2531%2534%2538...
+      const doubleEncodedProdUrl = 'postgresql://user:Secret123@%2531%2534%2538%252e%2531%2533%2535%252e%2531%2533%2538%252e%2531%2539%2536:5432/postgres';
+      expect(() =>
+        assertValidTargetForEnvironment(doubleEncodedProdUrl, { appEnv: 'staging' }),
+      ).toThrow(/identified as a production system/);
+
+      // Trailing dot in hostname (e.g. FQDN root)
+      const trailingDotProdUrl = 'postgresql://user:Secret123@148.135.138.196.:5432/postgres';
+      expect(() =>
+        assertValidTargetForEnvironment(trailingDotProdUrl, { appEnv: 'staging' }),
+      ).toThrow(/identified as a production system/);
+
       // URL-encoded database name
       const encodedDbUrl =
         'postgresql://user:Secret123@staging-db.educarelearning.in:5432/educare%5Fstaging?sslmode=require';
       const result = assertValidTargetForEnvironment(encodedDbUrl, { appEnv: 'staging' });
       expect(result.database).toBe('educare_staging');
+    });
+
+    it('should reject conflicting DIRECT_URL pointing to production when running in staging mode', () => {
+      const validStagingUrl = 'postgresql://user:pass@staging-db.educarelearning.in:5432/educare_staging?sslmode=require';
+      process.env.DIRECT_URL = 'postgresql://user:pass@148.135.138.196:5432/educare_prod?sslmode=require';
+
+      expect(() =>
+        assertValidTargetForEnvironment(validStagingUrl, { appEnv: 'staging' }),
+      ).toThrow(/DIRECT_URL .* is pointing to a production system while running in staging mode/);
+
+      delete process.env.DIRECT_URL;
+    });
+
+    it('should detect and reject DNS alias/CNAME spoofing resolving to production IP via verifyHostDnsSafety', async () => {
+      // Mock DNS resolution returning production IP 148.135.138.196 for a benign-looking host
+      const mockDnsLookup = jest.fn().mockResolvedValue([
+        { address: '148.135.138.196', family: 4 },
+      ]);
+
+      await expect(
+        verifyHostDnsSafety('innocent-staging-alias.internal', {
+          dnsLookupFn: mockDnsLookup,
+        }),
+      ).rejects.toThrow(/DNS spoofing\/alias violation: Hostname "innocent-staging-alias.internal" resolves to production IP "148.135.138.196"/);
+
+      // Mock DNS resolution returning safe staging IP
+      const safeDnsLookup = jest.fn().mockResolvedValue([
+        { address: '10.0.50.15', family: 4 },
+      ]);
+
+      await expect(
+        verifyHostDnsSafety('verified-staging-host.internal', {
+          dnsLookupFn: safeDnsLookup,
+        }),
+      ).resolves.not.toThrow();
     });
   });
 

@@ -43,11 +43,15 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
   let rawHostname = (parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   let hostname = rawHostname;
   try {
-    hostname = decodeURIComponent(rawHostname);
+    let decoded = decodeURIComponent(rawHostname);
+    if (decoded.includes('%')) {
+      decoded = decodeURIComponent(decoded);
+    }
+    hostname = decoded;
   } catch {
     // Retain raw if decoding fails
   }
-  hostname = hostname.trim().replace(/^\[|\]$/g, '');
+  hostname = hostname.trim().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
 
   if (!hostname) {
     throw new Error('DATABASE_URL contains an empty or invalid hostname.');
@@ -61,7 +65,11 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
   let rawDb = (parsed.pathname || '').replace(/^\//, '').split('?')[0].trim();
   let database = rawDb;
   try {
-    database = decodeURIComponent(rawDb);
+    let decoded = decodeURIComponent(rawDb);
+    if (decoded.includes('%')) {
+      decoded = decodeURIComponent(decoded);
+    }
+    database = decoded;
   } catch {
     // Retain raw if decoding fails
   }
@@ -91,6 +99,7 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     '::ffff:148.135.138.196',
     '::ffff:9487:8ac4',
     '0:0:0:0:0:ffff:9487:8ac4',
+    '0000:0000:0000:0000:0000:ffff:9487:8ac4',
     ...configuredProdIps,
   ];
 
@@ -131,7 +140,7 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     ...(process.env.APPROVED_STAGING_HOSTS ? process.env.APPROVED_STAGING_HOSTS.split(',') : []),
     ...(process.env.STAGING_DATABASE_ALLOWLIST ? process.env.STAGING_DATABASE_ALLOWLIST.split(',') : []),
     ...(process.env.STAGING_DATABASE_HOST ? [process.env.STAGING_DATABASE_HOST] : []),
-  ].map((h) => h.trim().toLowerCase()).filter(Boolean);
+  ].map((h) => h.trim().toLowerCase().replace(/\.+$/, '')).filter(Boolean);
 
   const isHostApproved =
     approvedStagingHostsEnv.includes(hostname) ||
@@ -249,7 +258,84 @@ export function assertValidTargetForEnvironment(
     }
   }
 
+  // 4. Conflicting Database URL Environment Variables Guard
+  // In Prisma, DIRECT_URL and SHADOW_DATABASE_URL can override DATABASE_URL.
+  // Ensure neither points to a production target when running in staging mode.
+  if (isStagingTier) {
+    if (process.env.DIRECT_URL && process.env.DIRECT_URL.trim()) {
+      const directTarget = parseDatabaseTarget(process.env.DIRECT_URL);
+      if (directTarget.isProductionTarget) {
+        throw new Error(
+          `Staging safety violation: DIRECT_URL (${directTarget.sanitizedTarget}) is pointing to a production system while running in staging mode. Startup aborted.`,
+        );
+      }
+    }
+    if (process.env.SHADOW_DATABASE_URL && process.env.SHADOW_DATABASE_URL.trim()) {
+      const shadowTarget = parseDatabaseTarget(process.env.SHADOW_DATABASE_URL);
+      if (shadowTarget.isProductionTarget) {
+        throw new Error(
+          `Staging safety violation: SHADOW_DATABASE_URL (${shadowTarget.sanitizedTarget}) is pointing to a production system while running in staging mode. Startup aborted.`,
+        );
+      }
+    }
+  }
+
   return targetInfo;
+}
+
+/**
+ * Validates that a hostname does not resolve via DNS to any known production IP address.
+ * Prevents DNS alias/CNAME/A-record spoofing where an allowlisted hostname resolves to production.
+ */
+export async function verifyHostDnsSafety(
+  hostname: string,
+  options?: {
+    customProdIps?: string[];
+    dnsLookupFn?: (host: string, opts: any) => Promise<Array<{ address: string; family: number }>>;
+  },
+): Promise<void> {
+  const cleanHost = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+  const isLocal =
+    cleanHost === 'localhost' ||
+    cleanHost === '127.0.0.1' ||
+    cleanHost === '::1' ||
+    cleanHost === '0.0.0.0' ||
+    cleanHost === 'staging-db' ||
+    cleanHost === 'postgres' ||
+    cleanHost === 'db';
+  if (isLocal) return;
+
+  const prodIps = options?.customProdIps || [
+    '148.135.138.196',
+    '::ffff:148.135.138.196',
+    '::ffff:9487:8ac4',
+    '0:0:0:0:0:ffff:9487:8ac4',
+    '0000:0000:0000:0000:0000:ffff:9487:8ac4',
+  ];
+
+  try {
+    let records: Array<{ address: string; family: number }> = [];
+    if (options?.dnsLookupFn) {
+      records = await options.dnsLookupFn(cleanHost, { all: true });
+    } else {
+      const dns = await import('dns');
+      records = await dns.promises.lookup(cleanHost, { all: true });
+    }
+
+    for (const rec of records) {
+      const addr = rec.address.toLowerCase().trim().replace(/^\[|\]$/g, '');
+      if (prodIps.includes(addr)) {
+        throw new Error(
+          `DNS spoofing/alias violation: Hostname "${cleanHost}" resolves to production IP "${addr}". Connection blocked to protect production database.`,
+        );
+      }
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes('DNS spoofing/alias violation')) {
+      throw err;
+    }
+    // Re-throw if it's our violation error
+  }
 }
 
 /**
