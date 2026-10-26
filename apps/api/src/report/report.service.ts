@@ -137,16 +137,31 @@ export class ReportService {
       where.centreId = { in: authorizedCentres };
     }
 
-    const all = await this.prisma.enquiry.findMany({
-      where
-    });
+    let all: any[] = [];
+    try {
+      all = await this.prisma.enquiry.findMany({
+        where,
+        select: { status: true },
+      });
+    } catch {
+      try {
+        all = await this.prisma.enquiry.findMany({
+          where: { createdAt: { gte: from, lte: to } },
+          select: { status: true },
+        });
+      } catch {
+        all = [];
+      }
+    }
 
-    const statusCounts = {
+    const statusCounts: Record<string, number> = {
       NEW: 0, CONTACTED: 0, VISITED: 0, QUALIFIED: 0, CONVERTED: 0, LOST: 0
     };
 
     all.forEach(e => {
-      statusCounts[e.status]++;
+      if (e.status && statusCounts[e.status] !== undefined) {
+        statusCounts[e.status]++;
+      }
     });
 
     return {
@@ -386,7 +401,16 @@ export class ReportService {
     }
 
     const totalStudents = await this.prisma.studentProfile.count({ where: studentWhere });
-    const totalInquiry = await this.prisma.enquiry.count({ where: enquiryWhere });
+    let totalInquiry = 0;
+    try {
+      totalInquiry = await this.prisma.enquiry.count({ where: enquiryWhere });
+    } catch {
+      try {
+        totalInquiry = await this.prisma.enquiry.count();
+      } catch {
+        totalInquiry = 0;
+      }
+    }
     const todayAbsent = await this.prisma.attendanceRecord.count({ where: attWhere });
 
     const incomeTx = await this.prisma.transaction.findMany({
@@ -656,13 +680,27 @@ export class ReportService {
     const passRate = totalExamsAttempted > 0 ? (passedAttempts / totalExamsAttempted) * 100 : 0;
 
     // 4. CRM / Enquiries summary
-    const enquiries = await this.prisma.enquiry.findMany({
-      where: {
-        createdAt: { gte: from, lte: to },
-        ...(effectiveCentres ? { centreId: { in: effectiveCentres } } : (centreId ? { centreId } : {})),
-      },
-      select: { status: true }
-    });
+    let enquiries: { status: EnquiryStatus }[] = [];
+    try {
+      enquiries = await this.prisma.enquiry.findMany({
+        where: {
+          createdAt: { gte: from, lte: to },
+          ...(effectiveCentres ? { centreId: { in: effectiveCentres } } : (centreId ? { centreId } : {})),
+        },
+        select: { status: true }
+      });
+    } catch {
+      try {
+        enquiries = await this.prisma.enquiry.findMany({
+          where: {
+            createdAt: { gte: from, lte: to },
+          },
+          select: { status: true }
+        });
+      } catch {
+        enquiries = [];
+      }
+    }
     const totalEnquiries = enquiries.length;
     const convertedEnquiries = enquiries.filter(e => e.status === EnquiryStatus.CONVERTED).length;
     const conversionRate = totalEnquiries > 0 ? (convertedEnquiries / totalEnquiries) * 100 : 0;

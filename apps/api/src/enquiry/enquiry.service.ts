@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Optional,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus } from '@educare/database';
@@ -14,6 +15,8 @@ import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class EnquiryService {
+  private readonly logger = new Logger(EnquiryService.name);
+
   constructor(
     private prisma: PrismaService,
     @Optional() private readonly auditService?: AuditService,
@@ -173,22 +176,41 @@ export class EnquiryService {
     // and free-text source values (e.g. "Centre: ...") are NEVER trusted to assign tenant ownership.
     // Tenant ownership cannot be forged via public input. targetCentreId remains null.
     // Client-supplied status, assignedToId, notes, followUpDate are completely discarded.
-    return this.prisma.enquiry.create({
-      data: {
-        studentName,
-        parentName: data.parentName ? String(data.parentName).trim().slice(0, 100) : null,
-        contactNumber,
-        email,
-        address: data.address ? String(data.address).trim().slice(0, 300) : null,
-        source: data.source ? String(data.source).trim().slice(0, 100) : 'Website Form',
-        targetBoard: data.targetBoard ? String(data.targetBoard).trim().slice(0, 100) : null,
-        targetStandard: data.targetStandard ? String(data.targetStandard).trim().slice(0, 100) : null,
-        targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
-        status: EnquiryStatus.NEW,
-        centreId: targetCentreId,
-        assignedToId: null,
-      },
-    });
+    try {
+      return await this.prisma.enquiry.create({
+        data: {
+          studentName,
+          parentName: data.parentName ? String(data.parentName).trim().slice(0, 100) : null,
+          contactNumber,
+          email,
+          address: data.address ? String(data.address).trim().slice(0, 300) : null,
+          source: data.source ? String(data.source).trim().slice(0, 100) : 'Website Form',
+          targetBoard: data.targetBoard ? String(data.targetBoard).trim().slice(0, 100) : null,
+          targetStandard: data.targetStandard ? String(data.targetStandard).trim().slice(0, 100) : null,
+          targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
+          status: EnquiryStatus.NEW,
+          centreId: targetCentreId,
+          assignedToId: null,
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to create public enquiry with centreId, falling back to legacy schema: ${err?.message}`);
+      return await (this.prisma.enquiry as any).create({
+        data: {
+          studentName,
+          parentName: data.parentName ? String(data.parentName).trim().slice(0, 100) : null,
+          contactNumber,
+          email,
+          address: data.address ? String(data.address).trim().slice(0, 300) : null,
+          source: data.source ? String(data.source).trim().slice(0, 100) : 'Website Form',
+          targetBoard: data.targetBoard ? String(data.targetBoard).trim().slice(0, 100) : null,
+          targetStandard: data.targetStandard ? String(data.targetStandard).trim().slice(0, 100) : null,
+          targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
+          status: EnquiryStatus.NEW,
+          assignedToId: null,
+        },
+      });
+    }
   }
 
   /**
@@ -229,30 +251,56 @@ export class EnquiryService {
       }
     }
 
-    return this.prisma.enquiry.create({
-      data: {
-        studentName: data.studentName,
-        parentName: data.parentName || null,
-        contactNumber: data.contactNumber,
-        email: data.email || null,
-        address: data.address || null,
-        source: data.source || 'Direct',
-        targetBoard: data.targetBoard || null,
-        targetStandard: data.targetStandard || null,
-        targetCourse: data.targetCourse || null,
-        status: data.status || EnquiryStatus.NEW,
-        followUpDate: data.followUpDate ? new Date(data.followUpDate) : null,
-        notes: data.notes || null,
-        assignedToId: data.assignedToId || null,
-        centreId: resolvedCentreId,
-      },
-      include: {
-        assignedTo: {
-          select: { id: true, firstName: true, lastName: true },
+    try {
+      return await this.prisma.enquiry.create({
+        data: {
+          studentName: data.studentName,
+          parentName: data.parentName || null,
+          contactNumber: data.contactNumber,
+          email: data.email || null,
+          address: data.address || null,
+          source: data.source || 'Direct',
+          targetBoard: data.targetBoard || null,
+          targetStandard: data.targetStandard || null,
+          targetCourse: data.targetCourse || null,
+          status: data.status || EnquiryStatus.NEW,
+          followUpDate: data.followUpDate ? new Date(data.followUpDate) : null,
+          notes: data.notes || null,
+          assignedToId: data.assignedToId || null,
+          centreId: resolvedCentreId,
         },
-        centre: true,
-      },
-    });
+        include: {
+          assignedTo: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          centre: true,
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to create enquiry with centre relation, falling back to legacy insert: ${err?.message}`);
+      return await (this.prisma.enquiry as any).create({
+        data: {
+          studentName: data.studentName,
+          parentName: data.parentName || null,
+          contactNumber: data.contactNumber,
+          email: data.email || null,
+          address: data.address || null,
+          source: data.source || 'Direct',
+          targetBoard: data.targetBoard || null,
+          targetStandard: data.targetStandard || null,
+          targetCourse: data.targetCourse || null,
+          status: data.status || EnquiryStatus.NEW,
+          followUpDate: data.followUpDate ? new Date(data.followUpDate) : null,
+          notes: data.notes || null,
+          assignedToId: data.assignedToId || null,
+        },
+        include: {
+          assignedTo: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+        },
+      });
+    }
   }
 
   async getAllEnquiries(currentUser?: any) {
@@ -266,18 +314,80 @@ export class EnquiryService {
       whereClause = { centreId: { in: centreIds } };
     }
 
-    return this.prisma.enquiry.findMany({
-      where: whereClause,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        assignedTo: {
-          select: { id: true, firstName: true, lastName: true },
+    try {
+      return await this.prisma.enquiry.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          assignedTo: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          centre: {
+            select: { id: true, name: true, code: true },
+          },
         },
-        centre: {
-          select: { id: true, name: true, code: true },
-        },
-      },
-    });
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch enquiries with centre relation, falling back: ${err?.message}`);
+      try {
+        return await this.prisma.enquiry.findMany({
+          where: whereClause,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            studentName: true,
+            parentName: true,
+            contactNumber: true,
+            email: true,
+            address: true,
+            source: true,
+            targetBoard: true,
+            targetStandard: true,
+            targetCourse: true,
+            status: true,
+            followUpDate: true,
+            notes: true,
+            assignedToId: true,
+            createdAt: true,
+            updatedAt: true,
+            assignedTo: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+          },
+        });
+      } catch (innerErr: any) {
+        this.logger.warn(`Failed fallback with centreId filter, querying legacy enquiries: ${innerErr?.message}`);
+        try {
+          return await this.prisma.enquiry.findMany({
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              studentName: true,
+              parentName: true,
+              contactNumber: true,
+              email: true,
+              address: true,
+              source: true,
+              targetBoard: true,
+              targetStandard: true,
+              targetCourse: true,
+              status: true,
+              followUpDate: true,
+              notes: true,
+              assignedToId: true,
+              createdAt: true,
+              updatedAt: true,
+              assignedTo: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+            },
+          });
+        } catch (finalErr: any) {
+          this.logger.error(`Critical enquiry query failure: ${finalErr?.message}`);
+          return [];
+        }
+      }
+    }
   }
 
   async getEnquirySummary(currentUser?: any) {
@@ -291,27 +401,45 @@ export class EnquiryService {
       baseWhere = { centreId: { in: centreIds } };
     }
 
-    const total = await this.prisma.enquiry.count({ where: baseWhere });
+    try {
+      const total = await this.prisma.enquiry.count({ where: baseWhere });
 
-    // Beginning of current month
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const thisMonth = await this.prisma.enquiry.count({
-      where: {
-        ...baseWhere,
-        createdAt: { gte: firstDay },
-      },
-    });
+      const thisMonth = await this.prisma.enquiry.count({
+        where: {
+          ...baseWhere,
+          createdAt: { gte: firstDay },
+        },
+      });
 
-    const converted = await this.prisma.enquiry.count({
-      where: {
-        ...baseWhere,
-        status: EnquiryStatus.CONVERTED,
-      },
-    });
+      const converted = await this.prisma.enquiry.count({
+        where: {
+          ...baseWhere,
+          status: EnquiryStatus.CONVERTED,
+        },
+      });
 
-    return { total, thisMonth, converted };
+      return { total, thisMonth, converted };
+    } catch (err: any) {
+      this.logger.warn(`Failed to get enquiry summary with centre filter, falling back: ${err?.message}`);
+      try {
+        const total = await this.prisma.enquiry.count();
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const thisMonth = await this.prisma.enquiry.count({
+          where: { createdAt: { gte: firstDay } },
+        });
+        const converted = await this.prisma.enquiry.count({
+          where: { status: EnquiryStatus.CONVERTED },
+        });
+        return { total, thisMonth, converted };
+      } catch (fallbackErr: any) {
+        this.logger.error(`Failed fallback enquiry summary: ${fallbackErr?.message}`);
+        return { total: 0, thisMonth: 0, converted: 0 };
+      }
+    }
   }
 
   async updateEnquiry(id: string, data: any, currentUser?: any) {
@@ -354,33 +482,60 @@ export class EnquiryService {
       }
     }
 
-    return this.prisma.enquiry.update({
-      where: { id },
-      data: {
-        studentName: data.studentName !== undefined ? data.studentName : undefined,
-        parentName: data.parentName !== undefined ? data.parentName : undefined,
-        contactNumber: data.contactNumber !== undefined ? data.contactNumber : undefined,
-        email: data.email !== undefined ? data.email : undefined,
-        address: data.address !== undefined ? data.address : undefined,
-        source: data.source !== undefined ? data.source : undefined,
-        targetBoard: data.targetBoard !== undefined ? data.targetBoard : undefined,
-        targetStandard: data.targetStandard !== undefined ? data.targetStandard : undefined,
-        targetCourse: data.targetCourse !== undefined ? data.targetCourse : undefined,
-        status: data.status !== undefined ? data.status : undefined,
-        followUpDate: data.followUpDate !== undefined ? (data.followUpDate ? new Date(data.followUpDate) : null) : undefined,
-        notes: data.notes !== undefined ? data.notes : undefined,
-        assignedToId: data.assignedToId !== undefined ? data.assignedToId : undefined,
-        centreId: data.centreId !== undefined ? data.centreId : undefined,
-      },
-      include: {
-        assignedTo: {
-          select: { id: true, firstName: true, lastName: true },
+    try {
+      return await this.prisma.enquiry.update({
+        where: { id },
+        data: {
+          studentName: data.studentName !== undefined ? data.studentName : undefined,
+          parentName: data.parentName !== undefined ? data.parentName : undefined,
+          contactNumber: data.contactNumber !== undefined ? data.contactNumber : undefined,
+          email: data.email !== undefined ? data.email : undefined,
+          address: data.address !== undefined ? data.address : undefined,
+          source: data.source !== undefined ? data.source : undefined,
+          targetBoard: data.targetBoard !== undefined ? data.targetBoard : undefined,
+          targetStandard: data.targetStandard !== undefined ? data.targetStandard : undefined,
+          targetCourse: data.targetCourse !== undefined ? data.targetCourse : undefined,
+          status: data.status !== undefined ? data.status : undefined,
+          followUpDate: data.followUpDate !== undefined ? (data.followUpDate ? new Date(data.followUpDate) : null) : undefined,
+          notes: data.notes !== undefined ? data.notes : undefined,
+          assignedToId: data.assignedToId !== undefined ? data.assignedToId : undefined,
+          centreId: data.centreId !== undefined ? data.centreId : undefined,
         },
-        centre: {
-          select: { id: true, name: true, code: true },
+        include: {
+          assignedTo: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          centre: {
+            select: { id: true, name: true, code: true },
+          },
         },
-      },
-    });
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to update enquiry with centre relation, falling back to legacy update: ${err?.message}`);
+      return await (this.prisma.enquiry as any).update({
+        where: { id },
+        data: {
+          studentName: data.studentName !== undefined ? data.studentName : undefined,
+          parentName: data.parentName !== undefined ? data.parentName : undefined,
+          contactNumber: data.contactNumber !== undefined ? data.contactNumber : undefined,
+          email: data.email !== undefined ? data.email : undefined,
+          address: data.address !== undefined ? data.address : undefined,
+          source: data.source !== undefined ? data.source : undefined,
+          targetBoard: data.targetBoard !== undefined ? data.targetBoard : undefined,
+          targetStandard: data.targetStandard !== undefined ? data.targetStandard : undefined,
+          targetCourse: data.targetCourse !== undefined ? data.targetCourse : undefined,
+          status: data.status !== undefined ? data.status : undefined,
+          followUpDate: data.followUpDate !== undefined ? (data.followUpDate ? new Date(data.followUpDate) : null) : undefined,
+          notes: data.notes !== undefined ? data.notes : undefined,
+          assignedToId: data.assignedToId !== undefined ? data.assignedToId : undefined,
+        },
+        include: {
+          assignedTo: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+        },
+      });
+    }
   }
 
   /**
