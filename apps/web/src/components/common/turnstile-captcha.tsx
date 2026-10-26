@@ -27,6 +27,7 @@ declare global {
 }
 
 interface TurnstileCaptchaProps {
+  siteKey?: string;
   onVerify: (token: string) => void;
   onExpire?: () => void;
   action?: string;
@@ -34,6 +35,7 @@ interface TurnstileCaptchaProps {
 }
 
 export function TurnstileCaptcha({
+  siteKey: siteKeyProp,
   onVerify,
   onExpire,
   action = "admission_enquiry",
@@ -46,7 +48,9 @@ export function TurnstileCaptcha({
 
   // Cloudflare test sitekey (always passes) if NEXT_PUBLIC_TURNSTILE_SITE_KEY is not configured
   const siteKey =
-    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "1x00000000000000000000AA";
+    siteKeyProp ||
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ||
+    "1x00000000000000000000AA";
 
   useEffect(() => {
     let isMounted = true;

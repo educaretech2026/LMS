@@ -60,6 +60,8 @@ interface AcademicOptions {
   courses: Array<{ id: string; title: string; slug: string; level: string; price?: any }>;
   tracks: Array<{ id: string; name: string }>;
   centres: Array<{ id: string; name: string; code: string; address?: string; contactNo?: string; email?: string }>;
+  turnstileSiteKey?: string | null;
+  turnstileRequired?: boolean;
 }
 
 interface AdmissionPolicy {
@@ -527,8 +529,8 @@ export default function AdmissionPage() {
       const signer = formData.signerName.trim() || (formData.signerRole === "PARENT" ? formData.parentName : formData.studentName);
 
       if (academicOptions?.turnstileRequired && !turnstileToken) {
-        setSubmitError("Please complete the bot verification check before submitting.");
-        setIsSubmitting(false);
+        alert("Please complete the bot verification check before submitting.");
+        setSubmitting(false);
         return;
       }
 
