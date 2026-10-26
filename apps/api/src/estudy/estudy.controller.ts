@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { EstudyService } from './estudy.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -13,13 +13,13 @@ export class EstudyController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
-  getMaterials() {
-    return this.estudyService.getMaterials();
+  getMaterials(@Req() req: any) {
+    return this.estudyService.getMaterials(req.user);
   }
 
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  createMaterial(@Body() data: any) {
-    return this.estudyService.createMaterial(data);
+  createMaterial(@Body() data: any, @Req() req: any) {
+    return this.estudyService.createMaterial(data, req.user);
   }
 }
