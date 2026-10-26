@@ -149,6 +149,9 @@ export function validateCsrf(request: Request): { valid: boolean; reason?: strin
     'https://lms.educarelearning.in',
     'https://educarelearning.in',
     'https://api.educarelearning.in',
+    ...(process.env.APP_ENV === 'staging'
+      ? ['https://staging.educarelearning.in', 'https://staging-api.educarelearning.in']
+      : []),
   ];
 
   if (process.env.NEXT_PUBLIC_APP_URL) {

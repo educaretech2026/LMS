@@ -40,7 +40,15 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     throw new Error(`Invalid database protocol "${parsed.protocol}". Expected "postgresql:" or "postgres:".`);
   }
 
-  const hostname = (parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  let rawHostname = (parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  let hostname = rawHostname;
+  try {
+    hostname = decodeURIComponent(rawHostname);
+  } catch {
+    // Retain raw if decoding fails
+  }
+  hostname = hostname.trim().replace(/^\[|\]$/g, '');
+
   if (!hostname) {
     throw new Error('DATABASE_URL contains an empty or invalid hostname.');
   }
@@ -50,7 +58,14 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     throw new Error('DATABASE_URL contains an invalid port number.');
   }
 
-  const database = (parsed.pathname || '').replace(/^\//, '').split('?')[0].trim();
+  let rawDb = (parsed.pathname || '').replace(/^\//, '').split('?')[0].trim();
+  let database = rawDb;
+  try {
+    database = decodeURIComponent(rawDb);
+  } catch {
+    // Retain raw if decoding fails
+  }
+
   if (!database) {
     throw new Error('DATABASE_URL does not specify a database name in its path.');
   }
@@ -67,7 +82,7 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     hostname === 'postgres' ||
     hostname === 'db';
 
-  // Configurable production IPs and hostnames (including IPv4-mapped IPv6 and known aliases)
+  // Configurable production IPs and hostnames (including IPv4-mapped IPv6, DNS aliases, and hex representations)
   const configuredProdIps = process.env.PRODUCTION_DATABASE_IPS
     ? process.env.PRODUCTION_DATABASE_IPS.split(',').map((ip) => ip.trim().toLowerCase()).filter(Boolean)
     : [];
@@ -146,6 +161,10 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
 /**
  * Validates the database target against environment safety constraints.
  * Fails closed if running in staging and the target is unapproved, production, or remote without SSL.
+ *
+ * Separates Runtime Mode (NODE_ENV) from Deployment Tier (APP_ENV).
+ * A deployed staging environment standardly runs with NODE_ENV=production (optimized bundle/engine)
+ * and APP_ENV=staging (staging infrastructure tier).
  */
 export function assertValidTargetForEnvironment(
   rawUrl: string | undefined,
@@ -157,22 +176,32 @@ export function assertValidTargetForEnvironment(
   const nodeEnv = (envOptions?.nodeEnv ?? process.env.NODE_ENV ?? 'development').toLowerCase();
   const appEnv = (envOptions?.appEnv ?? process.env.APP_ENV ?? '').toLowerCase();
 
-  // Ambiguity check: Conflicting environment definitions
+  // Ambiguity check: Reject genuinely contradictory environment configurations
+  // Valid standard: NODE_ENV=production with APP_ENV=staging (deployed staging with optimized runtime)
+  // Contradiction 1: APP_ENV=production while NODE_ENV=staging or process.env.DEPLOYED_STAGING=true
   if (
-    (nodeEnv === 'production' && appEnv === 'staging') ||
-    (nodeEnv === 'staging' && appEnv === 'production')
+    appEnv === 'production' &&
+    (nodeEnv === 'staging' || process.env.DEPLOYED_STAGING === 'true' || process.env.STAGE === 'staging')
   ) {
     throw new Error(
-      'Ambiguous environment configuration: NODE_ENV and APP_ENV conflict (one is production, one is staging). Startup aborted for safety.',
+      'Ambiguous environment configuration: APP_ENV indicates production tier while staging mode is declared. Startup aborted for safety.',
     );
   }
 
-  const isProduction = nodeEnv === 'production' || appEnv === 'production';
-  const isStaging = nodeEnv === 'staging' || appEnv === 'staging';
+  // Contradiction 2: APP_ENV=production while running in development runtime mode
+  if (appEnv === 'production' && nodeEnv === 'development') {
+    throw new Error(
+      'Ambiguous environment configuration: APP_ENV=production cannot run with unoptimized NODE_ENV=development runtime. Startup aborted for safety.',
+    );
+  }
+
+  // Determine effective deployment tier: APP_ENV takes precedence over NODE_ENV
+  const isStagingTier = appEnv === 'staging' || (!appEnv && nodeEnv === 'staging');
+  const isProductionTier = appEnv === 'production' || (!appEnv && nodeEnv === 'production' && !isStagingTier);
 
   const targetInfo = parseDatabaseTarget(rawUrl);
 
-  if (isStaging) {
+  if (isStagingTier) {
     // 1. Must NOT be a production target
     if (targetInfo.isProductionTarget) {
       throw new Error(
@@ -200,7 +229,7 @@ export function assertValidTargetForEnvironment(
     }
   }
 
-  if (isProduction) {
+  if (isProductionTier) {
     // In production, loopback/local is not permitted unless explicit dev override
     if (targetInfo.isLocal && !process.env.ALLOW_LOCAL_PRODUCTION) {
       throw new Error(

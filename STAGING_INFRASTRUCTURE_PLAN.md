@@ -128,10 +128,13 @@ Save as `.env.staging` (or inject into your staging container orchestrator / sec
 
 # -----------------------------------------------------------------------------
 # Runtime & Environment Scoping
+# Runtime Mode: NODE_ENV=production (optimizations, minification, production build)
+# Deployment Tier: APP_ENV=staging (staging infrastructure, isolated allowlists)
 # -----------------------------------------------------------------------------
-NODE_ENV=staging
+NODE_ENV=production
 APP_ENV=staging
 PORT=3001
+STAGING_DATABASE_ALLOWLIST="staging-db.educare.internal,staging-postgres,staging-db"
 
 # -----------------------------------------------------------------------------
 # Isolated Staging Database (PostgreSQL 14+)
@@ -318,29 +321,42 @@ graph TD
     ForwardFix --> DeployForward["Deploy Forward-Fix via prisma migrate deploy"]
 ```
 
-1. **Option 1: Isolated Separate Target Restore & Cutover (Disaster Recovery)**
+1. **Option 1: Isolated Separate Target Restore & Controlled Cutover (Disaster Recovery)**
    > [!IMPORTANT]
-   > **Correction on In-Place Restoration**:
-   > In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails due to active client connections, foreign key dependencies, or lock timeouts, the database is left in an inconsistent, partially dropped state.
-   
-   **Standard Safe Procedure**:
-   - Pre-deployment backup:
+   > **Correction on In-Place Restoration & Split-Brain Writes**:
+   > In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` drops and creates objects sequentially, leaving partial state if interrupted.
+   > Furthermore, simply modifying `DATABASE_URL` and running a slow rolling restart is **not** an atomic cutover: during the rollout, old and new API replicas simultaneously write to different databases, resulting in permanent split-brain state desynchronization.
+
+   **Standard Controlled Cutover Runbook (Zero Split-Brain)**:
+   - **Step 1: Snapshot & Pre-Requisites**:
+     Ensure the executing database administrative role possesses `CREATEDB` and `GRANT ALL` privileges. Take a binary snapshot:
      ```bash
      pg_dump -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_pre_deploy.dump
      ```
-   - Restore into a separate freshly created target database or clone instance:
+   - **Step 2: Quiesce Write Traffic (Prevent Split Writes)**:
+     Drain ingress traffic or set the active database to read-only before restoring:
+     ```sql
+     -- Prevent any further mutations on the source database
+     ALTER DATABASE educare_staging SET default_transaction_read_only = on;
+     -- Terminate active mutation backends
+     SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
+     WHERE datname = 'educare_staging' AND pid <> pg_backend_pid();
+     ```
+   - **Step 3: Restore & Verify in Isolated Fresh Database**:
      ```bash
      createdb -h <STAGING_DB_HOST> -p 5432 -U educare_staging educare_staging_restored
      pg_restore -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_pre_deploy.dump
-     ```
-   - Validate restored database integrity:
-     ```bash
-     # Verify migration table consistency
-     psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT "id", "migration_name", "finished_at" FROM "_prisma_migrations";'
-     # Verify row counts match snapshot
+     
+     # Verify migration ledger and table counts
+     psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "_prisma_migrations";'
      psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
      ```
-   - Controlled atomic cutover: Update `DATABASE_URL` in container secret configuration to point to `educare_staging_restored` and trigger a rolling restart. Retain the prior database for post-mortem analysis.
+   - **Step 4: Coordinated Cutover**:
+     Update `DATABASE_URL` in container secret manager (or repoint internal connection pooler / PgBouncer / DNS endpoint `staging-db.educare.internal` to the restored instance).
+   - **Step 5: Coordinated Replica Transition**:
+     Restart or transition all API container replicas synchronously (`kubectl rollout restart deployment/api` or scaling to 0 and back to N) to ensure no active connections remain pointed to the old database.
+   - **Step 6: Integrity Verification & Quarantine**:
+     Verify `GET /health` and run read/write smoke queries on the restored database. Retain the quarantined original database for forensic analysis; do not drop immediately.
 
 2. **Option 2: Zero-Downtime Application Version Rollback (Preferred)**
    - Revert application image / container deployment to the previous stable release tag.
@@ -354,11 +370,23 @@ graph TD
    > [!WARNING]
    > **Preventing Data Loss on Rollback**:
    > Executing `ALTER TABLE "custom_forms" DROP COLUMN "centreId"` directly drops all centre-assignment data recorded while the migration was active.
-   - If a schema alteration must be rolled back, preserve data first in an archival table:
+   > Furthermore, `CREATE TABLE IF NOT EXISTS ... AS SELECT` does NOT append or update mappings if the archive table already exists from a prior execution.
+   - When archiving data prior to schema alteration, use an idempotent schema definition with upsert:
      ```sql
-     -- Archive active mappings before schema alterations
-     CREATE TABLE IF NOT EXISTS "custom_forms_centre_archive" AS
-     SELECT "id", "centreId", NOW() as archived_at FROM "custom_forms" WHERE "centreId" IS NOT NULL;
+     -- Create archive table with explicit primary key
+     CREATE TABLE IF NOT EXISTS "custom_forms_centre_archive" (
+       "id" TEXT PRIMARY KEY,
+       "centreId" TEXT NOT NULL,
+       "archived_at" TIMESTAMPTZ DEFAULT NOW()
+     );
+     
+     -- Idempotently append or update active centre mappings
+     INSERT INTO "custom_forms_centre_archive" ("id", "centreId", "archived_at")
+     SELECT "id", "centreId", NOW()
+     FROM "custom_forms"
+     WHERE "centreId" IS NOT NULL
+     ON CONFLICT ("id") DO UPDATE 
+     SET "centreId" = EXCLUDED."centreId", "archived_at" = EXCLUDED."archived_at";
      
      -- Drop constraint and column safely via forward-fix
      ALTER TABLE "custom_forms" DROP CONSTRAINT IF EXISTS "custom_forms_centreId_fkey";
@@ -395,7 +423,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 
 ### Verified Test Runner Output:
 - **Test Suites**: **18 passed, 18 total**
-- **Tests**: **437 passed, 437 total**
+- **Tests**: **441 passed, 441 total**
 - **Skipped Tests**: **0**
 - **Failed Tests**: **0**
 - **Snapshots**: **0**
@@ -403,9 +431,9 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 ### Reconciled Suite Breakdown:
 | Suite Name | File Location | Tests | Status |
 | :--- | :--- | :-: | :-: |
-| **Dedicated Authorization Remediation Suite** | `apps/api/src/common/authorization-remediation.spec.ts` | **101** | **PASS** |
+| **Dedicated Authorization Remediation Suite** | `apps/api/src/common/authorization-remediation.spec.ts` | **103** | **PASS** |
 | **Comprehensive Security Regression Suite** | `apps/api/src/common/security-regression.spec.ts` | **298** | **PASS** |
-| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **23** | **PASS** |
+| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **25** | **PASS** |
 | **Enquiry Controller Suite** | `apps/api/src/enquiry/enquiry.controller.spec.ts` | **1** | **PASS** |
 | **Enquiry Service Suite** | `apps/api/src/enquiry/enquiry.service.spec.ts` | **1** | **PASS** |
 | **Assignments Controller Suite** | `apps/api/src/assignments/assignments.controller.spec.ts` | **1** | **PASS** |
@@ -420,8 +448,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | **Report Service Suite** | `apps/api/src/report/report.service.spec.ts` | **1** | **PASS** |
 | **Fee Controller Suite** | `apps/api/src/fee/fee.controller.spec.ts` | **1** | **PASS** |
 | **Fee Service Suite** | `apps/api/src/fee/fee.service.spec.ts` | **1** | **PASS** |
-| **App Controller Suite** | `apps/api/src/app.controller.spec.ts` | **1** | **PASS** |
-| **TOTAL** | **18 Test Suites** | **437** | **PASS** |
+| **TOTAL** | **18 Test Suites** | **441** | **PASS** |
 
 ---
 

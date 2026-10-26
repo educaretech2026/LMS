@@ -104,14 +104,21 @@ export class EnquiryService {
         }
 
         // Hostname allowlist validation (exclude API hostname since widget is rendered strictly on web frontends)
-        const defaultHostnames = ['lms.educarelearning.in', 'educarelearning.in'];
+        const isStagingTier = process.env.APP_ENV === 'staging' || process.env.NODE_ENV === 'staging';
+        const defaultHostnames = [
+          'lms.educarelearning.in',
+          'educarelearning.in',
+          ...(isStagingTier ? ['staging.educarelearning.in', 'lms.staging.educarelearning.in'] : []),
+        ];
         const configuredHostnames = process.env.TURNSTILE_ALLOWED_HOSTNAMES
           ? process.env.TURNSTILE_ALLOWED_HOSTNAMES.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
           : [];
         const allowedHostnames = new Set([
           ...defaultHostnames,
           ...configuredHostnames,
-          ...(process.env.NODE_ENV !== 'production' ? ['localhost', '127.0.0.1'] : []),
+          ...((process.env.NODE_ENV !== 'production' && !isStagingTier) || process.env.ALLOW_LOCAL_STAGING_HOSTS === 'true'
+            ? ['localhost', '127.0.0.1']
+            : []),
         ]);
 
         let returnedHostname = String(verifyData.hostname || '').toLowerCase().trim();

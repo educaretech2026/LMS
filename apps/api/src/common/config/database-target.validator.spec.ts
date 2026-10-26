@@ -184,15 +184,45 @@ describe('Database Target & Environment Safety Validator', () => {
       ).toThrow(/identified as a production system/);
     });
 
-    it('should REJECT ambiguous conflicting environment settings (NODE_ENV=production, APP_ENV=staging)', () => {
-      const url = 'postgresql://user:Secret123@127.0.0.1:5433/educare_db';
-      expect(() =>
-        assertValidTargetForEnvironment(url, { nodeEnv: 'production', appEnv: 'staging' }),
-      ).toThrow('Ambiguous environment configuration: NODE_ENV and APP_ENV conflict');
+    it('should ALLOW standard deployed staging configuration (NODE_ENV=production with APP_ENV=staging)', () => {
+      const stagingUrl =
+        'postgresql://user:Secret123@staging-db.educarelearning.in:5432/educare_staging?sslmode=require';
+      const result = assertValidTargetForEnvironment(stagingUrl, {
+        nodeEnv: 'production',
+        appEnv: 'staging',
+      });
+      expect(result.isApprovedStagingTarget).toBe(true);
+      expect(result.isProductionTarget).toBe(false);
+    });
 
+    it('should REJECT genuinely contradictory environment settings', () => {
+      const url = 'postgresql://user:Secret123@127.0.0.1:5433/educare_db';
+
+      // Contradiction 1: APP_ENV=production with unoptimized development runtime
       expect(() =>
-        assertValidTargetForEnvironment(url, { nodeEnv: 'staging', appEnv: 'production' }),
-      ).toThrow('Ambiguous environment configuration: NODE_ENV and APP_ENV conflict');
+        assertValidTargetForEnvironment(url, { nodeEnv: 'development', appEnv: 'production' }),
+      ).toThrow('APP_ENV=production cannot run with unoptimized NODE_ENV=development runtime');
+
+      // Contradiction 2: APP_ENV=production while staging flag is declared
+      process.env.DEPLOYED_STAGING = 'true';
+      expect(() =>
+        assertValidTargetForEnvironment(url, { nodeEnv: 'production', appEnv: 'production' }),
+      ).toThrow('APP_ENV indicates production tier while staging mode is declared');
+      delete process.env.DEPLOYED_STAGING;
+    });
+
+    it('should decode URL-encoded hostnames and database names and enforce safety', () => {
+      // URL-encoded production IP %31%34%38%2E%31%33%35%2E%31%33%38%2E%31%39%36 -> 148.135.138.196
+      const encodedProdUrl = 'postgresql://user:Secret123@%31%34%38%2E%31%33%35%2E%31%33%38%2E%31%39%36:5432/postgres';
+      expect(() =>
+        assertValidTargetForEnvironment(encodedProdUrl, { appEnv: 'staging' }),
+      ).toThrow(/identified as a production system/);
+
+      // URL-encoded database name
+      const encodedDbUrl =
+        'postgresql://user:Secret123@staging-db.educarelearning.in:5432/educare%5Fstaging?sslmode=require';
+      const result = assertValidTargetForEnvironment(encodedDbUrl, { appEnv: 'staging' });
+      expect(result.database).toBe('educare_staging');
     });
   });
 

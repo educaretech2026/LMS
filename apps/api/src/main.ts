@@ -9,21 +9,32 @@ import helmet from 'helmet';
 import { assertValidTargetForEnvironment } from './common/config/database-target.validator';
 
 function runPreflightSafetyChecks() {
-  const isProd = process.env.NODE_ENV === 'production';
-  const isStag = process.env.NODE_ENV === 'staging' || process.env.APP_ENV === 'staging';
+  const nodeEnv = (process.env.NODE_ENV || 'development').toLowerCase();
+  const appEnv = (process.env.APP_ENV || '').toLowerCase();
+
+  const isStag = appEnv === 'staging' || (!appEnv && nodeEnv === 'staging');
+  const isProd = appEnv === 'production' || (!appEnv && nodeEnv === 'production' && !isStag);
 
   if (!isProd && !isStag) {
     return; // Allow permissive development defaults
   }
 
-  const envLabel = isProd ? 'production' : 'staging';
+  const envLabel = isStag ? 'staging' : 'production';
+  const isDeployedStaging = isStag && (process.env.DEPLOYED_STAGING === 'true' || nodeEnv === 'production');
 
   // 1. Strict Fail-Closed Database Target Verification (blocks prod IPs, unapproved hosts, cleartext SSL)
   assertValidTargetForEnvironment(process.env.DATABASE_URL);
 
-  // 2. REDIS_URL presence
-  if (!process.env.REDIS_URL || !process.env.REDIS_URL.trim()) {
+  // 2. REDIS_URL presence and deployed staging check
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl || !redisUrl.trim()) {
     throw new Error(`FATAL: REDIS_URL is mandatory in ${envLabel} for secure session enforcement and distributed rate limiting.`);
+  }
+  if (isDeployedStaging) {
+    const redisLower = redisUrl.toLowerCase();
+    if (redisLower.includes('localhost') || redisLower.includes('127.0.0.1') || redisLower.includes('::1')) {
+      throw new Error('FATAL: Deployed staging cannot use localhost fallback for REDIS_URL. Dedicated authenticated staging Redis instance is required.');
+    }
   }
 
   // 3. JWT_SECRET strength
@@ -39,6 +50,14 @@ function runPreflightSafetyChecks() {
   // 4. TURNSTILE_SECRET_KEY
   if (!process.env.TURNSTILE_SECRET_KEY || !process.env.TURNSTILE_SECRET_KEY.trim()) {
     throw new Error(`FATAL: TURNSTILE_SECRET_KEY is mandatory in ${envLabel} for public form protection.`);
+  }
+
+  // 5. Cloudflare R2 bucket separation for staging
+  if (isStag) {
+    const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME;
+    if (bucket && (bucket.trim() === 'educare' || bucket.trim() === 'educare-prod')) {
+      throw new Error(`FATAL: Staging environment cannot use production Cloudflare R2 bucket "${bucket}". Dedicated staging bucket (e.g. "educare-staging") is required.`);
+    }
   }
 }
 

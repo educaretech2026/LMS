@@ -174,12 +174,12 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | :--- | :--- | :--- | :--- |
 | **Database Schema** | `pnpm --filter @educare/database exec prisma validate` | **PASS** | `The schema at prisma/schema.prisma is valid 🚀` |
 | **Prisma Client Generation** | `pnpm --filter @educare/database db:generate` | **PASS** | Generated client v5.19.1 in 321ms. |
-| **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **101/101 tests passed** (including Scope J cases 1–10). |
+| **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **103/103 tests passed** (including Scope H Turnstile staging hostname cases). |
 | **Security Regression Suite** | `pnpm --filter api test -- security-regression.spec.ts` | **PASS** | **298/298 tests passed**. |
-| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **23/23 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, deployed staging policy, zero-leak credentials, lifecycle ordering, bypass removal). |
-| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 437 tests passed, 0 failed, 0 skipped**. |
+| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **25/25 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, runtime mode vs deployment tier separation, URL-encoded decoding, zero-leak credentials, lifecycle ordering, bypass removal). |
+| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 441 tests passed, 0 failed, 0 skipped**. |
 | **API Production Build** | `pnpm --filter api build` | **PASS** | Clean `nest build` compilation (0 TypeScript errors). |
-| **Web Production Build** | `pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
+| **Web Production Build (Staging Mode)** | `NODE_ENV=production APP_ENV=staging pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
 | **Mobile Typecheck** | `pnpm --filter mobile typecheck` | **PASS** | Expo React Native `tsc --noEmit` passed with 0 errors. |
 | **Web Lint** | `pnpm --filter web lint` | **PRE-EXISTING ISSUES** | 803 pre-existing lint issues in web repo (mostly `any` types and React 19 hook purity). Build passes. |
 | **API Lint** | `pnpm --filter api lint` | **PRE-EXISTING ISSUES** | Pre-existing prettier formatting issues in test files. Code builds and runs cleanly. |
@@ -195,12 +195,13 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | **CRITICAL** | **F-01** | Database Target Isolation | `packages/database/.env`<br>`apps/api/src/common/config/database-target.validator.ts` | `packages/database/.env` points to live production server (`148.135.138.196:5432`). If unverified, migration or seed commands could mutate live data. | **REMEDIATED (CODE)**: Built `assertValidTargetForEnvironment()` and `assertSafeReconciliationTarget()` enforcing fail-closed checks against production IPs, hostnames, IPv6 aliases, and unallowlisted remote hosts. External staging DB required. |
 | **CRITICAL** | **F-02** | Startup Connection Ordering | `apps/api/src/main.ts`<br>`apps/api/src/database/prisma.service.ts` | `NestFactory.create(AppModule)` connects to PostgreSQL during `PrismaService.onModuleInit()` before bootstrap preflight checks execute. | **REMEDIATED (CODE)**: Reordered `runPreflightSafetyChecks()` to line 1 of `bootstrap()` before `NestFactory.create()`, and added defense-in-depth target assertion in `PrismaService.onModuleInit()`. |
 | **CRITICAL** | **F-03** | Reconciliation Script Bypass | `packages/database/prisma/scripts/backfill-enquiry-centres.ts`<br>`packages/database/prisma/scripts/backfill-study-material-centres.ts` | Previous `ALLOW_PRODUCTION_RECONCILIATION=true` environment override could accidentally trigger live database mutations via inherited shell or CI environment. | **REMEDIATED (CODE)**: Removed generic bypass completely. CLI writes against production are unconditionally forbidden; staging apply requires `--confirm-staging-target=<db_name>` matching the target database name on an approved staging host. |
-| **HIGH** | **F-04** | Distributed Rate Limiting & Revocation | `apps/api/src/redis/redis.service.ts`<br>`apps/api/src/common/guards/strict-throttler.guard.ts` | Missing `REDIS_URL` in staging environment results in in-memory fallback, allowing rate-limit bypassing across multiple API replicas and preventing distributed session revocation. | **BLOCKED (INFRASTRUCTURE)**: Code preflight asserts `REDIS_URL` presence in staging. External staging Redis instance must be provisioned. |
+| **HIGH** | **F-04** | Distributed Rate Limiting & Revocation | `apps/api/src/redis/redis.service.ts`<br>`apps/api/src/common/guards/strict-throttler.guard.ts` | Missing `REDIS_URL` in staging environment results in in-memory fallback, allowing rate-limit bypassing across multiple API replicas and preventing distributed session revocation. | **BLOCKED (INFRASTRUCTURE)**: Code preflight asserts `REDIS_URL` presence in staging. Local fallback is strictly rejected when `DEPLOYED_STAGING=true`. External staging Redis instance must be provisioned. |
 | **HIGH** | **F-05** | Public Enquiry Tenant Hijacking | `apps/api/src/enquiry/enquiry.service.ts`<br>`packages/database/prisma/schema.prisma` | Public admission enquiries could infer centre ownership from unverified client parameters or form names. | **REMEDIATED (CODE)**: Added `CustomForm.centreId` schema relation and migration `20261025_add_custom_form_centre`. Public enquiries strictly resolve centre ownership from authoritative form relation; unbound forms create unassigned records (`centreId: null`). |
-| **HIGH** | **F-06** | Cloudflare Turnstile Verification | `apps/api/src/enquiry/enquiry.service.ts` | Turnstile credentials currently configured use production account, and staging frontends (`staging.educarelearning.in`) would be rejected by hostname allowlist. | **BLOCKED (INFRASTRUCTURE)**: Code enforces hostname verification and fail-closed secret checks. Dedicated staging Turnstile sitekey/secret and Cloudflare domain approval required. |
-| **MEDIUM** | **F-07** | In-Place Disaster Recovery Assumption | `STAGING_INFRASTRUCTURE_PLAN.md`<br>`STAGING_VALIDATION_REPORT.md` | Prior documentation claimed `pg_restore --clean --if-exists` is atomic. In PostgreSQL, `pg_restore` is non-atomic and drops objects sequentially, risking partial database state on failure. | **REMEDIATED (DOCS)**: Documented separate target restore into fresh database (`educare_staging_restored`), schema validation, and controlled atomic connection cutover. |
+| **HIGH** | **F-06** | Cloudflare Turnstile Verification | `apps/api/src/enquiry/enquiry.service.ts` | Turnstile credentials currently configured use production account, and staging frontends (`staging.educarelearning.in`) were omitted from default allowlists. | **REMEDIATED (CODE)**: Included `staging.educarelearning.in` and `lms.staging.educarelearning.in` in staging allowlist; supported dynamic extension via `TURNSTILE_ALLOWED_HOSTNAMES`. Dedicated staging Turnstile credentials required. |
+| **MEDIUM** | **F-07** | In-Place Disaster Recovery & Split Writes | `STAGING_INFRASTRUCTURE_PLAN.md`<br>`STAGING_VALIDATION_REPORT.md` | Prior documentation claimed `pg_restore --clean --if-exists` is atomic and recommended rolling restarts, risking split-brain writes across replicas. | **REMEDIATED (DOCS)**: Documented 6-step controlled cutover runbook: quiesce write traffic, restore into fresh DB (`educare_staging_restored`), validate ledger/counts, repoint connection endpoint, transition replicas synchronously, and quarantine original DB. |
 | **MEDIUM** | **F-08** | Ingress Reverse-Proxy Spoofing | `apps/api/src/common/guards/strict-throttler.guard.ts` | If untrusted clients send forged `X-Forwarded-For` or `CF-Connecting-IP` headers directly to API, rate limits could be spoofed. | **REMEDIATED (CODE)**: `StrictThrottlerGuard` evaluates peer IP strictly via `req.socket.remoteAddress` unless upstream peer IP matches explicit `TRUSTED_PROXIES` CIDR. |
-| **LOW** | **F-09** | Forward-Fix Migration Data Loss | `STAGING_INFRASTRUCTURE_PLAN.md` | Dropping `centreId` from `custom_forms` during forward-fix rollback causes data loss of active form associations. | **REMEDIATED (DOCS)**: Documented non-destructive archival pattern (`custom_forms_centre_archive`) and highlighted zero-downtime application rollback without DDL. |
+| **MEDIUM** | **F-09** | Runtime Mode vs Deployment Tier Conflict | `apps/api/src/common/config/database-target.validator.ts` | Early validator rejected `NODE_ENV=production` with `APP_ENV=staging`, conflicting with standard optimized Next.js/NestJS staging deployments. | **REMEDIATED (CODE)**: Separated runtime mode (`NODE_ENV=production`) from deployment tier (`APP_ENV=staging`). Deployed staging with production-optimized bundle is now supported and verified. |
+| **LOW** | **F-10** | Non-Idempotent Archival in Forward-Fix | `STAGING_INFRASTRUCTURE_PLAN.md` | `CREATE TABLE IF NOT EXISTS ... AS SELECT` does not append or update newly created mappings if run more than once. | **REMEDIATED (DOCS)**: Updated migration runbook with idempotent DDL and `INSERT ... ON CONFLICT ("id") DO UPDATE` pattern. |
 
 ---
 
@@ -208,28 +209,39 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 
 If issues arise following migration or deployment in staging or production:
 
-### A. Isolated Separate Target Restore & Cutover (Disaster Recovery)
+### A. Isolated Separate Target Restore & Controlled Cutover (Zero Split-Brain)
 > [!IMPORTANT]
-> **Correction on In-Place Restoration**:
+> **Correction on In-Place Restoration & Split-Brain Writes**:
 > In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails midway due to active connections, lock timeouts, or foreign key dependencies, the database is left in a corrupted or half-dropped state.
+> Furthermore, updating `DATABASE_URL` during a slow rolling restart causes split-brain writes: old replicas write to the old database while new replicas write to the restored database.
 
-**Standard Safe Procedure**:
+**Controlled Cutover Runbook (Zero Split-Brain)**:
 1. **Pre-deployment snapshot**:
+   Ensure executing user has `CREATEDB` and `GRANT ALL` administrative privileges:
    ```bash
    pg_dump -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_pre_deploy.dump
    ```
-2. **Restore into a separate freshly created database**:
+2. **Quiesce Write Traffic**:
+   Set the active database to read-only or activate ingress maintenance mode before cutover:
+   ```sql
+   ALTER DATABASE educare_staging SET default_transaction_read_only = on;
+   SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
+   WHERE datname = 'educare_staging' AND pid <> pg_backend_pid();
+   ```
+3. **Restore into a separate freshly created database**:
    ```bash
    createdb -h <DB_HOST> -p 5432 -U educare_staging educare_staging_restored
    pg_restore -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_pre_deploy.dump
    ```
-3. **Validate restored database integrity**:
+4. **Validate restored database integrity**:
    ```bash
-   psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT "id", "migration_name", "finished_at" FROM "_prisma_migrations";'
+   psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "_prisma_migrations";'
    psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
    ```
-4. **Controlled atomic cutover**:
-   Update `DATABASE_URL` in the secrets manager to point to `educare_staging_restored` and trigger a rolling restart of API containers. Retain the prior database for post-mortem analysis.
+5. **Coordinated Target Switch & Synchronous Replica Transition**:
+   Update `DATABASE_URL` in secrets manager (or repoint internal PgBouncer pooler) and restart all replicas synchronously (`kubectl rollout restart deployment/api` or scaling to 0 and back to N) to ensure no connections remain open to the old database.
+6. **Verification & Forensic Quarantine**:
+   Verify `GET /health` and smoke test write paths. Retain the quarantined original database for post-mortem analysis; do not delete immediately.
 
 ### B. Zero-Downtime Application Version Rollback (Preferred)
 - Revert the API container to the prior release tag.
@@ -239,11 +251,23 @@ If issues arise following migration or deployment in staging or production:
 > [!WARNING]
 > **Preventing Data Loss**:
 > Directly executing `ALTER TABLE "custom_forms" DROP COLUMN "centreId"` permanently destroys any centre-ownership mappings recorded during the active deployment window.
-- When reversing a schema change via forward-fix, preserve active mappings first:
+> Furthermore, `CREATE TABLE IF NOT EXISTS ... AS SELECT` does not append or update if the archive table already exists.
+- When reversing a schema change via forward-fix, preserve active mappings idempotently with primary key and upsert:
   ```sql
-  -- Archive active mappings before schema alterations
-  CREATE TABLE IF NOT EXISTS "custom_forms_centre_archive" AS
-  SELECT "id", "centreId", NOW() as archived_at FROM "custom_forms" WHERE "centreId" IS NOT NULL;
+  -- Create archive table with explicit primary key
+  CREATE TABLE IF NOT EXISTS "custom_forms_centre_archive" (
+    "id" TEXT PRIMARY KEY,
+    "centreId" TEXT NOT NULL,
+    "archived_at" TIMESTAMPTZ DEFAULT NOW()
+  );
+  
+  -- Idempotently append or update active centre mappings
+  INSERT INTO "custom_forms_centre_archive" ("id", "centreId", "archived_at")
+  SELECT "id", "centreId", NOW()
+  FROM "custom_forms"
+  WHERE "centreId" IS NOT NULL
+  ON CONFLICT ("id") DO UPDATE 
+  SET "centreId" = EXCLUDED."centreId", "archived_at" = EXCLUDED."archived_at";
   
   -- Drop constraint and column safely via forward migration
   ALTER TABLE "custom_forms" DROP CONSTRAINT IF EXISTS "custom_forms_centreId_fkey";

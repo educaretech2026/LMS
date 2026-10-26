@@ -2287,6 +2287,57 @@ describe('Authorization Remediation Regression Suite', () => {
       expect(mockPrisma.enquiry.create).not.toHaveBeenCalled();
     });
 
+    it('Accepts Turnstile token issued for staging.educarelearning.in when APP_ENV=staging', async () => {
+      const prevAppEnv = process.env.APP_ENV;
+      process.env.APP_ENV = 'staging';
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          hostname: 'staging.educarelearning.in',
+          action: 'admission_enquiry',
+        }),
+      } as any);
+
+      const result = await enquiryService.createPublicEnquiry({
+        studentName: 'Staging Student',
+        contactNumber: '9876543210',
+        turnstileToken: 'staging-token-valid',
+      });
+
+      expect(result).toBeDefined();
+      expect(mockPrisma.enquiry.create).toHaveBeenCalled();
+      if (prevAppEnv) {
+        process.env.APP_ENV = prevAppEnv;
+      } else {
+        delete process.env.APP_ENV;
+      }
+    });
+
+    it('Accepts Turnstile token for dynamically configured hostnames via TURNSTILE_ALLOWED_HOSTNAMES', async () => {
+      process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
+      process.env.TURNSTILE_ALLOWED_HOSTNAMES = 'custom-staging.educarelearning.in,test-domain.org';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          hostname: 'custom-staging.educarelearning.in',
+          action: 'admission_enquiry',
+        }),
+      } as any);
+
+      const result = await enquiryService.createPublicEnquiry({
+        studentName: 'Custom Staging Student',
+        contactNumber: '9876543210',
+        turnstileToken: 'custom-staging-token',
+      });
+
+      expect(result).toBeDefined();
+      expect(mockPrisma.enquiry.create).toHaveBeenCalled();
+      delete process.env.TURNSTILE_ALLOWED_HOSTNAMES;
+    });
+
     it('Rejects expired or replayed Turnstile token with explicit timeout-or-duplicate error message', async () => {
       process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAATestKey';
       global.fetch = jest.fn().mockResolvedValue({
