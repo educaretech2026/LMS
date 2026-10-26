@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { fetchApi } from "@/lib/api";
 import logoImage from "@/logos/logo1-clean.png";
+import { TurnstileCaptcha } from "@/components/common/turnstile-captcha";
 import {
   GraduationCap,
   ShieldCheck,
@@ -225,6 +226,7 @@ export default function AdmissionPage() {
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [applicationRef, setApplicationRef] = useState<string>("");
   const [submissionDate, setSubmissionDate] = useState<string>("");
+  const [turnstileToken, setTurnstileToken] = useState<string>("");
 
   // Load rules & policy & live academic options from backend
   useEffect(() => {
@@ -539,6 +541,7 @@ export default function AdmissionPage() {
         signatureType: signatureMode === "DRAW" ? "DRAWN_CANVAS" : "UPLOADED_IMAGE",
         signerName: signer,
         termsAccepted: true,
+        turnstileToken: turnstileToken || undefined,
       };
 
       const result = (await fetchApi("/enquiry/public", {
@@ -704,6 +707,7 @@ export default function AdmissionPage() {
                   setSignatureData(null);
                   setIsCanvasDrawn(false);
                   setUploadedFileName(null);
+                  setTurnstileToken("");
                   setFormData({
                     studentName: "",
                     parentName: "",
@@ -1615,6 +1619,15 @@ export default function AdmissionPage() {
                       </span>
                     </div>
                   </label>
+                </div>
+
+                {/* Cloudflare Turnstile Bot Protection */}
+                <div className="pt-2">
+                  <TurnstileCaptcha
+                    onVerify={(token) => setTurnstileToken(token)}
+                    onExpire={() => setTurnstileToken("")}
+                    action="admission_enquiry"
+                  />
                 </div>
               </div>
             )}

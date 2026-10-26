@@ -1,15 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { SplashScreen } from "@/components/splash-screen";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-});
-
 import { getUserFromToken } from "@/lib/auth-server";
 
 export const metadata: Metadata = {
@@ -20,8 +12,8 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const user = await getUserFromToken();
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-inter">
+    <html lang="en" className="h-full antialiased font-sans">
+      <body className="min-h-full flex flex-col font-sans">
         <SplashScreen />
         <AuthProvider
           initialRole={user?.role}
