@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { fetchApi } from "@/lib/api";
 import logoImage from "@/logos/logo1-clean.png";
-import { TurnstileCaptcha } from "@/components/common/turnstile-captcha";
 import {
   GraduationCap,
   ShieldCheck,
@@ -228,7 +227,19 @@ export default function AdmissionPage() {
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [applicationRef, setApplicationRef] = useState<string>("");
   const [submissionDate, setSubmissionDate] = useState<string>("");
-  const [turnstileToken, setTurnstileToken] = useState<string>("");
+  // Form Validation State
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [stepError, setStepError] = useState<string | null>(null);
+
+  const clearFieldError = (field: string) => {
+    setErrors((prev) => {
+      if (!prev[field]) return prev;
+      const updated = { ...prev };
+      delete updated[field];
+      return updated;
+    });
+    setStepError(null);
+  };
 
   // Load rules & policy & live academic options from backend
   useEffect(() => {
@@ -353,6 +364,7 @@ export default function AdmissionPage() {
         canvas.releasePointerCapture(e.pointerId);
       } catch {}
       setSignatureData(canvas.toDataURL("image/png"));
+      clearFieldError("signature");
     }
     isDrawing.current = false;
     lastPos.current = null;
@@ -374,12 +386,12 @@ export default function AdmissionPage() {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      alert("Please upload a valid image file (PNG, JPG, JPEG, WEBP).");
+      setStepError("Please upload a valid image file (PNG, JPG, JPEG, WEBP).");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("File size exceeds 5MB limit. Please choose a smaller signature image.");
+      setStepError("File size exceeds 5MB limit. Please choose a smaller signature image.");
       return;
     }
 
@@ -388,6 +400,7 @@ export default function AdmissionPage() {
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       setSignatureData(dataUrl);
+      clearFieldError("signature");
     };
     reader.readAsDataURL(file);
   };
@@ -457,45 +470,127 @@ export default function AdmissionPage() {
   };
 
   // Step Validation
-  const validateStep1 = () => {
-    if (!formData.studentName.trim() || formData.studentName.trim().length < 2) {
-      alert("Please enter a valid student full name.");
+  // Step 1 Validation
+  const validateStep1 = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    const name = formData.studentName.trim();
+    if (!name) {
+      newErrors.studentName = "Student full name is required.";
+    } else if (name.length < 2) {
+      newErrors.studentName = "Student name must be at least 2 characters.";
+    } else if (name.length > 100) {
+      newErrors.studentName = "Student name cannot exceed 100 characters.";
+    } else if (!/^[a-zA-Z\s.'-]+$/.test(name)) {
+      newErrors.studentName = "Please enter a valid legal name using letters only.";
+    }
+
+    const parent = formData.parentName.trim();
+    if (!parent) {
+      newErrors.parentName = "Parent / guardian full name is required.";
+    } else if (parent.length < 2) {
+      newErrors.parentName = "Parent / guardian name must be at least 2 characters.";
+    } else if (parent.length > 100) {
+      newErrors.parentName = "Parent name cannot exceed 100 characters.";
+    } else if (!/^[a-zA-Z\s.'-]+$/.test(parent)) {
+      newErrors.parentName = "Please enter a valid legal name using letters only.";
+    }
+
+    const cleanPhone = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
+    const normalizedPhone = cleanPhone.startsWith("91") && cleanPhone.length === 12 ? cleanPhone.slice(2) : cleanPhone;
+    if (!normalizedPhone) {
+      newErrors.contactNumber = "Mobile contact number is required.";
+    } else if (!/^[6-9]\d{9}$/.test(normalizedPhone)) {
+      newErrors.contactNumber = "Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).";
+    }
+
+    if (formData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        newErrors.email = "Please enter a valid email address (e.g. name@domain.com).";
+      }
+    }
+
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      setStepError("Please fill in all mandatory fields with valid information to continue.");
       return false;
     }
-    if (!formData.parentName.trim() || formData.parentName.trim().length < 2) {
-      alert("Please enter a valid parent or guardian name.");
-      return false;
-    }
-    const cleanPhone = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "");
-    if (!cleanPhone || cleanPhone.length < 10) {
-      alert("Please enter a valid 10-digit mobile number.");
-      return false;
-    }
+
+    setStepError(null);
     return true;
   };
 
-  const validateStep2 = () => {
+  // Step 2 Validation
+  const validateStep2 = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.centreId && !formData.preferredCampus) {
+      newErrors.preferredCampus = "Please select your preferred study campus or centre.";
+    }
+
     if (!formData.targetBoard) {
-      alert("Please select a target academic board.");
-      return false;
+      newErrors.targetBoard = "Please select a target curriculum board.";
     }
+
     if (!formData.targetStandard) {
-      alert("Please select the target class / grade.");
+      newErrors.targetStandard = "Please select your class / grade.";
+    }
+
+    if (!formData.targetCourse) {
+      newErrors.targetCourse = "Please select your target course stream.";
+    }
+
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      setStepError("Please select all required academic options before continuing.");
       return false;
     }
+
+    setStepError(null);
+    return true;
+  };
+
+  // Step 3 Validation
+  const validateStep3 = (): boolean => {
+    if (!allMandatoryVerified) {
+      setStepError("Please click 'Click to Verify' on all mandatory regulations above before proceeding to the digital signature step.");
+      return false;
+    }
+    setStepError(null);
+    return true;
+  };
+
+  // Step 4 Validation
+  const validateStep4 = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (policy.requireSignature && !signatureData) {
+      newErrors.signature = "A digital signature or uploaded signature image is required.";
+    }
+
+    if (!formData.termsAccepted) {
+      newErrors.termsAccepted = "You must accept the solemn undertaking covenants to submit.";
+    }
+
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      setStepError("Please provide your signature and accept the undertaking to submit your application.");
+      return false;
+    }
+
+    setStepError(null);
     return true;
   };
 
   const handleNext = () => {
     if (currentStep === 1 && !validateStep1()) return;
     if (currentStep === 2 && !validateStep2()) return;
-    if (currentStep === 3) {
-      if (!allMandatoryVerified) {
-        alert("Please read and verify all mandatory rules before proceeding to the digital signature step.");
-        return;
-      }
-    }
+    if (currentStep === 3 && !validateStep3()) return;
+
     if (currentStep < 4) {
+      setStepError(null);
+      setErrors({});
       setCurrentStep((prev) => (prev + 1) as any);
       window.scrollTo({ top: 120, behavior: "smooth" });
     }
@@ -503,6 +598,8 @@ export default function AdmissionPage() {
 
   const handleBack = () => {
     if (currentStep > 1) {
+      setStepError(null);
+      setErrors({});
       setCurrentStep((prev) => (prev - 1) as any);
       window.scrollTo({ top: 120, behavior: "smooth" });
     }
@@ -512,34 +609,23 @@ export default function AdmissionPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateStep1() || !validateStep2()) return;
-
-    if (policy.requireSignature && !signatureData) {
-      alert("Please provide your digital signature or upload a signature image to accept the admission rules.");
-      return;
-    }
-
-    if (!formData.termsAccepted) {
-      alert("Please check the confirmation box to certify that you have read and accepted the rules and regulations.");
+    if (!validateStep1() || !validateStep2() || !validateStep3() || !validateStep4()) {
       return;
     }
 
     setSubmitting(true);
+    setStepError(null);
     try {
       const signer = formData.signerName.trim() || (formData.signerRole === "PARENT" ? formData.parentName : formData.studentName);
-
-      if (academicOptions?.turnstileRequired && !turnstileToken) {
-        alert("Please complete the bot verification security check before submitting. If the verification box did not load, please check if an ad-blocker is active or click 'Retry Verification'.");
-        setSubmitting(false);
-        return;
-      }
+      const cleanPhone = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
+      const normalizedPhone = cleanPhone.startsWith("91") && cleanPhone.length === 12 ? cleanPhone.slice(2) : cleanPhone;
 
       const payload = {
         studentName: formData.studentName.trim(),
         parentName: formData.parentName.trim(),
-        contactNumber: formData.contactNumber.trim(),
+        contactNumber: normalizedPhone,
         email: formData.email.trim() || undefined,
-        address: [formData.city, formData.address].filter(Boolean).join(", "),
+        address: [formData.city.trim(), formData.address.trim()].filter(Boolean).join(", "),
         source: `Online Admission Portal (${formData.preferredCampus})`,
         centreId: formData.centreId || undefined,
         targetBoard: formData.targetBoard,
@@ -549,7 +635,6 @@ export default function AdmissionPage() {
         signatureType: signatureMode === "DRAW" ? "DRAWN_CANVAS" : "UPLOADED_IMAGE",
         signerName: signer,
         termsAccepted: true,
-        turnstileToken: turnstileToken || undefined,
       };
 
       const result = (await fetchApi("/enquiry/public", {
@@ -564,7 +649,7 @@ export default function AdmissionPage() {
       setSubmissionSuccess(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: any) {
-      alert("Submission error: " + (err.message || "Failed to submit admission application. Please try again."));
+      setStepError(err.message || "Failed to submit admission application. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -715,7 +800,8 @@ export default function AdmissionPage() {
                   setSignatureData(null);
                   setIsCanvasDrawn(false);
                   setUploadedFileName(null);
-                  setTurnstileToken("");
+                  setErrors({});
+                  setStepError(null);
                   setFormData({
                     studentName: "",
                     parentName: "",
@@ -874,7 +960,17 @@ export default function AdmissionPage() {
           </div>
 
           {/* Form Content Body */}
-          <form onSubmit={handleSubmit} className="p-6 sm:p-10 space-y-8">
+          <form onSubmit={handleSubmit} noValidate className="p-6 sm:p-10 space-y-8">
+            {stepError && (
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-3 text-xs text-rose-800 font-medium animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-bold text-rose-900">Please review the required information</h4>
+                  <p className="mt-0.5 leading-relaxed text-rose-700">{stepError}</p>
+                </div>
+              </div>
+            )}
+
             {/* ---------------------------------------------------------------- */}
             {/* STEP 1: APPLICANT & PARENT PROFILE                               */}
             {/* ---------------------------------------------------------------- */}
@@ -892,12 +988,24 @@ export default function AdmissionPage() {
                     </label>
                     <input
                       type="text"
-                      required
                       value={formData.studentName}
-                      onChange={(e) => setFormData({ ...formData, studentName: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, studentName: e.target.value });
+                        clearFieldError("studentName");
+                      }}
                       placeholder="e.g. Alen Jacob Thomas"
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 focus:ring-brand-blue/20 transition-all"
+                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
+                        errors.studentName
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
                     />
+                    {errors.studentName && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.studentName}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -906,12 +1014,24 @@ export default function AdmissionPage() {
                     </label>
                     <input
                       type="text"
-                      required
                       value={formData.parentName}
-                      onChange={(e) => setFormData({ ...formData, parentName: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, parentName: e.target.value });
+                        clearFieldError("parentName");
+                      }}
                       placeholder="e.g. Thomas K. Jacob"
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 focus:ring-brand-blue/20 transition-all"
+                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
+                        errors.parentName
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
                     />
+                    {errors.parentName && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.parentName}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -924,14 +1044,28 @@ export default function AdmissionPage() {
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-text-muted">+91</span>
                       <input
                         type="tel"
-                        required
+                        maxLength={14}
                         value={formData.contactNumber}
-                        onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, contactNumber: e.target.value });
+                          clearFieldError("contactNumber");
+                        }}
                         placeholder="9876543210"
-                        className="w-full h-12 rounded-xl border border-border-soft bg-surface pl-12 pr-4 text-sm font-mono text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 focus:ring-brand-blue/20 transition-all"
+                        className={`w-full h-12 rounded-xl border bg-surface pl-12 pr-4 text-sm font-mono text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
+                          errors.contactNumber
+                            ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                            : "border-border-soft focus:ring-brand-blue/20"
+                        }`}
                       />
                     </div>
-                    <span className="text-[11px] text-text-muted mt-1 block">Course timetable & notifications will be communicated to this number.</span>
+                    {errors.contactNumber ? (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.contactNumber}
+                      </p>
+                    ) : (
+                      <span className="text-[11px] text-text-muted mt-1 block">Course timetable & notifications will be communicated to this number.</span>
+                    )}
                   </div>
 
                   <div>
@@ -939,11 +1073,25 @@ export default function AdmissionPage() {
                     <input
                       type="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, email: e.target.value });
+                        clearFieldError("email");
+                      }}
                       placeholder="student@example.com"
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 focus:ring-brand-blue/20 transition-all"
+                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
+                        errors.email
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
                     />
-                    <span className="text-[11px] text-text-muted mt-1 block">Optional: for digital receipts and student portal links.</span>
+                    {errors.email ? (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.email}
+                      </p>
+                    ) : (
+                      <span className="text-[11px] text-text-muted mt-1 block">Optional: for digital receipts and student portal links.</span>
+                    )}
                   </div>
                 </div>
 
@@ -993,16 +1141,19 @@ export default function AdmissionPage() {
                         return (
                           <div
                             key={centre.id}
-                            onClick={() =>
+                            onClick={() => {
                               setFormData({
                                 ...formData,
                                 centreId: centre.id,
                                 preferredCampus: centre.name,
-                              })
-                            }
+                              });
+                              clearFieldError("preferredCampus");
+                            }}
                             className={`p-4 rounded-2xl border-2 cursor-pointer transition-all text-left ${
                               isSelected
                                 ? "border-brand-blue bg-brand-blue/5 shadow-sm"
+                                : errors.preferredCampus
+                                ? "border-rose-300 bg-rose-50/20 hover:border-rose-400"
                                 : "border-border-soft bg-white hover:border-brand-blue/30"
                             }`}
                           >
@@ -1047,10 +1198,15 @@ export default function AdmissionPage() {
                         return (
                           <div
                             key={campus.name}
-                            onClick={() => setFormData({ ...formData, preferredCampus: campus.name })}
+                            onClick={() => {
+                              setFormData({ ...formData, preferredCampus: campus.name });
+                              clearFieldError("preferredCampus");
+                            }}
                             className={`p-4 rounded-2xl border-2 cursor-pointer transition-all text-left ${
                               isSelected
                                 ? "border-brand-blue bg-brand-blue/5 shadow-sm"
+                                : errors.preferredCampus
+                                ? "border-rose-300 bg-rose-50/20 hover:border-rose-400"
                                 : "border-border-soft bg-white hover:border-brand-blue/30"
                             }`}
                           >
@@ -1067,16 +1223,31 @@ export default function AdmissionPage() {
                       })
                     )}
                   </div>
+                  {errors.preferredCampus && (
+                    <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      {errors.preferredCampus}
+                    </p>
+                  )}
                 </div>
 
                 {/* Program Details from Live DB */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-2">
                   <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5">Target Curriculum Board</label>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                      Target Curriculum Board <span className="text-rose-500">*</span>
+                    </label>
                     <select
                       value={formData.targetBoard}
-                      onChange={(e) => handleBoardChange(e.target.value)}
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                      onChange={(e) => {
+                        handleBoardChange(e.target.value);
+                        clearFieldError("targetBoard");
+                      }}
+                      className={`w-full h-12 rounded-xl border bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 transition-all ${
+                        errors.targetBoard
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
                     >
                       {academicOptions.boards.length > 0 ? (
                         academicOptions.boards.map((b) => (
@@ -1093,14 +1264,29 @@ export default function AdmissionPage() {
                         </>
                       )}
                     </select>
+                    {errors.targetBoard && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.targetBoard}
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5">Class / Standard</label>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                      Class / Standard <span className="text-rose-500">*</span>
+                    </label>
                     <select
                       value={formData.targetStandard}
-                      onChange={(e) => setFormData({ ...formData, targetStandard: e.target.value })}
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                      onChange={(e) => {
+                        setFormData({ ...formData, targetStandard: e.target.value });
+                        clearFieldError("targetStandard");
+                      }}
+                      className={`w-full h-12 rounded-xl border bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 transition-all ${
+                        errors.targetStandard
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
                     >
                       {availableStandards.length > 0 ? (
                         availableStandards.map((s) => (
@@ -1119,14 +1305,29 @@ export default function AdmissionPage() {
                         </>
                       )}
                     </select>
+                    {errors.targetStandard && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.targetStandard}
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5">Course / Programme Stream</label>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                      Course / Programme Stream <span className="text-rose-500">*</span>
+                    </label>
                     <select
                       value={formData.targetCourse}
-                      onChange={(e) => setFormData({ ...formData, targetCourse: e.target.value })}
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                      onChange={(e) => {
+                        setFormData({ ...formData, targetCourse: e.target.value });
+                        clearFieldError("targetCourse");
+                      }}
+                      className={`w-full h-12 rounded-xl border bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 transition-all ${
+                        errors.targetCourse
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
                     >
                       {academicOptions.tracks.length > 0 || academicOptions.courses.length > 0 ? (
                         <>
@@ -1150,6 +1351,12 @@ export default function AdmissionPage() {
                         </>
                       )}
                     </select>
+                    {errors.targetCourse && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.targetCourse}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1605,16 +1812,30 @@ export default function AdmissionPage() {
                       </div>
                     </div>
                   )}
+                  {errors.signature && (
+                    <p className="text-xs text-rose-500 font-semibold flex items-center gap-1.5 mt-2 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      {errors.signature}
+                    </p>
+                  )}
                 </div>
 
                 {/* Solemn Undertaking Checkbox */}
                 <div className="pt-2 border-t border-border-soft">
-                  <label className="flex items-start gap-3.5 p-4 sm:p-5 rounded-2xl bg-brand-blue/5 border-2 border-brand-blue/20 hover:border-brand-blue/40 hover:bg-brand-blue/10 cursor-pointer transition-all shadow-sm">
+                  <label
+                    className={`flex items-start gap-3.5 p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all shadow-sm ${
+                      errors.termsAccepted
+                        ? "border-rose-400 bg-rose-50/20 hover:border-rose-500"
+                        : "border-brand-blue/20 bg-brand-blue/5 hover:border-brand-blue/40 hover:bg-brand-blue/10"
+                    }`}
+                  >
                     <input
                       type="checkbox"
-                      required
                       checked={formData.termsAccepted}
-                      onChange={(e) => setFormData({ ...formData, termsAccepted: e.target.checked })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, termsAccepted: e.target.checked });
+                        clearFieldError("termsAccepted");
+                      }}
                       className="mt-1 h-5 w-5 rounded-lg text-brand-blue focus:ring-brand-blue/30 border-border-soft cursor-pointer shrink-0"
                     />
                     <div className="space-y-1">
@@ -1627,19 +1848,13 @@ export default function AdmissionPage() {
                       </span>
                     </div>
                   </label>
+                  {errors.termsAccepted && (
+                    <p className="text-xs text-rose-500 font-semibold mt-2 flex items-center gap-1.5 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      {errors.termsAccepted}
+                    </p>
+                  )}
                 </div>
-
-                {/* Cloudflare Turnstile Bot Protection */}
-                {academicOptions?.turnstileRequired && (
-                  <div className="pt-2">
-                    <TurnstileCaptcha
-                      siteKey={academicOptions?.turnstileSiteKey || undefined}
-                      onVerify={(token) => setTurnstileToken(token)}
-                      onExpire={() => setTurnstileToken("")}
-                      action="admission_enquiry"
-                    />
-                  </div>
-                )}
               </div>
             )}
 

@@ -1092,8 +1092,9 @@ export class SetupService {
       }),
     ]);
 
-    const isTurnstileDisabled = process.env.DISABLE_TURNSTILE === 'true';
-    const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || null;
+    const isExplicitlyEnforced = process.env.TURNSTILE_ENFORCED === 'true' || process.env.TURNSTILE_REQUIRED === 'true';
+    const isTurnstileDisabled = process.env.DISABLE_TURNSTILE === 'true' || !isExplicitlyEnforced;
+    const turnstileSiteKey = !isTurnstileDisabled ? (process.env.TURNSTILE_SITE_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || null) : null;
 
     return {
       boards,
