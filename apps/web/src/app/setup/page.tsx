@@ -2590,6 +2590,7 @@ interface AdmissionPolicyItem {
   subtitle: string;
   description: string;
   declarationText: string;
+  declarationBulletins?: string[];
   requireSignature: boolean;
   allowUploadSignature: boolean;
   requireParentSignature: boolean;
@@ -2619,7 +2620,14 @@ function AdmissionRulesTab() {
     title: "Educare Academy Student Code & Admission Undertaking",
     subtitle: "Institutional Guidelines, Academic Code of Conduct & Guardian Declaration",
     description: "All students admitted to Educare Institute of Learning are expected to observe high standards of academic diligence, discipline, and mutual respect. Please read the terms below carefully before signing.",
-    declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute. I understand that any breach of discipline or submission of false records may result in disciplinary action or cancellation of enrollment.",
+    declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute.",
+    declarationBulletins: [
+      "I confirm that all details, contact information, and academic background submitted in this admission form are true, accurate, and authentic.",
+      "I have carefully reviewed the Institutional Rules & Guidelines and solemnly undertake to abide by the academic code of conduct and disciplinary regulations.",
+      "I understand that tuition and course fees must be remitted as per the agreed schedule and that registration charges are non-refundable once classes commence.",
+      "I agree to maintain the required minimum 85% attendance, punctuality, and complete all scheduled evaluations and assignments.",
+      "I understand that any willful breach of discipline, damage to property, or submission of fraudulent records may lead to disciplinary action or termination of enrollment.",
+    ],
     requireSignature: true,
     allowUploadSignature: true,
     requireParentSignature: true,
@@ -2951,20 +2959,98 @@ function AdmissionRulesTab() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-text-secondary mb-1.5">
-              Official Undertaking Statement (Accepted by Digital Signature)
-            </label>
-            <textarea
-              rows={4}
-              value={policy.declarationText}
-              onChange={(e) => setPolicy({ ...policy, declarationText: e.target.value })}
-              className="w-full rounded-xl border border-border-soft bg-surface p-3.5 text-sm text-text-primary font-mono text-xs leading-relaxed focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
-              placeholder="Exact legal clause accepted when applicant signs..."
-            />
-            <p className="text-[11px] text-text-muted mt-1.5">
-              This statement is explicitly acknowledged and sealed with the applicant's digital signature or uploaded signature image.
-            </p>
+          {/* Undertaking Declaration & Bulletins Manager */}
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                Preamble / Declaration Introduction (Accepted by Digital Signature)
+              </label>
+              <textarea
+                rows={2}
+                value={policy.declarationText}
+                onChange={(e) => setPolicy({ ...policy, declarationText: e.target.value })}
+                className="w-full rounded-xl border border-border-soft bg-surface p-3.5 text-xs text-text-primary leading-relaxed focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                placeholder="e.g. I hereby solemnly declare and undertake that the information provided is genuine and I agree to the following terms..."
+              />
+              <p className="text-[11px] text-text-muted mt-1">
+                Introduces the undertaking statement before the specific bulletin points.
+              </p>
+            </div>
+
+            {/* Bulletins List Builder */}
+            <div className="border border-border-soft rounded-2xl p-4 bg-surface/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                    <ScrollText className="w-4 h-4 text-brand-blue" />
+                    Undertaking Bulletins / Clauses
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-blue/10 text-brand-blue border border-brand-blue/20">
+                      {(policy.declarationBulletins || []).length} Bulletins
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-text-muted mt-0.5">
+                    Add specific bullet points that applicants acknowledge and digitally sign.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = policy.declarationBulletins || [];
+                    setPolicy({
+                      ...policy,
+                      declarationBulletins: [...current, ""],
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-brand-blue bg-white border border-brand-blue/30 hover:bg-brand-blue/5 shadow-xs transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Bulletin
+                </button>
+              </div>
+
+              {/* Bulletins items */}
+              {(!policy.declarationBulletins || policy.declarationBulletins.length === 0) ? (
+                <div className="text-center py-6 border border-dashed border-border-soft rounded-xl bg-white text-text-muted text-xs">
+                  No bulletins configured yet. Click "+ Add Bulletin" to add undertaking clauses.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
+                  {policy.declarationBulletins.map((bulletin, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-white rounded-xl border border-border-soft hover:border-brand-blue/30 transition-all flex items-start gap-3 shadow-xs"
+                    >
+                      <div className="w-6 h-6 rounded-lg bg-brand-blue/10 text-brand-blue flex items-center justify-center text-xs font-bold shrink-0 mt-1">
+                        {idx + 1}
+                      </div>
+                      <div className="flex-1">
+                        <textarea
+                          rows={2}
+                          value={bulletin}
+                          onChange={(e) => {
+                            const updated = [...(policy.declarationBulletins || [])];
+                            updated[idx] = e.target.value;
+                            setPolicy({ ...policy, declarationBulletins: updated });
+                          }}
+                          placeholder={`Undertaking clause #${idx + 1}...`}
+                          className="w-full text-xs text-text-primary rounded-lg border border-border-soft bg-surface p-2.5 focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none leading-relaxed"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (policy.declarationBulletins || []).filter((_, i) => i !== idx);
+                          setPolicy({ ...policy, declarationBulletins: updated });
+                        }}
+                        className="text-text-muted hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors mt-1"
+                        title="Remove bulletin"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Signature Verification Toggles */}

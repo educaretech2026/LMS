@@ -33,6 +33,7 @@ import {
   FileCheck2,
   Layers,
   Eye,
+  ScrollText,
 } from "lucide-react";
 
 interface AdmissionRuleSubsection {
@@ -65,6 +66,7 @@ interface AdmissionPolicy {
   subtitle: string;
   description: string;
   declarationText: string;
+  declarationBulletins?: string[];
   requireSignature: boolean;
   allowUploadSignature: boolean;
   requireParentSignature: boolean;
@@ -74,7 +76,14 @@ const DEFAULT_POLICY: AdmissionPolicy = {
   title: "Educare Academy Student Code & Admission Undertaking",
   subtitle: "Institutional Guidelines, Academic Code of Conduct & Guardian Declaration",
   description: "All students admitted to Educare Institute of Learning are expected to observe high standards of academic diligence, discipline, and mutual respect. Please read the terms below carefully before signing.",
-  declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute. I understand that any breach of discipline or submission of false records may result in disciplinary action or cancellation of enrollment.",
+  declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute.",
+  declarationBulletins: [
+    "I confirm that all details, contact information, and academic background submitted in this admission form are true, accurate, and authentic.",
+    "I have carefully reviewed the Institutional Rules & Guidelines and solemnly undertake to abide by the academic code of conduct and disciplinary regulations.",
+    "I understand that tuition and course fees must be remitted as per the agreed schedule and that registration charges are non-refundable once classes commence.",
+    "I agree to maintain the required minimum 85% attendance, punctuality, and complete all scheduled evaluations and assignments.",
+    "I understand that any willful breach of discipline, damage to property, or submission of fraudulent records may lead to disciplinary action or termination of enrollment.",
+  ],
   requireSignature: true,
   allowUploadSignature: true,
   requireParentSignature: true,
@@ -1357,24 +1366,69 @@ export default function AdmissionPage() {
                   <p className="text-xs text-text-muted mt-1">Review the solemn declaration and provide your digital signature or signature image</p>
                 </div>
 
-                {/* Official Declaration Box */}
-                <div className="p-6 rounded-2xl bg-[#040e1d] text-white border border-white/10 relative overflow-hidden space-y-3">
-                  <div className="absolute top-0 right-0 w-48 h-48 bg-[#0162b1]/20 rounded-full blur-2xl pointer-events-none" />
+                {/* Official Declaration Box with Bulletins */}
+                {(() => {
+                  const bulletins =
+                    policy.declarationBulletins && policy.declarationBulletins.length > 0
+                      ? policy.declarationBulletins
+                      : (policy.declarationText.includes("\n")
+                          ? policy.declarationText
+                              .split(/\n+/)
+                              .map((s) => s.replace(/^[-*•\d.]+\s*/, "").trim())
+                              .filter(Boolean)
+                          : DEFAULT_POLICY.declarationBulletins || []);
 
-                  <div className="flex items-center gap-2 text-xs font-bold text-sky-400 uppercase tracking-wider">
-                    <FileCheck2 className="w-4 h-4" /> Official Declaration & Undertaking
-                  </div>
+                  return (
+                    <div className="p-6 rounded-3xl bg-[#040e1d] text-white border border-white/10 relative overflow-hidden space-y-4 shadow-xl">
+                      <div className="absolute top-0 right-0 w-64 h-64 bg-[#0162b1]/20 rounded-full blur-3xl pointer-events-none" />
 
-                  <h3 className="text-base font-bold text-white tracking-tight">{policy.title}</h3>
-                  <p className="text-xs text-slate-300 font-mono leading-relaxed bg-white/5 p-4 rounded-xl border border-white/10">
-                    "{policy.declarationText}"
-                  </p>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-sky-400 uppercase tracking-wider">
+                          <FileCheck2 className="w-4 h-4" /> Official Declaration & Undertaking
+                        </div>
+                        <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-400/20">
+                          {bulletins.length} Undertaking Covenants
+                        </span>
+                      </div>
 
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Cryptographically bound to applicant IP, submission timestamp, and admission reference ledger.</span>
-                  </div>
-                </div>
+                      <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">{policy.title}</h3>
+
+                      {policy.declarationText && (
+                        <p className="text-xs text-slate-300 leading-relaxed font-medium bg-white/[0.04] p-3.5 rounded-xl border border-white/10">
+                          "{policy.declarationText}"
+                        </p>
+                      )}
+
+                      {/* Bulletins Section */}
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300 uppercase tracking-wider text-[11px]">
+                          <ScrollText className="w-3.5 h-3.5 text-sky-400" /> Specific Undertaking Bulletins
+                        </div>
+
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                          {bulletins.map((bulletin, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 flex items-start gap-3 transition-colors"
+                            >
+                              <div className="w-5 h-5 rounded-md bg-sky-500/20 text-sky-300 border border-sky-400/30 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                                {idx + 1}
+                              </div>
+                              <p className="text-xs text-slate-200 leading-relaxed font-normal">
+                                {bulletin}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-3 border-t border-white/10">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Cryptographically bound to applicant IP, submission timestamp, and institutional reference ledger.</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Signer Identity Selection */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1542,19 +1596,24 @@ export default function AdmissionPage() {
                 </div>
 
                 {/* Solemn Undertaking Checkbox */}
-                <div className="pt-3 border-t border-border-soft">
-                  <label className="flex items-start gap-3 p-4 rounded-2xl bg-brand-blue/5 border border-brand-blue/20 hover:bg-brand-blue/10 cursor-pointer transition-colors">
+                <div className="pt-2 border-t border-border-soft">
+                  <label className="flex items-start gap-3.5 p-4 sm:p-5 rounded-2xl bg-brand-blue/5 border-2 border-brand-blue/20 hover:border-brand-blue/40 hover:bg-brand-blue/10 cursor-pointer transition-all shadow-sm">
                     <input
                       type="checkbox"
                       required
                       checked={formData.termsAccepted}
                       onChange={(e) => setFormData({ ...formData, termsAccepted: e.target.checked })}
-                      className="mt-1 h-5 w-5 rounded text-brand-blue focus:ring-brand-blue/30 border-border-soft cursor-pointer"
+                      className="mt-1 h-5 w-5 rounded-lg text-brand-blue focus:ring-brand-blue/30 border-border-soft cursor-pointer shrink-0"
                     />
-                    <span className="text-xs font-medium text-text-secondary leading-relaxed">
-                      <strong className="text-text-primary font-bold block mb-0.5">Solemn Legal Undertaking Confirmation:</strong>
-                      I have carefully read, understood, and accept all the Rules & Regulations and Academic Code of Conduct stated above. I certify that the details and signature submitted are genuine and legally valid.
-                    </span>
+                    <div className="space-y-1">
+                      <strong className="text-xs sm:text-sm font-bold text-text-primary flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-brand-blue" />
+                        Solemn Legal Undertaking Confirmation
+                      </strong>
+                      <span className="text-xs font-medium text-text-secondary leading-relaxed block">
+                        I / We have carefully read, understood, and accept each of the undertaking covenants and bulletins stated above, along with the Code of Conduct and Disciplinary Regulations. I certify that the signatory identity and digital signature provided are genuine and legally valid.
+                      </span>
+                    </div>
                   </label>
                 </div>
               </div>

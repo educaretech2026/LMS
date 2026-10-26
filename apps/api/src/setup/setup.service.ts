@@ -769,11 +769,19 @@ export class SetupService {
 
     try {
       const parsed = JSON.parse(policyNotice.content);
+      const declarationBulletins =
+        Array.isArray(parsed.declarationBulletins) && parsed.declarationBulletins.length > 0
+          ? parsed.declarationBulletins.filter((b: any) => typeof b === 'string' && b.trim().length > 0)
+          : (typeof parsed.declarationText === 'string' && parsed.declarationText.includes('\n')
+              ? parsed.declarationText.split(/\n+/).map((line: string) => line.replace(/^[-*•\d.]+\s*/, '').trim()).filter(Boolean)
+              : DEFAULT_ADMISSION_POLICY.declarationBulletins);
+
       return {
         title: policyNotice.title || DEFAULT_ADMISSION_POLICY.title,
         subtitle: parsed.subtitle || DEFAULT_ADMISSION_POLICY.subtitle,
         description: parsed.description || DEFAULT_ADMISSION_POLICY.description,
         declarationText: parsed.declarationText || DEFAULT_ADMISSION_POLICY.declarationText,
+        declarationBulletins,
         requireSignature: parsed.requireSignature !== false,
         allowUploadSignature: parsed.allowUploadSignature !== false,
         requireParentSignature: parsed.requireParentSignature !== false,
@@ -788,6 +796,7 @@ export class SetupService {
     subtitle?: string;
     description?: string;
     declarationText?: string;
+    declarationBulletins?: string[];
     requireSignature?: boolean;
     allowUploadSignature?: boolean;
     requireParentSignature?: boolean;
@@ -796,10 +805,18 @@ export class SetupService {
       where: { type: 'ADMISSION_POLICY' },
     });
 
+    const sanitizedBulletins = Array.isArray(data.declarationBulletins)
+      ? data.declarationBulletins
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .slice(0, 20)
+          .map((item) => item.replace(/<[^>]*>?/gm, '').trim().slice(0, 500))
+      : undefined;
+
     const content = JSON.stringify({
       subtitle: data.subtitle?.trim() || DEFAULT_ADMISSION_POLICY.subtitle,
       description: data.description?.trim() || DEFAULT_ADMISSION_POLICY.description,
       declarationText: data.declarationText?.trim() || DEFAULT_ADMISSION_POLICY.declarationText,
+      declarationBulletins: sanitizedBulletins || DEFAULT_ADMISSION_POLICY.declarationBulletins,
       requireSignature: data.requireSignature !== undefined ? Boolean(data.requireSignature) : true,
       allowUploadSignature: data.allowUploadSignature !== undefined ? Boolean(data.allowUploadSignature) : true,
       requireParentSignature: data.requireParentSignature !== undefined ? Boolean(data.requireParentSignature) : true,
@@ -1089,7 +1106,14 @@ export const DEFAULT_ADMISSION_POLICY = {
   title: "Educare Academy Student Code & Admission Undertaking",
   subtitle: "Institutional Guidelines, Academic Code of Conduct & Guardian Declaration",
   description: "All students admitted to Educare Institute of Learning are expected to observe high standards of academic diligence, discipline, and mutual respect. Please read the terms below carefully before signing.",
-  declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute. I understand that any breach of discipline or submission of false records may result in disciplinary action or cancellation of enrollment.",
+  declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute.",
+  declarationBulletins: [
+    "I confirm that all details, contact information, and academic background submitted in this admission form are true, accurate, and authentic.",
+    "I have carefully reviewed the Institutional Rules & Guidelines and solemnly undertake to abide by the academic code of conduct and disciplinary regulations.",
+    "I understand that tuition and course fees must be remitted as per the agreed schedule and that registration charges are non-refundable once classes commence.",
+    "I agree to maintain the required minimum 85% attendance, punctuality, and complete all scheduled evaluations and assignments.",
+    "I understand that any willful breach of discipline, damage to property, or submission of fraudulent records may lead to disciplinary action or termination of enrollment.",
+  ],
   requireSignature: true,
   allowUploadSignature: true,
   requireParentSignature: true,
