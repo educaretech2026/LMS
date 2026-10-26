@@ -79,20 +79,21 @@ export class AppController {
 
     // 3. Redis Connectivity Check (when mandatory)
     const isRedisMandatory = Boolean(
-      process.env.REDIS_URL ||
-      process.env.NODE_ENV === 'production' ||
-      process.env.APP_ENV === 'staging' ||
+      process.env.REQUIRE_REDIS === 'true' ||
       process.env.DEPLOYED_STAGING === 'true',
     );
-    if (this.redisService && isRedisMandatory) {
-      if (!this.redisService.isConnected) {
+    if (this.redisService) {
+      if (this.redisService.isConnected) {
+        checks.redis = 'connected';
+      } else if (isRedisMandatory) {
         throw new ServiceUnavailableException({
           status: 'degraded',
           message: 'Redis connection unavailable in mandatory environment',
           timestamp: new Date().toISOString(),
         });
+      } else {
+        checks.redis = 'fallback';
       }
-      checks.redis = 'connected';
     }
 
     return {
