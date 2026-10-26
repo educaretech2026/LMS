@@ -1092,12 +1092,17 @@ export class SetupService {
       }),
     ]);
 
+    const isTurnstileDisabled = process.env.DISABLE_TURNSTILE === 'true';
+    const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || null;
+
     return {
       boards,
       standards,
       courses,
       tracks,
       centres,
+      turnstileSiteKey,
+      turnstileRequired: !isTurnstileDisabled && Boolean(process.env.TURNSTILE_SECRET_KEY),
     };
   }
 }

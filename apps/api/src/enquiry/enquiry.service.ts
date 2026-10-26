@@ -101,6 +101,7 @@ export class EnquiryService {
 
         if (!verifyData || !verifyData.success) {
           const errorCodes = Array.isArray(verifyData?.['error-codes']) ? verifyData['error-codes'] : [];
+          console.warn('[Turnstile] Cloudflare siteverify rejected token:', JSON.stringify(errorCodes));
           if (errorCodes.includes('timeout-or-duplicate')) {
             throw new BadRequestException('CAPTCHA verification failed: token expired or already used.');
           }
@@ -109,10 +110,12 @@ export class EnquiryService {
 
         // Hostname allowlist validation (exclude API hostname since widget is rendered strictly on web frontends)
         const isStagingTier = process.env.APP_ENV === 'staging' || process.env.NODE_ENV === 'staging';
+        const isDummyTestSecret = process.env.TURNSTILE_SECRET_KEY?.startsWith('1x00000000000000000000');
         const defaultHostnames = [
           'lms.educarelearning.in',
           'educarelearning.in',
           ...(isStagingTier ? ['staging.educarelearning.in', 'lms.staging.educarelearning.in'] : []),
+          ...(isDummyTestSecret ? ['example.com'] : []),
         ];
         const configuredHostnames = process.env.TURNSTILE_ALLOWED_HOSTNAMES
           ? process.env.TURNSTILE_ALLOWED_HOSTNAMES.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
@@ -139,7 +142,7 @@ export class EnquiryService {
 
         // Widget action validation: strictly require exact expected action (reject missing or mismatched action)
         const expectedAction = process.env.TURNSTILE_EXPECTED_ACTION || 'admission_enquiry';
-        if (!verifyData.action || String(verifyData.action).trim() !== expectedAction) {
+        if (!isDummyTestSecret && (!verifyData.action || String(verifyData.action).trim() !== expectedAction)) {
           throw new BadRequestException('CAPTCHA verification failed: widget action missing or mismatched.');
         }
       } catch (err: any) {

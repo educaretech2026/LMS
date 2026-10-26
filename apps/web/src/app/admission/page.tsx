@@ -526,6 +526,12 @@ export default function AdmissionPage() {
     try {
       const signer = formData.signerName.trim() || (formData.signerRole === "PARENT" ? formData.parentName : formData.studentName);
 
+      if (academicOptions?.turnstileRequired && !turnstileToken) {
+        setSubmitError("Please complete the bot verification check before submitting.");
+        setIsSubmitting(false);
+        return;
+      }
+
       const payload = {
         studentName: formData.studentName.trim(),
         parentName: formData.parentName.trim(),
@@ -1622,13 +1628,16 @@ export default function AdmissionPage() {
                 </div>
 
                 {/* Cloudflare Turnstile Bot Protection */}
-                <div className="pt-2">
-                  <TurnstileCaptcha
-                    onVerify={(token) => setTurnstileToken(token)}
-                    onExpire={() => setTurnstileToken("")}
-                    action="admission_enquiry"
-                  />
-                </div>
+                {academicOptions?.turnstileRequired !== false && (
+                  <div className="pt-2">
+                    <TurnstileCaptcha
+                      siteKey={academicOptions?.turnstileSiteKey || undefined}
+                      onVerify={(token) => setTurnstileToken(token)}
+                      onExpire={() => setTurnstileToken("")}
+                      action="admission_enquiry"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
