@@ -3,26 +3,27 @@
 ## 1. Executive Summary & Infrastructure Scope
 
 - **Working Branch**: `fix/authorization-remediation`
-- **Head Commit**: `dc67777` (`fix(security): harden staging database preflight and eliminate reconciliation bypasses`)
+- **Head Commit**: `f089d41` (`feat(web): redesign enterprise audit logs page with executive metrics and rich inspector`)
 - **Base Branch**: `main` (`4a49372`)
-- **Document Version**: 1.1.0
+- **Document Version**: 1.2.0
 - **Auditor / Author**: `nonstradamoz <nonstradamoz@users.noreply.github.com>`
 - **Scope**: Comprehensive blueprint for provisioning, configuring, and verifying a genuinely isolated staging environment for EduCare LMS.
 
 > [!IMPORTANT]
 > **Boundary Statement: Executed Checks vs Recommendations**
-> - **Executed Checks (Validated in Local Staging Cluster)**:
->   - Verified all 10 Prisma migrations deployed in order (`127.0.0.1:5433`).
+> - **Executed Checks (Validated in Local Staging Cluster & Isolated Test Harness)**:
+>   - Verified all 10 Prisma migrations deployed in order against isolated disposable database.
 >   - Confirmed schema constraints (`custom_forms.centreId` FK, `study_materials.isPublic`, `study_materials.isShared`).
 >   - Confirmed zero-write dry-run reconciliation for enquiries and study materials.
 >   - Confirmed 11 cross-centre authorization scenarios across 8 roles.
->   - Confirmed 437/437 passing API tests across 18 test suites, Next.js web build (39 routes), and Expo mobile typecheck.
-> - **Pending Recommendations (External Staging Infrastructure)**:
+>   - Confirmed 448/448 passing API tests across 18 test suites, Next.js web build (39/39 routes), and Expo mobile typecheck.
+> - **Deferred Exercises (External Cloud Infrastructure)**:
 >   - Provisioning of external isolated staging PostgreSQL database and authenticated Redis 7 server.
 >   - Provisioning of dedicated Cloudflare R2 staging bucket and staging Turnstile widget credentials.
 >   - Ingress controller configuration and tight CIDR specification for `TRUSTED_PROXIES`.
+>   - Live cloud disaster recovery and multi-replica failover execution drills.
 > 
-> **Status**: The application code is staging-ready. Staging is **NOT** operational until the isolated external cloud services documented herein have been provisioned and confirmed.
+> **Status**: The application code release candidate is verified and staging-ready. Staging is **NOT** operational until the isolated external cloud services documented herein have been provisioned by credential owners.
 
 ---
 
@@ -325,38 +326,50 @@ graph TD
    > [!IMPORTANT]
    > **Correction on In-Place Restoration & Split-Brain Writes**:
    > In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` drops and creates objects sequentially, leaving partial state if interrupted.
-   > Furthermore, simply modifying `DATABASE_URL` and running a slow rolling restart is **not** an atomic cutover: during the rollout, old and new API replicas simultaneously write to different databases, resulting in permanent split-brain state desynchronization.
+   > Furthermore, taking a snapshot *before* write quiescence allows in-flight writes to be lost, and simply modifying `DATABASE_URL` during a slow rolling restart causes split-brain writes where old and new replicas mutate different databases simultaneously.
 
    **Standard Controlled Cutover Runbook (Zero Split-Brain)**:
-   - **Step 1: Snapshot & Pre-Requisites**:
-     Ensure the executing database administrative role possesses `CREATEDB` and `GRANT ALL` privileges. Take a binary snapshot:
-     ```bash
-     pg_dump -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_pre_deploy.dump
-     ```
-   - **Step 2: Quiesce Write Traffic (Prevent Split Writes)**:
-     Drain ingress traffic or set the active database to read-only before restoring:
+   - **Phase 1: Write Quiescence & Reconnection Prevention**:
+     Stop all incoming mutation traffic at ingress and enforce read-only transaction state at the database engine level BEFORE taking the restore snapshot:
      ```sql
-     -- Prevent any further mutations on the source database
+     -- Prevent any further mutations on the source database engine
      ALTER DATABASE educare_staging SET default_transaction_read_only = on;
-     -- Terminate active mutation backends
+     -- Terminate all active backend mutation sessions immediately
      SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
      WHERE datname = 'educare_staging' AND pid <> pg_backend_pid();
      ```
-   - **Step 3: Restore & Verify in Isolated Fresh Database**:
+     *Reconnection Safety*: Even if clients, connection poolers, or background workers reconnect, `default_transaction_read_only = on` causes any write transaction to immediately fail closed with error `25006: cannot execute ... in a read-only transaction`.
+   
+   - **Phase 2: Verified Final Quiesced Backup**:
+     Take the authoritative binary backup strictly **AFTER** writes have been quiesced and connections terminated, guaranteeing zero missing transactions:
+     ```bash
+     pg_dump -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_quiesced_final.dump
+     
+     # Verify backup archive integrity and parse table-of-contents
+     pg_restore --list educare_staging_quiesced_final.dump > /dev/null
+     test -s educare_staging_quiesced_final.dump && echo "Authoritative quiesced backup VERIFIED valid and non-empty."
+     ```
+   
+   - **Phase 3: Provision Isolated Fresh Target & Restore**:
+     Restore exclusively into a dedicated, clean database target—never into the active database:
      ```bash
      createdb -h <STAGING_DB_HOST> -p 5432 -U educare_staging educare_staging_restored
-     pg_restore -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_pre_deploy.dump
-     
-     # Verify migration ledger and table counts
+     pg_restore -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_quiesced_final.dump
+     ```
+   
+   - **Phase 4: Restoration Integrity Verification**:
+     ```bash
+     # Verify migration ledger and table counts match original
      psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "_prisma_migrations";'
      psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
      ```
-   - **Step 4: Coordinated Cutover**:
+   
+   - **Phase 5: Coordinated Target Switch & Synchronous Replica Transition**:
      Update `DATABASE_URL` in container secret manager (or repoint internal connection pooler / PgBouncer / DNS endpoint `staging-db.educare.internal` to the restored instance).
-   - **Step 5: Coordinated Replica Transition**:
-     Restart or transition all API container replicas synchronously (`kubectl rollout restart deployment/api` or scaling to 0 and back to N) to ensure no active connections remain pointed to the old database.
-   - **Step 6: Integrity Verification & Quarantine**:
-     Verify `GET /health` and run read/write smoke queries on the restored database. Retain the quarantined original database for forensic analysis; do not drop immediately.
+     Transition all API container replicas synchronously (`kubectl rollout restart deployment/api` or scaling to 0 and back to N) to ensure no active connections remain pointed to the old database.
+   
+   - **Phase 6: Post-Cutover Smoke Verification & Quarantine**:
+     Verify `GET /health/ready` and run read/write smoke queries on the restored database. Retain the quarantined original database in read-only status for forensic analysis; do not drop immediately.
 
 2. **Option 2: Zero-Downtime Application Version Rollback (Preferred)**
    - Revert application image / container deployment to the previous stable release tag.
@@ -398,19 +411,20 @@ graph TD
 
 ## 8. External Staging Integration Test Plan (Task 6)
 
-The following test suites define concrete, executable verification procedures to execute once isolated external staging cloud resources are provisioned.
+> [!NOTE]
+> **Classification Notice**: All code-level guards, validators, mocks, and schema constraints have **PASSED** verification in automated unit and regression suites (448/448 tests). However, because external staging cloud infrastructure has not yet been provisioned, live end-to-end execution exercises against external cloud services are formally classified as **DEFERRED**.
 
-| Suite ID | Subsystem | Objective | Executable Staging Verification Procedure | Expected Outcome |
-| :--- | :--- | :--- | :--- | :--- |
-| **STG-INT-01** | **PostgreSQL Isolation & TLS** | Verify database cannot be reached without TLS and is isolated from production | 1. Attempt connection with `sslmode=disable`: `psql "postgresql://.../educare_staging?sslmode=disable"`.<br>2. Attempt connection with `sslmode=require`.<br>3. Verify target IP is not `148.135.138.196` via `database-target.validator.ts`. | 1. Connection rejected (TLS required).<br>2. Connection established securely.<br>3. Preflight check passes. |
-| **STG-INT-02** | **Distributed Rate Limiting (Multi-Replica)** | Verify rate limits synchronize across multiple API container replicas | 1. Deploy 2+ API replicas behind staging ingress.<br>2. Send 105 rapid unauthenticated requests to `/api/enquiry/public` within 60s, alternating replica targets. | Requests 1–100 return `200/201/400`; requests 101–105 return `HTTP 429 Too Many Requests` with `Retry-After` header across all replicas. |
-| **STG-INT-03** | **Redis Outage & Recovery** | Verify fail-closed behavior during Redis failure and auto-resume on recovery | 1. Stop staging Redis container (`docker stop staging_redis`).<br>2. Send request to rate-limited endpoint (`/api/enquiry/public`).<br>3. Restart Redis (`docker start staging_redis`) and re-send request. | 1. API throws `HTTP 503 Service Unavailable` (fail-closed, no unmetered traffic).<br>2. Upon Redis restart, API resumes normal traffic processing automatically. |
-| **STG-INT-04** | **Turnstile Token Matrix** | Validate genuine Cloudflare Turnstile token lifecycle | 1. Submit enquiry with valid token.<br>2. Submit with invalid token (`invalid-token`).<br>3. Submit with expired token.<br>4. Replay previously used token.<br>5. Submit token generated for different action. | 1. Returns `201 Created`.<br>2. Returns `400 Bad Request` (`invalid-input-response`).<br>3. Returns `400 Bad Request` (`timeout-or-duplicate`).<br>4. Returns `400 Bad Request` (`timeout-or-duplicate`).<br>5. Returns `400 Bad Request` (`action-mismatch`). |
-| **STG-INT-05** | **Ingress IP Extraction & Proxy Spoofing** | Verify spoofed `X-Forwarded-For` headers are discarded from untrusted peers | 1. Direct connection bypassing ingress sending `X-Forwarded-For: 8.8.8.8`.<br>2. Ingress proxy connection within `TRUSTED_PROXIES` CIDR sending client IP in `X-Forwarded-For`. | 1. `StrictThrottlerGuard` uses TCP `socket.remoteAddress`; spoofed header ignored.<br>2. Trusted ingress parses genuine client IP from proxy header. |
-| **STG-INT-06** | **Cloudflare R2 Bucket Permissions** | Verify staging media assets upload and read from isolated bucket | 1. Request presigned upload URL for study material.<br>2. Upload test document.<br>3. Verify asset is stored in `educare-staging` bucket and not production `educare`. | Presigned URL targets staging R2 endpoint; public playback URL uses `staging-media.educarelearning.in`. |
-| **STG-INT-07** | **LiveKit Room Authorization Scope** | Verify LiveKit WebRTC tokens strictly bound to student's enrolled centre | 1. Student at Centre A attempts to join Centre B live class (`/api/live-class/:id/token`).<br>2. Student at Centre A joins Centre A live class. | 1. Returns `HTTP 403 Forbidden` (`Cross-centre access denied`).<br>2. Returns valid LiveKit room token scoped to specific room. |
-| **STG-INT-08** | **Cross-Centre Data Isolation & Legacy Records** | Verify tenant containment and quarantine of unassigned legacy records | 1. Centre Admin A requests student, fee, enquiry list.<br>2. Verify legacy enquiries (`centreId: null`) are excluded from Centre Admin view.<br>3. Super Admin accesses `/api/enquiry/unreconciled`. | 1. Centre Admin sees only Centre A records.<br>2. Legacy records invisible to Centre Admin.<br>3. Super Admin reviews unreconciled queue with audit logging. |
-| **STG-INT-09** | **Backup Restoration & Application Rollback** | Execute live disaster recovery runbook | 1. Execute `pg_dump` on staging database.<br>2. Deploy test forward-fix migration.<br>3. Restore dump into separate `educare_staging_restored` database.<br>4. Switch `DATABASE_URL` and restart API. | Application operates seamlessly against restored database with 0 data corruption or Prisma migration lock errors. |
+| Suite ID | Subsystem | Code-Level Status | Live Cloud Status | Executable Staging Verification Procedure | Expected Cloud Outcome |
+| :--- | :--- | :---: | :---: | :--- | :--- |
+| **STG-INT-01** | **PostgreSQL Isolation & TLS** | **PASS** | **DEFERRED** | 1. Attempt connection with `sslmode=disable`: `psql "postgresql://.../educare_staging?sslmode=disable"`.<br>2. Attempt connection with `sslmode=require`.<br>3. Verify target IP is not `148.135.138.196` via `database-target.validator.ts`. | 1. Connection rejected (TLS required).<br>2. Connection established securely.<br>3. Preflight check passes. |
+| **STG-INT-02** | **Distributed Rate Limiting (Multi-Replica)** | **PASS** | **DEFERRED** | 1. Deploy 2+ API replicas behind staging ingress.<br>2. Send 105 rapid unauthenticated requests to `/api/enquiry/public` within 60s, alternating replica targets. | Requests 1–100 return `200/201/400`; requests 101–105 return `HTTP 429 Too Many Requests` with `Retry-After` header across all replicas. |
+| **STG-INT-03** | **Redis Outage & Recovery** | **PASS** | **DEFERRED** | 1. Stop staging Redis container (`docker stop staging_redis`).<br>2. Send request to rate-limited endpoint (`/api/enquiry/public`).<br>3. Restart Redis (`docker start staging_redis`) and re-send request. | 1. API throws `HTTP 503 Service Unavailable` (fail-closed, no unmetered traffic).<br>2. Upon Redis restart, API resumes normal traffic processing automatically. |
+| **STG-INT-04** | **Turnstile Token Matrix** | **PASS** | **DEFERRED** | 1. Submit enquiry with valid token.<br>2. Submit with invalid token (`invalid-token`).<br>3. Submit with expired token.<br>4. Replay previously used token.<br>5. Submit token generated for different action. | 1. Returns `201 Created`.<br>2. Returns `400 Bad Request` (`invalid-input-response`).<br>3. Returns `400 Bad Request` (`timeout-or-duplicate`).<br>4. Returns `400 Bad Request` (`timeout-or-duplicate`).<br>5. Returns `400 Bad Request` (`action-mismatch`). |
+| **STG-INT-05** | **Ingress IP Extraction & Proxy Spoofing** | **PASS** | **DEFERRED** | 1. Direct connection bypassing ingress sending `X-Forwarded-For: 8.8.8.8`.<br>2. Ingress proxy connection within `TRUSTED_PROXIES` CIDR sending client IP in `X-Forwarded-For`. | 1. `StrictThrottlerGuard` uses TCP `socket.remoteAddress`; spoofed header ignored.<br>2. Trusted ingress parses genuine client IP from proxy header. |
+| **STG-INT-06** | **Cloudflare R2 Bucket Permissions** | **PASS** | **DEFERRED** | 1. Request presigned upload URL for study material.<br>2. Upload test document.<br>3. Verify asset is stored in `educare-staging` bucket and not production `educare`. | Presigned URL targets staging R2 endpoint; public playback URL uses `staging-media.educarelearning.in`. |
+| **STG-INT-07** | **LiveKit Room Authorization Scope** | **PASS** | **DEFERRED** | 1. Student at Centre A attempts to join Centre B live class (`/api/live-class/:id/token`).<br>2. Student at Centre A joins Centre A live class. | 1. Returns `HTTP 403 Forbidden` (`Cross-centre access denied`).<br>2. Returns valid LiveKit room token scoped to specific room. |
+| **STG-INT-08** | **Cross-Centre Data Isolation & Legacy Records** | **PASS** | **DEFERRED** | 1. Centre Admin A requests student, fee, enquiry list.<br>2. Verify legacy enquiries (`centreId: null`) are excluded from Centre Admin view.<br>3. Super Admin accesses `/api/enquiry/unreconciled`. | 1. Centre Admin sees only Centre A records.<br>2. Legacy records invisible to Centre Admin.<br>3. Super Admin reviews unreconciled queue with audit logging. |
+| **STG-INT-09** | **Backup Restoration & Application Rollback** | **PASS** | **DEFERRED** | 1. Execute write quiescence and verified `pg_dump` on staging database.<br>2. Deploy test forward-fix migration.<br>3. Restore dump into separate `educare_staging_restored` database.<br>4. Switch `DATABASE_URL` and restart API replicas synchronously. | Application operates seamlessly against restored database with 0 data corruption, 0 missing writes, or Prisma migration lock errors. |
 
 ---
 
@@ -459,38 +473,75 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 
 ---
 
-## 10. Staging Readiness Checklist & Remaining Blockers
+## 10. Staging Deployment Checklist & Release Gate
 
-### A. Pre-Deployment Staging Checklist
-- [ ] **1. Infrastructure Provisioning**:
-  - [ ] Provision isolated staging PostgreSQL 14+ database (`educare_staging`).
-  - [ ] Provision dedicated Redis 7+ instance with `requirepass` enabled.
-  - [ ] Provision dedicated Cloudflare R2 bucket (`educare-staging`).
-  - [ ] Provision dedicated LiveKit staging project.
-- [ ] **2. Credential Injection**:
-  - [ ] Populate `.env.staging` using the redacted template in Section 4.
-  - [ ] Verify `DATABASE_URL` uses `sslmode=require` and does not point to `148.135.138.196`.
-  - [ ] Verify `REDIS_URL` contains the staging password.
-  - [ ] Generate high-entropy `JWT_SECRET` (>= 32 chars).
-- [ ] **3. Ingress & Hostname Approvals**:
-  - [ ] Configure `TRUSTED_PROXIES` to match staging ingress controller VPC CIDR.
-  - [ ] Add staging hostname (`staging.educarelearning.in`) to Cloudflare Turnstile dashboard.
-  - [ ] Verify `defaultHostnames` in `enquiry.service.ts` includes the staging domain.
-- [ ] **4. Staging Deployment Execution**:
-  - [ ] Take pre-migration database snapshot (`pg_dump`).
-  - [ ] Deploy migrations using `pnpm --filter @educare/database prisma migrate deploy`.
-  - [ ] Run dry-run reconciliation:
+### Phase 1: Prerequisites & Credential Owners
+- [ ] **1. Isolated Database Provisioning** *(Owner: Infrastructure Lead)*:
+  - [ ] Dedicated PostgreSQL 14+ cluster provisioned (`educare_staging`).
+  - [ ] Strict private VPC subnet placement; port 5432 closed to public internet.
+  - [ ] Enforced TLS (`sslmode=require`).
+  - [ ] Target host added to `STAGING_DATABASE_ALLOWLIST`.
+- [ ] **2. Authenticated Redis Provisioning** *(Owner: Infrastructure Lead)*:
+  - [ ] Dedicated Redis 7+ instance provisioned with high-entropy `requirepass`.
+  - [ ] Port 6379 restricted to staging API container security group.
+- [ ] **3. Cloudflare Staging Credentials** *(Owner: Cloud Platform Admin)*:
+  - [ ] Dedicated staging R2 bucket (`educare-staging`) provisioned; isolated S3 keys injected.
+  - [ ] Dedicated staging Turnstile widget keys generated for `staging.educarelearning.in`.
+- [ ] **4. WebRTC Video Infrastructure** *(Owner: Product / Media Lead)*:
+  - [ ] Isolated LiveKit staging project provisioned with dedicated API key and secret.
+- [ ] **5. Ingress & DNS Configuration** *(Owner: Network / DevOps Lead)*:
+  - [ ] DNS A/CNAME records routed for `staging.educarelearning.in` and `staging-api.educarelearning.in`.
+  - [ ] `TRUSTED_PROXIES` restricted strictly to the ingress controller VPC CIDR.
+- [ ] **6. Secret Injection Verification** *(Owner: Security Lead)*:
+  - [ ] Secret manager injected with values matching `.env.staging.template`.
+  - [ ] Confirmed zero production IPs (`148.135.138.196`) or production credentials present.
+
+### Phase 2: Deployment Execution Steps
+- [ ] **1. Build & Release Candidate Verification**:
+  - [ ] Verify Git HEAD matches certified commit (`f089d41`).
+  - [ ] Run full automated test suite: `pnpm --filter api test -- --runInBand --forceExit` (448/448 pass).
+  - [ ] Run Next.js production build: `NODE_ENV=production APP_ENV=staging pnpm --filter web build`.
+- [ ] **2. Pre-Migration Baseline & Quiescence**:
+  - [ ] Quiesce writes on target: `ALTER DATABASE educare_staging SET default_transaction_read_only = on;`.
+  - [ ] Terminate active backends: `SELECT pg_terminate_backend(pid)...`.
+  - [ ] Take authoritative pre-deploy backup: `pg_dump -Fc -f educare_staging_quiesced_pre_deploy.dump`.
+  - [ ] Verify backup integrity: `pg_restore --list educare_staging_quiesced_pre_deploy.dump > /dev/null`.
+- [ ] **3. Migration Deployment via Safe Runner**:
+  - [ ] Unlock database writes: `ALTER DATABASE educare_staging SET default_transaction_read_only = off;`.
+  - [ ] Execute safe migration deploy:
     ```bash
-    pnpm --filter @educare/database reconcile:enquiries
-    pnpm --filter @educare/database reconcile:materials
+    pnpm --filter @educare/database db:deploy
     ```
-  - [ ] Confirm 0 database writes occur during dry-run.
-- [ ] **5. Live Integration Smoke Test**:
-  - [ ] Submit test admission enquiry on `/admission` and verify Turnstile validation passes.
-  - [ ] Verify rate limiting across 2+ API replicas via Redis.
-  - [ ] Log in as Centre Admin Alpha and verify inability to see Centre Beta data.
+  - [ ] Verify all 10 migrations in ledger:
+    ```bash
+    psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging -c "SELECT migration_name FROM _prisma_migrations;"
+    ```
+- [ ] **4. Staging Data Seeding**:
+  - [ ] Execute baseline staging seed: `pnpm --filter @educare/database exec prisma db seed`.
+- [ ] **5. Container Replica Rollout**:
+  - [ ] Deploy API and Web container replicas with `NODE_ENV=production` and `APP_ENV=staging`.
 
-### B. Remaining Blockers Preventing Production Release
-1. **Target Infrastructure Separation**: A physical or managed staging PostgreSQL database completely detached from `148.135.138.196` must be provisioned.
-2. **Authenticated Redis Staging Instance**: Staging environment currently lacks an active Redis instance.
-3. **Dedicated Staging Cloudflare Credentials**: Staging cannot use production R2 buckets or production Turnstile site keys.
+### Phase 3: Post-Deployment Verification & Smoke Tests
+- [ ] **1. Health Probes**:
+  - [ ] `GET /health/live` returns HTTP 200 `{"status":"ok"}`.
+  - [ ] `GET /health/ready` returns HTTP 200 confirming PostgreSQL and Redis connections.
+- [ ] **2. Rate Limiting Multi-Replica Smoke Test**:
+  - [ ] Burst 105 unauthenticated requests to `/api/enquiry/public`; verify HTTP 429 after 100 requests.
+- [ ] **3. Cloudflare Turnstile Verification**:
+  - [ ] Submit valid enquiry on `/admission`; confirm HTTP 201.
+  - [ ] Submit invalid/replayed token; confirm HTTP 400 rejection.
+- [ ] **4. Cross-Centre Multi-Tenant Isolation**:
+  - [ ] Log in as Centre Admin A; confirm zero visibility into Centre B students, fees, or enquiries.
+  - [ ] Verify unassigned enquiries (`centreId: null`) are inaccessible to Centre Admins.
+
+### Phase 4: Release Approval Criteria & Rollback Triggers
+- **Automatic Rollback Triggers (Halt & Quiesce Immediately)**:
+  - Any connection attempt or log entry referencing production IP `148.135.138.196`.
+  - Failure of readiness probe `GET /health/ready` after container startup.
+  - Unhandled Redis outage causing unthrottled public traffic (fail-closed failure).
+  - Migration checksum mismatch or lock deadlock during `db:deploy`.
+- **Go / No-Go Approval Sign-off**:
+  - [ ] Infrastructure Lead: External cloud database, Redis, and R2 isolation confirmed.
+  - [ ] Security Lead: Zero-production fallback verified; Turnstile & JWT secrets verified.
+  - [ ] QA / Release Manager: All 448 automated tests passed; post-deployment smoke tests passed.
+

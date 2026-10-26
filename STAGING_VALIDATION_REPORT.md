@@ -3,18 +3,19 @@
 ## 1. Executive Summary & Final Recommendation
 
 - **Git Branch**: `fix/authorization-remediation`
-- **Latest Commit**: `72ceb88` (`fix(staging): strengthen DNS & env target guards, verify live Redis ping, audit media credentials, and reconcile test suite`)
+- **Latest Commit**: `f089d41` (`feat(web): redesign enterprise audit logs page with executive metrics and rich inspector`)
 - **Base Branch**: `main` (`4a49372`)
 - **Audit Execution Date**: 2026-10-26
-- **Final Release Gate Status**: **PASSED (RELEASE GATE VERIFIED)**
+- **Final Release Gate Status**: **CODE-LEVEL RELEASE CANDIDATE VERIFIED (EXTERNAL CLOUD DRILLS DEFERRED)**
 
 ### Summary of Recommendation
-The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, cross-centre isolation checks, fail-closed target guards, and Redis startup preflights have **PASSED** completely, with 443/443 passing API tests across 18 suites, clean Next.js production builds (39/39 routes), and valid Prisma schemas.
+The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, cross-centre isolation checks, fail-closed target guards, safe migration runner, and Redis startup preflights have **PASSED** completely at the code and local harness levels, with 448/448 passing API tests across 18 suites, clean Next.js production builds (39/39 routes), and valid Prisma schemas.
 
-However, deployment to production remains **BLOCKED** until the following infrastructure separation requirements are fulfilled in the external staging environment:
-1. **Isolated Staging Database & Credentials**: `packages/database/.env` currently references a remote database IP (`148.135.138.196:5432`) that corresponds to the live/production server. Staging database migrations were strictly validated against a local isolated PostgreSQL instance (`127.0.0.1:5433`). The remote database was protected from mutations during preflight.
-2. **Dedicated Staging Redis Cluster**: `REDIS_URL` is unconfigured in staging environment files; multi-replica rate limiting and distributed session revocation require an isolated staging Redis instance.
-3. **Dedicated Staging Cloudflare Turnstile Sitekey & Secret**: Turnstile credentials currently configured in `.env` point to live accounts, and staging domain names (e.g. `staging.educarelearning.in`) must be explicitly provisioned in Cloudflare and added to the application hostname allowlist.
+However, deployment to production remains **BLOCKED** and external staging cloud drills are **DEFERRED** until the following infrastructure separation requirements are fulfilled in the external staging environment:
+1. **Isolated Staging Database & Credentials**: `packages/database/.env` currently references a remote database IP (`148.135.138.196:5432`) that corresponds to the live/production server. Staging database migrations were strictly validated against an isolated disposable PostgreSQL instance without touching production.
+2. **Dedicated Staging Redis Cluster**: Multi-replica rate limiting and distributed session revocation require an isolated staging Redis instance with `requirepass`.
+3. **Dedicated Staging Cloudflare Turnstile Sitekey & Secret**: Turnstile credentials currently configured in `.env` point to live accounts, and staging domain names (e.g. `staging.educarelearning.in`) must be explicitly provisioned in Cloudflare.
+4. **Cloud Disaster-Recovery & Integration Drills**: Formally reclassified as **DEFERRED** until the aforementioned isolated cloud resources are provisioned by credential owners.
 
 ---
 
@@ -216,35 +217,47 @@ If issues arise following migration or deployment in staging or production:
 > [!IMPORTANT]
 > **Correction on In-Place Restoration & Split-Brain Writes**:
 > In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails midway due to active connections, lock timeouts, or foreign key dependencies, the database is left in a corrupted or half-dropped state.
-> Furthermore, updating `DATABASE_URL` during a slow rolling restart causes split-brain writes: old replicas write to the old database while new replicas write to the restored database.
+> Furthermore, taking a snapshot *before* write quiescence allows in-flight writes to be omitted from the dump, and updating `DATABASE_URL` during a slow rolling restart causes split-brain writes where old and new replicas simultaneously mutate different databases.
 
 **Controlled Cutover Runbook (Zero Split-Brain)**:
-1. **Pre-deployment snapshot**:
-   Ensure executing user has `CREATEDB` and `GRANT ALL` administrative privileges:
-   ```bash
-   pg_dump -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_pre_deploy.dump
-   ```
-2. **Quiesce Write Traffic**:
-   Set the active database to read-only or activate ingress maintenance mode before cutover:
+1. **Phase 1: Write Quiescence & Reconnection Prevention**:
+   Stop incoming traffic at ingress and set the active database to read-only BEFORE taking the snapshot:
    ```sql
+   -- Prevent any further mutations on the source database
    ALTER DATABASE educare_staging SET default_transaction_read_only = on;
+   -- Terminate active mutation backends immediately
    SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
    WHERE datname = 'educare_staging' AND pid <> pg_backend_pid();
    ```
-3. **Restore into a separate freshly created database**:
+   *Reconnection Protection*: Any connection that reconnects is blocked by `default_transaction_read_only = on` and cannot write data.
+
+2. **Phase 2: Verified Authoritative Quiesced Backup**:
+   Take the binary snapshot strictly AFTER writes are quiesced, guaranteeing complete transaction capture:
+   ```bash
+   pg_dump -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_quiesced_final.dump
+   
+   # Verify archive validity and structure
+   pg_restore --list educare_staging_quiesced_final.dump > /dev/null
+   test -s educare_staging_quiesced_final.dump && echo "Backup verified valid and non-empty."
+   ```
+
+3. **Phase 3: Provision Isolated Fresh Target & Restore**:
    ```bash
    createdb -h <DB_HOST> -p 5432 -U educare_staging educare_staging_restored
-   pg_restore -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_pre_deploy.dump
+   pg_restore -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_quiesced_final.dump
    ```
-4. **Validate restored database integrity**:
+
+4. **Phase 4: Validate Restored Database Integrity**:
    ```bash
    psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "_prisma_migrations";'
    psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
    ```
-5. **Coordinated Target Switch & Synchronous Replica Transition**:
+
+5. **Phase 5: Coordinated Target Switch & Synchronous Replica Transition**:
    Update `DATABASE_URL` in secrets manager (or repoint internal PgBouncer pooler) and restart all replicas synchronously (`kubectl rollout restart deployment/api` or scaling to 0 and back to N) to ensure no connections remain open to the old database.
-6. **Verification & Forensic Quarantine**:
-   Verify `GET /health` and smoke test write paths. Retain the quarantined original database for post-mortem analysis; do not delete immediately.
+
+6. **Phase 6: Verification & Forensic Quarantine**:
+   Verify `GET /health/ready` and smoke test write paths. Retain the quarantined original database in read-only status for post-mortem analysis; do not delete immediately.
 
 ### B. Zero-Downtime Application Version Rollback (Preferred)
 - Revert the API container to the prior release tag.
@@ -286,11 +299,11 @@ If issues arise following migration or deployment in staging or production:
 ========================================================================================
                       EDUCARE LMS — STAGING VERIFICATION CERTIFICATE                    
 ========================================================================================
-STATUS:                PASSED & RELEASE-GATE CERTIFIED
+STATUS:                CODE RELEASE CANDIDATE VERIFIED (EXTERNAL CLOUD DRILLS DEFERRED)
 BRANCH:                fix/authorization-remediation
-COMMIT HEAD:           68e364f7bdf7f45778a5dcbe84e6f663ee38758d
+COMMIT HEAD:           f089d4132ba26119880174536642a9c0336f503b
 BASE BRANCH:           main (4a49372)
-TIMESTAMP:             2026-10-26T02:44:00Z
+TIMESTAMP:             2026-10-26T06:15:00Z
 AUDIT AUTHORITY:       Antigravity Security & Release Auditor
 
 ----------------------------------------------------------------------------------------
@@ -301,19 +314,24 @@ VERIFICATION CRITERIA & EVIDENCE SUMMARY:
 [PASS] Authorization Remediation:  103 / 103 Tests Passed (Scopes A through H)
 [PASS] Database Target Safety:     27 / 27 Tests Passed (Fail-closed host allowlists, DNS)
 [PASS] Health & Readiness Probes:  6 / 6 Tests Passed (Separated /health/live & /health/ready)
-[PASS] Safe Migration Runner:      Independent Target Assertion (safe-migrate-deploy.ts)
+[PASS] Safe Migration Runner:      Controlled Test Matrix Rejections Verified (safe-migrate-deploy.ts)
 [PASS] Web Application Build:      Next.js 16.4.2 Production Build Clean (39/39 routes)
-[PASS] Database Migration Ledger:  10 / 10 Migrations Applied Sequentially
+[PASS] Database Migration Ledger:  10 / 10 Migrations Applied on Disposable Test DB
 [PASS] Mobile Application Build:   Expo React Native Typecheck Passed (0 errors)
 [PASS] Tenant Ownership Isolation: Authoritative CustomForm.centreId Relation Verified
 [PASS] Distributed Rate Limiting:  StrictThrottlerGuard & Redis Fail-Closed Guards Active
 [PASS] Cloudflare Turnstile:       Staging Hostname Allowlist Enabled (staging.educarelearning.in)
-[PASS] Recovery Runbook:           6-Phase Zero-Split-Brain Protocol & Idempotent DDL Verified
+[PASS] Recovery Runbook Docs:      6-Phase Zero-Split-Brain Protocol & Idempotent DDL Corrected
+[DEFERRED] External Staging DB:    Pending Provisioning of Dedicated Staging PostgreSQL Cluster
+[DEFERRED] External Staging Redis: Pending Provisioning of Authenticated Redis 7 Instance
+[DEFERRED] Cloud Disaster Recovery:Pending Live Staging Cloud DR Cutover Exercise
 
 ----------------------------------------------------------------------------------------
 CONCLUSION:
 The codebase on branch fix/authorization-remediation satisfies all security, multi-tenant
 isolation, and runtime-hardening requirements. Application code is certified ready for
-staging deployment and release gating.
+staging deployment. External cloud infrastructure drills remain deferred until isolated
+staging resources are provisioned by credential owners.
 ========================================================================================
 ```
+
