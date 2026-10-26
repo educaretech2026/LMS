@@ -31,7 +31,6 @@ import {
   ChevronUp,
   HelpCircle,
   FileCheck2,
-  Award,
   Layers,
   Eye,
 } from "lucide-react";
@@ -790,12 +789,6 @@ export default function AdmissionPage() {
 
           {/* Trust Metrics */}
           <div className="pt-4 flex items-center justify-center gap-4 sm:gap-8 text-xs text-slate-300 flex-wrap">
-            <span className="flex items-center gap-1.5">
-              <Award className="w-4 h-4 text-amber-400" /> 28+ Years Proven Results
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Building2 className="w-4 h-4 text-sky-400" /> Mannanam & Kalathipady Campuses
-            </span>
             <span className="flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-400" /> Authorized Institutional Portal
             </span>
