@@ -713,4 +713,334 @@ export class SetupService {
 
     return this.prisma.notice.delete({ where: { id } });
   }
+
+  // ---------------------------------------------------------------------------
+  // Admission Rules & Regulations & Digital Undertaking Policy
+  // ---------------------------------------------------------------------------
+
+  async getAdmissionRules() {
+    const list = await this.prisma.notice.findMany({
+      where: { type: 'ADMISSION_RULE' },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (list.length === 0) {
+      return DEFAULT_ADMISSION_RULES.map((rule, idx) => ({
+        id: `default-${idx + 1}`,
+        title: rule.title,
+        content: rule.content,
+        category: rule.category,
+        order: rule.order,
+        isRequiredAck: rule.isRequiredAck,
+        isActive: true,
+        isDefault: true,
+      }));
+    }
+
+    const mapped = list.map(item => {
+      let meta: any = {};
+      try { meta = JSON.parse(item.content); } catch { meta = { description: item.content, category: 'General', order: 999 }; }
+      return {
+        id: item.id,
+        title: item.title,
+        content: meta.description || meta.content || '',
+        category: meta.category || 'General',
+        order: typeof meta.order === 'number' ? meta.order : 999,
+        isRequiredAck: meta.isRequiredAck !== false,
+        isActive: item.isActive,
+        isDefault: false,
+        createdAt: item.createdAt,
+      };
+    });
+    mapped.sort((a, b) => a.order - b.order);
+    return mapped;
+  }
+
+  async getAdmissionPolicy() {
+    const policyNotice = await this.prisma.notice.findFirst({
+      where: { type: 'ADMISSION_POLICY' },
+    });
+
+    if (!policyNotice) {
+      return DEFAULT_ADMISSION_POLICY;
+    }
+
+    try {
+      const parsed = JSON.parse(policyNotice.content);
+      return {
+        title: policyNotice.title || DEFAULT_ADMISSION_POLICY.title,
+        subtitle: parsed.subtitle || DEFAULT_ADMISSION_POLICY.subtitle,
+        description: parsed.description || DEFAULT_ADMISSION_POLICY.description,
+        declarationText: parsed.declarationText || DEFAULT_ADMISSION_POLICY.declarationText,
+        requireSignature: parsed.requireSignature !== false,
+        allowUploadSignature: parsed.allowUploadSignature !== false,
+        requireParentSignature: parsed.requireParentSignature !== false,
+      };
+    } catch {
+      return DEFAULT_ADMISSION_POLICY;
+    }
+  }
+
+  async updateAdmissionPolicy(data: {
+    title?: string;
+    subtitle?: string;
+    description?: string;
+    declarationText?: string;
+    requireSignature?: boolean;
+    allowUploadSignature?: boolean;
+    requireParentSignature?: boolean;
+  }) {
+    const existing = await this.prisma.notice.findFirst({
+      where: { type: 'ADMISSION_POLICY' },
+    });
+
+    const content = JSON.stringify({
+      subtitle: data.subtitle?.trim() || DEFAULT_ADMISSION_POLICY.subtitle,
+      description: data.description?.trim() || DEFAULT_ADMISSION_POLICY.description,
+      declarationText: data.declarationText?.trim() || DEFAULT_ADMISSION_POLICY.declarationText,
+      requireSignature: data.requireSignature !== undefined ? Boolean(data.requireSignature) : true,
+      allowUploadSignature: data.allowUploadSignature !== undefined ? Boolean(data.allowUploadSignature) : true,
+      requireParentSignature: data.requireParentSignature !== undefined ? Boolean(data.requireParentSignature) : true,
+    });
+
+    const title = data.title?.trim() || DEFAULT_ADMISSION_POLICY.title;
+
+    if (existing) {
+      await this.prisma.notice.update({
+        where: { id: existing.id },
+        data: { title, content },
+      });
+    } else {
+      await this.prisma.notice.create({
+        data: {
+          title,
+          content,
+          type: 'ADMISSION_POLICY',
+          isActive: true,
+        },
+      });
+    }
+
+    return this.getAdmissionPolicy();
+  }
+
+  async createAdmissionRule(data: {
+    title: string;
+    content: string;
+    category?: string;
+    order?: number;
+    isRequiredAck?: boolean;
+  }) {
+    if (!data.title || !data.title.trim()) throw new BadRequestException('Rule title is required');
+    if (!data.content || !data.content.trim()) throw new BadRequestException('Rule clause/content is required');
+
+    let order = Number(data.order);
+    if (!order || isNaN(order)) {
+      const existing = await this.prisma.notice.count({ where: { type: 'ADMISSION_RULE' } });
+      order = existing + 1;
+    }
+
+    const payload = JSON.stringify({
+      description: data.content.trim(),
+      category: data.category?.trim() || 'General',
+      order,
+      isRequiredAck: data.isRequiredAck !== false,
+    });
+
+    const created = await this.prisma.notice.create({
+      data: {
+        title: data.title.trim(),
+        content: payload,
+        type: 'ADMISSION_RULE',
+        isActive: true,
+      },
+    });
+
+    return {
+      id: created.id,
+      title: created.title,
+      content: data.content.trim(),
+      category: data.category?.trim() || 'General',
+      order,
+      isRequiredAck: data.isRequiredAck !== false,
+      isActive: created.isActive,
+      isDefault: false,
+    };
+  }
+
+  async updateAdmissionRule(id: string, data: {
+    title?: string;
+    content?: string;
+    category?: string;
+    order?: number;
+    isRequiredAck?: boolean;
+    isActive?: boolean;
+  }) {
+    // If updating a default rule that hasn't been saved to DB yet, convert to a real record
+    if (id.startsWith('default-')) {
+      const defaultIdx = parseInt(id.replace('default-', ''), 10) - 1;
+      const def = DEFAULT_ADMISSION_RULES[defaultIdx] || DEFAULT_ADMISSION_RULES[0];
+      return this.createAdmissionRule({
+        title: data.title !== undefined ? data.title : def.title,
+        content: data.content !== undefined ? data.content : def.content,
+        category: data.category !== undefined ? data.category : def.category,
+        order: data.order !== undefined ? data.order : def.order,
+        isRequiredAck: data.isRequiredAck !== undefined ? data.isRequiredAck : def.isRequiredAck,
+      });
+    }
+
+    const item = await this.prisma.notice.findUnique({ where: { id } });
+    if (!item || item.type !== 'ADMISSION_RULE') {
+      throw new NotFoundException('Admission rule not found');
+    }
+
+    let meta: any = {};
+    try { meta = JSON.parse(item.content); } catch {}
+
+    const title = data.title !== undefined ? data.title.trim() : item.title;
+    const content = data.content !== undefined ? data.content.trim() : (meta.description || meta.content || '');
+    const category = data.category !== undefined ? data.category.trim() : (meta.category || 'General');
+    const order = typeof data.order === 'number' ? data.order : (meta.order || 1);
+    const isRequiredAck = data.isRequiredAck !== undefined ? Boolean(data.isRequiredAck) : (meta.isRequiredAck !== false);
+    const isActive = data.isActive !== undefined ? Boolean(data.isActive) : item.isActive;
+
+    const updated = await this.prisma.notice.update({
+      where: { id },
+      data: {
+        title,
+        content: JSON.stringify({ description: content, category, order, isRequiredAck }),
+        isActive,
+      },
+    });
+
+    return {
+      id: updated.id,
+      title: updated.title,
+      content,
+      category,
+      order,
+      isRequiredAck,
+      isActive: updated.isActive,
+      isDefault: false,
+    };
+  }
+
+  async deleteAdmissionRule(id: string) {
+    if (id.startsWith('default-')) {
+      return { success: true, message: 'Default template ignored' };
+    }
+    const item = await this.prisma.notice.findUnique({ where: { id } });
+    if (!item || item.type !== 'ADMISSION_RULE') {
+      throw new NotFoundException('Admission rule not found');
+    }
+    await this.prisma.notice.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async toggleAdmissionRuleActive(id: string) {
+    if (id.startsWith('default-')) {
+      const defaultIdx = parseInt(id.replace('default-', ''), 10) - 1;
+      const def = DEFAULT_ADMISSION_RULES[defaultIdx] || DEFAULT_ADMISSION_RULES[0];
+      const created = await this.createAdmissionRule({
+        title: def.title,
+        content: def.content,
+        category: def.category,
+        order: def.order,
+        isRequiredAck: def.isRequiredAck,
+      });
+      return this.prisma.notice.update({
+        where: { id: created.id },
+        data: { isActive: false },
+      });
+    }
+
+    const item = await this.prisma.notice.findUnique({ where: { id } });
+    if (!item || item.type !== 'ADMISSION_RULE') {
+      throw new NotFoundException('Admission rule not found');
+    }
+    return this.prisma.notice.update({
+      where: { id },
+      data: { isActive: !item.isActive },
+    });
+  }
+
+  async reorderAdmissionRules(orderedIds: string[]) {
+    if (!Array.isArray(orderedIds)) throw new BadRequestException('orderedIds must be an array');
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      if (id.startsWith('default-')) continue;
+      const item = await this.prisma.notice.findUnique({ where: { id } });
+      if (item && item.type === 'ADMISSION_RULE') {
+        let meta: any = {};
+        try { meta = JSON.parse(item.content); } catch {}
+        meta.order = i + 1;
+        await this.prisma.notice.update({
+          where: { id },
+          data: { content: JSON.stringify(meta) },
+        });
+      }
+    }
+    return { success: true };
+  }
+
+  async getPublicAdmissionRules() {
+    const [policy, rules] = await Promise.all([
+      this.getAdmissionPolicy(),
+      this.getAdmissionRules(),
+    ]);
+
+    const activeRules = rules.filter(r => r.isActive);
+    return {
+      policy,
+      rules: activeRules,
+    };
+  }
 }
+
+export const DEFAULT_ADMISSION_POLICY = {
+  title: "Educare Academy Student Code & Admission Undertaking",
+  subtitle: "Institutional Guidelines, Academic Code of Conduct & Guardian Declaration",
+  description: "All students admitted to Educare Institute of Learning are expected to observe high standards of academic diligence, discipline, and mutual respect. Please read the terms below carefully before signing.",
+  declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute. I understand that any breach of discipline or submission of false records may result in disciplinary action or cancellation of enrollment.",
+  requireSignature: true,
+  allowUploadSignature: true,
+  requireParentSignature: true,
+};
+
+export const DEFAULT_ADMISSION_RULES = [
+  {
+    title: "Attendance & Punctuality Norms",
+    category: "Attendance",
+    content: "Students must maintain a minimum of 85% attendance across all scheduled theory, discussion, and practical laboratory sessions. In case of illness or emergency, a written leave letter signed by the parent/guardian must be submitted to the academic office within 48 hours.",
+    order: 1,
+    isRequiredAck: true,
+  },
+  {
+    title: "Academic Integrity & Assessment Discipline",
+    category: "Academics",
+    content: "Academic dishonesty, including copying in examinations, unauthorized collaboration during test series, or plagiarism in assignments, is strictly prohibited. Violations will result in cancellation of test results and immediate parent-teacher consultation.",
+    order: 2,
+    isRequiredAck: true,
+  },
+  {
+    title: "Campus Decorum, Dress Code & Mutual Respect",
+    category: "Conduct",
+    content: "Students must dress in modest, neat, and respectable attire appropriate for an academic environment. Respectful behavior towards teachers, peer students, and support staff is non-negotiable. Ragging, bullying, or disrespectful language will lead to immediate expulsion.",
+    order: 3,
+    isRequiredAck: true,
+  },
+  {
+    title: "Digital Device & Mobile Phone Policy",
+    category: "Discipline",
+    content: "Personal smartphones and electronic gadgets must be switched off or placed in silent mode during active lecture hours unless explicitly permitted by the instructor for interactive learning exercises.",
+    order: 4,
+    isRequiredAck: false,
+  },
+  {
+    title: "Fee Schedule, Batch Continuity & Refund Undertaking",
+    category: "Finance",
+    content: "Tuition and course fees must be remitted as per the agreed schedule. Admission and registration charges are non-refundable once classes commence. Batch or center change requests are subject to seat availability and administrative approval.",
+    order: 5,
+    isRequiredAck: true,
+  },
+];

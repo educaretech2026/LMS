@@ -33,6 +33,10 @@ import {
   Search,
   Lock,
   Check,
+  FileSignature,
+  ScrollText,
+  ExternalLink,
+  CheckCircle2,
 } from "lucide-react";
 import { MODULE_PERMISSIONS, checkModulePermission } from "@/lib/permissions";
 
@@ -108,6 +112,7 @@ export default function SetupPage() {
     { id: "SMS Templates", icon: MessageSquare },
     { id: "Exam Configuration", icon: FileText },
     { id: "Star Achievers", icon: Award },
+    { id: "Admission Rules", icon: FileSignature },
   ];
 
   return (
@@ -165,6 +170,7 @@ export default function SetupPage() {
               {activeTab === "SMS Templates" && <SmsTemplatesTab />}
               {activeTab === "Exam Configuration" && <ExamConfigTab />}
               {activeTab === "Star Achievers" && <StarAchieversTab />}
+              {activeTab === "Admission Rules" && <AdmissionRulesTab />}
             </div>
           </div>
         </div>
@@ -2547,6 +2553,677 @@ function StarAchieversTab() {
                   className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors disabled:opacity-50"
                 >
                   {submitting ? "Saving…" : "Save Poster"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// ADMISSION RULES & DIGITAL UNDERTAKING POLICY TAB
+// -----------------------------------------------------------------------------
+
+interface AdmissionRuleItem {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  order: number;
+  isRequiredAck: boolean;
+  isActive: boolean;
+  isDefault?: boolean;
+}
+
+interface AdmissionPolicyItem {
+  title: string;
+  subtitle: string;
+  description: string;
+  declarationText: string;
+  requireSignature: boolean;
+  allowUploadSignature: boolean;
+  requireParentSignature: boolean;
+}
+
+const RULE_CATEGORIES = [
+  "Attendance",
+  "Academics",
+  "Conduct",
+  "Discipline",
+  "Finance",
+  "General",
+];
+
+const CATEGORY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  Attendance: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+  Academics: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+  Conduct: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+  Discipline: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
+  Finance: { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
+  General: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" },
+};
+
+function AdmissionRulesTab() {
+  const [rules, setRules] = useState<AdmissionRuleItem[]>([]);
+  const [policy, setPolicy] = useState<AdmissionPolicyItem>({
+    title: "Educare Academy Student Code & Admission Undertaking",
+    subtitle: "Institutional Guidelines, Academic Code of Conduct & Guardian Declaration",
+    description: "All students admitted to Educare Institute of Learning are expected to observe high standards of academic diligence, discipline, and mutual respect. Please read the terms below carefully before signing.",
+    declarationText: "I hereby confirm that all information provided in this admission application is true, accurate, and complete. I have read, understood, and solemnly undertake to abide by the rules, code of conduct, attendance norms, and disciplinary regulations of Educare Institute. I understand that any breach of discipline or submission of false records may result in disciplinary action or cancellation of enrollment.",
+    requireSignature: true,
+    allowUploadSignature: true,
+    requireParentSignature: true,
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [policySaveSuccess, setPolicySaveSuccess] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [showModal, setShowModal] = useState(false);
+  const [editingRule, setEditingRule] = useState<AdmissionRuleItem | null>(null);
+  const [submittingRule, setSubmittingRule] = useState(false);
+
+  const [ruleForm, setRuleForm] = useState({
+    title: "",
+    category: "General",
+    content: "",
+    order: 1,
+    isRequiredAck: true,
+  });
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [rulesData, policyData] = await Promise.all([
+        fetchApi<AdmissionRuleItem[]>("/setup/admission-rules"),
+        fetchApi<AdmissionPolicyItem>("/setup/admission-policy"),
+      ]);
+      setRules(rulesData || []);
+      if (policyData) setPolicy(policyData);
+    } catch (e: any) {
+      console.error("Failed to load admission rules or policy:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleSavePolicy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPolicy(true);
+    setPolicySaveSuccess(false);
+    try {
+      const updated = await fetchApi<AdmissionPolicyItem>("/setup/admission-policy", {
+        method: "PUT",
+        body: JSON.stringify(policy),
+      });
+      if (updated) setPolicy(updated);
+      setPolicySaveSuccess(true);
+      setTimeout(() => setPolicySaveSuccess(false), 3000);
+    } catch (e: any) {
+      alert("Failed to save admission policy: " + (e.message || "Unknown error"));
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
+  const openAddModal = () => {
+    setEditingRule(null);
+    setRuleForm({
+      title: "",
+      category: "General",
+      content: "",
+      order: rules.length + 1,
+      isRequiredAck: true,
+    });
+    setShowModal(true);
+  };
+
+  const openEditModal = (rule: AdmissionRuleItem) => {
+    setEditingRule(rule);
+    setRuleForm({
+      title: rule.title,
+      category: rule.category || "General",
+      content: rule.content,
+      order: rule.order,
+      isRequiredAck: rule.isRequiredAck !== false,
+    });
+    setShowModal(true);
+  };
+
+  const handleRuleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ruleForm.title.trim()) {
+      alert("Rule title is required.");
+      return;
+    }
+    if (!ruleForm.content.trim()) {
+      alert("Rule clause / content is required.");
+      return;
+    }
+
+    setSubmittingRule(true);
+    try {
+      if (editingRule) {
+        await fetchApi(`/setup/admission-rules/${editingRule.id}`, {
+          method: "PUT",
+          body: JSON.stringify(ruleForm),
+        });
+      } else {
+        await fetchApi("/setup/admission-rules", {
+          method: "POST",
+          body: JSON.stringify(ruleForm),
+        });
+      }
+      setShowModal(false);
+      await loadData();
+    } catch (e: any) {
+      alert("Failed to save rule: " + (e.message || "Unknown error"));
+    } finally {
+      setSubmittingRule(false);
+    }
+  };
+
+  const handleToggle = async (rule: AdmissionRuleItem) => {
+    try {
+      await fetchApi(`/setup/admission-rules/${rule.id}/toggle`, {
+        method: "PATCH",
+      });
+      setRules((prev) =>
+        prev.map((r) => (r.id === rule.id ? { ...r, isActive: !r.isActive } : r))
+      );
+    } catch (e: any) {
+      alert("Failed to toggle rule active status: " + e.message);
+    }
+  };
+
+  const handleDelete = async (rule: AdmissionRuleItem) => {
+    if (!confirm(`Are you sure you want to remove rule "${rule.title}"?`)) return;
+    try {
+      await fetchApi(`/setup/admission-rules/${rule.id}`, {
+        method: "DELETE",
+      });
+      setRules((prev) => prev.filter((r) => r.id !== rule.id));
+    } catch (e: any) {
+      alert("Failed to delete rule: " + e.message);
+    }
+  };
+
+  const handleMove = async (index: number, direction: "up" | "down") => {
+    const targetIdx = direction === "up" ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= rules.length) return;
+
+    const newRules = [...rules];
+    const [moved] = newRules.splice(index, 1);
+    newRules.splice(targetIdx, 0, moved);
+    setRules(newRules);
+
+    try {
+      const orderedIds = newRules.map((r) => r.id);
+      await fetchApi("/setup/admission-rules/order", {
+        method: "PUT",
+        body: JSON.stringify({ orderedIds }),
+      });
+    } catch (e: any) {
+      console.error("Failed to persist rule reordering", e);
+    }
+  };
+
+  const filteredRules =
+    selectedCategory === "ALL"
+      ? rules
+      : rules.filter((r) => (r.category || "General").toLowerCase() === selectedCategory.toLowerCase());
+
+  const activeCount = rules.filter((r) => r.isActive).length;
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-300">
+      {/* Top Banner & Quick Links */}
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-[#0162b1]/10 via-[#071d3d]/5 to-transparent border border-[#0162b1]/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0162b1]/15 text-[#0162b1] text-xs font-bold mb-2">
+            <FileSignature className="w-3.5 h-3.5" /> Admission Undertaking & Digital Signatures
+          </div>
+          <h2 className="text-xl font-bold text-text-primary tracking-tight">Admission Rules & Declaration Policy</h2>
+          <p className="text-xs text-text-muted mt-1 max-w-2xl leading-relaxed">
+            Manage the institutional terms, disciplinary guidelines, attendance norms, and digital signature requirements presented to prospective students and parents on the public admission page.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <a
+            href="/admission"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-text-primary bg-white border border-border-soft hover:bg-surface-2 transition-colors shadow-sm"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-text-muted" /> Preview Admission Page
+          </a>
+          <button
+            onClick={openAddModal}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors shadow-md shadow-brand-blue/20"
+          >
+            <Plus className="w-4 h-4" /> Add New Rule
+          </button>
+        </div>
+      </div>
+
+      {/* Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="p-4 rounded-xl bg-white border border-border-soft shadow-sm">
+          <span className="text-xs font-medium text-text-muted">Total Rules</span>
+          <p className="text-2xl font-black text-text-primary mt-1">{rules.length}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-white border border-border-soft shadow-sm">
+          <span className="text-xs font-medium text-text-muted">Active on Public Form</span>
+          <p className="text-2xl font-black text-emerald-600 mt-1">{activeCount}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-white border border-border-soft shadow-sm">
+          <span className="text-xs font-medium text-text-muted">Digital Signature</span>
+          <p className="text-sm font-bold text-text-primary mt-2 flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 rounded-full ${policy.requireSignature ? "bg-emerald-500" : "bg-slate-300"}`} />
+            {policy.requireSignature ? "Enforced" : "Optional"}
+          </p>
+        </div>
+        <div className="p-4 rounded-xl bg-white border border-border-soft shadow-sm">
+          <span className="text-xs font-medium text-text-muted">Image Upload Option</span>
+          <p className="text-sm font-bold text-text-primary mt-2 flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 rounded-full ${policy.allowUploadSignature ? "bg-blue-500" : "bg-slate-300"}`} />
+            {policy.allowUploadSignature ? "Enabled" : "Disabled"}
+          </p>
+        </div>
+      </div>
+
+      {/* Section 1: Policy Settings & Undertaking Statement */}
+      <div className="p-6 rounded-2xl bg-white border border-border-soft shadow-sm">
+        <div className="flex items-center justify-between pb-4 border-b border-border-soft mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-brand-blue/10 flex items-center justify-center text-brand-blue">
+              <ScrollText className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-text-primary">Policy Declaration & Signature Mandate</h3>
+              <p className="text-xs text-text-muted">Configure the legal declaration text and student/parent acknowledgment requirements</p>
+            </div>
+          </div>
+          {policySaveSuccess && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+              <Check className="w-3.5 h-3.5" /> Saved Successfully!
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSavePolicy} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Policy Header Title</label>
+              <input
+                type="text"
+                value={policy.title}
+                onChange={(e) => setPolicy({ ...policy, title: e.target.value })}
+                className="w-full h-10 rounded-xl border border-border-soft bg-surface px-3.5 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                placeholder="e.g. Educare Academy Student Code & Admission Undertaking"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Subtitle / Sub-heading</label>
+              <input
+                type="text"
+                value={policy.subtitle}
+                onChange={(e) => setPolicy({ ...policy, subtitle: e.target.value })}
+                className="w-full h-10 rounded-xl border border-border-soft bg-surface px-3.5 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                placeholder="e.g. Institutional Guidelines & Code of Conduct"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1.5">Preamble / Introduction</label>
+            <textarea
+              rows={2}
+              value={policy.description}
+              onChange={(e) => setPolicy({ ...policy, description: e.target.value })}
+              className="w-full rounded-xl border border-border-soft bg-surface p-3.5 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20 resize-none"
+              placeholder="Explains the purpose of the undertaking..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1.5">
+              Official Undertaking Statement (Accepted by Digital Signature)
+            </label>
+            <textarea
+              rows={4}
+              value={policy.declarationText}
+              onChange={(e) => setPolicy({ ...policy, declarationText: e.target.value })}
+              className="w-full rounded-xl border border-border-soft bg-surface p-3.5 text-sm text-text-primary font-mono text-xs leading-relaxed focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+              placeholder="Exact legal clause accepted when applicant signs..."
+            />
+            <p className="text-[11px] text-text-muted mt-1.5">
+              This statement is explicitly acknowledged and sealed with the applicant's digital signature or uploaded signature image.
+            </p>
+          </div>
+
+          {/* Signature Verification Toggles */}
+          <div className="pt-4 border-t border-border-soft grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label className="flex items-start gap-3 p-3.5 rounded-xl border border-border-soft bg-surface hover:bg-surface-2 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={policy.requireSignature}
+                onChange={(e) => setPolicy({ ...policy, requireSignature: e.target.checked })}
+                className="mt-1 h-4 w-4 rounded text-brand-blue focus:ring-brand-blue/30 border-border-soft"
+              />
+              <div>
+                <span className="text-xs font-bold text-text-primary block">Enforce Digital Signature</span>
+                <span className="text-[11px] text-text-muted">Requires applicants to provide a digital signature before submitting</span>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 p-3.5 rounded-xl border border-border-soft bg-surface hover:bg-surface-2 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={policy.allowUploadSignature}
+                onChange={(e) => setPolicy({ ...policy, allowUploadSignature: e.target.checked })}
+                className="mt-1 h-4 w-4 rounded text-brand-blue focus:ring-brand-blue/30 border-border-soft"
+              />
+              <div>
+                <span className="text-xs font-bold text-text-primary block">Allow Signature Image Upload</span>
+                <span className="text-[11px] text-text-muted">Enables applicants to upload a photo/scan of their paper signature</span>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 p-3.5 rounded-xl border border-border-soft bg-surface hover:bg-surface-2 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={policy.requireParentSignature}
+                onChange={(e) => setPolicy({ ...policy, requireParentSignature: e.target.checked })}
+                className="mt-1 h-4 w-4 rounded text-brand-blue focus:ring-brand-blue/30 border-border-soft"
+              />
+              <div>
+                <span className="text-xs font-bold text-text-primary block">Guardian Undertaking Required</span>
+                <span className="text-[11px] text-text-muted">Requests explicit parent/guardian co-signing or verification</span>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={savingPolicy}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors shadow-sm disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {savingPolicy ? "Saving Policy..." : "Save Policy Settings"}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Section 2: Rules & Regulations List */}
+      <div className="p-6 rounded-2xl bg-white border border-border-soft shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border-soft">
+          <div>
+            <h3 className="text-base font-bold text-text-primary">Rules & Regulations Catalog</h3>
+            <p className="text-xs text-text-muted mt-0.5">Clauses displayed to prospective candidates on the admission portal</p>
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => setSelectedCategory("ALL")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                selectedCategory === "ALL"
+                  ? "bg-text-primary text-white shadow-sm"
+                  : "bg-surface text-text-secondary hover:bg-surface-2"
+              }`}
+            >
+              All ({rules.length})
+            </button>
+            {RULE_CATEGORIES.map((cat) => {
+              const count = rules.filter((r) => (r.category || "General").toLowerCase() === cat.toLowerCase()).length;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    selectedCategory === cat
+                      ? "bg-brand-blue text-white shadow-sm"
+                      : "bg-surface text-text-secondary hover:bg-surface-2"
+                  }`}
+                >
+                  {cat} ({count})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-12 text-center text-text-muted text-sm">Loading admission rules...</div>
+        ) : filteredRules.length === 0 ? (
+          <div className="p-12 text-center border-2 border-dashed border-border-soft rounded-2xl">
+            <FileSignature className="w-10 h-10 text-text-muted mx-auto mb-3 opacity-40" />
+            <h4 className="text-sm font-bold text-text-primary">No rules found</h4>
+            <p className="text-xs text-text-muted mt-1 max-w-sm mx-auto">
+              {selectedCategory === "ALL"
+                ? "Click 'Add New Rule' to add your first admission regulation."
+                : `No rules in the '${selectedCategory}' category.`}
+            </p>
+            <button
+              onClick={openAddModal}
+              className="mt-4 px-4 py-2 rounded-xl text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Add Rule
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredRules.map((rule, idx) => {
+              const catStyle = CATEGORY_STYLES[rule.category] || CATEGORY_STYLES.General;
+              return (
+                <div
+                  key={rule.id}
+                  className={`p-4 rounded-xl border transition-all ${
+                    rule.isActive
+                      ? "bg-white border-border-soft hover:border-brand-blue/30 hover:shadow-sm"
+                      : "bg-surface/60 border-border-soft/60 opacity-60"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 flex-1">
+                      <div className="w-7 h-7 rounded-lg bg-surface flex items-center justify-center font-mono text-xs font-bold text-text-secondary shrink-0 border border-border-soft">
+                        {rule.order || idx + 1}
+                      </div>
+
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${catStyle.bg} ${catStyle.text} ${catStyle.border}`}>
+                            {rule.category || "General"}
+                          </span>
+                          <h4 className="text-sm font-bold text-text-primary">{rule.title}</h4>
+                          {rule.isDefault && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
+                              Default Template
+                            </span>
+                          )}
+                          {!rule.isActive && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
+                              Inactive (Hidden)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-secondary leading-relaxed">{rule.content}</p>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleMove(idx, "up")}
+                        disabled={idx === 0}
+                        title="Move Up"
+                        className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors disabled:opacity-20"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMove(idx, "down")}
+                        disabled={idx === filteredRules.length - 1}
+                        title="Move Down"
+                        className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors disabled:opacity-20"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+
+                      <div className="h-4 w-px bg-border-soft mx-1" />
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggle(rule)}
+                        title={rule.isActive ? "Deactivate Rule" : "Activate Rule"}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                          rule.isActive
+                            ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {rule.isActive ? "Active" : "Hidden"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(rule)}
+                        title="Edit Rule"
+                        className="p-1.5 rounded-lg text-text-muted hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(rule)}
+                        title="Delete Rule"
+                        className="p-1.5 rounded-lg text-text-muted hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Add / Edit Rule Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-border-soft w-full max-w-lg p-6 overflow-hidden">
+            <div className="flex items-center justify-between pb-4 border-b border-border-soft mb-5">
+              <h3 className="text-base font-bold text-text-primary">
+                {editingRule ? "Edit Admission Rule" : "Add New Admission Rule"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRuleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1">
+                  Rule Title <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={ruleForm.title}
+                  onChange={(e) => setRuleForm({ ...ruleForm, title: e.target.value })}
+                  placeholder="e.g. Lab Safety & Equipment Protocol"
+                  className="w-full h-10 rounded-xl border border-border-soft bg-surface px-3.5 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Category</label>
+                  <select
+                    value={ruleForm.category}
+                    onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value })}
+                    className="w-full h-10 rounded-xl border border-border-soft bg-surface px-3 text-xs font-bold text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  >
+                    {RULE_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1">Display Order</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={ruleForm.order}
+                    onChange={(e) => setRuleForm({ ...ruleForm, order: parseInt(e.target.value, 10) || 1 })}
+                    className="w-full h-10 rounded-xl border border-border-soft bg-surface px-3.5 text-sm font-mono text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-1">
+                  Clause Explanation / Regulation Content <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={ruleForm.content}
+                  onChange={(e) => setRuleForm({ ...ruleForm, content: e.target.value })}
+                  placeholder="Describe the rule, requirement, attendance percentage, or policy expectation in detail..."
+                  className="w-full rounded-xl border border-border-soft bg-surface p-3.5 text-xs text-text-primary leading-relaxed focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              <label className="flex items-center gap-2.5 pt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ruleForm.isRequiredAck}
+                  onChange={(e) => setRuleForm({ ...ruleForm, isRequiredAck: e.target.checked })}
+                  className="h-4 w-4 rounded text-brand-blue focus:ring-brand-blue/30 border-border-soft"
+                />
+                <span className="text-xs font-medium text-text-secondary">
+                  Mandatory clause for student / guardian undertaking
+                </span>
+              </label>
+
+              <div className="pt-4 border-t border-border-soft flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRule}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue-dark transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {submittingRule ? "Saving..." : editingRule ? "Update Rule" : "Create Rule"}
                 </button>
               </div>
             </form>

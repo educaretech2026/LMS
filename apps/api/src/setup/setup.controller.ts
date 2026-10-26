@@ -62,6 +62,64 @@ export class SetupController {
     return this.setupService.getPublicAchievers();
   }
 
+  // Admission Rules & Regulations
+  @Get('admission-rules')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  getAdmissionRules() {
+    return this.setupService.getAdmissionRules();
+  }
+
+  @Post('admission-rules')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  createAdmissionRule(@Body() data: { title: string; content: string; category?: string; order?: number; isRequiredAck?: boolean }) {
+    return this.setupService.createAdmissionRule(data);
+  }
+
+  @Put('admission-rules/order')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  reorderAdmissionRules(@Body('orderedIds') orderedIds: string[]) {
+    return this.setupService.reorderAdmissionRules(orderedIds);
+  }
+
+  @Put('admission-rules/:id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  updateAdmissionRule(
+    @Param('id') id: string,
+    @Body() data: { title?: string; content?: string; category?: string; order?: number; isRequiredAck?: boolean; isActive?: boolean },
+  ) {
+    return this.setupService.updateAdmissionRule(id, data);
+  }
+
+  @Patch('admission-rules/:id/toggle')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  toggleAdmissionRule(@Param('id') id: string) {
+    return this.setupService.toggleAdmissionRuleActive(id);
+  }
+
+  @Delete('admission-rules/:id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  deleteAdmissionRule(@Param('id') id: string) {
+    return this.setupService.deleteAdmissionRule(id);
+  }
+
+  @Get('admission-policy')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  getAdmissionPolicy() {
+    return this.setupService.getAdmissionPolicy();
+  }
+
+  @Put('admission-policy')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  updateAdmissionPolicy(@Body() data: any) {
+    return this.setupService.updateAdmissionPolicy(data);
+  }
+
+  @Public()
+  @Get('public/admission-rules')
+  getPublicAdmissionRules() {
+    return this.setupService.getPublicAdmissionRules();
+  }
+
   @Get('roles')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getRoles() {

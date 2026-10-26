@@ -175,7 +175,16 @@ export class EnquiryService {
     // Note: If no verified form configuration exists, client-supplied centreId, assignedToId,
     // and free-text source values (e.g. "Centre: ...") are NEVER trusted to assign tenant ownership.
     // Tenant ownership cannot be forged via public input. targetCentreId remains null.
-    // Client-supplied status, assignedToId, notes, followUpDate are completely discarded.
+    // Client-supplied status, assignedToId, followUpDate are completely discarded.
+
+    let signatureAuditNote: string | null = null;
+    if (data.signatureData || data.signature) {
+      const sigData = String(data.signatureData || data.signature);
+      const signer = data.signerName ? String(data.signerName).trim() : (data.parentName ? String(data.parentName).trim() : studentName);
+      const sigType = data.signatureType ? String(data.signatureType).trim() : (sigData.startsWith('data:image') ? 'DRAWN_CANVAS' : 'UPLOADED_IMAGE');
+      signatureAuditNote = `[DIGITAL SIGNATURE ACCEPTANCE]\nSigner: ${signer}\nType: ${sigType}\nAccepted Rules: Yes\nTimestamp: ${new Date().toISOString()}\nSignature: ${sigData.slice(0, 5000)}`;
+    }
+
     try {
       return await this.prisma.enquiry.create({
         data: {
@@ -191,6 +200,7 @@ export class EnquiryService {
           status: EnquiryStatus.NEW,
           centreId: targetCentreId,
           assignedToId: null,
+          ...(signatureAuditNote ? { notes: signatureAuditNote } : {}),
         },
       });
     } catch (err: any) {
@@ -208,6 +218,7 @@ export class EnquiryService {
           targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
           status: EnquiryStatus.NEW,
           assignedToId: null,
+          ...(signatureAuditNote ? { notes: signatureAuditNote } : {}),
         },
       });
     }
