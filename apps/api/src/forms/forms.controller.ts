@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import * as path from 'path';
 
 import { CreateFormDto } from './dto/create-form.dto';
@@ -31,6 +32,7 @@ const ALLOWED_FORM_EXTENSIONS = new Set([
 ]);
 
 @Controller('forms')
+@Permissions('FORMS')
 export class FormsController {
   constructor(
     private readonly formsService: FormsService,

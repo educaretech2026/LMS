@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { fetchApi } from "@/lib/api";
+import { useAuth } from "@/components/providers/auth-provider";
 import logoImage from "@/logos/logo1.png";
 import {
   LayoutDashboard,
@@ -27,36 +28,45 @@ import {
   LogOut,
   CalendarCheck,
   ClipboardList,
-  MessagesSquare
+  MessagesSquare,
+  ShieldAlert,
 } from "lucide-react";
 
-const mainNav = [
+interface NavItem {
+  label: string;
+  href: string;
+  icon: any;
+  module?: string;
+}
+
+const mainNav: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Student", href: "/students", icon: Users },
-  { label: "Attendance", href: "/attendance", icon: CalendarCheck },
-  { label: "Assignments", href: "/assignments", icon: ClipboardList },
-  { label: "Doubt Clearance", href: "/doubts", icon: MessagesSquare },
-  { label: "Live Class", href: "/live-class", icon: Video },
-  { label: "Fee", href: "/fee", icon: CreditCard },
-  { label: "Exam", href: "/exam", icon: FileText },
-  { label: "eStudy", href: "/estudy", icon: BookOpen },
-  { label: "Syllabus", href: "/syllabus", icon: BookOpenCheck },
-  { label: "Certificate", href: "/certificate", icon: Award },
+  { label: "Student", href: "/students", icon: Users, module: "STUDENTS" },
+  { label: "Attendance", href: "/attendance", icon: CalendarCheck, module: "ATTENDANCE" },
+  { label: "Assignments", href: "/assignments", icon: ClipboardList, module: "ASSIGNMENTS" },
+  { label: "Doubt Clearance", href: "/doubts", icon: MessagesSquare, module: "DOUBTS" },
+  { label: "Live Class", href: "/live-class", icon: Video, module: "LIVE_CLASSES" },
+  { label: "Fee", href: "/fee", icon: CreditCard, module: "FEES" },
+  { label: "Exam", href: "/exam", icon: FileText, module: "EXAMS" },
+  { label: "eStudy", href: "/estudy", icon: BookOpen, module: "ESTUDY" },
+  { label: "Syllabus", href: "/syllabus", icon: BookOpenCheck, module: "SYLLABUS" },
+  { label: "Certificate", href: "/certificate", icon: Award, module: "CERTIFICATES" },
 ];
 
-const managementNav = [
-  { label: "Staff / User", href: "/staff", icon: UserCheck },
-  { label: "Enquiry / Leads", href: "/enquiry", icon: Headset },
-  { label: "Forms", href: "/forms", icon: FileText },
-  { label: "SMS", href: "/sms", icon: MessageSquare },
-  { label: "Expense & Income", href: "/expense", icon: Banknote },
-  { label: "Report", href: "/report", icon: BarChart2 },
+const managementNav: NavItem[] = [
+  { label: "Staff / User", href: "/staff", icon: UserCheck, module: "STAFF" },
+  { label: "Enquiry / Leads", href: "/enquiry", icon: Headset, module: "ENQUIRY" },
+  { label: "Forms", href: "/forms", icon: FileText, module: "FORMS" },
+  { label: "SMS", href: "/sms", icon: MessageSquare, module: "SMS" },
+  { label: "Expense & Income", href: "/expense", icon: Banknote, module: "FINANCE" },
+  { label: "Report", href: "/report", icon: BarChart2, module: "REPORTS" },
+  { label: "Audit Logs", href: "/audit-logs", icon: ShieldAlert, module: "AUDIT_LOGS" },
 ];
 
-const systemNav = [
+const systemNav: NavItem[] = [
   { label: "My Profile", href: "/profile", icon: UserCheck },
-  { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Setup", href: "/setup", icon: Wrench },
+  { label: "Settings", href: "/settings", icon: Settings, module: "SETTINGS" },
+  { label: "Setup", href: "/setup", icon: Wrench, module: "SETUP" },
   { label: "Help", href: "/help", icon: HelpCircle },
 ];
 
@@ -82,6 +92,39 @@ export function Sidebar({
     window.location.href = "/login?t=" + Date.now();
   };
 
+
+  const { role: authRole, hasPermission } = useAuth();
+  const currentRole = role || authRole;
+  const r = currentRole?.toUpperCase().replace(/\s+/g, '_') || '';
+
+  const visibleMainNav = mainNav.filter(item => {
+    if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') {
+      const allowedStudentLabels = [
+        'Dashboard',
+        'Assignments',
+        'Doubt Clearance',
+        'Live Class',
+        'Fee',
+        'Exam',
+        'eStudy',
+        'Syllabus',
+        'Certificate',
+      ];
+      return allowedStudentLabels.includes(item.label) && (!item.module || hasPermission(item.module));
+    }
+    if (!item.module) return true;
+    return hasPermission(item.module);
+  });
+
+  const visibleManagementNav =
+    r === 'STUDENT' || r === 'PUBLIC_LEARNER'
+      ? []
+      : managementNav.filter(item => !item.module || hasPermission(item.module));
+
+  const visibleSystemNav = systemNav.filter(item => {
+    if (!item.module) return true;
+    return hasPermission(item.module);
+  });
 
   return (
     <>
@@ -120,41 +163,29 @@ export function Sidebar({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6">
-          <NavSection
-            label="Main"
-            items={(() => {
-              const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
-              if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') return mainNav.filter(i => ['Dashboard', 'Assignments', 'Doubt Clearance', 'Live Class', 'Fee', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
-              if (r === 'TEACHER') return mainNav.filter(i => ['Dashboard', 'Student', 'Attendance', 'Assignments', 'Doubt Clearance', 'Live Class', 'Exam', 'eStudy', 'Syllabus'].includes(i.label));
-              if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return mainNav;
-              if (r === 'RECEPTIONIST') return mainNav.filter(i => ['Dashboard', 'Student', 'Fee'].includes(i.label));
-              return mainNav.filter(i => ['Dashboard'].includes(i.label));
-            })()}
-            activePath={path}
-          />
+          {visibleMainNav.length > 0 && (
+            <NavSection
+              label="Main"
+              items={visibleMainNav}
+              activePath={path}
+            />
+          )}
           
-          {['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN', 'RECEPTIONIST'].includes(role?.toUpperCase().replace(/\s+/g, '_') || '') && (
+          {visibleManagementNav.length > 0 && (
             <NavSection 
               label="Management" 
-              items={(() => {
-                const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
-                if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return managementNav;
-                if (r === 'RECEPTIONIST') return managementNav.filter(i => ['Enquiry / Leads', 'SMS'].includes(i.label));
-                return [];
-              })()} 
+              items={visibleManagementNav} 
               activePath={path} 
             />
           )}
 
-          <NavSection 
-            label="System & Account" 
-            items={(() => {
-              const r = role?.toUpperCase().replace(/\s+/g, '_') || '';
-              if (['SUPER_ADMIN', 'CENTRE_ADMIN', 'ADMIN'].includes(r)) return systemNav;
-              return systemNav.filter(i => ['My Profile', 'Help'].includes(i.label));
-            })()} 
-            activePath={path} 
-          />
+          {visibleSystemNav.length > 0 && (
+            <NavSection 
+              label="System & Account" 
+              items={visibleSystemNav} 
+              activePath={path} 
+            />
+          )}
         </nav>
 
         {/* Footer */}

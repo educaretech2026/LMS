@@ -4,10 +4,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('setup')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+@Permissions('SETUP')
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
@@ -18,7 +20,7 @@ export class SetupController {
   }
 
   @Put('settings')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Roles('SUPER_ADMIN')
   async updateSettings(@Body() data: any) {
     return this.setupService.updateSettings(data);
   }
@@ -82,6 +84,12 @@ export class SetupController {
   @Roles('SUPER_ADMIN')
   toggleRolePermission(@Param('id') id: string, @Body() data: { module: string, active: boolean }) {
     return this.setupService.toggleRolePermission(id, data.module, data.active);
+  }
+
+  @Post('roles/:id/permissions/bulk')
+  @Roles('SUPER_ADMIN')
+  bulkSetRolePermissions(@Param('id') id: string, @Body() data: { modules: string[] }) {
+    return this.setupService.bulkSetRolePermissions(id, data.modules || []);
   }
 
   @Get('centres')

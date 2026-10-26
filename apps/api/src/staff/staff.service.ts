@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
@@ -14,14 +14,32 @@ export class StaffService {
 
   async createStaff(data: any, currentUser?: any) {
     try {
+      if (!currentUser) {
+        throw new ForbiddenException('Authentication required to create staff');
+      }
+
       const roleName = data.role;
+      if (!roleName || typeof roleName !== 'string') {
+        throw new BadRequestException('Role name is required');
+      }
+
+      if (!isSuperAdmin(currentUser)) {
+        if (roleName !== 'TEACHER') {
+          throw new ForbiddenException('Centre Administrators are only permitted to provision Teacher staff accounts.');
+        }
+      }
+
       const role = await this.prisma.role.findUnique({ where: { name: roleName } });
       if (!role) throw new NotFoundException(`Role "${roleName}" not found.`);
 
-      const centre = await this.prisma.centre.findFirst({ where: { name: data.centre } });
+      if (!data.centre || typeof data.centre !== 'string' || !data.centre.trim()) {
+        throw new BadRequestException('Centre name is required');
+      }
+
+      const centre = await this.prisma.centre.findFirst({ where: { name: data.centre.trim() } });
       if (!centre) throw new NotFoundException(`Centre "${data.centre}" not found.`);
 
-      if (currentUser && !isSuperAdmin(currentUser)) {
+      if (!isSuperAdmin(currentUser)) {
         assertCentreAccess(currentUser, centre.id);
       }
 
@@ -115,7 +133,7 @@ export class StaffService {
 
       return newStaff;
     } catch (error: any) {
-      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+      if (error instanceof ForbiddenException || error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
       console.error('Error creating staff:', error);
@@ -169,22 +187,38 @@ export class StaffService {
   }
 
   async updateStaff(userId: string, data: any, currentUser?: any) {
+    if (!currentUser) {
+      throw new ForbiddenException('Authentication required to update staff');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { userCentres: true }
+      include: { userCentres: true, role: true }
     });
     if (!user) throw new NotFoundException('Staff not found');
 
-    if (currentUser && !isSuperAdmin(currentUser)) {
+    if (!isSuperAdmin(currentUser)) {
+      const targetRole = user.role?.name;
+      if (targetRole === 'SUPER_ADMIN' || targetRole === 'CENTRE_ADMIN') {
+        throw new ForbiddenException('Cannot edit or modify privileged administrative accounts.');
+      }
+
       const userCentres = getAuthorizedCentreIds(currentUser);
       const staffCentres = user.userCentres.map(uc => uc.centreId);
       if (!staffCentres.some(cId => userCentres.includes(cId))) {
         throw new ForbiddenException('Cannot edit staff from another centre');
       }
+
+      if (data.role && data.role !== 'TEACHER') {
+        throw new ForbiddenException('Centre Administrators cannot promote staff to administrative or unauthorized roles.');
+      }
     }
 
-    const centre = data.centre ? await this.prisma.centre.findFirst({ where: { name: data.centre } }) : null;
-    if (centre && currentUser && !isSuperAdmin(currentUser)) {
+    const centre = data.centre ? await this.prisma.centre.findFirst({ where: { name: data.centre.trim() } }) : null;
+    if (data.centre && !centre) {
+      throw new NotFoundException(`Centre "${data.centre}" not found`);
+    }
+    if (centre && !isSuperAdmin(currentUser)) {
       assertCentreAccess(currentUser, centre.id);
     }
 
@@ -292,13 +326,22 @@ export class StaffService {
   }
 
   async deleteStaff(userId: string, currentUser?: any) {
+    if (!currentUser) {
+      throw new ForbiddenException('Authentication required to delete staff');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { userCentres: true }
+      include: { userCentres: true, role: true }
     });
     if (!user) throw new NotFoundException('Staff not found');
 
-    if (currentUser && !isSuperAdmin(currentUser)) {
+    if (!isSuperAdmin(currentUser)) {
+      const targetRole = user.role?.name;
+      if (targetRole === 'SUPER_ADMIN' || targetRole === 'CENTRE_ADMIN') {
+        throw new ForbiddenException('Cannot delete privileged administrative accounts.');
+      }
+
       const userCentres = getAuthorizedCentreIds(currentUser);
       const staffCentres = user.userCentres.map(uc => uc.centreId);
       if (!staffCentres.some(cId => userCentres.includes(cId))) {

@@ -3,9 +3,11 @@ import { FinanceService } from './finance.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('finance')
+@Permissions('FINANCE')
 export class FinanceController {
   constructor(private readonly financeService: FinanceService) {}
 

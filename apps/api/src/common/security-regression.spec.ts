@@ -3784,10 +3784,10 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             expect.objectContaining({
               where: {
                 OR: [
+                  { isPublic: true },
+                  { isShared: true },
+                  { centreId: { in: ['centre-alpha'] } },
                   { targetTrackId: { not: null }, targetTrack: { batches: { some: { centreId: { in: ['centre-alpha'] } } } } },
-                  { targetTrackId: null, uploader: { userCentres: { some: { centreId: { in: ['centre-alpha'] } } } } },
-                  { uploaderId: 'admin-a' },
-                  { uploader: { role: { name: 'SUPER_ADMIN' } }, targetTrackId: null },
                 ],
               },
             })
@@ -4169,18 +4169,17 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           role: { name: 'PUBLIC_LEARNER' },
         };
 
-        it('should restrict getAll() for Public Learners to materials with no centre and null track', async () => {
+        it('should restrict getAll() for Public Learners to published public materials', async () => {
           mockPrisma.studyMaterial.findMany.mockResolvedValue([]);
 
           await studyMaterialService.getAll(publicLearner);
 
           expect(mockPrisma.studyMaterial.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
-              where: expect.objectContaining({
-                targetTrackId: null,
-                uploader: { role: { name: 'SUPER_ADMIN' } }
-              })
-            })
+              where: {
+                isPublic: true,
+              },
+            }),
           );
         });
 
@@ -4223,7 +4222,7 @@ describe('Security Regression Suite — Real Production Implementations', () => 
             expect.objectContaining({
               where: expect.objectContaining({
                 OR: expect.arrayContaining([
-                  { uploaderId: 'teacher-a' },
+                  { uploaderId: 'teacher-a', centreId: { in: ['centre-alpha'] } },
                   expect.objectContaining({
                     AND: expect.arrayContaining([
                       { syllabus: { subjectId: 'physics-id', standardId: 'std-11' } }
@@ -4797,10 +4796,12 @@ describe('Security Regression Suite — Real Production Implementations', () => 
           ).rejects.toThrow(ForbiddenException);
         });
 
-        it('should allow public learner access to material uploaded by SUPER_ADMIN with null track', async () => {
+        it('should allow public learner access to material published for public preview', async () => {
           mockPrisma.studyMaterial.findUnique.mockResolvedValue({
             id: 'mat-superadmin-public',
             targetTrackId: null,
+            isShared: true,
+            isPublic: true,
             uploader: {
               role: { name: 'SUPER_ADMIN' },
               userCentres: []
@@ -5089,7 +5090,11 @@ describe('Security Regression Suite — Real Production Implementations', () => 
         it('should allow teacher to access material they uploaded regardless of centre', async () => {
           mockPrisma.studyMaterial.findUnique.mockResolvedValue({
             id: 'mat-self-uploaded',
-            uploaderId: dualCentreTeacher.id
+            uploaderId: dualCentreTeacher.id,
+            uploader: {
+              role: { name: 'TEACHER' },
+              userCentres: [{ centreId: 'centre-alpha' }],
+            },
           });
 
           const res = await studyMaterialService.getById('mat-self-uploaded', dualCentreTeacher);

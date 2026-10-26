@@ -6,8 +6,102 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { assertValidTargetForEnvironment, parseDatabaseTarget, verifyHostDnsSafety } from './common/config/database-target.validator';
+
+async function runPreflightSafetyChecks() {
+  const nodeEnv = (process.env.NODE_ENV || 'development').toLowerCase();
+  const appEnv = (process.env.APP_ENV || '').toLowerCase();
+
+  const isStag = appEnv === 'staging' || (!appEnv && nodeEnv === 'staging');
+  const isProd = appEnv === 'production' || (!appEnv && nodeEnv === 'production' && !isStag);
+
+  if (!isProd && !isStag) {
+    return; // Allow permissive development defaults
+  }
+
+  const envLabel = isStag ? 'staging' : 'production';
+  const isDeployedStaging = isStag && (process.env.DEPLOYED_STAGING === 'true' || nodeEnv === 'production');
+
+  // 1. Strict Fail-Closed Database Target Verification (blocks prod IPs, unapproved hosts, cleartext SSL)
+  const targetInfo = assertValidTargetForEnvironment(process.env.DATABASE_URL);
+  await verifyHostDnsSafety(targetInfo.hostname);
+
+  // 2. REDIS_URL presence, deployed staging check, and active ping test
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl || !redisUrl.trim()) {
+    throw new Error(`FATAL: REDIS_URL is mandatory in ${envLabel} for secure session enforcement and distributed rate limiting.`);
+  }
+  if (isDeployedStaging) {
+    const redisLower = redisUrl.toLowerCase();
+    if (redisLower.includes('localhost') || redisLower.includes('127.0.0.1') || redisLower.includes('::1')) {
+      throw new Error('FATAL: Deployed staging cannot use localhost fallback for REDIS_URL. Dedicated authenticated staging Redis instance is required.');
+    }
+  }
+
+  // Active ping test in deployed staging / production to ensure Redis is reachable and operational
+  if (isDeployedStaging || (isProd && process.env.NODE_ENV !== 'test')) {
+    const Redis = (await import('ioredis')).default;
+    const testClient = new Redis(redisUrl, {
+      lazyConnect: true,
+      connectTimeout: 3000,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+      enableOfflineQueue: false,
+    });
+    try {
+      await testClient.connect();
+      const pong = await testClient.ping();
+      if (pong !== 'PONG') {
+        throw new Error(`Unexpected PING response: ${pong}`);
+      }
+    } catch (err: any) {
+      throw new Error(`FATAL: Redis connection preflight check failed in ${envLabel} (${err.message || err}). Remote authenticated Redis is mandatory.`);
+    } finally {
+      testClient.disconnect();
+    }
+  }
+
+  // 3. JWT_SECRET strength
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret || jwtSecret.trim().length < 32) {
+    throw new Error(`FATAL: JWT_SECRET in ${envLabel} must be configured and be at least 32 characters long.`);
+  }
+  const insecureDefaults = ['secret', 'changeme', 'development', 'supersecret', '12345678'];
+  if (insecureDefaults.includes(jwtSecret.trim().toLowerCase())) {
+    throw new Error(`FATAL: JWT_SECRET in ${envLabel} cannot use known insecure defaults.`);
+  }
+
+  // 4. TURNSTILE_SECRET_KEY
+  if (!process.env.TURNSTILE_SECRET_KEY || !process.env.TURNSTILE_SECRET_KEY.trim()) {
+    throw new Error(`FATAL: TURNSTILE_SECRET_KEY is mandatory in ${envLabel} for public form protection.`);
+  }
+
+  // 5. Cloudflare R2 bucket separation for staging
+  if (isStag) {
+    const bucket = (
+      process.env.CLOUDFLARE_R2_BUCKET_NAME ||
+      process.env.R2_BUCKET_NAME ||
+      process.env.CLOUDFLARE_BUCKET_NAME ||
+      ''
+    ).trim();
+    if (!bucket || bucket === 'educare' || bucket === 'educare-prod') {
+      throw new Error(`FATAL: Staging environment cannot use production Cloudflare R2 bucket "${bucket || 'default educare'}". Dedicated staging bucket (e.g. "educare-staging") is required.`);
+    }
+  }
+
+  // 6. LiveKit isolation for staging
+  if (isStag && process.env.LIVEKIT_WS_URL) {
+    const wsLower = process.env.LIVEKIT_WS_URL.toLowerCase();
+    if (wsLower.includes('educarelms-prod') || wsLower.includes('livekit-prod')) {
+      throw new Error(`FATAL: Staging environment cannot use production LiveKit endpoint "${process.env.LIVEKIT_WS_URL}". Dedicated staging LiveKit instance is required.`);
+    }
+  }
+}
 
 async function bootstrap() {
+  // Execute preflight checks BEFORE any NestJS module, provider, or database connection is initialized!
+  await runPreflightSafetyChecks();
+
   const app = await NestFactory.create(AppModule);
 
   // SEC-09: HTTP security headers with Content Security Policy
@@ -34,8 +128,18 @@ async function bootstrap() {
   // SEC-06: Strict CORS allowlist with credentials - exclude localhost in production
   const isProduction = process.env.NODE_ENV === 'production';
 
-  if (isProduction && !process.env.REDIS_URL) {
-    throw new Error('FATAL: REDIS_URL is mandatory in production for secure session enforcement and distributed rate limiting.');
+  // Reverse proxy trust configuration (restricted to intended infrastructure)
+  const trustedProxies = process.env.TRUSTED_PROXIES;
+  if (trustedProxies) {
+    const expressApp = app.getHttpAdapter().getInstance();
+    if (trustedProxies.trim() === 'loopback') {
+      expressApp.set('trust proxy', 'loopback');
+    } else {
+      const proxyList = trustedProxies.split(',').map((p) => p.trim()).filter(Boolean);
+      expressApp.set('trust proxy', proxyList);
+    }
+  } else if (!isProduction) {
+    app.getHttpAdapter().getInstance().set('trust proxy', 'loopback');
   }
 
   const rawOrigins = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '';

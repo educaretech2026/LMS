@@ -9,5 +9,6 @@ import { PrismaService } from '../database/prisma.service';
   imports: [StorageModule, CloudflareModule],
   controllers: [StudyMaterialController],
   providers: [StudyMaterialService, PrismaService],
+  exports: [StudyMaterialService],
 })
 export class StudyMaterialModule {}

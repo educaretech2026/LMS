@@ -3,10 +3,12 @@ import { StaffService } from './staff.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('staff')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+@Permissions('STAFF')
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 

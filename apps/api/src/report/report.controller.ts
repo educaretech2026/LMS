@@ -3,9 +3,11 @@ import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('report')
+@Permissions('REPORTS')
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
 

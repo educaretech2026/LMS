@@ -243,16 +243,28 @@ export default function PublicLiveClassPage() {
       </header>
 
       {/* ── MAIN ── */}
-      <main style={{ position: "relative", zIndex: 20, flex: 1, maxWidth: "1200px", margin: "0 auto", width: "100%", padding: "48px 32px" }}>
+      <main className="relative z-20 flex-1 max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+          
+          {/* Main Content Column */}
+          <div className="lg:col-span-7 max-w-[640px] w-full">
 
-        {/* Content sits on the LEFT ~55% — right side intentionally open for banner person */}
-        <div style={{ maxWidth: "620px" }}>
+            {/* ── Dedicated Mobile Landscape Poster Showcase ── */}
+            {webinar.backgroundImageUrl && (
+              <div className="block lg:hidden mb-6 rounded-2xl overflow-hidden border border-white/15 bg-slate-950/85 shadow-2xl">
+                <img
+                  src={webinar.backgroundImageUrl}
+                  alt={webinar.title}
+                  className="w-full h-auto max-h-[380px] object-contain mx-auto block"
+                />
+              </div>
+            )}
 
-          {/* Subject tag */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>
-            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#0162b1", display: "inline-block" }} />
-            {webinar.subject}
-          </div>
+            {/* Subject tag */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>
+              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#0162b1", display: "inline-block" }} />
+              {webinar.subject}
+            </div>
 
           {/* Title */}
           <h1 style={{ color: "white", fontSize: "clamp(28px, 4vw, 46px)", fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.02em", marginBottom: "16px" }}>
@@ -288,16 +300,16 @@ export default function PublicLiveClassPage() {
           {!timeLeft.isStarted && !isEnded && (
             <div style={{ marginBottom: "36px" }}>
               <p style={{ fontSize: "10px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "12px" }}>Starts in</p>
-              <div style={{ display: "flex", gap: "10px" }}>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 {[
                   { label: "Days", v: timeLeft.days },
                   { label: "Hrs", v: timeLeft.hours },
                   { label: "Min", v: timeLeft.minutes },
                   { label: "Sec", v: timeLeft.seconds },
                 ].map(({ label, v }) => (
-                  <div key={label} style={{ textAlign: "center", minWidth: "64px" }}>
-                    <div style={{ background: "rgba(1,98,177,0.12)", border: "1px solid rgba(1,98,177,0.2)", borderRadius: "10px", padding: "12px 8px", marginBottom: "6px" }}>
-                      <span style={{ color: "white", fontSize: "26px", fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{String(v).padStart(2, "0")}</span>
+                  <div key={label} style={{ textAlign: "center", minWidth: "54px" }} className="flex-1 sm:flex-initial sm:min-w-[64px]">
+                    <div style={{ background: "rgba(1,98,177,0.12)", border: "1px solid rgba(1,98,177,0.2)", borderRadius: "10px", padding: "12px 6px", marginBottom: "6px" }}>
+                      <span style={{ color: "white", fontSize: "24px", fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{String(v).padStart(2, "0")}</span>
                     </div>
                     <span style={{ fontSize: "9px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</span>
                   </div>
@@ -488,6 +500,21 @@ export default function PublicLiveClassPage() {
             </div>
           </div>
         </div>
+
+          {/* ── Desktop Right Column: Crisp Official Poster Showcase ── */}
+          {webinar.backgroundImageUrl && (
+            <div className="hidden lg:block lg:col-span-5 sticky top-24">
+              <div className="rounded-2xl overflow-hidden border border-white/15 bg-slate-950/75 backdrop-blur-xl shadow-2xl p-3">
+                <img
+                  src={webinar.backgroundImageUrl}
+                  alt={webinar.title}
+                  className="w-full h-auto max-h-[580px] object-contain rounded-xl mx-auto block"
+                />
+              </div>
+            </div>
+          )}
+
+        </div>
       </main>
 
       {/* ── BROAD ROLLING ACHIEVER POSTERS SHOWCASE ── */}
@@ -508,19 +535,11 @@ export default function PublicLiveClassPage() {
             alignItems: "center",
           }}
         >
-          {/* Left pinned title badge */}
+          {/* Left pinned title badge - responsive for small screens */}
           <div
+            className="hidden sm:flex flex-col justify-center shrink-0 border-r border-white/10 z-10 bg-[#040f1e]/95 h-[160px] px-4 sm:px-6"
             style={{
-              flexShrink: 0,
-              padding: "0 24px 0 28px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
               gap: "4px",
-              borderRight: "1px solid rgba(255, 255, 255, 0.1)",
-              zIndex: 3,
-              background: "rgba(4, 15, 30, 0.95)",
-              height: "160px",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

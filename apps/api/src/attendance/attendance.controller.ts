@@ -3,9 +3,11 @@ import { AttendanceService } from './attendance.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('attendance')
+@Permissions('ATTENDANCE')
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 

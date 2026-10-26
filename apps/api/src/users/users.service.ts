@@ -16,7 +16,13 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: { permission: true }
+            }
+          }
+        },
         studentProfile: {
           include: {
             enrollments: {
@@ -57,9 +63,13 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('User not found');
     
-    // Omit password
+    // Omit password and extract permissions
     const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    const permissions = user.role?.permissions?.map((p: any) => p.permission?.action).filter(Boolean) || [];
+    return {
+      ...userWithoutPassword,
+      permissions,
+    };
   }
 
   async updateProfile(userId: string, data: any) {
