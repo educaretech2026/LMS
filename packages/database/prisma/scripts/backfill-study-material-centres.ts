@@ -157,8 +157,22 @@ function assertSafeCliReconciliationTarget(argv: string[]): boolean {
   const sanitizedTarget = `host: ${hostname}, port: ${port}, db: ${database}, ssl: ${sslMode || 'none'}`;
 
   // Unconditional block on production systems - no environment variable bypass permitted
-  const knownProductionIps = ['148.135.138.196'];
+  const configuredProdIps = process.env.PRODUCTION_DATABASE_IPS
+    ? process.env.PRODUCTION_DATABASE_IPS.split(',').map((ip) => ip.trim().toLowerCase()).filter(Boolean)
+    : [];
+  const knownProductionIps = [
+    '148.135.138.196',
+    '::ffff:148.135.138.196',
+    '::ffff:9487:8ac4',
+    '0:0:0:0:0:ffff:9487:8ac4',
+    ...configuredProdIps,
+  ];
+
+  const configuredProdHosts = process.env.PRODUCTION_DATABASE_HOSTS
+    ? process.env.PRODUCTION_DATABASE_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    : [];
   const knownProductionHosts = [
+    'educarelearning.in',
     'api.educarelearning.in',
     'db.educarelearning.in',
     'database.educarelearning.in',
@@ -166,14 +180,19 @@ function assertSafeCliReconciliationTarget(argv: string[]): boolean {
     'lms.educarelearning.in',
     'prod-db.educarelearning.in',
     'prod.educarelearning.in',
+    ...configuredProdHosts,
   ];
+
+  const configuredProdDbs = process.env.PRODUCTION_DATABASE_NAMES
+    ? process.env.PRODUCTION_DATABASE_NAMES.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
+    : [];
+  const knownProductionDbs = ['educare_prod', 'educare_production', ...configuredProdDbs];
 
   const isProductionTarget =
     knownProductionIps.includes(hostname) ||
     knownProductionHosts.includes(hostname) ||
-    (hostname.includes('educarelearning.in') && !hostname.includes('staging')) ||
-    database === 'educare_prod' ||
-    database === 'educare_production';
+    (hostname.endsWith('.educarelearning.in') && !hostname.includes('staging')) ||
+    knownProductionDbs.includes(database);
 
   if (isProductionTarget) {
     console.error(
@@ -191,21 +210,28 @@ function assertSafeCliReconciliationTarget(argv: string[]): boolean {
     hostname === 'postgres' ||
     hostname === 'db';
 
-  const approvedStagingHostsEnv = process.env.APPROVED_STAGING_HOSTS
-    ? process.env.APPROVED_STAGING_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
-    : [];
+  const isDeployedStaging =
+    process.env.DEPLOYED_STAGING === 'true' ||
+    process.env.STAGING_DEPLOYED === 'true' ||
+    process.env.REQUIRE_REMOTE_STAGING_DB === 'true';
 
-  const isApprovedStaging =
-    isLocal ||
+  const approvedStagingHostsEnv = [
+    ...(process.env.APPROVED_STAGING_HOSTS ? process.env.APPROVED_STAGING_HOSTS.split(',') : []),
+    ...(process.env.STAGING_DATABASE_ALLOWLIST ? process.env.STAGING_DATABASE_ALLOWLIST.split(',') : []),
+    ...(process.env.STAGING_DATABASE_HOST ? [process.env.STAGING_DATABASE_HOST] : []),
+  ].map((h) => h.trim().toLowerCase()).filter(Boolean);
+
+  // Host identity must be approved independently - database name is NEVER proof of server identity
+  const isApprovedStagingHost =
     approvedStagingHostsEnv.includes(hostname) ||
-    hostname.includes('staging') ||
-    database.includes('staging') ||
-    database === 'educare_db' ||
-    database === 'test_educare';
+    hostname.startsWith('staging-db.') ||
+    hostname.endsWith('.staging.educarelearning.in') ||
+    hostname === 'staging-db' ||
+    (!isDeployedStaging && isLocal);
 
-  if (!isApprovedStaging) {
+  if (!isApprovedStagingHost) {
     console.error(
-      `FATAL RECONCILIATION VIOLATION: Database target (${sanitizedTarget}) is not an approved staging database. Apply mode is blocked.`,
+      `FATAL RECONCILIATION VIOLATION: Database host (${sanitizedTarget}) is not an approved staging server. Database name alone does not authenticate server identity. Apply mode is blocked.`,
     );
     process.exit(1);
   }

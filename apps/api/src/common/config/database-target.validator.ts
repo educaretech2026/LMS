@@ -57,7 +57,7 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
 
   const sslMode = parsed.searchParams.get('sslmode');
 
-  // Local/container loopback targets
+  // Local loopback targets (strictly for local development / integration test execution)
   const isLocal =
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
@@ -67,9 +67,23 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     hostname === 'postgres' ||
     hostname === 'db';
 
-  // Known production IPs and hostnames
-  const knownProductionIps = ['148.135.138.196'];
+  // Configurable production IPs and hostnames (including IPv4-mapped IPv6 and known aliases)
+  const configuredProdIps = process.env.PRODUCTION_DATABASE_IPS
+    ? process.env.PRODUCTION_DATABASE_IPS.split(',').map((ip) => ip.trim().toLowerCase()).filter(Boolean)
+    : [];
+  const knownProductionIps = [
+    '148.135.138.196',
+    '::ffff:148.135.138.196',
+    '::ffff:9487:8ac4',
+    '0:0:0:0:0:ffff:9487:8ac4',
+    ...configuredProdIps,
+  ];
+
+  const configuredProdHosts = process.env.PRODUCTION_DATABASE_HOSTS
+    ? process.env.PRODUCTION_DATABASE_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    : [];
   const knownProductionHosts = [
+    'educarelearning.in',
     'api.educarelearning.in',
     'db.educarelearning.in',
     'database.educarelearning.in',
@@ -77,28 +91,42 @@ export function parseDatabaseTarget(rawUrl: string | undefined): DatabaseTargetI
     'lms.educarelearning.in',
     'prod-db.educarelearning.in',
     'prod.educarelearning.in',
+    ...configuredProdHosts,
   ];
+
+  const configuredProdDbs = process.env.PRODUCTION_DATABASE_NAMES
+    ? process.env.PRODUCTION_DATABASE_NAMES.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
+    : [];
+  const knownProductionDbs = ['educare_prod', 'educare_production', ...configuredProdDbs];
 
   const isProductionTarget =
     knownProductionIps.includes(hostname) ||
     knownProductionHosts.includes(hostname) ||
-    (hostname.includes('educarelearning.in') && !hostname.includes('staging')) ||
-    database === 'educare_prod' ||
-    database === 'educare_production';
+    (hostname.endsWith('.educarelearning.in') && !hostname.includes('staging')) ||
+    knownProductionDbs.includes(database);
 
-  // Approved staging target resolution
-  const approvedStagingHostsEnv = process.env.APPROVED_STAGING_HOSTS
-    ? process.env.APPROVED_STAGING_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
-    : [];
+  // Deployed staging mode: Disallows local loopback targets when deployed staging is active
+  const isDeployedStaging =
+    process.env.DEPLOYED_STAGING === 'true' ||
+    process.env.STAGING_DEPLOYED === 'true' ||
+    process.env.REQUIRE_REMOTE_STAGING_DB === 'true';
 
-  const isApprovedStagingTarget =
-    !isProductionTarget &&
-    (isLocal ||
-      approvedStagingHostsEnv.includes(hostname) ||
-      hostname.includes('staging') ||
-      database.includes('staging') ||
-      database === 'educare_db' ||
-      database === 'test_educare');
+  // Approved staging target resolution: MUST be based on verified server host identity, NOT database name alone!
+  const approvedStagingHostsEnv = [
+    ...(process.env.APPROVED_STAGING_HOSTS ? process.env.APPROVED_STAGING_HOSTS.split(',') : []),
+    ...(process.env.STAGING_DATABASE_ALLOWLIST ? process.env.STAGING_DATABASE_ALLOWLIST.split(',') : []),
+    ...(process.env.STAGING_DATABASE_HOST ? [process.env.STAGING_DATABASE_HOST] : []),
+  ].map((h) => h.trim().toLowerCase()).filter(Boolean);
+
+  const isHostApproved =
+    approvedStagingHostsEnv.includes(hostname) ||
+    hostname.startsWith('staging-db.') ||
+    hostname.endsWith('.staging.educarelearning.in') ||
+    hostname === 'staging-db' ||
+    (!isDeployedStaging && isLocal);
+
+  // Database name must also be appropriate for staging, but host identity MUST be verified independently!
+  const isApprovedStagingTarget = !isProductionTarget && isHostApproved;
 
   const sanitizedTarget = `host: ${hostname}, port: ${port}, db: ${database}, ssl: ${sslMode || 'none'}`;
 

@@ -140,6 +140,50 @@ describe('Database Target & Environment Safety Validator', () => {
       }
     });
 
+    it('should REJECT unapproved arbitrary host even if database is named educare_staging or educare_db (database name is NOT proof of server identity)', () => {
+      const urlWithStagingDbName =
+        'postgresql://user:Secret123@198.51.100.25:5432/educare_staging?sslmode=require';
+      expect(() =>
+        assertValidTargetForEnvironment(urlWithStagingDbName, { nodeEnv: 'staging' }),
+      ).toThrow(/not on the staging host\/database allowlist/);
+
+      const urlWithEducareDbName =
+        'postgresql://user:Secret123@198.51.100.25:5432/educare_db?sslmode=require';
+      expect(() =>
+        assertValidTargetForEnvironment(urlWithEducareDbName, { nodeEnv: 'staging' }),
+      ).toThrow(/not on the staging host\/database allowlist/);
+    });
+
+    it('should REJECT localhost/loopback when DEPLOYED_STAGING=true is active', () => {
+      process.env.DEPLOYED_STAGING = 'true';
+      const localUrl = 'postgresql://educare:pass@127.0.0.1:5433/educare_staging?sslmode=require';
+      expect(() =>
+        assertValidTargetForEnvironment(localUrl, { nodeEnv: 'staging' }),
+      ).toThrow(/not on the staging host\/database allowlist/);
+    });
+
+    it('should REJECT alternate production addresses (IPv4-mapped IPv6, custom PRODUCTION_DATABASE_IPS, custom PRODUCTION_DATABASE_HOSTS)', () => {
+      // IPv4-mapped IPv6
+      const ipv6MappedProd = 'postgresql://educare:Secret123@[::ffff:148.135.138.196]:5432/postgres';
+      expect(() =>
+        assertValidTargetForEnvironment(ipv6MappedProd, { nodeEnv: 'staging' }),
+      ).toThrow(/identified as a production system/);
+
+      // Custom production IP
+      process.env.PRODUCTION_DATABASE_IPS = '203.0.113.88';
+      const customProdIpUrl = 'postgresql://educare:Secret123@203.0.113.88:5432/app_db';
+      expect(() =>
+        assertValidTargetForEnvironment(customProdIpUrl, { nodeEnv: 'staging' }),
+      ).toThrow(/identified as a production system/);
+
+      // Custom production host
+      process.env.PRODUCTION_DATABASE_HOSTS = 'rds-primary.internal.educare';
+      const customProdHostUrl = 'postgresql://educare:Secret123@rds-primary.internal.educare:5432/app_db';
+      expect(() =>
+        assertValidTargetForEnvironment(customProdHostUrl, { nodeEnv: 'staging' }),
+      ).toThrow(/identified as a production system/);
+    });
+
     it('should REJECT ambiguous conflicting environment settings (NODE_ENV=production, APP_ENV=staging)', () => {
       const url = 'postgresql://user:Secret123@127.0.0.1:5433/educare_db';
       expect(() =>

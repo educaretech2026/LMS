@@ -3,13 +3,13 @@
 ## 1. Executive Summary & Final Recommendation
 
 - **Git Branch**: `fix/authorization-remediation`
-- **Latest Commit**: `9c316b0` (`fix(security): add idempotent custom_forms centreId migration and document disposable db verification`)
-- **Base Branch**: `main`
+- **Latest Commit**: `dc67777` (`fix(security): harden staging database preflight and eliminate reconciliation bypasses`)
+- **Base Branch**: `main` (`4a49372`)
 - **Audit Execution Date**: 2026-10-26
 - **Final Release Gate Recommendation**: **PASS WITH BLOCKERS**
 
 ### Summary of Recommendation
-The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, and cross-centre isolation checks have **PASSED** completely against an isolated staging PostgreSQL database cluster, with 434/434 passing API tests across 18 suites and clean Next.js and Expo mobile builds.
+The core authorization remediation, database migration safety, enquiry-origin derivation, legacy record containment, and cross-centre isolation checks have **PASSED** completely against an isolated staging PostgreSQL database cluster, with 437/437 passing API tests across 18 suites and clean Next.js and Expo mobile builds.
 
 However, deployment to production remains **BLOCKED** until the following infrastructure separation requirements are fulfilled in the external staging environment:
 1. **Isolated Staging Database & Credentials**: `packages/database/.env` currently references a remote database IP (`148.135.138.196:5432`) that corresponds to the live/production server. Staging database migrations were strictly validated against a local isolated PostgreSQL instance (`127.0.0.1:5433`). The remote database was protected from mutations during preflight.
@@ -22,7 +22,7 @@ However, deployment to production remains **BLOCKED** until the following infras
 
 | Preflight Check | Requirement | Staging Status | Action Taken / Result |
 | :--- | :--- | :--- | :--- |
-| **1. Branch & Working Tree** | Branch `fix/authorization-remediation`, clean tree | **VERIFIED** | Head commit `9c316b0`; working tree clean; 5,058 additions across 32 files vs `main`. |
+| **1. Branch & Working Tree** | Branch `fix/authorization-remediation`, clean tree | **VERIFIED** | Head commit `dc67777`; working tree clean; 6,405 additions across 37 files vs `main`. |
 | **2. Feature Completeness** | Enquiry-origin, Turnstile, sharing/public decoupling, rate limiting | **VERIFIED** | Code includes all verified controller, service, guard, and DTO changes. |
 | **3. Prisma Migration Sequence** | Sequential ordering of all 10 migrations | **VERIFIED** | All 10 migrations reviewed; `migration_lock.toml` present (`postgresql`). |
 | **4. Database & Redis Isolation** | Point to isolated staging infrastructure | **PARTIAL / BLOCKED** | Preflight detected `148.135.138.196:5432` in `packages/database/.env` (live host). Stopped mutation on remote. Redirected staging validation to dedicated local cluster (`127.0.0.1:5433`). |
@@ -176,8 +176,8 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 | **Prisma Client Generation** | `pnpm --filter @educare/database db:generate` | **PASS** | Generated client v5.19.1 in 321ms. |
 | **Authorization Regression Suite** | `pnpm --filter api test -- authorization-remediation.spec.ts` | **PASS** | **101/101 tests passed** (including Scope J cases 1–10). |
 | **Security Regression Suite** | `pnpm --filter api test -- security-regression.spec.ts` | **PASS** | **298/298 tests passed**. |
-| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **20/20 tests passed** (covers production IP/hostname rejection, allowlists, zero-leak credentials, lifecycle ordering, bypass removal). |
-| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 434 tests passed, 0 failed, 0 skipped**. |
+| **Database Target & Preflight Safety Suite** | `pnpm --filter api test -- database-target.validator.spec.ts` | **PASS** | **23/23 tests passed** (covers production IP/hostname/IPv6 rejection, host allowlists vs database names, deployed staging policy, zero-leak credentials, lifecycle ordering, bypass removal). |
+| **Full API Test Suite** | `pnpm --filter api test -- --runInBand --forceExit` | **PASS** | **18 test suites, 437 tests passed, 0 failed, 0 skipped**. |
 | **API Production Build** | `pnpm --filter api build` | **PASS** | Clean `nest build` compilation (0 TypeScript errors). |
 | **Web Production Build** | `pnpm --filter web build` | **PASS** | Next.js 16.4.2 production bundle compiled successfully; 39/39 routes generated. |
 | **Mobile Typecheck** | `pnpm --filter mobile typecheck` | **PASS** | Expo React Native `tsc --noEmit` passed with 0 errors. |
@@ -186,29 +186,21 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 
 ---
 
-## 8. Issues Found, Implemented Hardening & Required External Fixes
+## 8. Findings Classified by Severity & Remediation Evidence
 
-### A. Implemented Safety Hardening (Code Level)
-1. **Fail-Closed Target Verification (`database-target.validator.ts`)**:
-   - Implemented RFC URL parsing that strips credentials before logging (zero log leakage).
-   - Rejects production IPs (`148.135.138.196`) and hostnames (`api.educarelearning.in`, `db.educarelearning.in`, `educarelearning.in`) unconditionally in non-production environments.
-   - Requires explicit allowlisting (`STAGING_DATABASE_HOST` or `STAGING_DATABASE_ALLOWLIST`) and TLS (`sslmode=require`) for remote staging targets.
-   - Detects conflicting/ambiguous environment identities (e.g. `NODE_ENV=production` while `APP_ENV=staging`).
-2. **NestJS Pre-Instantiation Startup Ordering**:
-   - Reordered `bootstrap()` in `apps/api/src/main.ts` so `runPreflightSafetyChecks()` executes **prior** to `NestFactory.create(AppModule)`, preventing `PrismaService.onModuleInit()` from connecting to an unverified target.
-   - Added secondary defense-in-depth target validation in `PrismaService.onModuleInit()` before `this.$connect()`.
-3. **Reconciliation Script Safeguards**:
-   - Removed generic `ALLOW_PRODUCTION_RECONCILIATION=true` environment override.
-   - Unconditionally blocks mutations against production targets.
-   - Requires explicit `--apply` AND `--confirm-staging-target=<db_name>` flag matching the target database name.
+### A. Findings Classification Table
 
-### B. Remaining External Infrastructure Requirements (Blockers)
-1. **Remote Target Separation (CRITICAL)**:
-   - Deploy an isolated staging database instance (e.g. `staging-db.educare.internal` or managed RDS/Cloud SQL) and populate `STAGING_DATABASE_ALLOWLIST`. Do not run migrations against `148.135.138.196`.
-2. **Missing Staging Redis Configuration**:
-   - Provision an isolated, authenticated Redis 7 instance and configure `REDIS_URL`.
-3. **Turnstile Staging Hostname Configuration**:
-   - Configure a dedicated staging Turnstile sitekey and secret in Cloudflare for `staging.educarelearning.in` and add it to `allowedHostnames`.
+| Severity | ID | Subsystem | File & Location | Description & Threat Vector | Code-Level Remediation Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **CRITICAL** | **F-01** | Database Target Isolation | `packages/database/.env`<br>`apps/api/src/common/config/database-target.validator.ts` | `packages/database/.env` points to live production server (`148.135.138.196:5432`). If unverified, migration or seed commands could mutate live data. | **REMEDIATED (CODE)**: Built `assertValidTargetForEnvironment()` and `assertSafeReconciliationTarget()` enforcing fail-closed checks against production IPs, hostnames, IPv6 aliases, and unallowlisted remote hosts. External staging DB required. |
+| **CRITICAL** | **F-02** | Startup Connection Ordering | `apps/api/src/main.ts`<br>`apps/api/src/database/prisma.service.ts` | `NestFactory.create(AppModule)` connects to PostgreSQL during `PrismaService.onModuleInit()` before bootstrap preflight checks execute. | **REMEDIATED (CODE)**: Reordered `runPreflightSafetyChecks()` to line 1 of `bootstrap()` before `NestFactory.create()`, and added defense-in-depth target assertion in `PrismaService.onModuleInit()`. |
+| **CRITICAL** | **F-03** | Reconciliation Script Bypass | `packages/database/prisma/scripts/backfill-enquiry-centres.ts`<br>`packages/database/prisma/scripts/backfill-study-material-centres.ts` | Previous `ALLOW_PRODUCTION_RECONCILIATION=true` environment override could accidentally trigger live database mutations via inherited shell or CI environment. | **REMEDIATED (CODE)**: Removed generic bypass completely. CLI writes against production are unconditionally forbidden; staging apply requires `--confirm-staging-target=<db_name>` matching the target database name on an approved staging host. |
+| **HIGH** | **F-04** | Distributed Rate Limiting & Revocation | `apps/api/src/redis/redis.service.ts`<br>`apps/api/src/common/guards/strict-throttler.guard.ts` | Missing `REDIS_URL` in staging environment results in in-memory fallback, allowing rate-limit bypassing across multiple API replicas and preventing distributed session revocation. | **BLOCKED (INFRASTRUCTURE)**: Code preflight asserts `REDIS_URL` presence in staging. External staging Redis instance must be provisioned. |
+| **HIGH** | **F-05** | Public Enquiry Tenant Hijacking | `apps/api/src/enquiry/enquiry.service.ts`<br>`packages/database/prisma/schema.prisma` | Public admission enquiries could infer centre ownership from unverified client parameters or form names. | **REMEDIATED (CODE)**: Added `CustomForm.centreId` schema relation and migration `20261025_add_custom_form_centre`. Public enquiries strictly resolve centre ownership from authoritative form relation; unbound forms create unassigned records (`centreId: null`). |
+| **HIGH** | **F-06** | Cloudflare Turnstile Verification | `apps/api/src/enquiry/enquiry.service.ts` | Turnstile credentials currently configured use production account, and staging frontends (`staging.educarelearning.in`) would be rejected by hostname allowlist. | **BLOCKED (INFRASTRUCTURE)**: Code enforces hostname verification and fail-closed secret checks. Dedicated staging Turnstile sitekey/secret and Cloudflare domain approval required. |
+| **MEDIUM** | **F-07** | In-Place Disaster Recovery Assumption | `STAGING_INFRASTRUCTURE_PLAN.md`<br>`STAGING_VALIDATION_REPORT.md` | Prior documentation claimed `pg_restore --clean --if-exists` is atomic. In PostgreSQL, `pg_restore` is non-atomic and drops objects sequentially, risking partial database state on failure. | **REMEDIATED (DOCS)**: Documented separate target restore into fresh database (`educare_staging_restored`), schema validation, and controlled atomic connection cutover. |
+| **MEDIUM** | **F-08** | Ingress Reverse-Proxy Spoofing | `apps/api/src/common/guards/strict-throttler.guard.ts` | If untrusted clients send forged `X-Forwarded-For` or `CF-Connecting-IP` headers directly to API, rate limits could be spoofed. | **REMEDIATED (CODE)**: `StrictThrottlerGuard` evaluates peer IP strictly via `req.socket.remoteAddress` unless upstream peer IP matches explicit `TRUSTED_PROXIES` CIDR. |
+| **LOW** | **F-09** | Forward-Fix Migration Data Loss | `STAGING_INFRASTRUCTURE_PLAN.md` | Dropping `centreId` from `custom_forms` during forward-fix rollback causes data loss of active form associations. | **REMEDIATED (DOCS)**: Documented non-destructive archival pattern (`custom_forms_centre_archive`) and highlighted zero-downtime application rollback without DDL. |
 
 ---
 
@@ -216,26 +208,45 @@ The 11 mandatory cross-centre isolation scenarios were executed against the stag
 
 If issues arise following migration or deployment in staging or production:
 
-1. **Atomic Snapshot Restore (Disaster Recovery)**:
-   - Prior to running `prisma migrate deploy`, take a consistent full snapshot:
-     ```bash
-     pg_dump -h <DB_HOST> -p 5432 -U educare -d educare_db -Fc -f educare_db_pre_remediation.dump
-     ```
-   - If immediate rollback is necessary before operational transactions occur, restore atomically to restore schema and migration ledger consistency:
-     ```bash
-     pg_restore -h <DB_HOST> -p 5432 -U educare -d educare_db --clean --if-exists educare_db_pre_remediation.dump
-     ```
+### A. Isolated Separate Target Restore & Cutover (Disaster Recovery)
+> [!IMPORTANT]
+> **Correction on In-Place Restoration**:
+> In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails midway due to active connections, lock timeouts, or foreign key dependencies, the database is left in a corrupted or half-dropped state.
 
-2. **Forward-Fix Migration Strategy (Preserving Migration History)**:
-   - **Prohibition on Destructive History Edits**: Manual deletion of rows from `_prisma_migrations` (`DELETE FROM "_prisma_migrations"`) is strictly prohibited in production and staging environments. Deleting migration records causes checksum drift, desynchronizes deployment pipelines, and breaks future `prisma migrate deploy` invocations.
-   - **Forward-Fix Procedure**: If a schema change must be reversed post-deployment, create and apply a forward-fix migration (e.g. `20261026_revert_custom_form_centre/migration.sql`):
-     ```sql
-     -- Revert constraint and column via forward migration
-     ALTER TABLE "custom_forms" DROP CONSTRAINT IF EXISTS "custom_forms_centreId_fkey";
-     ALTER TABLE "custom_forms" DROP COLUMN IF EXISTS "centreId";
-     ```
-   - Apply the forward-fix via `prisma migrate deploy`. This preserves an immutable, auditable migration history across all environments.
+**Standard Safe Procedure**:
+1. **Pre-deployment snapshot**:
+   ```bash
+   pg_dump -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_pre_deploy.dump
+   ```
+2. **Restore into a separate freshly created database**:
+   ```bash
+   createdb -h <DB_HOST> -p 5432 -U educare_staging educare_staging_restored
+   pg_restore -h <DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_pre_deploy.dump
+   ```
+3. **Validate restored database integrity**:
+   ```bash
+   psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT "id", "migration_name", "finished_at" FROM "_prisma_migrations";'
+   psql -h <DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
+   ```
+4. **Controlled atomic cutover**:
+   Update `DATABASE_URL` in the secrets manager to point to `educare_staging_restored` and trigger a rolling restart of API containers. Retain the prior database for post-mortem analysis.
 
-3. **Application Version Rollback**:
-   - Revert the API container/process to the prior commit preceding `fix/authorization-remediation`.
-   - Because all schema changes in this remediation are strictly additive and non-breaking (all new columns are nullable or have safe defaults like `false`), the prior application version remains fully operational against the updated schema.
+### B. Zero-Downtime Application Version Rollback (Preferred)
+- Revert the API container to the prior release tag.
+- **Backward-Compatibility Invariant**: All migrations on branch `fix/authorization-remediation` add nullable columns (`custom_forms.centreId String?`) or columns with database-level defaults (`study_materials.isPublic Boolean @default(false)`). Older application code generated with prior Prisma clients ignores the additional columns and executes safely without requiring immediate schema alterations or downtime.
+
+### C. Non-Destructive Forward-Fix Migration
+> [!WARNING]
+> **Preventing Data Loss**:
+> Directly executing `ALTER TABLE "custom_forms" DROP COLUMN "centreId"` permanently destroys any centre-ownership mappings recorded during the active deployment window.
+- When reversing a schema change via forward-fix, preserve active mappings first:
+  ```sql
+  -- Archive active mappings before schema alterations
+  CREATE TABLE IF NOT EXISTS "custom_forms_centre_archive" AS
+  SELECT "id", "centreId", NOW() as archived_at FROM "custom_forms" WHERE "centreId" IS NOT NULL;
+  
+  -- Drop constraint and column safely via forward migration
+  ALTER TABLE "custom_forms" DROP CONSTRAINT IF EXISTS "custom_forms_centreId_fkey";
+  ALTER TABLE "custom_forms" DROP COLUMN IF EXISTS "centreId";
+  ```
+- Deploy using `pnpm --filter @educare/database prisma migrate deploy`. Never manually delete records from `_prisma_migrations`.

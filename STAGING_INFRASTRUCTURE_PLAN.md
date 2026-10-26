@@ -3,8 +3,9 @@
 ## 1. Executive Summary & Infrastructure Scope
 
 - **Working Branch**: `fix/authorization-remediation`
-- **Base Commit**: `9c316b0` (`fix(security): add idempotent custom_forms centreId migration and document disposable db verification`)
-- **Document Version**: 1.0.0
+- **Head Commit**: `dc67777` (`fix(security): harden staging database preflight and eliminate reconciliation bypasses`)
+- **Base Branch**: `main` (`4a49372`)
+- **Document Version**: 1.1.0
 - **Auditor / Author**: `nonstradamoz <nonstradamoz@users.noreply.github.com>`
 - **Scope**: Comprehensive blueprint for provisioning, configuring, and verifying a genuinely isolated staging environment for EduCare LMS.
 
@@ -15,7 +16,7 @@
 >   - Confirmed schema constraints (`custom_forms.centreId` FK, `study_materials.isPublic`, `study_materials.isShared`).
 >   - Confirmed zero-write dry-run reconciliation for enquiries and study materials.
 >   - Confirmed 11 cross-centre authorization scenarios across 8 roles.
->   - Confirmed 434/434 passing API tests across 18 test suites, Next.js web build (39 routes), and Expo mobile typecheck.
+>   - Confirmed 437/437 passing API tests across 18 test suites, Next.js web build (39 routes), and Expo mobile typecheck.
 > - **Pending Recommendations (External Staging Infrastructure)**:
 >   - Provisioning of external isolated staging PostgreSQL database and authenticated Redis 7 server.
 >   - Provisioning of dedicated Cloudflare R2 staging bucket and staging Turnstile widget credentials.
@@ -296,50 +297,96 @@ Earlier reports suggested manually executing:
 > **Why Deleting From `_prisma_migrations` is Prohibited**:
 > Prisma's migration engine verifies applied migration checksums against local migration files. Manually deleting rows from `_prisma_migrations` causes checksum mismatch errors, desynchronizes development and staging environments, and causes subsequent `prisma migrate deploy` commands to crash with exit code 1.
 
-### B. Standard Staging/Production Recovery Plan
+### B. Robust Staging/Production Recovery Plan
 
 ```mermaid
 graph TD
     IssueDetected{Issue Detected Post-Migration?}
-    IssueDetected -->|Immediate Abort Before Writes| PITR[Option 1: Atomic Snapshot Restore]
-    IssueDetected -->|Post-Write Production Fix| ForwardFix[Option 2: Forward-Fix Migration]
+    IssueDetected -->|Catastrophic Failure / Data Corruption| RestoreSeparate[Option 1: Isolated Separate Target Restore & Cutover]
+    IssueDetected -->|Non-Catastrophic Bug / Code Revert| BackwardCompat[Option 2: Zero-Downtime Application Rollback]
+    IssueDetected -->|Post-Write Schema Revision| ForwardFix[Option 3: Non-Destructive Forward-Fix Migration]
     
-    PITR --> RestoreDB["pg_restore --clean --if-exists"]
-    PITR --> RevertApp["Revert Container to Previous Tag"]
+    RestoreSeparate --> CreateFreshDB["Create Fresh DB: educare_staging_restored"]
+    RestoreSeparate --> RestoreDump["pg_restore into Fresh DB"]
+    RestoreSeparate --> ValidateRestored["Validate _prisma_migrations & Row Counts"]
+    RestoreSeparate --> ControlledCutover["Controlled Cutover: Update DATABASE_URL / Pooler"]
     
-    ForwardFix --> CreateMig["Create Reversal Migration SQL"]
-    ForwardFix --> DeployMig["prisma migrate deploy"]
-    ForwardFix --> KeepHistory["Preserve Complete Audit Trail"]
+    BackwardCompat --> RevertContainers["Roll Back API Container to Previous Tag"]
+    BackwardCompat --> SafeCompat["Nullable Columns / Defaults Run Without DDL Changes"]
+    
+    ForwardFix --> ArchiveData["Archive Live Data to custom_forms_centre_archive"]
+    ForwardFix --> DeployForward["Deploy Forward-Fix via prisma migrate deploy"]
 ```
 
-1. **Option 1: Atomic Snapshot Restore (Pre-Write Recovery)**
+1. **Option 1: Isolated Separate Target Restore & Cutover (Disaster Recovery)**
+   > [!IMPORTANT]
+   > **Correction on In-Place Restoration**:
+   > In PostgreSQL, running `pg_restore --clean --if-exists` directly against an active database is **NOT** atomic. `pg_restore` executes sequential `DROP` and `CREATE` commands. If a command fails due to active client connections, foreign key dependencies, or lock timeouts, the database is left in an inconsistent, partially dropped state.
+   
+   **Standard Safe Procedure**:
    - Pre-deployment backup:
      ```bash
      pg_dump -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging -Fc -f educare_staging_pre_deploy.dump
      ```
-   - Atomic rollback:
+   - Restore into a separate freshly created target database or clone instance:
      ```bash
-     pg_restore -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging --clean --if-exists educare_staging_pre_deploy.dump
+     createdb -h <STAGING_DB_HOST> -p 5432 -U educare_staging educare_staging_restored
+     pg_restore -h <STAGING_DB_HOST> -p 5432 -U educare_staging -d educare_staging_restored educare_staging_pre_deploy.dump
      ```
-   - Restores database data and `_prisma_migrations` atomically.
+   - Validate restored database integrity:
+     ```bash
+     # Verify migration table consistency
+     psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT "id", "migration_name", "finished_at" FROM "_prisma_migrations";'
+     # Verify row counts match snapshot
+     psql -h <STAGING_DB_HOST> -U educare_staging -d educare_staging_restored -c 'SELECT count(*) FROM "enquiries"; SELECT count(*) FROM "study_materials";'
+     ```
+   - Controlled atomic cutover: Update `DATABASE_URL` in container secret configuration to point to `educare_staging_restored` and trigger a rolling restart. Retain the prior database for post-mortem analysis.
 
-2. **Option 2: Forward-Fix Migration (Standard Post-Write Recovery)**
-   - Create a forward migration that safely drops the new column or constraint without rewriting history:
+2. **Option 2: Zero-Downtime Application Version Rollback (Preferred)**
+   - Revert application image / container deployment to the previous stable release tag.
+   - **Schema Compatibility Invariant**: Every schema modification introduced in `fix/authorization-remediation` is strictly additive and backward-compatible:
+     * `custom_forms.centreId` is nullable (`String?`), with a non-cascading foreign key.
+     * `study_materials.isPublic` and `isShared` have safe defaults (`false`).
+     * `enquiries.centreId` allows `NULL` for legacy/unreconciled intake.
+   - Older application code generated with prior Prisma clients ignores new nullable columns and executes without errors or regressions against the expanded database.
+
+3. **Option 3: Non-Destructive Forward-Fix Migration**
+   > [!WARNING]
+   > **Preventing Data Loss on Rollback**:
+   > Executing `ALTER TABLE "custom_forms" DROP COLUMN "centreId"` directly drops all centre-assignment data recorded while the migration was active.
+   - If a schema alteration must be rolled back, preserve data first in an archival table:
      ```sql
-     -- migrations/20261026_revert_custom_form_centre/migration.sql
+     -- Archive active mappings before schema alterations
+     CREATE TABLE IF NOT EXISTS "custom_forms_centre_archive" AS
+     SELECT "id", "centreId", NOW() as archived_at FROM "custom_forms" WHERE "centreId" IS NOT NULL;
+     
+     -- Drop constraint and column safely via forward-fix
      ALTER TABLE "custom_forms" DROP CONSTRAINT IF EXISTS "custom_forms_centreId_fkey";
      ALTER TABLE "custom_forms" DROP COLUMN IF EXISTS "centreId";
      ```
-   - Deploy using `pnpm --filter @educare/database prisma migrate deploy`.
-   - Preserves migration integrity and prevents schema drift across branches.
-
-3. **Application Container Rollback**:
-   - Revert application image to the previous container release tag.
-   - All migrations on branch `fix/authorization-remediation` add nullable columns with defaults (`isPublic: false`, `centreId: null`), making them 100% backward-compatible with older application versions.
+   - Deploy the forward-fix via `pnpm --filter @educare/database prisma migrate deploy`. Never delete applied rows from `_prisma_migrations`.
 
 ---
 
-## 8. Reconciled Test Summary (Task 7)
+## 8. External Staging Integration Test Plan (Task 6)
+
+The following test suites define concrete, executable verification procedures to execute once isolated external staging cloud resources are provisioned.
+
+| Suite ID | Subsystem | Objective | Executable Staging Verification Procedure | Expected Outcome |
+| :--- | :--- | :--- | :--- | :--- |
+| **STG-INT-01** | **PostgreSQL Isolation & TLS** | Verify database cannot be reached without TLS and is isolated from production | 1. Attempt connection with `sslmode=disable`: `psql "postgresql://.../educare_staging?sslmode=disable"`.<br>2. Attempt connection with `sslmode=require`.<br>3. Verify target IP is not `148.135.138.196` via `database-target.validator.ts`. | 1. Connection rejected (TLS required).<br>2. Connection established securely.<br>3. Preflight check passes. |
+| **STG-INT-02** | **Distributed Rate Limiting (Multi-Replica)** | Verify rate limits synchronize across multiple API container replicas | 1. Deploy 2+ API replicas behind staging ingress.<br>2. Send 105 rapid unauthenticated requests to `/api/enquiry/public` within 60s, alternating replica targets. | Requests 1–100 return `200/201/400`; requests 101–105 return `HTTP 429 Too Many Requests` with `Retry-After` header across all replicas. |
+| **STG-INT-03** | **Redis Outage & Recovery** | Verify fail-closed behavior during Redis failure and auto-resume on recovery | 1. Stop staging Redis container (`docker stop staging_redis`).<br>2. Send request to rate-limited endpoint (`/api/enquiry/public`).<br>3. Restart Redis (`docker start staging_redis`) and re-send request. | 1. API throws `HTTP 503 Service Unavailable` (fail-closed, no unmetered traffic).<br>2. Upon Redis restart, API resumes normal traffic processing automatically. |
+| **STG-INT-04** | **Turnstile Token Matrix** | Validate genuine Cloudflare Turnstile token lifecycle | 1. Submit enquiry with valid token.<br>2. Submit with invalid token (`invalid-token`).<br>3. Submit with expired token.<br>4. Replay previously used token.<br>5. Submit token generated for different action. | 1. Returns `201 Created`.<br>2. Returns `400 Bad Request` (`invalid-input-response`).<br>3. Returns `400 Bad Request` (`timeout-or-duplicate`).<br>4. Returns `400 Bad Request` (`timeout-or-duplicate`).<br>5. Returns `400 Bad Request` (`action-mismatch`). |
+| **STG-INT-05** | **Ingress IP Extraction & Proxy Spoofing** | Verify spoofed `X-Forwarded-For` headers are discarded from untrusted peers | 1. Direct connection bypassing ingress sending `X-Forwarded-For: 8.8.8.8`.<br>2. Ingress proxy connection within `TRUSTED_PROXIES` CIDR sending client IP in `X-Forwarded-For`. | 1. `StrictThrottlerGuard` uses TCP `socket.remoteAddress`; spoofed header ignored.<br>2. Trusted ingress parses genuine client IP from proxy header. |
+| **STG-INT-06** | **Cloudflare R2 Bucket Permissions** | Verify staging media assets upload and read from isolated bucket | 1. Request presigned upload URL for study material.<br>2. Upload test document.<br>3. Verify asset is stored in `educare-staging` bucket and not production `educare`. | Presigned URL targets staging R2 endpoint; public playback URL uses `staging-media.educarelearning.in`. |
+| **STG-INT-07** | **LiveKit Room Authorization Scope** | Verify LiveKit WebRTC tokens strictly bound to student's enrolled centre | 1. Student at Centre A attempts to join Centre B live class (`/api/live-class/:id/token`).<br>2. Student at Centre A joins Centre A live class. | 1. Returns `HTTP 403 Forbidden` (`Cross-centre access denied`).<br>2. Returns valid LiveKit room token scoped to specific room. |
+| **STG-INT-08** | **Cross-Centre Data Isolation & Legacy Records** | Verify tenant containment and quarantine of unassigned legacy records | 1. Centre Admin A requests student, fee, enquiry list.<br>2. Verify legacy enquiries (`centreId: null`) are excluded from Centre Admin view.<br>3. Super Admin accesses `/api/enquiry/unreconciled`. | 1. Centre Admin sees only Centre A records.<br>2. Legacy records invisible to Centre Admin.<br>3. Super Admin reviews unreconciled queue with audit logging. |
+| **STG-INT-09** | **Backup Restoration & Application Rollback** | Execute live disaster recovery runbook | 1. Execute `pg_dump` on staging database.<br>2. Deploy test forward-fix migration.<br>3. Restore dump into separate `educare_staging_restored` database.<br>4. Switch `DATABASE_URL` and restart API. | Application operates seamlessly against restored database with 0 data corruption or Prisma migration lock errors. |
+
+---
+
+## 9. Reconciled Test Summary (Task 7)
 
 Executed on macOS with Node.js 22 and Jest test runner:
 ```bash
@@ -348,7 +395,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 
 ### Verified Test Runner Output:
 - **Test Suites**: **18 passed, 18 total**
-- **Tests**: **434 passed, 434 total**
+- **Tests**: **437 passed, 437 total**
 - **Skipped Tests**: **0**
 - **Failed Tests**: **0**
 - **Snapshots**: **0**
@@ -358,7 +405,7 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | :--- | :--- | :-: | :-: |
 | **Dedicated Authorization Remediation Suite** | `apps/api/src/common/authorization-remediation.spec.ts` | **101** | **PASS** |
 | **Comprehensive Security Regression Suite** | `apps/api/src/common/security-regression.spec.ts` | **298** | **PASS** |
-| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **20** | **PASS** |
+| **Database Target & Preflight Safety Suite** | `apps/api/src/common/config/database-target.validator.spec.ts` | **23** | **PASS** |
 | **Enquiry Controller Suite** | `apps/api/src/enquiry/enquiry.controller.spec.ts` | **1** | **PASS** |
 | **Enquiry Service Suite** | `apps/api/src/enquiry/enquiry.service.spec.ts` | **1** | **PASS** |
 | **Assignments Controller Suite** | `apps/api/src/assignments/assignments.controller.spec.ts` | **1** | **PASS** |
@@ -374,11 +421,11 @@ NODE_OPTIONS="--max-old-space-size=4096" pnpm --filter api test -- --runInBand -
 | **Fee Controller Suite** | `apps/api/src/fee/fee.controller.spec.ts` | **1** | **PASS** |
 | **Fee Service Suite** | `apps/api/src/fee/fee.service.spec.ts` | **1** | **PASS** |
 | **App Controller Suite** | `apps/api/src/app.controller.spec.ts` | **1** | **PASS** |
-| **TOTAL** | **18 Test Suites** | **434** | **PASS** |
+| **TOTAL** | **18 Test Suites** | **437** | **PASS** |
 
 ---
 
-## 9. Staging Readiness Checklist & Remaining Blockers
+## 10. Staging Readiness Checklist & Remaining Blockers
 
 ### A. Pre-Deployment Staging Checklist
 - [ ] **1. Infrastructure Provisioning**:
