@@ -58,7 +58,8 @@ export class EnquiryService {
 
     // Production Turnstile bot protection policy
     const isProduction = process.env.NODE_ENV === 'production';
-    const isTurnstileRequired = isProduction || process.env.TURNSTILE_REQUIRED === 'true';
+    const isTurnstileDisabled = process.env.DISABLE_TURNSTILE === 'true';
+    const isTurnstileRequired = !isTurnstileDisabled && (isProduction || process.env.TURNSTILE_REQUIRED === 'true');
 
     if (isTurnstileRequired && !process.env.TURNSTILE_SECRET_KEY) {
       throw new HttpException(
@@ -67,7 +68,7 @@ export class EnquiryService {
       );
     }
 
-    if (process.env.TURNSTILE_SECRET_KEY) {
+    if (!isTurnstileDisabled && process.env.TURNSTILE_SECRET_KEY) {
       const token = data.turnstileToken || data['cf-turnstile-response'];
       if (!token) {
         throw new BadRequestException('CAPTCHA verification token is missing.');
