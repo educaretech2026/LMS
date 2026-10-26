@@ -27,10 +27,20 @@ import {
   Clock,
   Printer,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   HelpCircle,
   FileCheck2,
   Award,
+  Layers,
+  Eye,
 } from "lucide-react";
+
+interface AdmissionRuleSubsection {
+  id?: string;
+  title: string;
+  content?: string;
+}
 
 interface AdmissionRule {
   id: string;
@@ -40,6 +50,15 @@ interface AdmissionRule {
   order: number;
   isRequiredAck: boolean;
   isActive: boolean;
+  subsections?: AdmissionRuleSubsection[];
+}
+
+interface AcademicOptions {
+  boards: Array<{ id: string; name: string }>;
+  standards: Array<{ id: string; name: string; level: number; boardId?: string; boards?: Array<{ boardId: string }> }>;
+  courses: Array<{ id: string; title: string; slug: string; level: string; price?: any }>;
+  tracks: Array<{ id: string; name: string }>;
+  centres: Array<{ id: string; name: string; code: string; address?: string; contactNo?: string; email?: string }>;
 }
 
 interface AdmissionPolicy {
@@ -71,6 +90,11 @@ const DEFAULT_RULES: AdmissionRule[] = [
     order: 1,
     isRequiredAck: true,
     isActive: true,
+    subsections: [
+      { id: "s-1-1", title: "85% Lecture Quota", content: "Monthly attendance is calculated and submitted to the Academic Dean. Falling below 85% restricts test sitting rights." },
+      { id: "s-1-2", title: "Emergency Medical Leave", content: "Medical leaves must be accompanied by an authorized physician certificate within 48 hours of return." },
+      { id: "s-1-3", title: "Late Entry Protocol", content: "Students arriving 10 minutes past class start must secure a temporary gate pass." },
+    ],
   },
   {
     id: "def-2",
@@ -80,6 +104,11 @@ const DEFAULT_RULES: AdmissionRule[] = [
     order: 2,
     isRequiredAck: true,
     isActive: true,
+    subsections: [
+      { id: "s-2-1", title: "Proctored Exam Rules", content: "Smart watches, mobile devices, and unauthorized notes are strictly banned in examination halls." },
+      { id: "s-2-2", title: "Sunday Mock Tests", content: "Sitting for scheduled weekly mock examinations is mandatory for ranking and syllabus evaluation." },
+      { id: "s-2-3", title: "Remedial Coaching", content: "Students with difficulties in baseline assessments will be scheduled for mentor reinforcement." },
+    ],
   },
   {
     id: "def-3",
@@ -89,6 +118,11 @@ const DEFAULT_RULES: AdmissionRule[] = [
     order: 3,
     isRequiredAck: true,
     isActive: true,
+    subsections: [
+      { id: "s-3-1", title: "Smart ID Card Display", content: "Educare ID cards must be worn visibly at all times within campus facilities." },
+      { id: "s-3-2", title: "Zero Tolerance to Bullying", content: "Bullying, harassment, or verbal intimidation results in immediate suspension." },
+      { id: "s-3-3", title: "Facility Care", content: "Willful damage to laboratory equipment, books, or smart displays will result in replacement charges." },
+    ],
   },
   {
     id: "def-4",
@@ -98,6 +132,10 @@ const DEFAULT_RULES: AdmissionRule[] = [
     order: 4,
     isRequiredAck: false,
     isActive: true,
+    subsections: [
+      { id: "s-4-1", title: "Device Storage", content: "Phones must remain silent and in backpacks during active instructional time." },
+      { id: "s-4-2", title: "Interactive Quizzing", content: "Devices may only be used when an instructor specifically launches an LMS quiz or poll." },
+    ],
   },
   {
     id: "def-5",
@@ -107,6 +145,11 @@ const DEFAULT_RULES: AdmissionRule[] = [
     order: 5,
     isRequiredAck: true,
     isActive: true,
+    subsections: [
+      { id: "s-5-1", title: "Instalment Deadlines", content: "Tuition instalments must be remitted on or before the 10th of the designated term month." },
+      { id: "s-5-2", title: "Non-Refundable Registration", content: "Registration and orientation materials fees are non-refundable once courses begin." },
+      { id: "s-5-3", title: "Campus Reallocation", content: "Transfers between Mannanam and Kalathipady are subject to batch vacancy." },
+    ],
   },
 ];
 
@@ -125,6 +168,16 @@ export default function AdmissionPage() {
   const [rules, setRules] = useState<AdmissionRule[]>(DEFAULT_RULES);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [loadingRules, setLoadingRules] = useState(true);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+
+  // Live Academic Database Options
+  const [academicOptions, setAcademicOptions] = useState<AcademicOptions>({
+    boards: [],
+    standards: [],
+    courses: [],
+    tracks: [],
+    centres: [],
+  });
 
   // Form State
   const [formData, setFormData] = useState({
@@ -134,6 +187,7 @@ export default function AdmissionPage() {
     email: "",
     city: "",
     address: "",
+    centreId: "",
     preferredCampus: "Mannanam Campus",
     targetBoard: "CBSE",
     targetStandard: "Class 11",
@@ -142,6 +196,10 @@ export default function AdmissionPage() {
     signerName: "",
     termsAccepted: false,
   });
+
+  // Rule verification tracking: ruleId -> boolean
+  const [verifiedRules, setVerifiedRules] = useState<Record<string, boolean>>({});
+  const [expandedRuleIds, setExpandedRuleIds] = useState<Record<string, boolean>>({});
 
   // Signature State
   const [signatureMode, setSignatureMode] = useState<"DRAW" | "UPLOAD">("DRAW");
@@ -160,19 +218,55 @@ export default function AdmissionPage() {
   const [applicationRef, setApplicationRef] = useState<string>("");
   const [submissionDate, setSubmissionDate] = useState<string>("");
 
-  // Load rules & policy from backend
+  // Load rules & policy & live academic options from backend
   useEffect(() => {
     async function loadAdmissionData() {
       try {
-        const res = (await fetchApi("/setup/public/admission-rules")) as any;
-        if (res?.policy) setPolicy(res.policy);
-        if (Array.isArray(res?.rules) && res.rules.length > 0) {
-          setRules(res.rules);
+        const [rulesRes, optionsRes] = (await Promise.all([
+          fetchApi("/setup/public/admission-rules"),
+          fetchApi("/setup/public/admission-options"),
+        ])) as any;
+
+        if (rulesRes?.policy) setPolicy(rulesRes.policy);
+        if (Array.isArray(rulesRes?.rules) && rulesRes.rules.length > 0) {
+          setRules(rulesRes.rules);
+          if (rulesRes.rules[0]?.id) {
+            setExpandedRuleIds({ [rulesRes.rules[0].id]: true });
+          }
+        }
+
+        if (optionsRes) {
+          setAcademicOptions(optionsRes);
+          // Set live defaults from real database records if available
+          setFormData((prev) => {
+            const firstCentre = optionsRes.centres?.[0];
+            const firstBoard = optionsRes.boards?.[0];
+            const matchingStandards = optionsRes.standards?.filter(
+              (s: any) =>
+                !firstBoard?.id ||
+                !s.boardId ||
+                s.boardId === firstBoard.id ||
+                s.boards?.some((b: any) => b.boardId === firstBoard.id)
+            );
+            const firstStandard = matchingStandards?.[0] || optionsRes.standards?.[0];
+            const firstTrackOrCourse =
+              optionsRes.tracks?.[0]?.name || optionsRes.courses?.[0]?.title || prev.targetCourse;
+
+            return {
+              ...prev,
+              centreId: prev.centreId || firstCentre?.id || "",
+              preferredCampus: prev.preferredCampus || firstCentre?.name || "Mannanam Campus",
+              targetBoard: prev.targetBoard || firstBoard?.name || "CBSE",
+              targetStandard: prev.targetStandard || firstStandard?.name || "Class 11",
+              targetCourse: prev.targetCourse || firstTrackOrCourse,
+            };
+          });
         }
       } catch (err) {
-        console.warn("[Admission] Using default rules template:", err);
+        console.warn("[Admission] Using default template fallback:", err);
       } finally {
         setLoadingRules(false);
+        setLoadingOptions(false);
       }
     }
     loadAdmissionData();
@@ -286,6 +380,70 @@ export default function AdmissionPage() {
     reader.readAsDataURL(file);
   };
 
+  const selectedBoardObj = academicOptions.boards.find(
+    (b) => b.name.toLowerCase() === formData.targetBoard.toLowerCase() || b.id === formData.targetBoard
+  );
+
+  const availableStandards = academicOptions.standards.length > 0
+    ? academicOptions.standards.filter((s) => {
+        if (!selectedBoardObj) return true;
+        if (!s.boardId && (!s.boards || s.boards.length === 0)) return true;
+        if (s.boardId === selectedBoardObj.id) return true;
+        if (s.boards && s.boards.some((b: any) => b.boardId === selectedBoardObj.id)) return true;
+        return false;
+      })
+    : [];
+
+  const toggleRuleVerified = (ruleId: string) => {
+    setVerifiedRules((prev) => ({
+      ...prev,
+      [ruleId]: !prev[ruleId],
+    }));
+  };
+
+  const handleVerifyAllRules = () => {
+    const allVerified: Record<string, boolean> = {};
+    rules.forEach((r) => {
+      allVerified[r.id] = true;
+    });
+    setVerifiedRules(allVerified);
+  };
+
+  const toggleRuleExpand = (ruleId: string) => {
+    setExpandedRuleIds((prev) => ({
+      ...prev,
+      [ruleId]: !prev[ruleId],
+    }));
+  };
+
+  const mandatoryRules = rules.filter((r) => r.isRequiredAck);
+  const verifiedCount = rules.filter((r) => verifiedRules[r.id]).length;
+  const verifiedPercent = rules.length > 0 ? Math.round((verifiedCount / rules.length) * 100) : 0;
+  const allMandatoryVerified = mandatoryRules.every((r) => verifiedRules[r.id]);
+
+  const handleBoardChange = (newBoardName: string) => {
+    const boardObj = academicOptions.boards.find(
+      (b) => b.name.toLowerCase() === newBoardName.toLowerCase() || b.id === newBoardName
+    );
+    const matchingStandards = academicOptions.standards.filter((s) => {
+      if (!boardObj) return true;
+      if (!s.boardId && (!s.boards || s.boards.length === 0)) return true;
+      if (s.boardId === boardObj.id) return true;
+      if (s.boards && s.boards.some((b: any) => b.boardId === boardObj.id)) return true;
+      return false;
+    });
+
+    const currentStandardValid = matchingStandards.some(
+      (s) => s.name.toLowerCase() === formData.targetStandard.toLowerCase()
+    );
+
+    setFormData((prev) => ({
+      ...prev,
+      targetBoard: newBoardName,
+      targetStandard: currentStandardValid ? prev.targetStandard : matchingStandards[0]?.name || prev.targetStandard,
+    }));
+  };
+
   // Step Validation
   const validateStep1 = () => {
     if (!formData.studentName.trim() || formData.studentName.trim().length < 2) {
@@ -319,6 +477,12 @@ export default function AdmissionPage() {
   const handleNext = () => {
     if (currentStep === 1 && !validateStep1()) return;
     if (currentStep === 2 && !validateStep2()) return;
+    if (currentStep === 3) {
+      if (!allMandatoryVerified) {
+        alert("Please read and verify all mandatory rules before proceeding to the digital signature step.");
+        return;
+      }
+    }
     if (currentStep < 4) {
       setCurrentStep((prev) => (prev + 1) as any);
       window.scrollTo({ top: 120, behavior: "smooth" });
@@ -359,6 +523,7 @@ export default function AdmissionPage() {
         email: formData.email.trim() || undefined,
         address: [formData.city, formData.address].filter(Boolean).join(", "),
         source: `Online Admission Portal (${formData.preferredCampus})`,
+        centreId: formData.centreId || undefined,
         targetBoard: formData.targetBoard,
         targetStandard: formData.targetStandard,
         targetCourse: formData.targetCourse,
@@ -538,6 +703,7 @@ export default function AdmissionPage() {
                     email: "",
                     city: "",
                     address: "",
+                    centreId: "",
                     preferredCampus: "Mannanam Campus",
                     targetBoard: "CBSE",
                     targetStandard: "Class 11",
@@ -805,63 +971,113 @@ export default function AdmissionPage() {
 
                 {/* Campus Choice Cards */}
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-2">Preferred Study Campus</label>
+                  <label className="block text-xs font-bold text-text-secondary mb-2">Preferred Study Campus / Centre</label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {[
-                      {
-                        name: "Mannanam Campus",
-                        desc: "2nd Flr Gurukrupa Complex, Mannanam Jn.",
-                        type: "Classroom / Offline",
-                      },
-                      {
-                        name: "Kalathipady Campus",
-                        desc: "2nd Flr Castle Charis, Near Pallikoodam",
-                        type: "Classroom / Offline",
-                      },
-                      {
-                        name: "Virtual Live Campus",
-                        desc: "Interactive Live-Class + LMS Portal",
-                        type: "Hybrid / Online",
-                      },
-                    ].map((campus) => {
-                      const isSelected = formData.preferredCampus === campus.name;
-                      return (
-                        <div
-                          key={campus.name}
-                          onClick={() => setFormData({ ...formData, preferredCampus: campus.name })}
-                          className={`p-4 rounded-2xl border-2 cursor-pointer transition-all text-left ${
-                            isSelected
-                              ? "border-brand-blue bg-brand-blue/5 shadow-sm"
-                              : "border-border-soft bg-white hover:border-brand-blue/30"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-blue">{campus.type}</span>
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? "border-brand-blue bg-brand-blue" : "border-border-soft"}`}>
-                              {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {academicOptions.centres.length > 0 ? (
+                      academicOptions.centres.map((centre) => {
+                        const isSelected = formData.centreId === centre.id || formData.preferredCampus === centre.name;
+                        return (
+                          <div
+                            key={centre.id}
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                centreId: centre.id,
+                                preferredCampus: centre.name,
+                              })
+                            }
+                            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all text-left ${
+                              isSelected
+                                ? "border-brand-blue bg-brand-blue/5 shadow-sm"
+                                : "border-border-soft bg-white hover:border-brand-blue/30"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-blue font-mono">
+                                {centre.code || "CAMPUS"}
+                              </span>
+                              <div
+                                className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                  isSelected ? "border-brand-blue bg-brand-blue" : "border-border-soft"
+                                }`}
+                              >
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
                             </div>
+                            <h4 className="text-sm font-bold text-text-primary">{centre.name}</h4>
+                            <p className="text-[11px] text-text-muted mt-1 leading-snug line-clamp-2">
+                              {centre.address || centre.contactNo || "Classroom / Offline Centre"}
+                            </p>
                           </div>
-                          <h4 className="text-sm font-bold text-text-primary">{campus.name}</h4>
-                          <p className="text-[11px] text-text-muted mt-1 leading-snug">{campus.desc}</p>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    ) : (
+                      [
+                        {
+                          name: "Mannanam Campus",
+                          desc: "2nd Flr Gurukrupa Complex, Mannanam Jn.",
+                          type: "Classroom / Offline",
+                        },
+                        {
+                          name: "Kalathipady Campus",
+                          desc: "2nd Flr Castle Charis, Near Pallikoodam",
+                          type: "Classroom / Offline",
+                        },
+                        {
+                          name: "Virtual Live Campus",
+                          desc: "Interactive Live-Class + LMS Portal",
+                          type: "Hybrid / Online",
+                        },
+                      ].map((campus) => {
+                        const isSelected = formData.preferredCampus === campus.name;
+                        return (
+                          <div
+                            key={campus.name}
+                            onClick={() => setFormData({ ...formData, preferredCampus: campus.name })}
+                            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all text-left ${
+                              isSelected
+                                ? "border-brand-blue bg-brand-blue/5 shadow-sm"
+                                : "border-border-soft bg-white hover:border-brand-blue/30"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-blue">{campus.type}</span>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? "border-brand-blue bg-brand-blue" : "border-border-soft"}`}>
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                            </div>
+                            <h4 className="text-sm font-bold text-text-primary">{campus.name}</h4>
+                            <p className="text-[11px] text-text-muted mt-1 leading-snug">{campus.desc}</p>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 
-                {/* Program Details */}
+                {/* Program Details from Live DB */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-2">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">Target Curriculum Board</label>
                     <select
                       value={formData.targetBoard}
-                      onChange={(e) => setFormData({ ...formData, targetBoard: e.target.value })}
+                      onChange={(e) => handleBoardChange(e.target.value)}
                       className="w-full h-12 rounded-xl border border-border-soft bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                     >
-                      <option value="CBSE">CBSE Board</option>
-                      <option value="ICSE">ICSE / ISC Board</option>
-                      <option value="State Board">Kerala State Board</option>
-                      <option value="Other">Other Board</option>
+                      {academicOptions.boards.length > 0 ? (
+                        academicOptions.boards.map((b) => (
+                          <option key={b.id} value={b.name}>
+                            {b.name} Board
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="CBSE">CBSE Board</option>
+                          <option value="ICSE">ICSE / ISC Board</option>
+                          <option value="State Board">Kerala State Board</option>
+                          <option value="Other">Other Board</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
@@ -872,26 +1088,53 @@ export default function AdmissionPage() {
                       onChange={(e) => setFormData({ ...formData, targetStandard: e.target.value })}
                       className="w-full h-12 rounded-xl border border-border-soft bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                     >
-                      <option value="Class 8">Class 8 (Pre-Foundation)</option>
-                      <option value="Class 9">Class 9 (Foundation)</option>
-                      <option value="Class 10">Class 10 (Board Focus)</option>
-                      <option value="Class 11">Class 11 (+1 Integrated)</option>
-                      <option value="Class 12">Class 12 (+2 Intensive)</option>
-                      <option value="Dropper / Repeat">Dropper / Repeat Batch</option>
+                      {availableStandards.length > 0 ? (
+                        availableStandards.map((s) => (
+                          <option key={s.id} value={s.name}>
+                            {s.name}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="Class 8">Class 8 (Pre-Foundation)</option>
+                          <option value="Class 9">Class 9 (Foundation)</option>
+                          <option value="Class 10">Class 10 (Board Focus)</option>
+                          <option value="Class 11">Class 11 (+1 Integrated)</option>
+                          <option value="Class 12">Class 12 (+2 Intensive)</option>
+                          <option value="Dropper / Repeat">Dropper / Repeat Batch</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5">Course Program Type</label>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">Course / Programme Stream</label>
                     <select
                       value={formData.targetCourse}
                       onChange={(e) => setFormData({ ...formData, targetCourse: e.target.value })}
                       className="w-full h-12 rounded-xl border border-border-soft bg-surface px-3 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                     >
-                      <option value="Entrance (NEET/JEE)">Entrance (NEET / JEE / KEAM)</option>
-                      <option value="Tuition">Regular Subject Tuition</option>
-                      <option value="Foundation">Integrated School Foundation</option>
-                      <option value="Crash Course">Crash Course & Test Series</option>
+                      {academicOptions.tracks.length > 0 || academicOptions.courses.length > 0 ? (
+                        <>
+                          {academicOptions.tracks.map((t) => (
+                            <option key={t.id} value={t.name}>
+                              {t.name} Stream
+                            </option>
+                          ))}
+                          {academicOptions.courses.map((c) => (
+                            <option key={c.id} value={c.title}>
+                              {c.title}
+                            </option>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <option value="Entrance (NEET/JEE)">Entrance (NEET / JEE / KEAM)</option>
+                          <option value="Tuition">Regular Subject Tuition</option>
+                          <option value="Foundation">Integrated School Foundation</option>
+                          <option value="Crash Course">Crash Course & Test Series</option>
+                        </>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -899,7 +1142,7 @@ export default function AdmissionPage() {
             )}
 
             {/* ---------------------------------------------------------------- */}
-            {/* STEP 3: DYNAMIC RULES & REGULATIONS                              */}
+            {/* STEP 3: DYNAMIC RULES & REGULATIONS (WITH SUBSECTIONS & VERIFY)  */}
             {/* ---------------------------------------------------------------- */}
             {currentStep === 3 && (
               <div className="space-y-6 animate-in fade-in duration-300">
@@ -907,7 +1150,7 @@ export default function AdmissionPage() {
                   <div>
                     <h2 className="text-xl font-bold text-text-primary tracking-tight">Institutional Rules & Code of Conduct</h2>
                     <p className="text-xs text-text-muted mt-1">
-                      Managed by Educare Academic Administration. Please review each guideline carefully.
+                      Managed by Educare Academic Administration. Review each guideline and click to verify comprehension.
                     </p>
                   </div>
 
@@ -941,8 +1184,42 @@ export default function AdmissionPage() {
                   </div>
                 </div>
 
+                {/* Verification Progress Strip */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-brand-blue/10 via-[#071d3d]/5 to-transparent border border-brand-blue/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex items-center justify-between max-w-sm text-xs font-bold text-text-primary">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-brand-blue" />
+                        Verification Status: {verifiedCount} of {rules.length} Read
+                      </span>
+                      <span className={allMandatoryVerified ? "text-emerald-600" : "text-brand-blue"}>
+                        {verifiedPercent}%
+                      </span>
+                    </div>
+                    <div className="w-full max-w-sm h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          allMandatoryVerified ? "bg-emerald-500" : "bg-brand-blue"
+                        }`}
+                        style={{ width: `${verifiedPercent}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleVerifyAllRules}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-brand-blue bg-white border border-brand-blue/30 hover:bg-brand-blue/5 transition-colors shadow-sm inline-flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Verify All Rules as Read
+                    </button>
+                  </div>
+                </div>
+
                 {/* Rules List Container */}
-                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                <div className="space-y-3.5 max-h-[500px] overflow-y-auto pr-1">
                   {loadingRules ? (
                     <div className="p-12 text-center text-text-muted text-sm">Loading institutional rules...</div>
                   ) : filteredRules.length === 0 ? (
@@ -952,28 +1229,98 @@ export default function AdmissionPage() {
                   ) : (
                     filteredRules.map((rule, idx) => {
                       const tagStyle = CATEGORY_TAG_COLORS[rule.category] || CATEGORY_TAG_COLORS.General;
+                      const isVerified = Boolean(verifiedRules[rule.id]);
+                      const hasSubsections = Boolean(rule.subsections && rule.subsections.length > 0);
+
                       return (
                         <div
                           key={rule.id}
-                          className="p-4 sm:p-5 rounded-2xl border border-border-soft bg-white hover:border-brand-blue/30 transition-all shadow-sm"
+                          className={`p-4 sm:p-5 rounded-2xl border transition-all shadow-sm ${
+                            isVerified
+                              ? "border-emerald-500/50 bg-emerald-50/10 shadow-emerald-500/5"
+                              : "border-border-soft bg-white hover:border-brand-blue/30"
+                          }`}
                         >
                           <div className="flex items-start gap-3.5">
-                            <div className="w-7 h-7 rounded-lg bg-surface border border-border-soft flex items-center justify-center font-mono text-xs font-bold text-text-secondary shrink-0">
-                              {rule.order || idx + 1}
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 border ${
+                                isVerified
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : "bg-surface border-border-soft text-text-secondary"
+                              }`}
+                            >
+                              {isVerified ? <Check className="w-4 h-4 text-emerald-700" /> : rule.order || idx + 1}
                             </div>
+
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${tagStyle}`}>
-                                  {rule.category || "General"}
-                                </span>
-                                <h4 className="text-sm font-bold text-text-primary">{rule.title}</h4>
-                                {rule.isRequiredAck && (
-                                  <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
-                                    Mandatory Clause
+                              <div className="flex items-start justify-between gap-3 mb-1.5 flex-wrap">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${tagStyle}`}>
+                                    {rule.category || "General"}
                                   </span>
-                                )}
+                                  <h4 className="text-sm font-bold text-text-primary">{rule.title}</h4>
+                                  {rule.isRequiredAck && (
+                                    <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
+                                      Mandatory
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Verification Action Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRuleVerified(rule.id)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 ${
+                                    isVerified
+                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200/70"
+                                      : "bg-surface text-text-secondary border border-border-soft hover:border-brand-blue/40 hover:text-brand-blue"
+                                  }`}
+                                >
+                                  {isVerified ? (
+                                    <>
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      Verified & Read
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                      Click to Verify
+                                    </>
+                                  )}
+                                </button>
                               </div>
+
                               <p className="text-xs text-text-secondary leading-relaxed">{rule.content}</p>
+
+                              {/* Rule Subsections Breakdown */}
+                              {hasSubsections && (
+                                <div className="mt-3 pt-3 border-t border-border-soft space-y-2">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center gap-1">
+                                    <Layers className="w-3 h-3 text-brand-blue" />
+                                    Rule Subsections ({rule.subsections!.length} clauses)
+                                  </span>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {rule.subsections!.map((sub, sIdx) => (
+                                      <div
+                                        key={sub.id || sIdx}
+                                        className="p-3 rounded-xl bg-surface/80 border border-border-soft text-xs"
+                                      >
+                                        <div className="font-bold text-text-primary flex items-center gap-2">
+                                          <span className="w-5 h-5 rounded-md bg-brand-blue/10 text-brand-blue flex items-center justify-center text-[10px] font-mono shrink-0">
+                                            {idx + 1}.{sIdx + 1}
+                                          </span>
+                                          <span>{sub.title}</span>
+                                        </div>
+                                        {sub.content && (
+                                          <p className="text-[11px] text-text-secondary mt-1 pl-7 leading-relaxed">
+                                            {sub.content}
+                                          </p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -982,12 +1329,28 @@ export default function AdmissionPage() {
                   )}
                 </div>
 
-                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800 leading-relaxed">
-                    By proceeding to the next step, you acknowledge that you have read and understood the rules and policies outlined above and agree to confirm them with a digital signature.
-                  </p>
-                </div>
+                {/* Gated Guidance Box */}
+                {!allMandatoryVerified ? (
+                  <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-300 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-900">Mandatory Rules Verification Required</h4>
+                      <p className="text-xs text-amber-800 leading-relaxed mt-0.5">
+                        Please click &quot;Click to Verify&quot; on all mandatory rules above to confirm that you have read and understood each regulation before advancing to the digital signature step.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-300 flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-emerald-900">All Mandatory Regulations Verified</h4>
+                      <p className="text-xs text-emerald-800 leading-relaxed mt-0.5">
+                        You have verified all institutional rules and policies. Proceed to the next step to execute your digital declaration and signature.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

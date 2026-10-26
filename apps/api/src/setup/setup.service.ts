@@ -734,6 +734,7 @@ export class SetupService {
         isRequiredAck: rule.isRequiredAck,
         isActive: true,
         isDefault: true,
+        subsections: (rule as any).subsections || [],
       }));
     }
 
@@ -749,6 +750,7 @@ export class SetupService {
         isRequiredAck: meta.isRequiredAck !== false,
         isActive: item.isActive,
         isDefault: false,
+        subsections: Array.isArray(meta.subsections) ? meta.subsections : [],
         createdAt: item.createdAt,
       };
     });
@@ -830,6 +832,7 @@ export class SetupService {
     category?: string;
     order?: number;
     isRequiredAck?: boolean;
+    subsections?: Array<{ id?: string; title: string; content?: string }>;
   }) {
     if (!data.title || !data.title.trim()) throw new BadRequestException('Rule title is required');
     if (!data.content || !data.content.trim()) throw new BadRequestException('Rule clause/content is required');
@@ -840,16 +843,25 @@ export class SetupService {
       order = existing + 1;
     }
 
+    const sanitizedSubsections = Array.isArray(data.subsections)
+      ? data.subsections.slice(0, 20).map((sub, idx) => ({
+          id: String(sub.id || `sub-${idx + 1}`),
+          title: String(sub.title || '').trim().slice(0, 200),
+          content: String(sub.content || '').trim().slice(0, 1000),
+        })).filter(s => s.title.length > 0)
+      : [];
+
     const payload = JSON.stringify({
-      description: data.content.trim(),
-      category: data.category?.trim() || 'General',
+      description: data.content.trim().slice(0, 5000),
+      category: data.category?.trim().slice(0, 100) || 'General',
       order,
       isRequiredAck: data.isRequiredAck !== false,
+      subsections: sanitizedSubsections,
     });
 
     const created = await this.prisma.notice.create({
       data: {
-        title: data.title.trim(),
+        title: data.title.trim().slice(0, 200),
         content: payload,
         type: 'ADMISSION_RULE',
         isActive: true,
@@ -865,6 +877,7 @@ export class SetupService {
       isRequiredAck: data.isRequiredAck !== false,
       isActive: created.isActive,
       isDefault: false,
+      subsections: sanitizedSubsections,
     };
   }
 
@@ -875,6 +888,7 @@ export class SetupService {
     order?: number;
     isRequiredAck?: boolean;
     isActive?: boolean;
+    subsections?: Array<{ id?: string; title: string; content?: string }>;
   }) {
     // If updating a default rule that hasn't been saved to DB yet, convert to a real record
     if (id.startsWith('default-')) {
@@ -886,6 +900,7 @@ export class SetupService {
         category: data.category !== undefined ? data.category : def.category,
         order: data.order !== undefined ? data.order : def.order,
         isRequiredAck: data.isRequiredAck !== undefined ? data.isRequiredAck : def.isRequiredAck,
+        subsections: data.subsections !== undefined ? data.subsections : (def as any).subsections,
       });
     }
 
@@ -897,18 +912,27 @@ export class SetupService {
     let meta: any = {};
     try { meta = JSON.parse(item.content); } catch {}
 
-    const title = data.title !== undefined ? data.title.trim() : item.title;
-    const content = data.content !== undefined ? data.content.trim() : (meta.description || meta.content || '');
-    const category = data.category !== undefined ? data.category.trim() : (meta.category || 'General');
+    const title = data.title !== undefined ? data.title.trim().slice(0, 200) : item.title;
+    const content = data.content !== undefined ? data.content.trim().slice(0, 5000) : (meta.description || meta.content || '');
+    const category = data.category !== undefined ? data.category.trim().slice(0, 100) : (meta.category || 'General');
     const order = typeof data.order === 'number' ? data.order : (meta.order || 1);
     const isRequiredAck = data.isRequiredAck !== undefined ? Boolean(data.isRequiredAck) : (meta.isRequiredAck !== false);
     const isActive = data.isActive !== undefined ? Boolean(data.isActive) : item.isActive;
+    const subsections = data.subsections !== undefined
+      ? (Array.isArray(data.subsections)
+          ? data.subsections.slice(0, 20).map((sub, idx) => ({
+              id: String(sub.id || `sub-${idx + 1}`),
+              title: String(sub.title || '').trim().slice(0, 200),
+              content: String(sub.content || '').trim().slice(0, 1000),
+            })).filter(s => s.title.length > 0)
+          : [])
+      : (Array.isArray(meta.subsections) ? meta.subsections : []);
 
     const updated = await this.prisma.notice.update({
       where: { id },
       data: {
         title,
-        content: JSON.stringify({ description: content, category, order, isRequiredAck }),
+        content: JSON.stringify({ description: content, category, order, isRequiredAck, subsections }),
         isActive,
       },
     });
@@ -922,6 +946,7 @@ export class SetupService {
       isRequiredAck,
       isActive: updated.isActive,
       isDefault: false,
+      subsections,
     };
   }
 
@@ -947,6 +972,7 @@ export class SetupService {
         category: def.category,
         order: def.order,
         isRequiredAck: def.isRequiredAck,
+        subsections: (def as any).subsections,
       });
       return this.prisma.notice.update({
         where: { id: created.id },
@@ -995,6 +1021,68 @@ export class SetupService {
       rules: activeRules,
     };
   }
+
+  async getPublicAdmissionOptions(): Promise<any> {
+    const [boards, standards, courses, tracks, centres] = await Promise.all([
+      this.prisma.board.findMany({
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.standard.findMany({
+        select: {
+          id: true,
+          name: true,
+          level: true,
+          boardId: true,
+          boards: {
+            select: { boardId: true },
+          },
+        },
+        orderBy: { level: 'asc' },
+      }),
+      this.prisma.course.findMany({
+        where: { isPublished: true },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          level: true,
+          price: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.targetTrack.findMany({
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.centre.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          address: true,
+          contactNo: true,
+          email: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    return {
+      boards,
+      standards,
+      courses,
+      tracks,
+      centres,
+    };
+  }
 }
 
 export const DEFAULT_ADMISSION_POLICY = {
@@ -1014,6 +1102,23 @@ export const DEFAULT_ADMISSION_RULES = [
     content: "Students must maintain a minimum of 85% attendance across all scheduled theory, discussion, and practical laboratory sessions. In case of illness or emergency, a written leave letter signed by the parent/guardian must be submitted to the academic office within 48 hours.",
     order: 1,
     isRequiredAck: true,
+    subsections: [
+      {
+        id: "sub-1-1",
+        title: "85% Minimum Lecture & Lab Quota",
+        content: "Attendance is calculated monthly. Falling below 85% triggers automated SMS alerts to parents and loss of test-series sitting clearance.",
+      },
+      {
+        id: "sub-1-2",
+        title: "Medical Emergency & Leave Letters",
+        content: "Absences due to medical reasons must be certified by a registered physician and countersigned by the student's legal guardian.",
+      },
+      {
+        id: "sub-1-3",
+        title: "Late Arrival & Gate Pass Protocol",
+        content: "Entering 10 minutes past class commencement requires special entry approval from the Academic Dean.",
+      },
+    ],
   },
   {
     title: "Academic Integrity & Assessment Discipline",
@@ -1021,6 +1126,23 @@ export const DEFAULT_ADMISSION_RULES = [
     content: "Academic dishonesty, including copying in examinations, unauthorized collaboration during test series, or plagiarism in assignments, is strictly prohibited. Violations will result in cancellation of test results and immediate parent-teacher consultation.",
     order: 2,
     isRequiredAck: true,
+    subsections: [
+      {
+        id: "sub-2-1",
+        title: "Proctored Examination Discipline",
+        content: "Possession of unauthorized formula sheets, written chits, or smart devices in the exam hall leads to automatic paper cancellation.",
+      },
+      {
+        id: "sub-2-2",
+        title: "Mandatory Sunday Mock Series",
+        content: "Regular test attendance is compulsory. Unexcused absence from three consecutive mock exams invites review of student enrollment.",
+      },
+      {
+        id: "sub-2-3",
+        title: "Remedial & Mentor Sessions",
+        content: "Students scoring below performance thresholds must attend dedicated weekly mentor-led concept reinforcement sessions.",
+      },
+    ],
   },
   {
     title: "Campus Decorum, Dress Code & Mutual Respect",
@@ -1028,6 +1150,23 @@ export const DEFAULT_ADMISSION_RULES = [
     content: "Students must dress in modest, neat, and respectable attire appropriate for an academic environment. Respectful behavior towards teachers, peer students, and support staff is non-negotiable. Ragging, bullying, or disrespectful language will lead to immediate expulsion.",
     order: 3,
     isRequiredAck: true,
+    subsections: [
+      {
+        id: "sub-3-1",
+        title: "Institutional ID Card Display",
+        content: "Students must wear the official Educare lanyard and smart ID badge while on campus premises for security verification.",
+      },
+      {
+        id: "sub-3-2",
+        title: "Zero-Tolerance Anti-Bullying Mandate",
+        content: "Educare enforces zero tolerance against intimidation, ragging, or discriminatory remarks online or offline.",
+      },
+      {
+        id: "sub-3-3",
+        title: "Care of Institutional Infrastructure",
+        content: "Defacing desks, damaging audio-visual equipment, or misusing laboratory chemicals incurs restitution charges.",
+      },
+    ],
   },
   {
     title: "Digital Device & Mobile Phone Policy",
@@ -1035,6 +1174,23 @@ export const DEFAULT_ADMISSION_RULES = [
     content: "Personal smartphones and electronic gadgets must be switched off or placed in silent mode during active lecture hours unless explicitly permitted by the instructor for interactive learning exercises.",
     order: 4,
     isRequiredAck: false,
+    subsections: [
+      {
+        id: "sub-4-1",
+        title: "Classroom Silent Storage",
+        content: "Mobile phones must be deposited in assigned pocket bays or kept silent in bags during all teaching hours.",
+      },
+      {
+        id: "sub-4-2",
+        title: "Authorized Interactive Quizzing",
+        content: "Devices may be used only when faculty members explicitly initiate in-class LMS poll or quiz activities.",
+      },
+      {
+        id: "sub-4-3",
+        title: "Lecture Recording Prohibition",
+        content: "Unauthorized audio or video recording of classroom lectures or distribution of faculty materials is strictly prohibited.",
+      },
+    ],
   },
   {
     title: "Fee Schedule, Batch Continuity & Refund Undertaking",
@@ -1042,5 +1198,22 @@ export const DEFAULT_ADMISSION_RULES = [
     content: "Tuition and course fees must be remitted as per the agreed schedule. Admission and registration charges are non-refundable once classes commence. Batch or center change requests are subject to seat availability and administrative approval.",
     order: 5,
     isRequiredAck: true,
+    subsections: [
+      {
+        id: "sub-5-1",
+        title: "Instalment Timelines & Grace Windows",
+        content: "Fee instalments are due on or before the 10th of the designated term month. A 5-day grace window applies before portal access is paused.",
+      },
+      {
+        id: "sub-5-2",
+        title: "Non-Refundable Registration Fee",
+        content: "Registration, course pack materials, and LMS setup charges are non-refundable after student orientation.",
+      },
+      {
+        id: "sub-5-3",
+        title: "Inter-Campus Transfer Protocol",
+        content: "Transfers between Mannanam and Kalathipady campuses are accommodated subject to batch quota vacancy.",
+      },
+    ],
   },
 ];

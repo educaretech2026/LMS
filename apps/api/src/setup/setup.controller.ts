@@ -71,7 +71,16 @@ export class SetupController {
 
   @Post('admission-rules')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
-  createAdmissionRule(@Body() data: { title: string; content: string; category?: string; order?: number; isRequiredAck?: boolean }) {
+  createAdmissionRule(
+    @Body() data: {
+      title: string;
+      content: string;
+      category?: string;
+      order?: number;
+      isRequiredAck?: boolean;
+      subsections?: Array<{ id?: string; title: string; content?: string }>;
+    },
+  ) {
     return this.setupService.createAdmissionRule(data);
   }
 
@@ -85,7 +94,15 @@ export class SetupController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   updateAdmissionRule(
     @Param('id') id: string,
-    @Body() data: { title?: string; content?: string; category?: string; order?: number; isRequiredAck?: boolean; isActive?: boolean },
+    @Body() data: {
+      title?: string;
+      content?: string;
+      category?: string;
+      order?: number;
+      isRequiredAck?: boolean;
+      isActive?: boolean;
+      subsections?: Array<{ id?: string; title: string; content?: string }>;
+    },
   ) {
     return this.setupService.updateAdmissionRule(id, data);
   }
@@ -118,6 +135,12 @@ export class SetupController {
   @Get('public/admission-rules')
   getPublicAdmissionRules() {
     return this.setupService.getPublicAdmissionRules();
+  }
+
+  @Public()
+  @Get('public/admission-options')
+  getPublicAdmissionOptions(): Promise<any> {
+    return this.setupService.getPublicAdmissionOptions();
   }
 
   @Get('roles')

@@ -2567,6 +2567,12 @@ function StarAchieversTab() {
 // ADMISSION RULES & DIGITAL UNDERTAKING POLICY TAB
 // -----------------------------------------------------------------------------
 
+interface AdmissionRuleSubsection {
+  id?: string;
+  title: string;
+  content?: string;
+}
+
 interface AdmissionRuleItem {
   id: string;
   title: string;
@@ -2576,6 +2582,7 @@ interface AdmissionRuleItem {
   isRequiredAck: boolean;
   isActive: boolean;
   isDefault?: boolean;
+  subsections?: AdmissionRuleSubsection[];
 }
 
 interface AdmissionPolicyItem {
@@ -2625,13 +2632,22 @@ function AdmissionRulesTab() {
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<AdmissionRuleItem | null>(null);
   const [submittingRule, setSubmittingRule] = useState(false);
+  const [expandedRuleIds, setExpandedRuleIds] = useState<Record<string, boolean>>({});
 
-  const [ruleForm, setRuleForm] = useState({
+  const [ruleForm, setRuleForm] = useState<{
+    title: string;
+    category: string;
+    content: string;
+    order: number;
+    isRequiredAck: boolean;
+    subsections: Array<{ id: string; title: string; content: string }>;
+  }>({
     title: "",
     category: "General",
     content: "",
     order: 1,
     isRequiredAck: true,
+    subsections: [],
   });
 
   const loadData = async () => {
@@ -2681,6 +2697,7 @@ function AdmissionRulesTab() {
       content: "",
       order: rules.length + 1,
       isRequiredAck: true,
+      subsections: [],
     });
     setShowModal(true);
   };
@@ -2693,8 +2710,48 @@ function AdmissionRulesTab() {
       content: rule.content,
       order: rule.order,
       isRequiredAck: rule.isRequiredAck !== false,
+      subsections: Array.isArray(rule.subsections)
+        ? rule.subsections.map((s, idx) => ({
+            id: s.id || `sub-${idx + 1}`,
+            title: s.title || "",
+            content: s.content || "",
+          }))
+        : [],
     });
     setShowModal(true);
+  };
+
+  const handleAddSubsection = () => {
+    setRuleForm((prev) => ({
+      ...prev,
+      subsections: [
+        ...prev.subsections,
+        {
+          id: `sub-${Date.now()}-${prev.subsections.length + 1}`,
+          title: "",
+          content: "",
+        },
+      ],
+    }));
+  };
+
+  const handleUpdateSubsection = (index: number, field: "title" | "content", value: string) => {
+    setRuleForm((prev) => {
+      const updated = [...prev.subsections];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, subsections: updated };
+    });
+  };
+
+  const handleRemoveSubsection = (index: number) => {
+    setRuleForm((prev) => ({
+      ...prev,
+      subsections: prev.subsections.filter((_, i) => i !== index),
+    }));
+  };
+
+  const toggleRuleExpand = (id: string) => {
+    setExpandedRuleIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleRuleSubmit = async (e: React.FormEvent) => {
@@ -3057,8 +3114,41 @@ function AdmissionRulesTab() {
                               Inactive (Hidden)
                             </span>
                           )}
+                          {rule.subsections && rule.subsections.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleRuleExpand(rule.id)}
+                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors inline-flex items-center gap-1"
+                            >
+                              <Layers className="w-3 h-3" />
+                              {rule.subsections.length} Sub-clauses
+                              {expandedRuleIds[rule.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+                          )}
                         </div>
                         <p className="text-xs text-text-secondary leading-relaxed">{rule.content}</p>
+
+                        {/* Expandable Subsections Preview */}
+                        {rule.subsections && rule.subsections.length > 0 && expandedRuleIds[rule.id] && (
+                          <div className="mt-3 pt-3 border-t border-border-soft space-y-2 animate-in fade-in duration-200">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Configured Sub-clauses:</span>
+                            <div className="grid grid-cols-1 gap-2">
+                              {rule.subsections.map((sub, sIdx) => (
+                                <div key={sub.id || sIdx} className="p-2.5 rounded-xl bg-surface border border-border-soft text-xs">
+                                  <div className="font-bold text-text-primary flex items-center gap-1.5">
+                                    <span className="w-4 h-4 rounded bg-brand-blue/10 text-brand-blue flex items-center justify-center text-[10px] font-mono">
+                                      {sIdx + 1}
+                                    </span>
+                                    {sub.title}
+                                  </div>
+                                  {sub.content && (
+                                    <p className="text-[11px] text-text-secondary mt-1 pl-5.5 leading-relaxed">{sub.content}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -3127,8 +3217,8 @@ function AdmissionRulesTab() {
       {/* Add / Edit Rule Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl border border-border-soft w-full max-w-lg p-6 overflow-hidden">
-            <div className="flex items-center justify-between pb-4 border-b border-border-soft mb-5">
+          <div className="bg-white rounded-2xl shadow-2xl border border-border-soft w-full max-w-xl p-6 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-border-soft mb-4 shrink-0">
               <h3 className="text-base font-bold text-text-primary">
                 {editingRule ? "Edit Admission Rule" : "Add New Admission Rule"}
               </h3>
@@ -3141,7 +3231,7 @@ function AdmissionRulesTab() {
               </button>
             </div>
 
-            <form onSubmit={handleRuleSubmit} className="space-y-4">
+            <form onSubmit={handleRuleSubmit} className="space-y-4 overflow-y-auto pr-1 flex-1">
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-1">
                   Rule Title <span className="text-rose-500">*</span>
@@ -3151,7 +3241,7 @@ function AdmissionRulesTab() {
                   required
                   value={ruleForm.title}
                   onChange={(e) => setRuleForm({ ...ruleForm, title: e.target.value })}
-                  placeholder="e.g. Lab Safety & Equipment Protocol"
+                  placeholder="e.g. Attendance & Punctuality Norms"
                   className="w-full h-10 rounded-xl border border-border-soft bg-surface px-3.5 text-sm text-text-primary focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                 />
               </div>
@@ -3186,19 +3276,85 @@ function AdmissionRulesTab() {
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-1">
-                  Clause Explanation / Regulation Content <span className="text-rose-500">*</span>
+                  Overall Clause Explanation / Overview <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   required
-                  rows={4}
+                  rows={3}
                   value={ruleForm.content}
                   onChange={(e) => setRuleForm({ ...ruleForm, content: e.target.value })}
-                  placeholder="Describe the rule, requirement, attendance percentage, or policy expectation in detail..."
+                  placeholder="Provide the primary summary of this policy or institutional expectation..."
                   className="w-full rounded-xl border border-border-soft bg-surface p-3.5 text-xs text-text-primary leading-relaxed focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                 />
               </div>
 
-              <label className="flex items-center gap-2.5 pt-1 cursor-pointer">
+              {/* Subsections Builder */}
+              <div className="pt-3 border-t border-border-soft">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <label className="block text-xs font-bold text-text-primary flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-brand-blue" />
+                      Rule Subsections & Specific Clauses
+                    </label>
+                    <p className="text-[11px] text-text-muted">
+                      Add numbered sub-clauses (e.g. 1.1 Minimum Attendance, 1.2 Leave Letters)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddSubsection}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-brand-blue bg-brand-blue/10 hover:bg-brand-blue/20 transition-colors inline-flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Clause
+                  </button>
+                </div>
+
+                {ruleForm.subsections.length === 0 ? (
+                  <div className="p-3.5 rounded-xl bg-surface border border-dashed border-border-soft text-center text-xs text-text-muted">
+                    No sub-clauses added yet. Click &quot;Add Clause&quot; to break this rule down into structured subsections for students.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                    {ruleForm.subsections.map((sub, sIdx) => (
+                      <div key={sub.id || sIdx} className="p-3 rounded-xl bg-surface border border-border-soft space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-mono font-bold text-brand-blue flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-brand-blue text-white flex items-center justify-center text-[10px]">
+                              {sIdx + 1}
+                            </span>
+                            Sub-clause {sIdx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSubsection(sIdx)}
+                            className="text-text-muted hover:text-rose-600 p-1 rounded transition-colors"
+                            title="Remove Clause"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Clause title e.g. 1.1 Minimum Attendance Quota"
+                          value={sub.title}
+                          onChange={(e) => handleUpdateSubsection(sIdx, "title", e.target.value)}
+                          className="w-full h-8 rounded-lg border border-border-soft bg-white px-2.5 text-xs text-text-primary focus:ring-1 focus:ring-brand-blue"
+                        />
+                        <textarea
+                          rows={2}
+                          placeholder="Detailed clause terms, expectations, or penalty conditions (optional)..."
+                          value={sub.content}
+                          onChange={(e) => handleUpdateSubsection(sIdx, "content", e.target.value)}
+                          className="w-full rounded-lg border border-border-soft bg-white p-2 text-xs text-text-primary focus:ring-1 focus:ring-brand-blue resize-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2.5 pt-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={ruleForm.isRequiredAck}
