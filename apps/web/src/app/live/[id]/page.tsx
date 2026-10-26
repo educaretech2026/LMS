@@ -244,21 +244,7 @@ export default function PublicLiveClassPage() {
 
       {/* ── MAIN ── */}
       <main className="relative z-20 flex-1 max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-          
-          {/* Main Content Column */}
-          <div className="lg:col-span-7 max-w-[640px] w-full">
-
-            {/* ── Dedicated Mobile Landscape Poster Showcase ── */}
-            {webinar.backgroundImageUrl && (
-              <div className="block lg:hidden mb-6 rounded-2xl overflow-hidden border border-white/15 bg-slate-950/85 shadow-2xl">
-                <img
-                  src={webinar.backgroundImageUrl}
-                  alt={webinar.title}
-                  className="w-full h-auto max-h-[380px] object-contain mx-auto block"
-                />
-              </div>
-            )}
+        <div className="max-w-[680px] w-full">
 
             {/* Subject tag */}
             <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>
@@ -499,21 +485,6 @@ export default function PublicLiveClassPage() {
               )}
             </div>
           </div>
-        </div>
-
-          {/* ── Desktop Right Column: Crisp Official Poster Showcase ── */}
-          {webinar.backgroundImageUrl && (
-            <div className="hidden lg:block lg:col-span-5 sticky top-24">
-              <div className="rounded-2xl overflow-hidden border border-white/15 bg-slate-950/75 backdrop-blur-xl shadow-2xl p-3">
-                <img
-                  src={webinar.backgroundImageUrl}
-                  alt={webinar.title}
-                  className="w-full h-auto max-h-[580px] object-contain rounded-xl mx-auto block"
-                />
-              </div>
-            </div>
-          )}
-
         </div>
       </main>
 
