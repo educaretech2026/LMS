@@ -128,6 +128,11 @@ async function bootstrap() {
   // Execute preflight checks BEFORE any NestJS module, provider, or database connection is initialized!
   await runPreflightSafetyChecks();
 
+  // Public admission bot protection: default disabled on runtime server unless explicitly enforced
+  if (process.env.DISABLE_TURNSTILE === undefined && process.env.TURNSTILE_ENFORCED !== 'true' && process.env.TURNSTILE_REQUIRED !== 'true') {
+    process.env.DISABLE_TURNSTILE = 'true';
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // SEC-09: HTTP security headers with Content Security Policy

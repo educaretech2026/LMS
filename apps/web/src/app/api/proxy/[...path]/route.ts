@@ -45,7 +45,17 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
 
   // 4. Extract authenticated token from HttpOnly cookie (strictly __Host- in prod)
   const token = extractTokenFromRequest(request);
-  if (!token) {
+  const normalizedLower = pathValidation.normalizedPath.toLowerCase();
+  const isPublicRoute =
+    normalizedLower === '/enquiry/public' ||
+    normalizedLower.startsWith('/setup/public') ||
+    normalizedLower.startsWith('/courses/public') ||
+    normalizedLower.startsWith('/live-class/public') ||
+    normalizedLower.startsWith('/forms/public') ||
+    normalizedLower.endsWith('/public') ||
+    normalizedLower.startsWith('/public-auth');
+
+  if (!token && !isPublicRoute) {
     return NextResponse.json(
       { success: false, message: 'Authentication required' },
       { status: 401 }
@@ -70,7 +80,7 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
   // 6. Build sanitized upstream request headers
   // Never forward client-supplied Authorization or Cookie headers
   const forwardHeaders: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     Accept: request.headers.get('accept') || 'application/json',
   };
 
