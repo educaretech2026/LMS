@@ -12,6 +12,7 @@ import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus } from '@educare/database';
 import { isSuperAdmin, getUserCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 import { AuditService } from '../audit/audit.service';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class EnquiryService {
@@ -20,6 +21,7 @@ export class EnquiryService {
   constructor(
     private prisma: PrismaService,
     @Optional() private readonly auditService?: AuditService,
+    @Optional() private readonly storageService?: StorageService,
   ) {}
 
   /**
@@ -181,16 +183,70 @@ export class EnquiryService {
     // Tenant ownership cannot be forged via public input. targetCentreId remains null.
     // Client-supplied status, assignedToId, followUpDate are completely discarded.
 
-    let signatureAuditNote: string | null = null;
-    if (data.signatureData || data.signature) {
-      const sigData = String(data.signatureData || data.signature);
-      const signer = data.signerName ? String(data.signerName).trim() : (data.parentName ? String(data.parentName).trim() : studentName);
-      const sigType = data.signatureType ? String(data.signatureType).trim() : (sigData.startsWith('data:image') ? 'DRAWN_CANVAS' : 'UPLOADED_IMAGE');
-      signatureAuditNote = `[DIGITAL SIGNATURE ACCEPTANCE]\nSigner: ${signer}\nType: ${sigType}\nAccepted Rules: Yes\nTimestamp: ${new Date().toISOString()}\nSignature: ${sigData.slice(0, 5000)}`;
+    // Upload student photo and signature directly to Cloudflare R2 if configured
+    let signatureUrl: string | null = null;
+    let photoUrl: string | null = null;
+
+    if (this.storageService) {
+      if (data.studentPhoto || data.photo) {
+        try {
+          const photoRaw = String(data.studentPhoto || data.photo).trim();
+          if (photoRaw.startsWith('data:image')) {
+            const uploadedPhoto = await this.storageService.uploadBase64(
+              photoRaw,
+              'admissions/photos',
+              'student-photo',
+            );
+            if (uploadedPhoto?.finalUrl) {
+              photoUrl = uploadedPhoto.finalUrl;
+            }
+          }
+        } catch (err: any) {
+          this.logger.warn(`Failed to upload student photo to R2: ${err?.message}`);
+        }
+      }
+
+      if (data.signatureData || data.signature) {
+        try {
+          const sigRaw = String(data.signatureData || data.signature).trim();
+          if (sigRaw.startsWith('data:image')) {
+            const uploadedSig = await this.storageService.uploadBase64(
+              sigRaw,
+              'admissions/signatures',
+              'signature',
+            );
+            if (uploadedSig?.finalUrl) {
+              signatureUrl = uploadedSig.finalUrl;
+            }
+          }
+        } catch (err: any) {
+          this.logger.warn(`Failed to upload signature to R2: ${err?.message}`);
+        }
+      }
     }
 
+    let signatureAuditNote: string | null = null;
+    if (data.signatureData || data.signature) {
+      const sigData = signatureUrl || String(data.signatureData || data.signature);
+      const signer = data.signerName ? String(data.signerName).trim() : (data.parentName ? String(data.parentName).trim() : studentName);
+      const sigType = data.signatureType ? String(data.signatureType).trim() : (String(data.signatureData || data.signature).startsWith('data:image') ? 'DRAWN_CANVAS' : 'UPLOADED_IMAGE');
+      signatureAuditNote = `[DIGITAL SIGNATURE ACCEPTANCE]\nSigner: ${signer}\nType: ${sigType}\nAccepted Rules: Yes\nTimestamp: ${new Date().toISOString()}\nSignature: ${signatureUrl ? signatureUrl : sigData.slice(0, 5000)}`;
+    }
+
+    const notesSections: string[] = [];
+    if (photoUrl) {
+      notesSections.push(`[STUDENT PHOTO]\nPhoto: ${photoUrl}`);
+    } else if (data.studentPhoto || data.photo) {
+      const photoData = String(data.studentPhoto || data.photo);
+      notesSections.push(`[STUDENT PHOTO]\nPhoto: ${photoData.slice(0, 100000)}`);
+    }
+    if (signatureAuditNote) {
+      notesSections.push(signatureAuditNote);
+    }
+    const finalNotes = notesSections.length > 0 ? notesSections.join('\n\n') : null;
+
     try {
-      return await this.prisma.enquiry.create({
+      const created = await this.prisma.enquiry.create({
         data: {
           studentName,
           parentName: data.parentName ? String(data.parentName).trim().slice(0, 100) : null,
@@ -204,12 +260,16 @@ export class EnquiryService {
           status: EnquiryStatus.NEW,
           centreId: targetCentreId,
           assignedToId: null,
-          ...(signatureAuditNote ? { notes: signatureAuditNote } : {}),
+          ...(finalNotes ? { notes: finalNotes } : {}),
         },
+      });
+      return Object.assign(created, {
+        ...(photoUrl ? { photoUrl } : {}),
+        ...(signatureUrl ? { signatureUrl } : {}),
       });
     } catch (err: any) {
       this.logger.warn(`Failed to create public enquiry with centreId, falling back to legacy schema: ${err?.message}`);
-      return await (this.prisma.enquiry as any).create({
+      const created = await (this.prisma.enquiry as any).create({
         data: {
           studentName,
           parentName: data.parentName ? String(data.parentName).trim().slice(0, 100) : null,
@@ -222,8 +282,12 @@ export class EnquiryService {
           targetCourse: data.targetCourse ? String(data.targetCourse).trim().slice(0, 100) : null,
           status: EnquiryStatus.NEW,
           assignedToId: null,
-          ...(signatureAuditNote ? { notes: signatureAuditNote } : {}),
+          ...(finalNotes ? { notes: finalNotes } : {}),
         },
+      });
+      return Object.assign(created, {
+        ...(photoUrl ? { photoUrl } : {}),
+        ...(signatureUrl ? { signatureUrl } : {}),
       });
     }
   }

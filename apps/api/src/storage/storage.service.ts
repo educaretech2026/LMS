@@ -367,6 +367,92 @@ export class StorageService {
   }
 
   /**
+   * Directly uploads a Buffer to Cloudflare R2 bucket.
+   * Useful for admission photographs, signatures, and server-side asset processing.
+   */
+  async uploadDirect(
+    buffer: Buffer,
+    contentType: string,
+    prefix: string = 'admissions',
+    customFilename?: string,
+  ): Promise<{ finalUrl: string; objectKey: string } | null> {
+    const config = this.getConfig();
+    if (!config.isConfigured) {
+      console.warn('[StorageService] Storage is not configured; skipping direct upload to R2.');
+      return null;
+    }
+
+    const uniqueId = crypto.randomUUID();
+    const ext = contentType.includes('png')
+      ? 'png'
+      : contentType.includes('webp')
+      ? 'webp'
+      : contentType.includes('jpeg') || contentType.includes('jpg')
+      ? 'jpg'
+      : 'bin';
+
+    const cleanName = customFilename
+      ? customFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
+      : `file-${Date.now()}-${uniqueId}.${ext}`;
+
+    const objectKey = `${prefix.replace(/^\/+|\/+$/g, '')}/${cleanName}`;
+
+    try {
+      const command = new PutObjectCommand({
+        Bucket: config.bucketName,
+        Key: objectKey,
+        Body: buffer,
+        ContentType: contentType,
+      });
+
+      await this.getClient().send(command);
+
+      const finalUrl = config.publicUrl
+        ? `${config.publicUrl}/${objectKey}`
+        : `https://${config.bucketName}.r2.cloudflarestorage.com/${objectKey}`;
+
+      return { finalUrl, objectKey };
+    } catch (error: any) {
+      console.error('[StorageService] Error during direct R2 upload:', error?.message);
+      return null;
+    }
+  }
+
+  /**
+   * Directly uploads a base64 Data URL or raw base64 string to Cloudflare R2 bucket.
+   */
+  async uploadBase64(
+    dataUrlOrBase64: string,
+    prefix: string = 'admissions',
+    filenamePrefix: string = 'asset',
+  ): Promise<{ finalUrl: string; objectKey: string } | null> {
+    if (!dataUrlOrBase64 || typeof dataUrlOrBase64 !== 'string') return null;
+
+    let contentType = 'image/png';
+    let base64String = dataUrlOrBase64;
+
+    const match = dataUrlOrBase64.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      contentType = match[1];
+      base64String = match[2];
+    }
+
+    try {
+      const buffer = Buffer.from(base64String, 'base64');
+      const ext = contentType.includes('jpeg') || contentType.includes('jpg')
+        ? 'jpg'
+        : contentType.includes('webp')
+        ? 'webp'
+        : 'png';
+      const filename = `${filenamePrefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+      return await this.uploadDirect(buffer, contentType, prefix, filename);
+    } catch (err: any) {
+      console.error('[StorageService] Error uploading base64 to R2:', err?.message);
+      return null;
+    }
+  }
+
+  /**
    * Generates a pre-signed GET URL for secure video streaming/downloading.
    * @param objectKey The key of the object in R2
    * @param expiresIn Seconds until the link expires
