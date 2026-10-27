@@ -897,11 +897,36 @@ export default function AdmissionPage() {
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
-            Admission Application & <br className="hidden sm:inline" />
+            Educare{" "}
             <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
-              Institutional Undertaking
+              Course Registration
             </span>
           </h1>
+
+          {/* Courses & Centres Highlight */}
+          <div className="pt-1 max-w-3xl mx-auto space-y-2">
+            <div className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-xs sm:text-sm font-medium text-slate-100 shadow-sm">
+              <span className="text-sky-300 font-semibold">Courses :</span>
+              <span>Entrance Coaching</span>
+              <span className="text-slate-400">|</span>
+              <span>Academic Tuition</span>
+              <span className="text-slate-400">|</span>
+              <span>Ai &amp; Cybersecurity</span>
+            </div>
+
+            <div className="space-y-1 text-xs sm:text-sm text-slate-200">
+              <p className="font-semibold text-emerald-300 flex items-center justify-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Offline &amp; Online Coaching
+              </p>
+              <p className="text-slate-300 text-xs sm:text-sm">
+                <span className="text-slate-400 font-semibold">Offline centres :</span>{" "}
+                <span className="text-white font-medium">Gurukrupa Complex, Mannanam</span>{" "}
+                <span className="text-slate-400">|</span>{" "}
+                <span className="text-white font-medium">Castle Charis Complex Kalathipady</span>
+              </p>
+            </div>
+          </div>
 
           <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed font-normal">
             Apply online for regular tuition, integrated foundation, or NEET/JEE entrance coaching. Review our academic guidelines and submit your digital declaration in under 5 minutes.
@@ -1214,17 +1239,17 @@ export default function AdmissionPage() {
                     ) : (
                       [
                         {
-                          name: "Main Campus",
-                          desc: "Institutional Classroom / Offline Centre",
-                          type: "Classroom / Offline",
+                          name: "Gurukrupa Complex, Mannanam",
+                          desc: "Offline Centre / Classroom Coaching",
+                          type: "Offline Centre",
                         },
                         {
-                          name: "City Campus",
-                          desc: "Classroom Tuition & Coaching Centre",
-                          type: "Classroom / Offline",
+                          name: "Castle Charis Complex Kalathipady",
+                          desc: "Offline Centre / Classroom Coaching",
+                          type: "Offline Centre",
                         },
                         {
-                          name: "Virtual Live Campus",
+                          name: "Offline & Online Coaching",
                           desc: "Interactive Live-Class + LMS Portal",
                           type: "Hybrid / Online",
                         },
@@ -1379,10 +1404,11 @@ export default function AdmissionPage() {
                         </>
                       ) : (
                         <>
-                          <option value="Entrance (NEET/JEE)">Entrance (NEET / JEE / KEAM)</option>
-                          <option value="Tuition">Regular Subject Tuition</option>
-                          <option value="Foundation">Integrated School Foundation</option>
-                          <option value="Crash Course">Crash Course & Test Series</option>
+                          <option value="Entrance Coaching">Entrance Coaching (NEET / JEE / KEAM)</option>
+                          <option value="Academic Tuition">Academic Tuition</option>
+                          <option value="Ai & Cybersecurity">Ai &amp; Cybersecurity</option>
+                          <option value="Integrated Foundation">Integrated School Foundation</option>
+                          <option value="Crash Course">Crash Course &amp; Test Series</option>
                         </>
                       )}
                     </select>
