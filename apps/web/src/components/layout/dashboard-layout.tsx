@@ -7,6 +7,8 @@ import { Sidebar } from "./sidebar";
 import { TopNav } from "./top-nav";
 import { useAuth } from "@/components/providers/auth-provider";
 import { BirthdayPopup } from "@/components/BirthdayPopup";
+import { AccessRestrictedModal } from "@/components/modals/access-restricted-modal";
+import { FirstTimePasswordModal } from "@/components/modals/first-time-password-modal";
 import { ROUTE_PERMISSION_MAP, MODULE_PERMISSIONS } from "@/lib/permissions";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 
@@ -86,6 +88,8 @@ export function DashboardLayout({
         </main>
       </div>
       <BirthdayPopup />
+      <AccessRestrictedModal />
+      <FirstTimePasswordModal />
     </div>
   );
 }

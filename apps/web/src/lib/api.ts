@@ -46,7 +46,23 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `API error: ${response.status} ${response.statusText}`);
+    const message = errorData.message || `API error: ${response.status} ${response.statusText}`;
+
+    if (isClient && (response.status === 403 || message.toLowerCase().includes('permission') || message.toLowerCase().includes('access denied'))) {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('educare:access-blocked', {
+            detail: {
+              status: response.status,
+              message,
+              endpoint: cleanEndpoint,
+            },
+          })
+        );
+      } catch {}
+    }
+
+    throw new Error(message);
   }
 
   // Handle empty or 204 responses gracefully

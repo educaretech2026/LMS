@@ -108,5 +108,11 @@ export class AuthController {
     };
   }
 
-
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change current user password' })
+  async changePassword(@Req() req: any, @Body() body: any) {
+    return this.authService.changePassword(req.user.id, body);
+  }
 }

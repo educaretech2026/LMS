@@ -9,6 +9,8 @@ interface AuthContextType {
   centreName: string | null;
   userId: string | null;
   permissions: string[];
+  mustChangePassword: boolean;
+  setMustChangePassword: (val: boolean) => void;
   hasPermission: (moduleKey: string) => boolean;
 }
 
@@ -18,6 +20,8 @@ const AuthContext = createContext<AuthContextType>({
   centreName: null,
   userId: null,
   permissions: [],
+  mustChangePassword: false,
+  setMustChangePassword: () => {},
   hasPermission: () => false,
 });
 
@@ -28,6 +32,7 @@ export function AuthProvider({
   initialCentreName = null,
   initialUserId = null,
   initialPermissions = [],
+  initialMustChangePassword = false,
 }: {
   children: React.ReactNode;
   initialRole?: string | null;
@@ -35,12 +40,14 @@ export function AuthProvider({
   initialCentreName?: string | null;
   initialUserId?: string | null;
   initialPermissions?: string[];
+  initialMustChangePassword?: boolean;
 }) {
   const [role, setRole] = useState<string | null>(initialRole);
   const [email, setEmail] = useState<string | null>(initialEmail);
   const [centreName, setCentreName] = useState<string | null>(initialCentreName);
   const [userId, setUserId] = useState<string | null>(initialUserId);
   const [permissions, setPermissions] = useState<string[]>(initialPermissions);
+  const [mustChangePassword, setMustChangePassword] = useState<boolean>(initialMustChangePassword);
 
   useEffect(() => {
     // If state wasn't populated from server initial props, query the same-origin BFF /api/auth/me
@@ -57,6 +64,9 @@ export function AuthProvider({
             setEmail(data.user.email || null);
             setUserId(data.user.id || null);
             if (data.user.centreName) setCentreName(data.user.centreName);
+            if (typeof data.user.mustChangePassword === 'boolean') {
+              setMustChangePassword(data.user.mustChangePassword);
+            }
 
             // Extract permissions array
             let perms: string[] = [];
@@ -84,8 +94,13 @@ export function AuthProvider({
         return true;
       }
 
-      // Default learner self-service access
-      if (normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER') {
+      // Public Learner strictly restricted to LIVE_CLASSES only
+      if (normalizedRole === 'PUBLIC_LEARNER') {
+        return moduleKey.toUpperCase() === 'LIVE_CLASSES';
+      }
+
+      // Default learner self-service access for enrolled students
+      if (normalizedRole === 'STUDENT') {
         const studentModules = [
           'STUDENTS',
           'ASSIGNMENTS',
@@ -96,6 +111,7 @@ export function AuthProvider({
           'ESTUDY',
           'SYLLABUS',
           'CERTIFICATES',
+          'REPORTS',
         ];
         if (studentModules.includes(moduleKey.toUpperCase())) {
           return true;
@@ -115,6 +131,8 @@ export function AuthProvider({
         centreName,
         userId,
         permissions,
+        mustChangePassword,
+        setMustChangePassword,
         hasPermission,
       }}
     >

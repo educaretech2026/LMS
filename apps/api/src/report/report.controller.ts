@@ -151,4 +151,10 @@ export class ReportController {
   getTeacherDashboard(@Req() req: any) {
     return this.reportService.getTeacherDashboard(req.user.id);
   }
+
+  @Roles('STUDENT')
+  @Get('my-report')
+  getMyReport(@Req() req: any) {
+    return this.reportService.getMyStudentReport(req.user.id, req.user);
+  }
 }

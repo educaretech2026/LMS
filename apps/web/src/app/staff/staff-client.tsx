@@ -5,6 +5,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 import { UserCheck, Plus, Search, Filter, X, User, ChevronRight, BookOpen, ChevronDown, Users, Shield, FileText, ShieldCheck } from "lucide-react";
+import { UserAccessModal } from "@/components/modals/user-access-modal";
 import Link from "next/link";
 
 interface Staff {
@@ -41,6 +42,7 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
   const [filterBoard, setFilterBoard] = useState("All Boards");
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<Staff | null>(null);
+  const [accessUser, setAccessUser] = useState<Staff | null>(null);
   const safeStaffList = Array.isArray(staffList) ? staffList : [];
   const filtered = safeStaffList.filter(s => {
     if (!s) return false;
@@ -270,7 +272,16 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                                                    <div className="flex items-center justify-end gap-3">
+                          <div className="flex items-center justify-end gap-3">
+                            {role?.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN' && (
+                              <button
+                                onClick={() => setAccessUser(s)}
+                                className="text-amber-500 hover:text-amber-400 font-semibold text-xs transition-colors inline-flex items-center gap-1"
+                                title="Manage custom module permissions for this user"
+                              >
+                                Access
+                              </button>
+                            )}
                             <button 
                               onClick={() => { setEditItem(s); setShowModal(true); }}
                               className="text-brand-blue hover:text-brand-blue-dark font-semibold text-xs transition-colors"
@@ -329,6 +340,17 @@ export function StaffClient({ initialStaffList, config }: { initialStaffList: St
               alert(err instanceof Error ? err.message : 'Error saving staff');
             }
           }}
+        />
+      )}
+
+      {accessUser && (
+        <UserAccessModal
+          userId={accessUser.id}
+          userName={accessUser.name}
+          userEmail={accessUser.email}
+          userRole={accessUser.role}
+          isOpen={Boolean(accessUser)}
+          onClose={() => setAccessUser(null)}
         />
       )}
     </DashboardLayout>

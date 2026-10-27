@@ -98,7 +98,15 @@ export class AuthService {
       );
     }
 
-    const permissions = user.role?.permissions?.map((p: any) => p.permission?.action).filter(Boolean) || [];
+    const mustChangePassword = await this.redisService.isMustChangePassword(user.id);
+    let permissions = user.role?.permissions?.map((p: any) => p.permission?.action).filter(Boolean) || [];
+    const customModules = await this.redisService.getUserModulePermissions(user.id);
+    if (customModules !== null) {
+      permissions = permissions.filter((act: string) => {
+        const modKey = act.split('.')[0].toUpperCase();
+        return customModules.map(m => m.toUpperCase()).includes(modKey);
+      });
+    }
 
     return {
       access_token: this.jwtService.sign(payload),
@@ -110,7 +118,44 @@ export class AuthService {
         role: user.role.name,
         centreName,
         permissions,
+        mustChangePassword,
       }
+    };
+  }
+
+  async changePassword(userId: string, data: { currentPassword?: string; newPassword?: string }) {
+    if (!data.newPassword || data.newPassword.length < 8) {
+      throw new HttpException('New password must be at least 8 characters long', HttpStatus.BAD_REQUEST);
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (data.currentPassword) {
+      const isValid = await argon2.verify(user.password, data.currentPassword);
+      if (!isValid) {
+        throw new UnauthorizedException('Current password does not match');
+      }
+    }
+
+    const isSameAsCurrent = await argon2.verify(user.password, data.newPassword);
+    if (isSameAsCurrent) {
+      throw new HttpException('New password cannot be the same as your existing password', HttpStatus.BAD_REQUEST);
+    }
+
+    const hashedPassword = await argon2.hash(data.newPassword);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    await this.redisService.clearMustChangePassword(userId);
+
+    return {
+      success: true,
+      message: 'Password changed successfully',
     };
   }
 }

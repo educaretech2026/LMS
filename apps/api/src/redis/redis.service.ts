@@ -253,6 +253,74 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       // Graceful degradation
     }
   }
+
+  // --- Mandatory First-Time Password Change Tracking ---
+  private inMemoryMustChangePwd = new Set<string>();
+
+  async setMustChangePassword(userId: string): Promise<void> {
+    this.inMemoryMustChangePwd.add(userId);
+    if (!this.client || !this.isAvailable) return;
+    try {
+      await this.client.set(`must_change_pwd:${userId}`, 'true');
+    } catch {}
+  }
+
+  async isMustChangePassword(userId: string): Promise<boolean> {
+    if (this.inMemoryMustChangePwd.has(userId)) return true;
+    if (!this.client || !this.isAvailable) return false;
+    try {
+      const res = await this.client.get(`must_change_pwd:${userId}`);
+      return res === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  async clearMustChangePassword(userId: string): Promise<void> {
+    this.inMemoryMustChangePwd.delete(userId);
+    if (!this.client || !this.isAvailable) return;
+    try {
+      await this.client.del(`must_change_pwd:${userId}`);
+    } catch {}
+  }
+
+  // --- User-Specific Module Permission Overrides ---
+  private inMemoryUserModules = new Map<string, string[]>();
+
+  async setUserModulePermissions(userId: string, modules: string[]): Promise<void> {
+    this.inMemoryUserModules.set(userId, modules);
+    if (!this.client || !this.isAvailable) return;
+    try {
+      await this.client.set(`user:modules:${userId}`, JSON.stringify(modules));
+    } catch {}
+  }
+
+  async getUserModulePermissions(userId: string): Promise<string[] | null> {
+    if (this.inMemoryUserModules.has(userId)) {
+      return this.inMemoryUserModules.get(userId) || null;
+    }
+    if (!this.client || !this.isAvailable) return null;
+    try {
+      const data = await this.client.get(`user:modules:${userId}`);
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        this.inMemoryUserModules.set(userId, parsed);
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async clearUserModulePermissions(userId: string): Promise<void> {
+    this.inMemoryUserModules.delete(userId);
+    if (!this.client || !this.isAvailable) return;
+    try {
+      await this.client.del(`user:modules:${userId}`);
+    } catch {}
+  }
 }
 
 

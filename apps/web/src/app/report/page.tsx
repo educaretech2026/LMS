@@ -39,11 +39,32 @@ import {
 } from "@/components/report/report-filters";
 import { SortableHeader, SortDirection } from "@/components/report/sortable-header";
 import { StudentReportModal } from "@/components/report/student-report-modal";
+import { useAuth } from "@/components/providers/auth-provider";
 
 type TabKey = "OVERVIEW" | "FINANCE" | "ACADEMICS" | "ATTENDANCE" | "CRM";
 
 export default function ReportsPage() {
+  const { role } = useAuth();
+  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
+  const isStudent = normalizedRole === 'STUDENT';
+  const isTeacher = normalizedRole === 'TEACHER';
+
   const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
+  const [myStudentReport, setMyStudentReport] = useState<any>(null);
+  const [loadingMyReport, setLoadingMyReport] = useState(false);
+
+  useEffect(() => {
+    if (isTeacher) {
+      setActiveTab("ACADEMICS");
+    }
+    if (isStudent) {
+      setLoadingMyReport(true);
+      fetchApi<any>("/report/my-report")
+        .then((data) => setMyStudentReport(data))
+        .catch(() => {})
+        .finally(() => setLoadingMyReport(false));
+    }
+  }, [isTeacher, isStudent]);
 
   // Hierarchy filter state
   const [filters, setFilters] = useState<HierarchyFilterState>(() => {
@@ -1222,6 +1243,137 @@ export default function ReportsPage() {
     );
   };
 
+  if (isStudent) {
+    return (
+      <DashboardLayout title="My Academic Report">
+        <PageShell
+          title="My Academic Performance Dossier"
+          subtitle="Your personal examination records, attendance statistics, and academic progress."
+          icon={BarChart3}
+          accentColor="blue"
+        >
+          {loadingMyReport ? (
+            <div className="py-20 flex flex-col items-center justify-center gap-3 text-text-muted text-xs">
+              <Loader2 className="w-8 h-8 animate-spin text-brand-blue" />
+              <span>Loading your academic dossier...</span>
+            </div>
+          ) : myStudentReport ? (
+            <div className="space-y-6">
+              {/* Student Header */}
+              <div className="bg-white rounded-2xl border border-border-soft p-5 shadow-2xs flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-brand-blue/10 border border-brand-blue/20 text-brand-blue font-black text-xl flex items-center justify-center">
+                    {myStudentReport.name?.charAt(0) || "S"}
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-text-primary">{myStudentReport.name}</h2>
+                    <p className="text-xs text-text-muted">
+                      Admission No: <span className="font-mono font-bold text-text-primary">{myStudentReport.admissionNo}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface hover:bg-surface-2 border border-border-soft text-xs font-bold text-text-primary transition-colors shadow-2xs"
+                >
+                  <Printer className="h-4 w-4 text-text-muted" />
+                  <span>Print Dossier</span>
+                </button>
+              </div>
+
+              {/* KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <MetricCard
+                  title="Attendance Rate"
+                  value={`${myStudentReport.attendanceDetails?.percentage || 0}%`}
+                  subtitle={`${myStudentReport.attendanceDetails?.presentDays || 0} of ${myStudentReport.attendanceDetails?.totalDays || 0} sessions present`}
+                  icon={UserCheck}
+                  accentColor="emerald"
+                  trend={{
+                    value: parseFloat(myStudentReport.attendanceDetails?.percentage || 0) >= 75 ? "Good Standing" : "Needs Improvement",
+                    isPositive: parseFloat(myStudentReport.attendanceDetails?.percentage || 0) >= 75,
+                  }}
+                />
+                <MetricCard
+                  title="Examinations Taken"
+                  value={`${myStudentReport.examResults?.length || 0}`}
+                  subtitle="Completed assessments"
+                  icon={Award}
+                  accentColor="blue"
+                />
+                <MetricCard
+                  title="Average Exam Score"
+                  value={`${
+                    myStudentReport.examResults?.length > 0
+                      ? (
+                          myStudentReport.examResults.reduce((acc: number, r: any) => acc + (r.percentage || 0), 0) /
+                          myStudentReport.examResults.length
+                        ).toFixed(1)
+                      : "0"
+                  }%`}
+                  subtitle="Cumulative assessment average"
+                  icon={TrendingUp}
+                  accentColor="violet"
+                />
+              </div>
+
+              {/* Exam Results Table */}
+              <div className="bg-white rounded-2xl border border-border-soft p-5 shadow-2xs space-y-4">
+                <h3 className="text-sm font-bold text-text-primary">Examination Records</h3>
+                {myStudentReport.examResults?.length === 0 ? (
+                  <p className="text-xs text-text-muted py-6 text-center">No examination records recorded yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-border-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                          <th className="pb-3 pl-2">Exam Title</th>
+                          <th className="pb-3">Type</th>
+                          <th className="pb-3">Marks Obtained</th>
+                          <th className="pb-3">Total Marks</th>
+                          <th className="pb-3">Percentage</th>
+                          <th className="pb-3">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-soft/60">
+                        {myStudentReport.examResults.map((r: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-surface/50">
+                            <td className="py-3 pl-2 font-semibold text-text-primary">{r.exam?.title || "Assessment"}</td>
+                            <td className="py-3 font-medium text-text-muted">{r.exam?.type || "Standard"}</td>
+                            <td className="py-3 font-bold text-text-primary">{r.marksObtained ?? "N/A"}</td>
+                            <td className="py-3 text-text-muted">{r.totalMarks ?? "N/A"}</td>
+                            <td className="py-3">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  (r.percentage || 0) >= 50
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-rose-50 text-rose-700"
+                                }`}
+                              >
+                                {r.percentage != null ? `${Number(r.percentage).toFixed(1)}%` : "N/A"}
+                              </span>
+                            </td>
+                            <td className="py-3 text-text-muted">
+                              {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "N/A"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="py-16 text-center text-text-muted text-xs">
+              Unable to load your student dossier at this time.
+            </div>
+          )}
+        </PageShell>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout title="Reports & Analytics">
       {/* 60% Print scale styling injected for Bug 5 */}
@@ -1323,14 +1475,16 @@ export default function ReportsPage() {
           {/* Tab Navigation */}
           <div className="flex items-center gap-1 border-b border-border-soft overflow-x-auto no-scrollbar pb-px print:hidden">
             {[
-              { key: "OVERVIEW", label: "Executive Overview", icon: Layers },
-              { key: "FINANCE", label: "Financials & Revenue", icon: DollarSign },
-              { key: "ACADEMICS", label: "Academics & Exams", icon: BookOpen },
-              { key: "ATTENDANCE", label: "Attendance & Registers", icon: UserCheck },
-              { key: "CRM", label: "CRM & Admissions", icon: Users },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.key;
+              { key: "OVERVIEW", label: "Executive Overview", icon: Layers, roles: ["SUPER_ADMIN", "CENTRE_ADMIN"] },
+              { key: "FINANCE", label: "Financials & Revenue", icon: DollarSign, roles: ["SUPER_ADMIN", "CENTRE_ADMIN"] },
+              { key: "ACADEMICS", label: "Academics & Exams", icon: BookOpen, roles: ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER"] },
+              { key: "ATTENDANCE", label: "Attendance & Registers", icon: UserCheck, roles: ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER"] },
+              { key: "CRM", label: "CRM & Admissions", icon: Users, roles: ["SUPER_ADMIN", "CENTRE_ADMIN"] },
+            ]
+              .filter((tab) => !tab.roles || tab.roles.includes(normalizedRole || "SUPER_ADMIN"))
+              .map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
               return (
                 <button
                   key={tab.key}

@@ -689,24 +689,47 @@ export class StudyMaterialService {
         resolvedIsPublic = false;
       }
 
-      const created = await this.prisma.studyMaterial.create({
-        data: {
-          title: data.title,
-          type: data.type,
-          url: data.url,
-          thumbnailUrl: data.thumbnailUrl,
-          academicYearId,
-          syllabusId,
-          chapterId: data.chapterId || null,
-          topicId: data.topicId || null,
-          subtopicId: data.subtopicId || null,
-          uploaderId: effectiveUploaderId,
-          centreId: resolvedCentreId,
-          isShared: resolvedIsShared,
-          isPublic: resolvedIsPublic,
-          targetTrackId: data.targetTrackId || null,
-        },
-      });
+      let created;
+      try {
+        created = await this.prisma.studyMaterial.create({
+          data: {
+            title: data.title,
+            type: data.type,
+            url: data.url,
+            thumbnailUrl: data.thumbnailUrl,
+            academicYearId,
+            syllabusId,
+            chapterId: data.chapterId || null,
+            topicId: data.topicId || null,
+            subtopicId: data.subtopicId || null,
+            uploaderId: effectiveUploaderId,
+            centreId: resolvedCentreId,
+            isShared: resolvedIsShared,
+            isPublic: resolvedIsPublic,
+            targetTrackId: data.targetTrackId || null,
+          },
+        });
+      } catch (dbErr: any) {
+        if (dbErr?.code === 'P2022' || String(dbErr?.message).includes('does not exist in the current database')) {
+          console.warn('Prisma P2022 column missing on study_materials. Retrying with legacy fields without centreId/isShared/isPublic.');
+          created = await this.prisma.studyMaterial.create({
+            data: {
+              title: data.title,
+              type: data.type,
+              url: data.url,
+              thumbnailUrl: data.thumbnailUrl,
+              academicYearId,
+              syllabusId,
+              chapterId: data.chapterId || null,
+              topicId: data.topicId || null,
+              subtopicId: data.subtopicId || null,
+              uploaderId: effectiveUploaderId,
+            },
+          });
+        } else {
+          throw dbErr;
+        }
+      }
 
       if ((resolvedIsShared || resolvedIsPublic) && this.auditService) {
         this.auditService.record({

@@ -102,6 +102,7 @@ describe('Authorization Remediation Regression Suite', () => {
       };
       const mockRedisService = {
         revokeAllSessions: jest.fn().mockResolvedValue(true),
+        setMustChangePassword: jest.fn().mockResolvedValue(undefined),
       };
       staffService = new StaffService(mockPrisma as any, mockRedisService as any);
     });

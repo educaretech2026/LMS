@@ -1122,5 +1122,13 @@ export class ReportService {
       }
     };
   }
+
+  async getMyStudentReport(userId: string, user: any) {
+    const student = await this.prisma.studentProfile.findUnique({
+      where: { userId },
+    });
+    if (!student) throw new NotFoundException('Student profile not found');
+    return this.getSingleStudentPerformance(student.id, user);
+  }
 }
 

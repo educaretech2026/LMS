@@ -119,6 +119,10 @@ export class StudentsService {
         return { user: safeUser, profile, enrollment, batch };
       });
 
+      if (newStudent?.user?.id && typeof this.redisService?.setMustChangePassword === 'function') {
+        await this.redisService.setMustChangePassword(newStudent.user.id);
+      }
+
       return newStudent;
     } catch (error: any) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {

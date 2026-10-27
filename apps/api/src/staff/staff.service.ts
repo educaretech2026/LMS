@@ -131,6 +131,10 @@ export class StaffService {
         return { user: safeUser, profile };
       });
 
+      if (newStaff?.user?.id && typeof this.redisService?.setMustChangePassword === 'function') {
+        await this.redisService.setMustChangePassword(newStaff.user.id);
+      }
+
       return newStaff;
     } catch (error: any) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException || error instanceof BadRequestException) {

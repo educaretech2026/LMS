@@ -119,7 +119,10 @@ export function Sidebar({
   const r = currentRole?.toUpperCase().replace(/\s+/g, '_') || '';
 
   const visibleMainNav = mainNav.filter(item => {
-    if (r === 'STUDENT' || r === 'PUBLIC_LEARNER') {
+    if (r === 'PUBLIC_LEARNER') {
+      return item.label === 'Live Class' || item.label === 'Dashboard';
+    }
+    if (r === 'STUDENT') {
       const allowedStudentLabels = [
         'Dashboard',
         'Assignments',
@@ -138,8 +141,10 @@ export function Sidebar({
   });
 
   const visibleManagementNav =
-    r === 'STUDENT' || r === 'PUBLIC_LEARNER'
+    r === 'PUBLIC_LEARNER'
       ? []
+      : r === 'STUDENT'
+      ? managementNav.filter(item => item.label === 'Report' && hasPermission('REPORTS'))
       : managementNav.filter(item => !item.module || hasPermission(item.module));
 
   const visibleSystemNav = systemNav.filter(item => {

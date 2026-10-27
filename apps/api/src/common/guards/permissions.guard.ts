@@ -55,14 +55,25 @@ export class PermissionsGuard implements CanActivate {
       }
     }
 
-    // 3. Extract granted actions from user role permissions
+    // 3. Extract granted actions from user overridden permissions or role permissions
+    if (Array.isArray(user.customModules)) {
+      for (const required of requiredPermissions) {
+        const modKey = required.split('.')[0].toUpperCase();
+        if (!user.customModules.map((m: string) => m.toUpperCase()).includes(modKey)) {
+          throw new ForbiddenException(
+            `Access denied: Administrator has restricted your access to the ${modKey} module.`
+          );
+        }
+      }
+    }
+
     let grantedActions: string[] = [];
-    if (Array.isArray(user.role?.permissions)) {
+    if (Array.isArray(user.permissions)) {
+      grantedActions = user.permissions;
+    } else if (Array.isArray(user.role?.permissions)) {
       grantedActions = user.role.permissions
         .map((p: any) => p.permission?.action || p.action)
         .filter(Boolean);
-    } else if (Array.isArray(user.permissions)) {
-      grantedActions = user.permissions;
     }
 
     // 4. Verify all required permissions are granted

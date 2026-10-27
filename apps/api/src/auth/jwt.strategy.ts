@@ -65,7 +65,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User is inactive or not found');
     }
 
+    const customModules = await this.redisService.getUserModulePermissions(payload.sub);
+    let permissions = user.role?.permissions?.map((p: any) => p.permission?.action || p.action).filter(Boolean) || [];
+    if (customModules !== null) {
+      permissions = permissions.filter((act: string) => {
+        const modKey = act.split('.')[0].toUpperCase();
+        return customModules.map(m => m.toUpperCase()).includes(modKey);
+      });
+    }
+
     const { password: _pwd, ...safeUser } = user;
-    return { ...safeUser, jti: payload.jti };
+    return { ...safeUser, permissions, customModules, jti: payload.jti };
   }
 }
