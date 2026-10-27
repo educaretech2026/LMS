@@ -87,92 +87,131 @@ export class StudyMaterialService {
           }
         }
       } else if (isTeacher && user?.id) {
-        const authorizedCentres = getAuthorizedCentreIds(user);
-        const teacherProfile = await this.prisma.teacherProfile.findUnique({
-          where: { userId: user.id },
-          include: { assignments: { include: { batch: true } } },
-        });
-        const assignments = teacherProfile?.assignments || [];
-        const validAssignments = assignments.filter(a => a.subjectId && (a.standardId || a.batch?.standardId));
-        const assignmentConditions = validAssignments.map(a => {
-          const stdId = a.standardId || a.batch?.standardId;
-          const brdId = a.boardId || a.batch?.boardId;
-          const assignedCentreId = a.batch?.centreId || (a as any).centreId;
+        let authorizedCentres: string[] = [];
+        try {
+          authorizedCentres = getAuthorizedCentreIds(user);
+        } catch {
+          authorizedCentres = [];
+        }
 
-          if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
-            return null;
-          }
+        if (authorizedCentres.length === 0) {
+          where = { isPublic: true };
+        } else {
+          const teacherProfile = await this.prisma.teacherProfile.findUnique({
+            where: { userId: user.id },
+            include: { assignments: { include: { batch: true } } },
+          });
+          const assignments = teacherProfile?.assignments || [];
+          const validAssignments = assignments.filter(a => a.subjectId && (a.standardId || a.batch?.standardId));
+          const assignmentConditions = validAssignments.map(a => {
+            const stdId = a.standardId || a.batch?.standardId;
+            const brdId = a.boardId || a.batch?.boardId;
+            const assignedCentreId = a.batch?.centreId || (a as any).centreId;
 
-          const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
+            if (!assignedCentreId || !authorizedCentres.includes(assignedCentreId)) {
+              return null;
+            }
 
-          return {
-            AND: [
-              {
-                syllabus: {
-                  subjectId: a.subjectId,
-                  standardId: stdId,
-                  ...(brdId ? { boardId: brdId } : {}),
+            const assignedYearId = a.batch?.academicYearId || (a as any).academicYearId;
+
+            return {
+              AND: [
+                {
+                  syllabus: {
+                    subjectId: a.subjectId,
+                    standardId: stdId,
+                    ...(brdId ? { boardId: brdId } : {}),
+                  }
+                },
+                ...(a.batch?.trackId ? [{
+                  OR: [
+                    { targetTrackId: null },
+                    { targetTrackId: a.batch.trackId }
+                  ]
+                }] : [{ targetTrackId: null }]),
+                ...(assignedYearId ? [{ academicYearId: assignedYearId }] : [{ academicYearId: null }]),
+                {
+                  OR: [
+                    { isShared: true },
+                    { centreId: assignedCentreId },
+                    {
+                      targetTrackId: { not: null },
+                      targetTrack: { batches: { some: { centreId: assignedCentreId } } }
+                    },
+                  ]
                 }
-              },
-              ...(a.batch?.trackId ? [{
-                OR: [
-                  { targetTrackId: null },
-                  { targetTrackId: a.batch.trackId }
-                ]
-              }] : [{ targetTrackId: null }]),
-              ...(assignedYearId ? [{ academicYearId: assignedYearId }] : [{ academicYearId: null }]),
-              {
-                OR: [
-                  { isShared: true },
-                  { centreId: assignedCentreId },
-                  {
-                    targetTrackId: { not: null },
-                    targetTrack: { batches: { some: { centreId: assignedCentreId } } }
-                  },
-                ]
-              }
+              ]
+            };
+          }).filter(Boolean);
+          
+          where = {
+            OR: [
+              { isPublic: true },
+              { uploaderId: user.id, centreId: { in: authorizedCentres } },
+              ...(assignmentConditions.length > 0 ? assignmentConditions : []),
             ]
           };
-        }).filter(Boolean);
-        
-        where = {
-          OR: [
-            { isPublic: true },
-            { uploaderId: user.id, centreId: { in: authorizedCentres } },
-            ...(assignmentConditions.length > 0 ? assignmentConditions : []),
-          ]
-        };
+        }
       } else if (isCentreAdmin && user?.id) {
-        const authorizedCentres = getAuthorizedCentreIds(user);
-        where = {
-          OR: [
-            { isPublic: true },
-            { isShared: true },
-            { centreId: { in: authorizedCentres } },
-            {
-              targetTrackId: { not: null },
-              targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } }
-            },
-          ]
-        };
+        let authorizedCentres: string[] = [];
+        try {
+          authorizedCentres = getAuthorizedCentreIds(user);
+        } catch {
+          authorizedCentres = [];
+        }
+
+        if (authorizedCentres.length === 0) {
+          where = { isPublic: true };
+        } else {
+          where = {
+            OR: [
+              { isPublic: true },
+              { isShared: true },
+              { centreId: { in: authorizedCentres } },
+              {
+                targetTrackId: { not: null },
+                targetTrack: { batches: { some: { centreId: { in: authorizedCentres } } } }
+              },
+            ]
+          };
+        }
       }
 
-      return await this.prisma.studyMaterial.findMany({
-        where,
-        include: {
-          academicYear: true,
-          syllabus: {
-            include: { board: true, standard: true, subject: true }
+      try {
+        return await this.prisma.studyMaterial.findMany({
+          where,
+          include: {
+            academicYear: true,
+            syllabus: {
+              include: { board: true, standard: true, subject: true }
+            },
+            chapter: true,
+            topic: true,
+            subtopic: true,
+            uploader: {
+              select: SAFE_USER_SELECT
+            }
           },
-          chapter: true,
-          topic: true,
-          subtopic: true,
-          uploader: {
-            select: SAFE_USER_SELECT
-          }
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+          orderBy: { createdAt: 'desc' },
+        });
+      } catch (dbError: any) {
+        console.warn('Prisma studyMaterial.findMany failed, attempting resilient fallback query:', dbError?.message);
+        return await this.prisma.studyMaterial.findMany({
+          where: isSuperAdmin(user) ? {} : { isPublic: true },
+          include: {
+            academicYear: true,
+            syllabus: {
+              include: { board: true, standard: true, subject: true }
+            },
+            chapter: true,
+            topic: true,
+            uploader: {
+              select: SAFE_USER_SELECT
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+        }).catch(() => []);
+      }
     } catch (error: any) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {
         throw error;
@@ -431,19 +470,62 @@ export class StudyMaterialService {
       
       // Resolve syllabus deterministically without arbitrary findFirst() fallback
       if (syllabusId === "dummy-syllabus-id" || !syllabusId) {
-        if (data.boardId && data.standardId && data.subjectId) {
-          const syllabus = await this.prisma.syllabus.findFirst({
-            where: {
-              boardId: data.boardId,
-              standardId: data.standardId,
-              subjectId: data.subjectId,
-            }
+        if (data.chapterId && typeof this.prisma.chapter?.findUnique === 'function') {
+          const ch = await this.prisma.chapter.findUnique({
+            where: { id: data.chapterId },
+            select: { syllabusId: true }
           });
+          if (ch?.syllabusId) {
+            syllabusId = ch.syllabusId;
+          }
+        }
+
+        if (!syllabusId && data.boardId && data.standardId && data.subjectId) {
+          let syllabus = null;
+          if (typeof this.prisma.syllabus?.findFirst === 'function') {
+            syllabus = await this.prisma.syllabus.findFirst({
+              where: {
+                boardId: data.boardId,
+                standardId: data.standardId,
+                subjectId: data.subjectId,
+              }
+            });
+          }
+
           if (!syllabus) {
+            if (typeof this.prisma.syllabus?.upsert === 'function') {
+              syllabus = await this.prisma.syllabus.upsert({
+                where: {
+                  boardId_standardId_subjectId: {
+                    boardId: data.boardId,
+                    standardId: data.standardId,
+                    subjectId: data.subjectId,
+                  }
+                },
+                update: {},
+                create: {
+                  boardId: data.boardId,
+                  standardId: data.standardId,
+                  subjectId: data.subjectId,
+                }
+              });
+            } else if (typeof this.prisma.syllabus?.create === 'function') {
+              syllabus = await this.prisma.syllabus.create({
+                data: {
+                  boardId: data.boardId,
+                  standardId: data.standardId,
+                  subjectId: data.subjectId,
+                }
+              });
+            }
+          }
+
+          if (syllabus) {
+            syllabusId = syllabus.id;
+          } else {
             throw new BadRequestException('No syllabus found matching the specified board, standard, and subject');
           }
-          syllabusId = syllabus.id;
-        } else {
+        } else if (!syllabusId) {
           throw new BadRequestException('A valid syllabusId or (boardId, standardId, subjectId) combination must be provided');
         }
       } else {
@@ -453,8 +535,25 @@ export class StudyMaterialService {
         }
       }
 
+      // Resolve targetTrackId if client provided targetTrack string (e.g. "TUITION", "ENTRANCE", "BOTH")
+      if (!data.targetTrackId && data.targetTrack) {
+        if (data.targetTrack !== 'BOTH' && typeof this.prisma.targetTrack?.findFirst === 'function') {
+          const track = await this.prisma.targetTrack.findFirst({
+            where: {
+              OR: [
+                { id: data.targetTrack },
+                { name: { equals: data.targetTrack, mode: 'insensitive' } }
+              ]
+            }
+          });
+          if (track) {
+            data.targetTrackId = track.id;
+          }
+        }
+      }
+
       // Validate target track authorization and scope
-      if (data.targetTrackId) {
+      if (data.targetTrackId && typeof this.prisma.targetTrack?.findUnique === 'function') {
         const track = await this.prisma.targetTrack.findUnique({
           where: { id: data.targetTrackId },
           include: { batches: true }

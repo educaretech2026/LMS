@@ -385,18 +385,25 @@ export class SetupService {
   }
 
   // Chapters
-  async getChapters(syllabusId?: string) {
+  async getChapters(syllabusId?: string, subjectId?: string, boardId?: string, standardId?: string) {
+    const where: any = {};
     if (syllabusId) {
-      return this.prisma.chapter.findMany({ 
-        where: { syllabusId },
-        include: { topics: { include: { subtopics: true } } }
-      });
+      where.syllabusId = syllabusId;
+    } else if (subjectId || boardId || standardId) {
+      where.syllabus = {
+        ...(subjectId ? { subjectId } : {}),
+        ...(boardId ? { boardId } : {}),
+        ...(standardId ? { standardId } : {}),
+      };
     }
+
     return this.prisma.chapter.findMany({ 
+      where,
       include: { 
-        syllabus: { include: { subject: true } },
+        syllabus: { include: { subject: true, standard: true, board: true } },
         topics: { include: { subtopics: true } }
-      } 
+      },
+      orderBy: { name: 'asc' }
     });
   }
   async createChapter(data: { name: string; syllabusId: string }) {

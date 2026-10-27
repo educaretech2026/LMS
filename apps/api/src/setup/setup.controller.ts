@@ -295,8 +295,13 @@ export class SetupController {
 
   @Get('chapters')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
-  getChapters(@Query('syllabusId') syllabusId?: string) {
-    return this.setupService.getChapters(syllabusId);
+  getChapters(
+    @Query('syllabusId') syllabusId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('boardId') boardId?: string,
+    @Query('standardId') standardId?: string,
+  ) {
+    return this.setupService.getChapters(syllabusId, subjectId, boardId, standardId);
   }
 
   @Post('chapters')

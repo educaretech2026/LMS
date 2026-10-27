@@ -358,6 +358,8 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
   const [boards, setBoards] = useState<any[]>([]);
   const [standards, setStandards] = useState<any[]>([]);
   const [subjectsList, setSubjectsList] = useState<any[]>([]);
+  const [availableSubjects, setAvailableSubjects] = useState<any[]>([]);
+  const [tracksList, setTracksList] = useState<any[]>([]);
   const [chapters, setChapters] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
 
@@ -370,29 +372,64 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
 
   // Fetch initial data
   useEffect(() => {
-    fetchApi('/setup/boards').then((data: any) => setBoards(data)).catch(console.error);
-    fetchApi('/setup/standards').then((data: any) => setStandards(data)).catch(console.error);
+    fetchApi('/setup/boards').then((data: any) => setBoards(Array.isArray(data) ? data : [])).catch(console.error);
+    fetchApi('/setup/standards').then((data: any) => setStandards(Array.isArray(data) ? data : [])).catch(console.error);
+    fetchApi('/setup/tracks').then((data: any) => setTracksList(Array.isArray(data) ? data : [])).catch(console.error);
     fetchApi('/setup/subjects').then((res: any) => {
-      setSubjectsList(res);
-      if (res.length > 0) setSubject(res[0].id);
+      const arr = Array.isArray(res) ? res : [];
+      setSubjectsList(arr);
+      setAvailableSubjects(arr);
+      if (arr.length > 0) setSubject(arr[0].id);
     }).catch(console.error);
   }, []);
 
-  // Fetch chapters when subject changes
+  // Update available subjects when board and standard change
+  useEffect(() => {
+    if (selectedBoard && selectedStandard) {
+      fetchApi(`/setup/syllabi?boardId=${selectedBoard}&standardId=${selectedStandard}`)
+        .then((data: any) => {
+          if (Array.isArray(data) && data.length > 0) {
+            const mapped = data.map((s: any) => ({
+              id: s.subject?.id || s.subjectId,
+              name: s.subject?.name || 'Unnamed Subject',
+              syllabusId: s.id,
+            }));
+            setAvailableSubjects(mapped);
+            if (!mapped.some((s: any) => s.id === subject)) {
+              setSubject(mapped[0]?.id || "");
+            }
+          } else {
+            setAvailableSubjects(subjectsList);
+          }
+        })
+        .catch(() => setAvailableSubjects(subjectsList));
+    } else {
+      setAvailableSubjects(subjectsList);
+    }
+  }, [selectedBoard, selectedStandard, subjectsList]);
+
+  // Fetch chapters when subject, board, or standard change
   useEffect(() => {
     if (subject) {
-      fetchApi(`/setup/chapters?subjectId=${subject}`).then((data: any) => setChapters(data)).catch(console.error);
+      const params = new URLSearchParams();
+      params.set('subjectId', subject);
+      if (selectedBoard) params.set('boardId', selectedBoard);
+      if (selectedStandard) params.set('standardId', selectedStandard);
+
+      fetchApi(`/setup/chapters?${params.toString()}`)
+        .then((data: any) => setChapters(Array.isArray(data) ? data : []))
+        .catch(console.error);
       setSelectedChapter("");
       setSelectedTopic("");
     } else {
       setChapters([]);
     }
-  }, [subject]);
+  }, [subject, selectedBoard, selectedStandard]);
 
   // Fetch topics when chapter changes
   useEffect(() => {
     if (selectedChapter) {
-      fetchApi(`/setup/topics?chapterId=${selectedChapter}`).then((data: any) => setTopics(data)).catch(console.error);
+      fetchApi(`/setup/topics?chapterId=${selectedChapter}`).then((data: any) => setTopics(Array.isArray(data) ? data : [])).catch(console.error);
       setSelectedTopic("");
     } else {
       setTopics([]);
@@ -422,12 +459,16 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
         finalThumbnailUrl = finalUrl;
       } catch (err) {
         console.error("Thumbnail upload failed", err);
-        // Continue anyway or handle error
       }
     }
 
     const finalType = overrideType || (type === "YOUTUBE_VIDEO" ? "VIDEO" : type);
     const finalUrl = url;
+
+    // Resolve syllabusId from selected chapter or syllabus
+    const selectedChapterObj = chapters.find(c => c.id === selectedChapter);
+    const resolvedSyllabusId = selectedChapterObj?.syllabusId || undefined;
+
     try {
       await fetchApi('/study-materials', {
         method: 'POST',
@@ -436,21 +477,20 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
           type: finalType,
           url: finalUrl,
           thumbnailUrl: finalThumbnailUrl,
+          syllabusId: resolvedSyllabusId,
           boardId: selectedBoard || undefined,
           standardId: selectedStandard || undefined,
           subjectId: subject || undefined,
           chapterId: selectedChapter || undefined,
           topicId: selectedTopic || undefined,
-          targetTrack,
-          // Remove dummy syllabus/academicYear ids so backend handles fallback,
-          // or ideally, these should also be selected by the user.
+          targetTrackId: targetTrack || undefined,
         })
       });
       onSuccess();
       onClose();
     } catch (e: any) {
       console.error(e);
-      setError("Error saving material to database");
+      setError(e?.message || "Error saving material to database");
       setSaving(false);
     }
   };
@@ -507,28 +547,28 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Board (Optional)</label>
-                      <select value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
-                        <option value="" disabled>Select Board</option>
+                      <select value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
+                        <option value="">All Boards</option>
                         {boards.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-text-secondary mb-1.5">Class (Optional)</label>
-                      <select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
-                        <option value="" disabled>Select Class</option>
+                      <select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
+                        <option value="">All Classes</option>
                         {standards
                           .filter((c: any) => !selectedBoard || c.boardId === selectedBoard || (c.boards && c.boards.some((b: any) => b.boardId === selectedBoard || b.board?.id === selectedBoard)))
                           .map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Target Audience <span className="text-brand-red">*</span></label>
+                      <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Target Track</label>
                       <div className="relative">
-                        <select value={targetTrack} onChange={(e) => setTargetTrack(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
-                          <option value="" disabled>Select Target Audience</option>
-                          <option value="BOTH">Both</option>
-                          <option value="TUITION">Tuition</option>
-                          <option value="ENTRANCE">Entrance</option>
+                        <select value={targetTrack} onChange={(e) => setTargetTrack(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
+                          <option value="">All Tracks (Both / General)</option>
+                          {tracksList.map((tr: any) => (
+                            <option key={tr.id} value={tr.id}>{tr.name}</option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -541,7 +581,7 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                     <div>
                       <label className="block text-[11px] font-semibold text-brand-blue/70 mb-1.5">Subject *</label>
                       <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
-                        {subjectsList.length === 0 ? <option value="">Loading...</option> : subjectsList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {availableSubjects.length === 0 ? <option value="">No subjects found</option> : availableSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </div>
                     <div>
