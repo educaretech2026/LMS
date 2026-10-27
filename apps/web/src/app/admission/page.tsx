@@ -35,6 +35,9 @@ import {
   Layers,
   Eye,
   ScrollText,
+  Camera,
+  User,
+  X,
 } from "lucide-react";
 
 interface AdmissionRuleSubsection {
@@ -212,6 +215,10 @@ export default function AdmissionPage() {
   // Rule verification tracking: ruleId -> boolean
   const [verifiedRules, setVerifiedRules] = useState<Record<string, boolean>>({});
   const [expandedRuleIds, setExpandedRuleIds] = useState<Record<string, boolean>>({});
+
+  // Student Photograph State
+  const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
+  const [photoFileName, setPhotoFileName] = useState<string | null>(null);
 
   // Signature State
   const [signatureMode, setSignatureMode] = useState<"DRAW" | "UPLOAD">("DRAW");
@@ -405,6 +412,71 @@ export default function AdmissionPage() {
       clearFieldError("signature");
     };
     reader.readAsDataURL(file);
+  };
+
+  // Handle Student Photo Upload & Compression
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setStepError("Please upload a valid image file (PNG, JPG, JPEG, WEBP) for the student photo.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setStepError("Image size exceeds 10MB limit. Please choose a smaller photo.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new (window as any).Image();
+      img.onload = () => {
+        // Resize to standard passport resolution (max 480x480) for crisp quality & compact payload
+        const maxDim = 480;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          setStudentPhoto(compressedDataUrl);
+          setPhotoFileName(file.name);
+          setStepError(null);
+        } else {
+          const rawDataUrl = event.target?.result as string;
+          setStudentPhoto(rawDataUrl);
+          setPhotoFileName(file.name);
+          setStepError(null);
+        }
+      };
+      img.onerror = () => {
+        setStepError("Failed to process the uploaded image. Please try another file.");
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    setStudentPhoto(null);
+    setPhotoFileName(null);
   };
 
   const selectedBoardObj = academicOptions.boards.find(
@@ -641,6 +713,7 @@ export default function AdmissionPage() {
         targetBoard: formData.targetBoard,
         targetStandard: formData.targetStandard,
         targetCourse: formData.targetCourse,
+        studentPhoto: studentPhoto || undefined,
         signatureData: signatureData,
         signatureType: signatureMode === "DRAW" ? "DRAWN_CANVAS" : "UPLOADED_IMAGE",
         signerName: signer,
@@ -651,6 +724,13 @@ export default function AdmissionPage() {
         method: "POST",
         body: JSON.stringify(payload),
       })) as any;
+
+      if (result?.photoUrl) {
+        setStudentPhoto(result.photoUrl);
+      }
+      if (result?.signatureUrl) {
+        setSignatureData(result.signatureUrl);
+      }
 
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
       const generatedRef = `EDC-ADM-${new Date().getFullYear()}-${result?.id ? result.id.slice(0, 4).toUpperCase() : randomSuffix}`;
@@ -736,22 +816,29 @@ export default function AdmissionPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                <div>
-                  <span className="text-[11px] text-text-muted block">Student</span>
-                  <strong className="text-xs font-bold text-text-primary block truncate">{formData.studentName}</strong>
-                </div>
-                <div>
-                  <span className="text-[11px] text-text-muted block">Parent / Guardian</span>
-                  <strong className="text-xs font-bold text-text-primary block truncate">{formData.parentName}</strong>
-                </div>
-                <div>
-                  <span className="text-[11px] text-text-muted block">Campus</span>
-                  <strong className="text-xs font-bold text-text-primary block truncate">{formData.preferredCampus}</strong>
-                </div>
-                <div>
-                  <span className="text-[11px] text-text-muted block">Program</span>
-                  <strong className="text-xs font-bold text-text-primary block truncate">{formData.targetCourse} ({formData.targetStandard})</strong>
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                {studentPhoto && (
+                  <div className="w-16 h-20 rounded-xl border border-border-soft overflow-hidden bg-white shrink-0 shadow-xs flex items-center justify-center">
+                    <img src={studentPhoto} alt="Student Photograph" className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 flex-1">
+                  <div>
+                    <span className="text-[11px] text-text-muted block">Student</span>
+                    <strong className="text-xs font-bold text-text-primary block truncate">{formData.studentName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-text-muted block">Parent / Guardian</span>
+                    <strong className="text-xs font-bold text-text-primary block truncate">{formData.parentName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-text-muted block">Campus</span>
+                    <strong className="text-xs font-bold text-text-primary block truncate">{formData.preferredCampus}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-text-muted block">Program</span>
+                    <strong className="text-xs font-bold text-text-primary block truncate">{formData.targetCourse} ({formData.targetStandard})</strong>
+                  </div>
                 </div>
               </div>
 
@@ -808,6 +895,8 @@ export default function AdmissionPage() {
                   setSubmissionSuccess(false);
                   setCurrentStep(1);
                   setSignatureData(null);
+                  setStudentPhoto(null);
+                  setPhotoFileName(null);
                   setIsCanvasDrawn(false);
                   setUploadedFileName(null);
                   setErrors({});
@@ -1017,6 +1106,73 @@ export default function AdmissionPage() {
                 <div>
                   <h2 className="text-xl font-bold text-text-primary tracking-tight">Applicant & Parent Information</h2>
                   <p className="text-xs text-text-muted mt-1">Please provide accurate contact details for official admission records</p>
+                </div>
+
+                {/* Student Photo Upload Section */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-surface border border-border-soft flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
+                  {/* Photo Frame */}
+                  <div className="relative shrink-0">
+                    <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-2xl border-2 border-dashed border-border-soft overflow-hidden bg-white shadow-xs flex items-center justify-center transition-all hover:border-brand-blue/50">
+                      {studentPhoto ? (
+                        <img
+                          src={studentPhoto}
+                          alt="Student Photograph"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-center p-2 text-text-muted">
+                          <User className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5]" />
+                          <span className="text-[10px] font-semibold block mt-1 text-text-muted">Passport Photo</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {studentPhoto && (
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-md hover:bg-rose-600 transition-colors"
+                        title="Remove photograph"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Upload Controls */}
+                  <div className="flex-1 text-center sm:text-left space-y-2">
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                      <label className="text-xs font-bold text-text-primary">
+                        Student Photograph
+                      </label>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-blue/10 text-brand-blue font-semibold">
+                        Recommended for Student ID
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-text-muted leading-relaxed">
+                      Upload a recent passport-size front-facing photograph of the student for official records and student ID card issuance. Supports JPG, PNG, WEBP (Max 10MB).
+                    </p>
+
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-1">
+                      <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-brand-blue hover:bg-brand-blue/90 shadow-xs transition-all cursor-pointer">
+                        <Camera className="w-3.5 h-3.5" />
+                        {studentPhoto ? "Change Photograph" : "Upload Photograph"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          className="hidden"
+                        />
+                      </label>
+
+                      {photoFileName && (
+                        <span className="text-xs text-text-secondary font-mono truncate max-w-[200px]">
+                          {photoFileName}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -1644,6 +1800,37 @@ export default function AdmissionPage() {
                 <div>
                   <h2 className="text-xl font-bold text-text-primary tracking-tight">Digital Undertaking & Signature Verification</h2>
                   <p className="text-xs text-text-muted mt-1">Review the solemn declaration and provide your digital signature or signature image</p>
+                </div>
+
+                {/* Applicant Summary Preview */}
+                <div className="p-4 rounded-2xl bg-surface border border-border-soft flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-12 h-14 rounded-xl border border-border-soft bg-white overflow-hidden shrink-0 flex items-center justify-center shadow-xs">
+                      {studentPhoto ? (
+                        <img src={studentPhoto} alt="Student Photograph" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-6 h-6 text-text-muted" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-text-primary truncate">{formData.studentName || "Applicant"}</h4>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-brand-blue/10 text-brand-blue">
+                          {formData.targetStandard}
+                        </span>
+                      </div>
+                      <p className="text-xs text-text-muted truncate mt-0.5">
+                        {formData.targetCourse} • {formData.preferredCampus}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(1)}
+                    className="text-xs font-bold text-brand-blue hover:underline shrink-0"
+                  >
+                    Edit Profile
+                  </button>
                 </div>
 
                 {/* Official Declaration Box with Bulletins */}
