@@ -864,7 +864,9 @@ export default function AdmissionPage() {
             <div className="hidden md:flex items-center gap-6 text-xs text-text-secondary font-medium">
               <span className="flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-brand-blue" />
-                +91 94470 12345
+                <a href="tel:+919746033703" className="hover:text-brand-blue transition-colors">+91 97460 33703</a>
+                <span>/</span>
+                <a href="tel:+918089372819" className="hover:text-brand-blue transition-colors">+91 80893 72819</a>
               </span>
               <span className="flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-brand-blue" />
@@ -1939,8 +1941,12 @@ export default function AdmissionPage() {
           <p>Need assistance with your admission application?</p>
           <p>
             Contact Admissions Desk at{" "}
-            <a href="tel:+919447012345" className="font-bold text-brand-blue hover:underline">
-              +91 94470 12345
+            <a href="tel:+919746033703" className="font-bold text-brand-blue hover:underline">
+              +91 97460 33703
+            </a>{" "}
+            or{" "}
+            <a href="tel:+918089372819" className="font-bold text-brand-blue hover:underline">
+              +91 80893 72819
             </a>{" "}
             or visit any of our Kottayam campuses.
           </p>
