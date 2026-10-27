@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { fetchApi } from "@/lib/api";
+import { COUNTRY_CODES } from "@/lib/country-codes";
 import logoImage from "@/logos/logo1-clean.png";
 import {
   GraduationCap,
@@ -193,6 +194,7 @@ export default function AdmissionPage() {
   const [formData, setFormData] = useState({
     studentName: "",
     parentName: "",
+    countryCode: "+91",
     contactNumber: "",
     email: "",
     city: "",
@@ -496,12 +498,18 @@ export default function AdmissionPage() {
       newErrors.parentName = "Please enter a valid legal name using letters only.";
     }
 
-    const cleanPhone = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
-    const normalizedPhone = cleanPhone.startsWith("91") && cleanPhone.length === 12 ? cleanPhone.slice(2) : cleanPhone;
-    if (!normalizedPhone) {
+    const cleanDigits = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
+    if (!cleanDigits) {
       newErrors.contactNumber = "Mobile contact number is required.";
-    } else if (!/^[6-9]\d{9}$/.test(normalizedPhone)) {
-      newErrors.contactNumber = "Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).";
+    } else if (formData.countryCode === "+91") {
+      const nationalPhone = cleanDigits.startsWith("91") && cleanDigits.length === 12 ? cleanDigits.slice(2) : cleanDigits;
+      if (!/^[6-9]\d{9}$/.test(nationalPhone)) {
+        newErrors.contactNumber = "Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).";
+      }
+    } else {
+      if (cleanDigits.length < 6 || cleanDigits.length > 15 || !/^\d+$/.test(cleanDigits)) {
+        newErrors.contactNumber = "Please enter a valid mobile number for the selected country (6–15 digits).";
+      }
     }
 
     if (formData.email.trim()) {
@@ -617,13 +625,15 @@ export default function AdmissionPage() {
     setStepError(null);
     try {
       const signer = formData.signerName.trim() || (formData.signerRole === "PARENT" ? formData.parentName : formData.studentName);
-      const cleanPhone = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
-      const normalizedPhone = cleanPhone.startsWith("91") && cleanPhone.length === 12 ? cleanPhone.slice(2) : cleanPhone;
+      const cleanDigits = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
+      const rawDialCode = formData.countryCode.replace("+", "");
+      const nationalNumber = cleanDigits.startsWith(rawDialCode) ? cleanDigits.slice(rawDialCode.length) : cleanDigits;
+      const fullPhoneNumber = `${formData.countryCode}${nationalNumber}`;
 
       const payload = {
         studentName: formData.studentName.trim(),
         parentName: formData.parentName.trim(),
-        contactNumber: normalizedPhone,
+        contactNumber: fullPhoneNumber,
         email: formData.email.trim() || undefined,
         address: [formData.city.trim(), formData.address.trim()].filter(Boolean).join(", "),
         source: `Online Admission Portal (${formData.preferredCampus})`,
@@ -805,6 +815,7 @@ export default function AdmissionPage() {
                   setFormData({
                     studentName: "",
                     parentName: "",
+                    countryCode: "+91",
                     contactNumber: "",
                     email: "",
                     city: "",
@@ -1040,22 +1051,44 @@ export default function AdmissionPage() {
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">
                       Contact / WhatsApp Mobile <span className="text-rose-500">*</span>
                     </label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-text-muted">+91</span>
+                    <div
+                      className={`flex items-center w-full h-12 rounded-xl border bg-surface transition-all focus-within:bg-white focus-within:ring-2 ${
+                        errors.contactNumber
+                          ? "border-rose-400 focus-within:border-rose-500 focus-within:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus-within:ring-brand-blue/20"
+                      }`}
+                    >
+                      {/* Country Code Dropdown */}
+                      <div className="relative flex items-center shrink-0 border-r border-border-soft/80 h-full max-w-[140px] sm:max-w-[150px]">
+                        <select
+                          value={formData.countryCode}
+                          onChange={(e) => {
+                            setFormData({ ...formData, countryCode: e.target.value });
+                            clearFieldError("contactNumber");
+                          }}
+                          className="h-full pl-3 pr-6 bg-transparent text-xs font-bold font-mono text-text-primary rounded-l-xl appearance-none cursor-pointer focus:outline-none hover:bg-slate-50 transition-colors truncate"
+                          title="Select Country Dialing Code"
+                        >
+                          {COUNTRY_CODES.map((c) => (
+                            <option key={`${c.code}-${c.dialCode}`} value={c.dialCode} className="text-xs font-sans text-slate-800">
+                              {c.flag} {c.name} ({c.dialCode})
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3 h-3 text-text-muted pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                      </div>
+
+                      {/* Phone Number Input */}
                       <input
                         type="tel"
-                        maxLength={14}
+                        maxLength={16}
                         value={formData.contactNumber}
                         onChange={(e) => {
                           setFormData({ ...formData, contactNumber: e.target.value });
                           clearFieldError("contactNumber");
                         }}
-                        placeholder="9876543210"
-                        className={`w-full h-12 rounded-xl border bg-surface pl-12 pr-4 text-sm font-mono text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
-                          errors.contactNumber
-                            ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
-                            : "border-border-soft focus:ring-brand-blue/20"
-                        }`}
+                        placeholder={formData.countryCode === "+91" ? "9876543210" : "Mobile number"}
+                        className="flex-1 h-full px-3 text-sm font-mono text-text-primary placeholder:text-text-muted bg-transparent focus:outline-none"
                       />
                     </div>
                     {errors.contactNumber ? (
