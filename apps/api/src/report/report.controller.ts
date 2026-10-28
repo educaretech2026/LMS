@@ -7,11 +7,11 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('report')
-@Permissions('REPORTS')
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('REPORTS')
   @Get('fees')
   getFeeReport(
     @Query('startDate') startDate: string,
@@ -22,6 +22,7 @@ export class ReportController {
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('REPORTS')
   @Get('finance')
   getFinanceReport(
     @Query('startDate') startDate: string,
@@ -33,6 +34,7 @@ export class ReportController {
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('REPORTS')
   @Get('enquiries')
   getEnquiryReport(
     @Query('startDate') startDate: string,
@@ -43,6 +45,7 @@ export class ReportController {
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Permissions('REPORTS')
   @Get('performance')
   getPerformanceReport(
     @Query('batchId') batchId: string,
@@ -61,12 +64,14 @@ export class ReportController {
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('REPORTS')
   @Get('dashboard')
   getDashboardStats(@Req() req: any) {
     return this.reportService.getDashboardStats(req.user);
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('REPORTS')
   @Get('overview')
   getOverviewAnalytics(
     @Query('startDate') startDate?: string,
@@ -93,6 +98,7 @@ export class ReportController {
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Permissions('REPORTS')
   @Get('exams-analytics')
   getExamsAnalytics(
     @Query('batchId') batchId?: string,
@@ -123,6 +129,7 @@ export class ReportController {
   }
 
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Permissions('REPORTS')
   @Get('attendance-analytics')
   getAttendanceAnalytics(
     @Query('batchId') batchId?: string,

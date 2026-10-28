@@ -49,7 +49,10 @@ export default function ReportsPage() {
   const isStudent = normalizedRole === 'STUDENT';
   const isTeacher = normalizedRole === 'TEACHER';
 
-  const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    if (normalizedRole === 'TEACHER') return "ACADEMICS";
+    return "OVERVIEW";
+  });
   const [myStudentReport, setMyStudentReport] = useState<any>(null);
   const [loadingMyReport, setLoadingMyReport] = useState(false);
 
@@ -123,8 +126,9 @@ export default function ReportsPage() {
     direction: "asc",
   });
 
-  // Initial load of master metadata
+  // Initial load of master metadata (staff only)
   useEffect(() => {
+    if (isStudent) return;
     Promise.all([
       fetchApi("/setup/academic-years").catch(() => []),
       fetchApi("/setup/centres").catch(() => []),
@@ -136,10 +140,11 @@ export default function ReportsPage() {
       setBoards(Array.isArray(b) ? b : []);
       setSubjects(Array.isArray(s) ? s : []);
     });
-  }, []);
+  }, [isStudent]);
 
   // Cascading Standards based on Board
   useEffect(() => {
+    if (isStudent) return;
     if (filters.boardId) {
       fetchApi(`/setup/standards?boardId=${filters.boardId}`)
         .then((st) => setStandards(Array.isArray(st) ? st : []))
@@ -149,10 +154,11 @@ export default function ReportsPage() {
         .then((st) => setStandards(Array.isArray(st) ? st : []))
         .catch(() => setStandards([]));
     }
-  }, [filters.boardId]);
+  }, [isStudent, filters.boardId]);
 
   // Cascading Batches based on Centre / Standard
   useEffect(() => {
+    if (isStudent) return;
     let q = "";
     if (filters.centreId && filters.standardId) {
       q = `?centreId=${filters.centreId}&standardId=${filters.standardId}${filters.boardId ? `&boardId=${filters.boardId}` : ""}`;
@@ -160,12 +166,16 @@ export default function ReportsPage() {
     fetchApi(q ? `/attendance/batches/filter${q}` : "/setup/batches")
       .then((b) => setBatches(Array.isArray(b) ? b : []))
       .catch(() => setBatches([]));
-  }, [filters.centreId, filters.standardId, filters.boardId]);
+  }, [isStudent, filters.centreId, filters.standardId, filters.boardId]);
 
   // Fetch report data on tab or filter change
   useEffect(() => {
+    if (isStudent) return;
+    if (isTeacher && activeTab === "OVERVIEW") return;
     loadTabData(activeTab, filters);
   }, [
+    isStudent,
+    isTeacher,
     activeTab,
     filters.startDate,
     filters.endDate,
@@ -178,6 +188,8 @@ export default function ReportsPage() {
   ]);
 
   const loadTabData = async (tab: TabKey, f: HierarchyFilterState) => {
+    if (isStudent) return;
+    if (isTeacher && (tab === "OVERVIEW" || tab === "FINANCE" || tab === "CRM")) return;
     setLoading(true);
     try {
       const q = new URLSearchParams();
