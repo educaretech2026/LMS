@@ -239,7 +239,7 @@ export class LiveClassService {
         teacherName: data.teacherName,
         scheduledAt: scheduledDate,
         duration: Number(data.duration),
-        roomId: data.zoomLink || undefined,
+        roomId: (typeof data.zoomLink === 'string' && data.zoomLink.trim()) ? data.zoomLink.trim() : undefined,
         isPublic: Boolean(data.isPublic),
         description: data.description ? data.description.trim() : null,
         backgroundImageUrl: data.backgroundImageUrl ? data.backgroundImageUrl.trim() : null,
@@ -272,7 +272,7 @@ export class LiveClassService {
     if (data.subject !== undefined) updateData.subject = data.subject;
     if (data.teacherName !== undefined) updateData.teacherName = data.teacherName;
     if (data.duration !== undefined) updateData.duration = Number(data.duration);
-    if (data.zoomLink !== undefined) updateData.roomId = data.zoomLink;
+    if (data.zoomLink !== undefined) updateData.roomId = typeof data.zoomLink === 'string' ? data.zoomLink.trim() : data.zoomLink;
     if (data.isPublic !== undefined) updateData.isPublic = Boolean(data.isPublic);
     if (data.description !== undefined) updateData.description = data.description;
     if (data.backgroundImageUrl !== undefined) updateData.backgroundImageUrl = data.backgroundImageUrl;

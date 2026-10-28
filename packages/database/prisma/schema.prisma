@@ -619,7 +619,7 @@ model LiveClass {
   status      LiveClassStatus @default(SCHEDULED)
   scheduledAt DateTime
   duration    Int // in minutes
-  roomId      String          @unique @default(uuid())
+  roomId      String          @default(uuid())
 
   boardId    String?
   standardId String?
