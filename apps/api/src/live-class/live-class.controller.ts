@@ -23,7 +23,7 @@ export class LiveClassController {
   }
 
   @Get('stats')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getStats(@Req() req: any) {
     return this.liveClassService.getStats(req.user);
   }

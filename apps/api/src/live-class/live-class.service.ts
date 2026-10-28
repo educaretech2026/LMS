@@ -7,7 +7,35 @@ export class LiveClassService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAll(user?: any) {
-    const isStudent = user?.role === 'STUDENT' || user?.role?.name === 'STUDENT';
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+
+    if (normalizedRole === 'PUBLIC_LEARNER') {
+      const classes = await this.prisma.liveClass.findMany({
+        where: { isPublic: true },
+        include: {
+          board: { select: { id: true, name: true } },
+          standard: { select: { id: true, name: true } },
+          centre: { select: { id: true, name: true } },
+        },
+        orderBy: { scheduledAt: 'asc' },
+      });
+
+      const now = Date.now();
+      return classes.map(c => {
+        const classTime = new Date(c.scheduledAt).getTime();
+        const isLiveNow = c.status === 'LIVE';
+        const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
+        const canAccessLink = isLiveNow || isStartingSoon;
+
+        if (!canAccessLink) {
+          return { ...c, roomId: null };
+        }
+        return c;
+      });
+    }
+
+    const isStudent = normalizedRole === 'STUDENT';
     
     if (isStudent && user?.id) {
       const profile = await this.prisma.studentProfile.findUnique({
@@ -20,7 +48,15 @@ export class LiveClassService {
       });
 
       if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
-        return [];
+        return this.prisma.liveClass.findMany({
+          where: { isPublic: true },
+          include: {
+            board: { select: { id: true, name: true } },
+            standard: { select: { id: true, name: true } },
+            centre: { select: { id: true, name: true } },
+          },
+          orderBy: { scheduledAt: 'asc' },
+        });
       }
 
       const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
@@ -33,7 +69,12 @@ export class LiveClassService {
       andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
 
       const classes = await this.prisma.liveClass.findMany({
-        where: { AND: andConditions },
+        where: {
+          OR: [
+            { AND: andConditions },
+            { isPublic: true },
+          ],
+        },
         include: {
           board: { select: { id: true, name: true } },
           standard: { select: { id: true, name: true } },
@@ -89,8 +130,36 @@ export class LiveClassService {
 
     if (!cls) throw new NotFoundException('Live class not found');
 
-    const isStudent = user?.role === 'STUDENT' || user?.role?.name === 'STUDENT';
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+
+    if (normalizedRole === 'PUBLIC_LEARNER') {
+      if (!cls.isPublic) {
+        throw new ForbiddenException('Access denied: Public learners can only access public live classes.');
+      }
+      const now = Date.now();
+      const classTime = new Date(cls.scheduledAt).getTime();
+      const isLiveNow = cls.status === 'LIVE';
+      const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -cls.duration * 60 * 1000;
+      if (!isLiveNow && !isStartingSoon) {
+        return { ...cls, roomId: null };
+      }
+      return cls;
+    }
+
+    const isStudent = normalizedRole === 'STUDENT';
     if (isStudent && user?.id) {
+      if (cls.isPublic) {
+        const now = Date.now();
+        const classTime = new Date(cls.scheduledAt).getTime();
+        const isLiveNow = cls.status === 'LIVE';
+        const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -cls.duration * 60 * 1000;
+        if (!isLiveNow && !isStartingSoon) {
+          return { ...cls, roomId: null };
+        }
+        return cls;
+      }
+
       const profile = await this.prisma.studentProfile.findUnique({
         where: { userId: user.id },
         include: { enrollments: { include: { batch: true } } }
@@ -261,6 +330,62 @@ export class LiveClassService {
   }
 
   async getStats(user?: any) {
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+
+    if (normalizedRole === 'PUBLIC_LEARNER') {
+      const [total, live] = await Promise.all([
+        this.prisma.liveClass.count({ where: { isPublic: true } }),
+        this.prisma.liveClass.count({ where: { isPublic: true, status: 'LIVE' } }),
+      ]);
+      return { total, live };
+    }
+
+    if (normalizedRole === 'STUDENT' && user?.id) {
+      const profile = await this.prisma.studentProfile.findUnique({
+        where: { userId: user.id },
+        include: { enrollments: { include: { batch: true } } }
+      });
+
+      if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
+        const [total, live] = await Promise.all([
+          this.prisma.liveClass.count({ where: { isPublic: true } }),
+          this.prisma.liveClass.count({ where: { isPublic: true, status: 'LIVE' } }),
+        ]);
+        return { total, live };
+      }
+
+      const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
+      const standardIds = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
+      const boardIds = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
+
+      const andConditions: any[] = [];
+      andConditions.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
+      andConditions.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
+      andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
+
+      const [total, live] = await Promise.all([
+        this.prisma.liveClass.count({
+          where: {
+            OR: [
+              { AND: andConditions },
+              { isPublic: true },
+            ],
+          },
+        }),
+        this.prisma.liveClass.count({
+          where: {
+            status: 'LIVE',
+            OR: [
+              { AND: andConditions },
+              { isPublic: true },
+            ],
+          },
+        }),
+      ]);
+      return { total, live };
+    }
+
     const where: any = {};
     if (user && !isSuperAdmin(user)) {
       const allowedCentres = getAuthorizedCentreIds(user);

@@ -52,13 +52,19 @@ export default function LiveClassPage() {
   const [stats, setStats] = useState({ total: 0, live: 0 });
   const { role, email } = useAuth();
 
+  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
+  const isStaff = Boolean(normalizedRole && !["STUDENT", "PUBLIC_LEARNER"].includes(normalizedRole));
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      const isStaffUser = Boolean(role && !["STUDENT", "PUBLIC_LEARNER"].includes(role.toUpperCase().replace(/\s+/g, '_')));
       const [data, s] = await Promise.all([
         fetchApi<ApiLiveClass[]>("/live-class"),
-        fetchApi<{ total: number; live: number }>("/live-class/stats"),
+        isStaffUser
+          ? fetchApi<{ total: number; live: number }>("/live-class/stats", { silent: true }).catch(() => ({ total: 0, live: 0 }))
+          : Promise.resolve({ total: 0, live: 0 }),
       ]);
       setClasses(data);
       setStats(s);
@@ -67,7 +73,7 @@ export default function LiveClassPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [role]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -149,7 +155,7 @@ export default function LiveClassPage() {
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
 
-            {role?.toUpperCase() !== "STUDENT" && (
+            {isStaff && (
               <>
                 {/* Host Public Webinar Button */}
                 <button
@@ -182,8 +188,8 @@ export default function LiveClassPage() {
             </div>
           )}
 
-          {/* Stats row — Admin only */}
-          {role?.toUpperCase() !== "STUDENT" && (
+          {/* Stats row — Staff/Admin only */}
+          {isStaff && (
             <div className="grid grid-cols-3 gap-4">
               {[
                 { label: "Total Sessions",   value: String(stats.total), icon: BookOpen, color: "text-brand-blue bg-brand-blue/8" },
@@ -381,7 +387,8 @@ function ClassCard({
 }) {
   const isLive = cls.status === "LIVE";
   const isEnded = cls.status === "ENDED";
-  const isStudent = role?.toUpperCase() === "STUDENT";
+  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
+  const isLearner = ["STUDENT", "PUBLIC_LEARNER"].includes(normalizedRole);
   const [copied, setCopied] = useState(false);
 
   const scheduledDate = new Date(cls.scheduledAt);
@@ -459,7 +466,7 @@ function ClassCard({
       {/* Actions */}
       <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
         {/* Public Webinar Actions for Admin/Teacher */}
-        {!isStudent && cls.isPublic && (
+        {!isLearner && cls.isPublic && (
           <>
             <button
               onClick={handleCopyPublicLink}
@@ -492,7 +499,7 @@ function ClassCard({
         )}
 
         {/* Status controls */}
-        {!isStudent && (
+        {!isLearner && (
           <>
             {cls.status === "SCHEDULED" && (
               <button
@@ -524,9 +531,9 @@ function ClassCard({
         {!isEnded && (
           <button
             onClick={onJoin}
-            disabled={isStudent && !isLive}
+            disabled={isLearner && !isLive}
             className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors shadow-sm ${
-              isStudent && !isLive
+              isLearner && !isLive
                 ? "bg-surface-3 text-text-muted cursor-not-allowed"
                 : isLive
                 ? "bg-brand-red hover:bg-brand-red-dark text-white"
@@ -534,7 +541,7 @@ function ClassCard({
             }`}
           >
             <Play className="h-3.5 w-3.5" />
-            {isStudent ? (isLive ? "Join" : "Waiting...") : (isLive ? "Join Live" : "Start Session")}
+            {isLearner ? (isLive ? "Join" : "Waiting...") : (isLive ? "Join Live" : "Start Session")}
           </button>
         )}
       </div>
