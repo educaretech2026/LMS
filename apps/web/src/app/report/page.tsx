@@ -57,17 +57,18 @@ export default function ReportsPage() {
   const [loadingMyReport, setLoadingMyReport] = useState(false);
 
   useEffect(() => {
+    if (!role) return;
     if (isTeacher) {
       setActiveTab("ACADEMICS");
     }
     if (isStudent) {
       setLoadingMyReport(true);
-      fetchApi<any>("/report/my-report")
+      fetchApi<any>("/report/my-report", { silent: true })
         .then((data) => setMyStudentReport(data))
         .catch(() => {})
         .finally(() => setLoadingMyReport(false));
     }
-  }, [isTeacher, isStudent]);
+  }, [role, isTeacher, isStudent]);
 
   // Hierarchy filter state
   const [filters, setFilters] = useState<HierarchyFilterState>(() => {
@@ -128,7 +129,7 @@ export default function ReportsPage() {
 
   // Initial load of master metadata (staff only)
   useEffect(() => {
-    if (isStudent) return;
+    if (!role || isStudent) return;
     Promise.all([
       fetchApi("/setup/academic-years").catch(() => []),
       fetchApi("/setup/centres").catch(() => []),
@@ -140,11 +141,11 @@ export default function ReportsPage() {
       setBoards(Array.isArray(b) ? b : []);
       setSubjects(Array.isArray(s) ? s : []);
     });
-  }, [isStudent]);
+  }, [role, isStudent]);
 
   // Cascading Standards based on Board
   useEffect(() => {
-    if (isStudent) return;
+    if (!role || isStudent) return;
     if (filters.boardId) {
       fetchApi(`/setup/standards?boardId=${filters.boardId}`)
         .then((st) => setStandards(Array.isArray(st) ? st : []))
@@ -154,11 +155,11 @@ export default function ReportsPage() {
         .then((st) => setStandards(Array.isArray(st) ? st : []))
         .catch(() => setStandards([]));
     }
-  }, [isStudent, filters.boardId]);
+  }, [role, isStudent, filters.boardId]);
 
   // Cascading Batches based on Centre / Standard
   useEffect(() => {
-    if (isStudent) return;
+    if (!role || isStudent) return;
     let q = "";
     if (filters.centreId && filters.standardId) {
       q = `?centreId=${filters.centreId}&standardId=${filters.standardId}${filters.boardId ? `&boardId=${filters.boardId}` : ""}`;
@@ -166,14 +167,15 @@ export default function ReportsPage() {
     fetchApi(q ? `/attendance/batches/filter${q}` : "/setup/batches")
       .then((b) => setBatches(Array.isArray(b) ? b : []))
       .catch(() => setBatches([]));
-  }, [isStudent, filters.centreId, filters.standardId, filters.boardId]);
+  }, [role, isStudent, filters.centreId, filters.standardId, filters.boardId]);
 
   // Fetch report data on tab or filter change
   useEffect(() => {
-    if (isStudent) return;
+    if (!role || isStudent) return;
     if (isTeacher && activeTab === "OVERVIEW") return;
     loadTabData(activeTab, filters);
   }, [
+    role,
     isStudent,
     isTeacher,
     activeTab,
@@ -188,7 +190,7 @@ export default function ReportsPage() {
   ]);
 
   const loadTabData = async (tab: TabKey, f: HierarchyFilterState) => {
-    if (isStudent) return;
+    if (!role || isStudent) return;
     if (isTeacher && (tab === "OVERVIEW" || tab === "FINANCE" || tab === "CRM")) return;
     setLoading(true);
     try {
@@ -1254,6 +1256,17 @@ export default function ReportsPage() {
       </div>
     );
   };
+
+  if (!role) {
+    return (
+      <DashboardLayout title="Report">
+        <div className="py-24 flex flex-col items-center justify-center gap-3 text-text-muted text-xs">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-blue" />
+          <span>Loading academic report...</span>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (isStudent) {
     return (
