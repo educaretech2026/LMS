@@ -437,7 +437,24 @@ export class StudentsService {
     const day = today.getDate();
     
     if (user && !isSuperAdmin(user)) {
-      const userCentres = getAuthorizedCentreIds(user);
+      let userCentres: string[] = [];
+      const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
+      const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+
+      if (normalizedRole === 'STUDENT') {
+        const student = await this.prisma.studentProfile.findUnique({
+          where: { userId: user.id },
+          include: { enrollments: { include: { batch: true } } }
+        });
+        userCentres = (student?.enrollments || []).map(e => e.batch?.centreId).filter(Boolean) as string[];
+      } else {
+        userCentres = getUserCentreIds(user);
+      }
+
+      if (userCentres.length === 0) {
+        return [];
+      }
+
       return this.prisma.$queryRaw`
         SELECT u."firstName", u."lastName", p."admissionNo", s."name" as "classLevel"
         FROM "student_profiles" p

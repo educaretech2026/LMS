@@ -7,18 +7,18 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Permissions('STUDENTS')
 export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
 
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('STUDENTS')
   createStudent(@Body() data: any, @Req() req: any) {
     return this.studentsService.createStudent(data, req.user);
   }
 
   @Get('birthdays/today')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'ACCOUNTANT', 'COUNSELOR')
   getTodayBirthdays(@Req() req: any) {
     return this.studentsService.getTodayBirthdays(req.user);
   }
@@ -37,12 +37,14 @@ export class StudentsController {
 
   @Get('search')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Permissions('STUDENTS')
   searchStudents(@Query('q') query: string, @Req() req: any) {
     return this.studentsService.searchStudents(query, req.user);
   }
 
   @Get()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  @Permissions('STUDENTS')
   getStudents(@Req() req: any) {
     return this.studentsService.getStudents(req.user);
   }
@@ -55,18 +57,21 @@ export class StudentsController {
 
   @Put(':id')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('STUDENTS')
   updateStudent(@Param('id') id: string, @Body() data: any, @Req() req: any) {
     return this.studentsService.updateStudent(id, data, req.user);
   }
 
   @Put(':id/status')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('STUDENTS')
   toggleStatus(@Param('id') id: string, @Body('status') status: 'ACTIVE' | 'INACTIVE', @Req() req: any) {
     return this.studentsService.toggleStatus(id, status, req.user);
   }
 
   @Delete(':id')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('STUDENTS')
   deleteStudent(@Param('id') id: string, @Req() req: any) {
     return this.studentsService.deleteStudent(id, req.user);
   }

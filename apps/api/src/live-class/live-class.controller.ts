@@ -17,7 +17,7 @@ export class LiveClassController {
   ) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getAll(@Req() req: any) {
     return this.liveClassService.getAll(req.user);
   }
@@ -53,7 +53,7 @@ export class LiveClassController {
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getById(@Param('id') id: string, @Req() req: any) {
     return this.liveClassService.getById(id, req.user);
   }

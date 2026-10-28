@@ -9,7 +9,11 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
-export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export interface FetchApiOptions extends RequestInit {
+  silent?: boolean;
+}
+
+export async function fetchApi<T>(endpoint: string, options: FetchApiOptions = {}): Promise<T> {
   const isClient = typeof window !== 'undefined';
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
@@ -38,9 +42,11 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     ...((options.headers as Record<string, string>) || {}),
   };
 
+  const { silent: _silent, ...fetchOptions } = options;
+
   const response = await fetch(targetUrl, {
     credentials: 'include',
-    ...options,
+    ...fetchOptions,
     headers,
   });
 
@@ -48,7 +54,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     const errorData = await response.json().catch(() => ({}));
     const message = errorData.message || `API error: ${response.status} ${response.statusText}`;
 
-    if (isClient && (response.status === 403 || message.toLowerCase().includes('permission') || message.toLowerCase().includes('access denied'))) {
+    if (isClient && !options.silent && (response.status === 403 || message.toLowerCase().includes('permission') || message.toLowerCase().includes('access denied'))) {
       try {
         window.dispatchEvent(
           new CustomEvent('educare:access-blocked', {

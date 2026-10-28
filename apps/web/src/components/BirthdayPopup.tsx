@@ -3,20 +3,25 @@
 import { useEffect, useState } from "react";
 import { Gift, X } from "lucide-react";
 import { fetchApi } from "@/lib/api";
+import { useAuth } from "@/components/providers/auth-provider";
 
 export function BirthdayPopup() {
+  const { role } = useAuth();
+  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
   const [birthdays, setBirthdays] = useState<any[]>([]);
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    fetchApi("/students/birthdays/today")
+    if (normalizedRole === 'PUBLIC_LEARNER') return;
+
+    fetchApi("/students/birthdays/today", { silent: true })
       .then((data) => {
         if (Array.isArray(data)) {
           setBirthdays(data);
         }
       })
-      .catch((err) => console.error("Failed to fetch birthdays:", err));
-  }, []);
+      .catch(() => {});
+  }, [normalizedRole]);
 
   if (!visible || birthdays.length === 0) return null;
 

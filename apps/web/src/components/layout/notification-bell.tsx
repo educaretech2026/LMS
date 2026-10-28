@@ -56,7 +56,7 @@ export function NotificationBell() {
   const fetchNotifications = async () => {
     if (!role) return;
     try {
-      const data = await fetchApi<NotificationItem[]>("/notifications");
+      const data = await fetchApi<NotificationItem[]>("/notifications", { silent: true });
       setNotifications(data || []);
     } catch (e) {
       console.error("Failed to load notifications", e);
