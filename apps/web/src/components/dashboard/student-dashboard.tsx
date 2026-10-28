@@ -13,7 +13,9 @@ import Link from "next/link";
 export function StudentDashboard({ user, liveClasses = [], notices = [] }: { user: any, liveClasses?: any[], notices?: any[] }) {
   // Only show live/scheduled classes for today/future
   const upcomingClasses = liveClasses.filter((cls: any) => cls.status !== 'ENDED').slice(0, 3);
-  const recentNotices = notices.slice(0, 5);
+  const recentNotices = (notices || [])
+    .filter((n: any) => !['ADMISSION_RULE', 'ADMISSION_POLICY', 'STAR_ACHIEVER'].includes(n?.type))
+    .slice(0, 5);
   
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">

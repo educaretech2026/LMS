@@ -16,7 +16,10 @@ export default function NoticesPage() {
     setIsLoading(true);
     try {
       const res: any = await fetchApi("/notices");
-      setNotices(res);
+      const filtered = Array.isArray(res)
+        ? res.filter((n: any) => !['ADMISSION_RULE', 'ADMISSION_POLICY', 'STAR_ACHIEVER'].includes(n?.type))
+        : [];
+      setNotices(filtered);
     } catch (error) {
       alert("Failed to load notices");
     } finally {

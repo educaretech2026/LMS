@@ -6,7 +6,12 @@ export class NoticesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAll(activeOnly: boolean = false) {
-    const filter = activeOnly ? { isActive: true } : {};
+    const filter: any = {
+      type: { notIn: ['ADMISSION_RULE', 'ADMISSION_POLICY', 'STAR_ACHIEVER'] },
+    };
+    if (activeOnly) {
+      filter.isActive = true;
+    }
     return this.prisma.notice.findMany({
       where: filter,
       orderBy: { createdAt: 'desc' },

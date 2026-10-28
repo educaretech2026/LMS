@@ -16,7 +16,9 @@ import {
 
 export function TeacherDashboard({ user, stats, notices = [] }: { user: any; stats: any; notices?: any[] }) {
   const ds = stats || {};
-  const recentNotices = notices.slice(0, 5);
+  const recentNotices = (notices || [])
+    .filter((n: any) => !['ADMISSION_RULE', 'ADMISSION_POLICY', 'STAR_ACHIEVER'].includes(n?.type))
+    .slice(0, 5);
   const batches: any[] = ds.batches || [];
   const subjects: any[] = ds.subjects || [];
 
