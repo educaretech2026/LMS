@@ -311,11 +311,11 @@ export default function AdmissionPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Handle high DPI displays
-    const dpr = window.devicePixelRatio || 1;
+    // Handle high DPI displays with reasonable cap (max 2) to keep mobile payload lightweight
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
     ctx.scale(dpr, dpr);
 
     ctx.strokeStyle = "#071d3d"; // Deep navy ink
@@ -389,7 +389,7 @@ export default function AdmissionPage() {
     setSignatureData(null);
   };
 
-  // Handle Signature Image Upload
+  // Handle Signature Image Upload & Compression
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -399,17 +399,51 @@ export default function AdmissionPage() {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setStepError("File size exceeds 5MB limit. Please choose a smaller signature image.");
+    if (file.size > 10 * 1024 * 1024) {
+      setStepError("File size exceeds 10MB limit. Please choose a smaller signature image.");
       return;
     }
 
     setUploadedFileName(file.name);
     const reader = new FileReader();
     reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setSignatureData(dataUrl);
-      clearFieldError("signature");
+      const img = new (window as any).Image();
+      img.onload = () => {
+        // Resize signature to max width/height (max 800px) and compress for mobile efficiency
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL("image/png");
+          setSignatureData(compressedDataUrl);
+          clearFieldError("signature");
+          setStepError(null);
+        } else {
+          const rawDataUrl = event.target?.result as string;
+          setSignatureData(rawDataUrl);
+          clearFieldError("signature");
+          setStepError(null);
+        }
+      };
+      img.onerror = () => {
+        setStepError("Failed to process the signature image. Please try another file.");
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -739,7 +773,11 @@ export default function AdmissionPage() {
       setSubmissionSuccess(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: any) {
-      setStepError(err.message || "Failed to submit admission application. Please try again.");
+      const errorMsg =
+        err?.message?.includes("Internal server error")
+          ? "The server encountered an issue processing the application. Please ensure uploaded photos and signatures are clear and try again."
+          : err?.message || "Failed to submit admission application. Please try again.";
+      setStepError(errorMsg);
     } finally {
       setSubmitting(false);
     }

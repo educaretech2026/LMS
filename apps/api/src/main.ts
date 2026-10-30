@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 import { assertValidTargetForEnvironment, parseDatabaseTarget, verifyHostDnsSafety } from './common/config/database-target.validator';
 
 async function runPreflightSafetyChecks() {
@@ -133,7 +134,11 @@ async function bootstrap() {
     process.env.DISABLE_TURNSTILE = 'true';
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  // SEC-07: Configure explicit body parser limits (15MB) for mobile photo and signature payloads
+  app.use(json({ limit: '15mb' }));
+  app.use(urlencoded({ extended: true, limit: '15mb' }));
 
   // SEC-09: HTTP security headers with Content Security Policy
   app.use(

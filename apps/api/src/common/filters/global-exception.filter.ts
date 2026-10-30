@@ -22,15 +22,27 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status =
+    let status =
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message =
+    let message =
       exception instanceof HttpException
         ? exception.getResponse()
         : 'Internal server error';
+
+    // Intercept Express body-parser PayloadTooLargeError (status 413)
+    const errObj = exception as any;
+    if (
+      errObj?.type === 'entity.too.large' ||
+      errObj?.status === 413 ||
+      errObj?.statusCode === 413 ||
+      errObj?.message?.includes?.('request entity too large')
+    ) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE;
+      message = 'The uploaded data exceeds the server size limit. Please choose a smaller photo or signature.';
+    }
 
     if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
