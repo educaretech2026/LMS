@@ -136,13 +136,13 @@ export default function PublicFormView() {
 
       <div className="max-w-3xl w-full relative z-10 flex flex-col gap-5 pb-20">
         
-        {/* Optional Form Banner Image */}
+        {/* Optional Form Image */}
         {form.imageUrl && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex justify-center">
             <img 
               src={form.imageUrl} 
-              alt={form.title || "Form banner"} 
-              className="w-full max-h-80 object-cover" 
+              alt={form.title || "Form visual"} 
+              className="w-full h-auto object-contain rounded-2xl" 
             />
           </div>
         )}
@@ -166,9 +166,9 @@ export default function PublicFormView() {
             
             if (field.type === 'image') {
               return (
-                <div key={field.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div key={field.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex justify-center">
                   {field.imageUrl ? (
-                    <img src={field.imageUrl} alt="Form visual" className="w-full h-auto object-cover" />
+                    <img src={field.imageUrl} alt="Form visual" className="w-full h-auto object-contain" />
                   ) : (
                     <div className="p-8 text-center text-gray-400 bg-gray-50">Image placeholder</div>
                   )}

@@ -156,7 +156,7 @@ export default function FormBuilderPage() {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-gray-700">
-                    Form Header / Cover Image <span className="text-gray-400 font-normal">(Optional)</span>
+                    Form Image <span className="text-gray-400 font-normal">(Optional)</span>
                   </label>
                   {imageUrl && (
                     <button
@@ -170,14 +170,14 @@ export default function FormBuilderPage() {
                 </div>
 
                 {imageUrl ? (
-                  <div className="relative rounded-xl border border-gray-200 overflow-hidden bg-gray-50 group max-h-56 flex items-center justify-center">
+                  <div className="rounded-xl border border-gray-200 overflow-hidden bg-gray-50/50 p-3 flex flex-col items-center">
                     <img
                       src={imageUrl}
-                      alt="Form Header Preview"
-                      className="w-full max-h-56 object-cover rounded-xl"
+                      alt="Form Image Preview"
+                      className="w-full h-auto max-h-[600px] object-contain rounded-lg"
                     />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                      <label className="bg-white text-gray-800 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer hover:bg-gray-100 shadow transition-all">
+                    <div className="mt-3 flex items-center justify-center gap-3">
+                      <label className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer hover:bg-gray-50 shadow-sm transition-all flex items-center gap-1.5">
                         Change Image
                         <input
                           type="file"
@@ -193,9 +193,9 @@ export default function FormBuilderPage() {
                       <button
                         type="button"
                         onClick={() => setImageUrl("")}
-                        className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-600 shadow transition-all flex items-center gap-1"
+                        className="bg-red-50 border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-100 shadow-sm transition-all flex items-center gap-1"
                       >
-                        <X className="w-3.5 h-3.5" /> Remove
+                        <Trash className="w-3.5 h-3.5" /> Remove
                       </button>
                     </div>
                   </div>
@@ -217,10 +217,10 @@ export default function FormBuilderPage() {
                             <ImageIcon className="w-5 h-5" />
                           </div>
                           <p className="text-xs font-semibold text-gray-700">
-                            Click to upload a banner or header image
+                            Click to upload an image
                           </p>
                           <p className="text-[11px] text-gray-400 mt-0.5">
-                            PNG, JPG, or WEBP (Optional — will appear at top of form)
+                            PNG, JPG, or WEBP (Optional — displays at full size without cropping)
                           </p>
                         </>
                       )}
