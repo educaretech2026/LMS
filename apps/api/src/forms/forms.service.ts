@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
+import { Injectable, OnModuleInit, NotFoundException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
@@ -84,12 +84,39 @@ export function validateFormFields(fields: any): void {
 }
 
 @Injectable()
-export class FormsService {
+export class FormsService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private storageService: StorageService
   ) {}
+
+  async onModuleInit() {
+    await this.ensureImageUrlColumn();
+  }
+
+  private async ensureImageUrlColumn(): Promise<void> {
+    try {
+      if (this.prisma?.$executeRawUnsafe) {
+        await this.prisma.$executeRawUnsafe(`
+          DO $$
+          BEGIN
+              IF NOT EXISTS (
+                  SELECT 1
+                  FROM information_schema.columns
+                  WHERE table_schema = CURRENT_SCHEMA
+                  AND table_name = 'custom_forms'
+                  AND column_name = 'imageUrl'
+              ) THEN
+                  ALTER TABLE "custom_forms" ADD COLUMN "imageUrl" TEXT;
+              END IF;
+          END $$;
+        `);
+      }
+    } catch (err) {
+      console.warn('[FormsService] Note on ensureImageUrlColumn:', (err as any)?.message || err);
+    }
+  }
 
   async createForm(data: { title: string; description?: string; imageUrl?: string; isActive?: boolean; fields: any; centreId?: string }, user?: any): Promise<any> {
     if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
@@ -137,16 +164,28 @@ export class FormsService {
       }
     }
 
-    return this.prisma.customForm.create({
-      data: {
-        title: data.title.trim(),
-        description: data.description ? data.description.trim() : null,
-        imageUrl: data.imageUrl ? data.imageUrl.trim() : null,
-        isActive: data.isActive ?? true,
-        fields: data.fields,
-        centreId: centreId || null,
-      },
-    });
+    const payload = {
+      title: data.title.trim(),
+      description: data.description ? data.description.trim() : null,
+      imageUrl: data.imageUrl ? data.imageUrl.trim() : null,
+      isActive: data.isActive ?? true,
+      fields: data.fields,
+      centreId: centreId || null,
+    };
+
+    try {
+      return await this.prisma.customForm.create({
+        data: payload,
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('imageUrl') || err?.code === 'P2021' || err?.code === 'P2022') {
+        await this.ensureImageUrlColumn();
+        return await this.prisma.customForm.create({
+          data: payload,
+        });
+      }
+      throw err;
+    }
   }
 
   async getForms(user?: any): Promise<any> {
@@ -156,23 +195,52 @@ export class FormsService {
       where.centreId = { in: authorizedCentres };
     }
 
-    return this.prisma.customForm.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { responses: true },
+    try {
+      return await this.prisma.customForm.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: { responses: true },
+          },
         },
-      },
-    });
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('imageUrl') || err?.code === 'P2021' || err?.code === 'P2022') {
+        await this.ensureImageUrlColumn();
+        return await this.prisma.customForm.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            _count: {
+              select: { responses: true },
+            },
+          },
+        });
+      }
+      throw err;
+    }
   }
 
   async getFormById(id: string): Promise<any> {
-    const form = await this.prisma.customForm.findUnique({
-      where: { id },
-    });
-    if (!form) throw new NotFoundException('Form not found');
-    return form;
+    try {
+      const form = await this.prisma.customForm.findUnique({
+        where: { id },
+      });
+      if (!form) throw new NotFoundException('Form not found');
+      return form;
+    } catch (err: any) {
+      if (err instanceof NotFoundException) throw err;
+      if (err?.message?.includes('imageUrl') || err?.code === 'P2021' || err?.code === 'P2022') {
+        await this.ensureImageUrlColumn();
+        const form = await this.prisma.customForm.findUnique({
+          where: { id },
+        });
+        if (!form) throw new NotFoundException('Form not found');
+        return form;
+      }
+      throw err;
+    }
   }
 
   async updateForm(id: string, data: { title?: string; description?: string; imageUrl?: string; isActive?: boolean; fields?: any; centreId?: string }, user?: any): Promise<any> {
@@ -238,10 +306,21 @@ export class FormsService {
     if (data.fields !== undefined) updatePayload.fields = data.fields;
     if (data.centreId !== undefined) updatePayload.centreId = data.centreId || null;
 
-    return this.prisma.customForm.update({
-      where: { id },
-      data: updatePayload,
-    });
+    try {
+      return await this.prisma.customForm.update({
+        where: { id },
+        data: updatePayload,
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('imageUrl') || err?.code === 'P2021' || err?.code === 'P2022') {
+        await this.ensureImageUrlColumn();
+        return await this.prisma.customForm.update({
+          where: { id },
+          data: updatePayload,
+        });
+      }
+      throw err;
+    }
   }
 
   async deleteForm(id: string, user?: any): Promise<any> {
