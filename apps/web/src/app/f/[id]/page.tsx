@@ -152,7 +152,7 @@ export default function PublicFormView() {
           <div className="absolute top-0 left-0 w-full h-2.5 bg-brand-blue" />
           <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight leading-tight">{form.title}</h1>
           {form.description && (
-            <p className="mt-4 text-gray-600 leading-relaxed text-base sm:text-lg">{form.description}</p>
+            <p className="mt-4 text-gray-600 leading-relaxed text-base sm:text-lg whitespace-pre-line">{form.description}</p>
           )}
           {form.fields?.some((f: any) => f.required) && (
             <p className="mt-6 text-sm font-medium text-red-500">* Indicates required question</p>
