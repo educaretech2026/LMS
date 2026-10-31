@@ -136,6 +136,17 @@ export default function PublicFormView() {
 
       <div className="max-w-3xl w-full relative z-10 flex flex-col gap-5 pb-20">
         
+        {/* Optional Form Banner Image */}
+        {form.imageUrl && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <img 
+              src={form.imageUrl} 
+              alt={form.title || "Form banner"} 
+              className="w-full max-h-80 object-cover" 
+            />
+          </div>
+        )}
+
         {/* Header Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sm:p-12 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-2.5 bg-brand-blue" />

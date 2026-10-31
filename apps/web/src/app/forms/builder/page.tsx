@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { PageShell } from "@/components/layout/page-shell";
 import { fetchApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { Plus, Trash, GripVertical, Save, PenTool } from "lucide-react";
+import { Plus, Trash, GripVertical, Save, PenTool, Image as ImageIcon, X, Loader2 } from "lucide-react";
 
 type Field = {
   id: string;
@@ -20,12 +20,43 @@ export default function FormBuilderPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [fields, setFields] = useState<Field[]>([
     { id: "field_" + Date.now(), label: "Full Name", type: "text", required: true },
     { id: "field_" + (Date.now() + 1), label: "Mobile / WhatsApp Number", type: "tel", required: true },
     { id: "field_" + (Date.now() + 2), label: "Email Address", type: "email", required: true },
   ]);
   const [saving, setSaving] = useState(false);
+
+  const handleFormImageUpload = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file (PNG, JPG, WEBP, GIF).");
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const urlRes = await fetchApi<any>(
+        `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
+      );
+      const { uploadUrl, finalUrl } = urlRes;
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!uploadRes.ok) throw new Error("Failed to upload image to storage");
+
+      setImageUrl(finalUrl);
+    } catch (e: any) {
+      alert(e.message || "Failed to upload form image");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const addField = () => {
     setFields([...fields, { id: "field_" + Date.now(), label: "New Field", type: "text", required: false }]);
@@ -79,7 +110,8 @@ export default function FormBuilderPage() {
         method: "POST",
         body: JSON.stringify({
           title,
-          description,
+          description: description ? description.trim() : undefined,
+          imageUrl: imageUrl || undefined,
           fields,
           isActive: true
         })
@@ -119,6 +151,93 @@ export default function FormBuilderPage() {
                   rows={3}
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-blue focus:border-transparent outline-none transition-all resize-none"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-700">
+                    Form Header / Cover Image <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  {imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl("")}
+                      className="text-xs text-red-600 hover:text-red-800 font-medium flex items-center gap-1"
+                    >
+                      <Trash className="w-3.5 h-3.5" /> Remove Image
+                    </button>
+                  )}
+                </div>
+
+                {imageUrl ? (
+                  <div className="relative rounded-xl border border-gray-200 overflow-hidden bg-gray-50 group max-h-56 flex items-center justify-center">
+                    <img
+                      src={imageUrl}
+                      alt="Form Header Preview"
+                      className="w-full max-h-56 object-cover rounded-xl"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      <label className="bg-white text-gray-800 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer hover:bg-gray-100 shadow transition-all">
+                        Change Image
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleFormImageUpload(e.target.files[0]);
+                            }
+                          }}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl("")}
+                        className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-600 shadow transition-all flex items-center gap-1"
+                      >
+                        <X className="w-3.5 h-3.5" /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50 hover:bg-brand-50/30 hover:border-brand-300 cursor-pointer transition-all ${
+                      uploadingImage ? "opacity-60 pointer-events-none" : ""
+                    }`}
+                  >
+                    <div className="flex flex-col items-center text-center p-4">
+                      {uploadingImage ? (
+                        <>
+                          <Loader2 className="w-6 h-6 text-brand-600 animate-spin mb-2" />
+                          <p className="text-xs font-semibold text-gray-700">Uploading image...</p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mb-2">
+                            <ImageIcon className="w-5 h-5" />
+                          </div>
+                          <p className="text-xs font-semibold text-gray-700">
+                            Click to upload a banner or header image
+                          </p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            PNG, JPG, or WEBP (Optional — will appear at top of form)
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploadingImage}
+                      onChange={e => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFormImageUpload(e.target.files[0]);
+                        }
+                      }}
+                    />
+                  </label>
+                )}
               </div>
             </div>
           </div>
@@ -258,10 +377,10 @@ export default function FormBuilderPage() {
             <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
               <button 
                 onClick={handleSave} 
-                disabled={saving}
+                disabled={saving || uploadingImage}
                 className="bg-brand-blue text-white px-6 py-2.5 rounded-xl font-bold hover:bg-brand-blue-dark flex items-center transition-all shadow-sm shadow-brand-blue-light/20 disabled:opacity-70"
               >
-                {saving ? "Saving..." : <><Save className="w-4 h-4 mr-2" /> Save & Publish Form</>}
+                {saving ? "Saving..." : uploadingImage ? "Uploading image..." : <><Save className="w-4 h-4 mr-2" /> Save & Publish Form</>}
               </button>
             </div>
           </div>

@@ -799,9 +799,21 @@ export class StorageService {
       }
     }
 
-    // 5. Custom Form Definitions (fields JSON, e.g. field imageUrl or header/layout images)
+    // 5. Custom Form Definitions (imageUrl or fields JSON, e.g. field imageUrl or header/layout images)
     if (prismaAny.customForm) {
       try {
+        if (prismaAny.customForm.findFirst) {
+          const formWithImage = await prismaAny.customForm.findFirst({
+            where: {
+              OR: [
+                { imageUrl: { in: keyVariations } },
+                { imageUrl: { endsWith: validatedKey } },
+              ],
+              ...(excludeContext?.model === 'CustomForm' && excludeContext.id ? { id: { not: excludeContext.id } } : {}),
+            },
+          });
+          if (formWithImage) return true;
+        }
         if (prismaAny.$queryRawUnsafe) {
           const rawForms = await prismaAny.$queryRawUnsafe(
             `SELECT id FROM "custom_forms" WHERE "fields"::text LIKE $1 LIMIT 1`,
@@ -815,7 +827,7 @@ export class StorageService {
           if (found) return true;
         }
       } catch (err) {
-        console.error('Error checking customForm fields references (failing closed):', err);
+        console.error('Error checking customForm references (failing closed):', err);
         return true;
       }
     }

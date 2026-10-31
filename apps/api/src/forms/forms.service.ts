@@ -15,6 +15,7 @@ const ALLOWED_FIELD_TYPES = new Set([
   'checkbox',
   'file',
   'date',
+  'image',
 ]);
 
 const PROTECTED_FORM_FIELDS = new Set(['id', '_id', 'createdAt', 'updatedAt', 'responses', '_count']);
@@ -90,7 +91,7 @@ export class FormsService {
     private storageService: StorageService
   ) {}
 
-  async createForm(data: { title: string; description?: string; isActive?: boolean; fields: any; centreId?: string }, user?: any): Promise<any> {
+  async createForm(data: { title: string; description?: string; imageUrl?: string; isActive?: boolean; fields: any; centreId?: string }, user?: any): Promise<any> {
     if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
       throw new BadRequestException('Form title is required and must be a non-empty string.');
     }
@@ -104,6 +105,15 @@ export class FormsService {
       }
       if (data.description.length > 2000) {
         throw new BadRequestException('Form description cannot exceed 2000 characters.');
+      }
+    }
+
+    if (data.imageUrl !== undefined && data.imageUrl !== null) {
+      if (typeof data.imageUrl !== 'string') {
+        throw new BadRequestException('Form imageUrl must be a string.');
+      }
+      if (data.imageUrl.length > 1000) {
+        throw new BadRequestException('Form imageUrl cannot exceed 1000 characters.');
       }
     }
 
@@ -131,6 +141,7 @@ export class FormsService {
       data: {
         title: data.title.trim(),
         description: data.description ? data.description.trim() : null,
+        imageUrl: data.imageUrl ? data.imageUrl.trim() : null,
         isActive: data.isActive ?? true,
         fields: data.fields,
         centreId: centreId || null,
@@ -164,7 +175,7 @@ export class FormsService {
     return form;
   }
 
-  async updateForm(id: string, data: { title?: string; description?: string; isActive?: boolean; fields?: any; centreId?: string }, user?: any): Promise<any> {
+  async updateForm(id: string, data: { title?: string; description?: string; imageUrl?: string; isActive?: boolean; fields?: any; centreId?: string }, user?: any): Promise<any> {
     const existing = await this.prisma.customForm.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Form not found');
 
@@ -200,6 +211,15 @@ export class FormsService {
       }
     }
 
+    if (data.imageUrl !== undefined && data.imageUrl !== null) {
+      if (typeof data.imageUrl !== 'string') {
+        throw new BadRequestException('Form imageUrl must be a string.');
+      }
+      if (data.imageUrl.length > 1000) {
+        throw new BadRequestException('Form imageUrl cannot exceed 1000 characters.');
+      }
+    }
+
     if (data.isActive !== undefined && data.isActive !== null) {
       if (typeof data.isActive !== 'boolean') {
         throw new BadRequestException('isActive must be a boolean (true or false).');
@@ -213,6 +233,7 @@ export class FormsService {
     const updatePayload: any = {};
     if (data.title !== undefined) updatePayload.title = data.title.trim();
     if (data.description !== undefined) updatePayload.description = data.description ? data.description.trim() : null;
+    if (data.imageUrl !== undefined) updatePayload.imageUrl = data.imageUrl ? data.imageUrl.trim() : null;
     if (data.isActive !== undefined) updatePayload.isActive = data.isActive;
     if (data.fields !== undefined) updatePayload.fields = data.fields;
     if (data.centreId !== undefined) updatePayload.centreId = data.centreId || null;

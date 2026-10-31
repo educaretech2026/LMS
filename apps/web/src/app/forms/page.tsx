@@ -80,8 +80,19 @@ export default function FormsPage() {
                 forms.map((form) => (
                   <tr key={form.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4">
-                      <p className="text-sm font-bold text-gray-900">{form.title}</p>
-                      <p className="text-xs text-gray-500 mt-1 truncate max-w-xs">{form.description}</p>
+                      <div className="flex items-center gap-3">
+                        {form.imageUrl && (
+                          <img
+                            src={form.imageUrl}
+                            alt=""
+                            className="w-10 h-10 rounded-lg object-cover border border-gray-200 flex-shrink-0"
+                          />
+                        )}
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">{form.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 truncate max-w-xs">{form.description}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${form.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
