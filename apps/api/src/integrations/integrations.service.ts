@@ -40,13 +40,17 @@ export class IntegrationsService {
 
     if (!integration) {
       const apiKey = `edc_live_${crypto.randomBytes(24).toString('hex')}`;
+      const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
       const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
+      const keySuffix = apiKey.slice(-4);
 
       integration = await this.prisma.apiIntegration.create({
         data: {
           name: 'Primary CRM Integration',
           apiKey,
+          apiKeyHash,
           keyPrefix: 'edc_live_',
+          keySuffix,
           webhookSecret,
           isActive: true,
           centreId: centreId || null,
@@ -73,12 +77,16 @@ export class IntegrationsService {
     }
 
     const newApiKey = `edc_live_${crypto.randomBytes(24).toString('hex')}`;
+    const newApiKeyHash = crypto.createHash('sha256').update(newApiKey).digest('hex');
     const newWebhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
+    const keySuffix = newApiKey.slice(-4);
 
     const updated = await this.prisma.apiIntegration.update({
       where: { id },
       data: {
         apiKey: newApiKey,
+        apiKeyHash: newApiKeyHash,
+        keySuffix,
         webhookSecret: newWebhookSecret,
         updatedAt: new Date(),
       },
@@ -240,10 +248,16 @@ export class IntegrationsService {
       }
 
       // 3. RESOLVE ENTITIES (Centre, Academic Year, Board, Standard, Batch)
-      // Centre Resolution
+      // Strict Multi-Tenant Isolation: If integration credentials belong to a specific centre, lock to that centre!
       let centre: any = null;
+      if (integration?.centreId) {
+        centre = await this.prisma.centre.findUnique({
+          where: { id: integration.centreId },
+        });
+      }
+
       const targetCentreQuery = data.centre || data.centreName || data.centreCode;
-      if (targetCentreQuery) {
+      if (!centre && targetCentreQuery) {
         centre = await this.prisma.centre.findFirst({
           where: {
             OR: [
@@ -251,12 +265,6 @@ export class IntegrationsService {
               { code: { equals: targetCentreQuery, mode: 'insensitive' } },
             ],
           },
-        });
-      }
-
-      if (!centre && integration?.centreId) {
-        centre = await this.prisma.centre.findUnique({
-          where: { id: integration.centreId },
         });
       }
 

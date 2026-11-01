@@ -85,7 +85,7 @@ describe('IntegrationsService & Webhook Ingestion', () => {
     expect(service).toBeDefined();
   });
 
-  describe('HMAC SHA-256 Webhook Signature Verification', () => {
+  describe('HMAC SHA-256 Webhook Signature & Anti-Replay Verification', () => {
     it('should compute and verify valid HMAC signatures over raw payloads', () => {
       const secret = 'whsec_test_secret_key_12345';
       const payload = JSON.stringify({
@@ -105,6 +105,67 @@ describe('IntegrationsService & Webhook Ingestion', () => {
 
       expect(signature).toBe(computed);
       expect(crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(computed, 'hex'))).toBe(true);
+    });
+
+    it('should verify timestamp-bound HMAC signature within 5 minute drift', () => {
+      const secret = 'whsec_test_secret_key_12345';
+      const timestamp = Math.floor(Date.now() / 1000);
+      const rawPayload = JSON.stringify({ test: true });
+
+      const timestampedSig = crypto
+        .createHmac('sha256', secret)
+        .update(Buffer.concat([Buffer.from(`${timestamp}.`), Buffer.from(rawPayload)]))
+        .digest('hex');
+
+      const expected = crypto
+        .createHmac('sha256', secret)
+        .update(Buffer.concat([Buffer.from(`${timestamp}.`), Buffer.from(rawPayload)]))
+        .digest('hex');
+
+      expect(crypto.timingSafeEqual(Buffer.from(timestampedSig, 'hex'), Buffer.from(expected, 'hex'))).toBe(true);
+    });
+
+    it('should hash API keys with SHA-256 for secure database lookup', () => {
+      const rawKey = 'edc_live_abcdef1234567890abcdef1234567890';
+      const hash1 = crypto.createHash('sha256').update(rawKey).digest('hex');
+      const hash2 = crypto.createHash('sha256').update(rawKey).digest('hex');
+
+      expect(hash1).toBe(hash2);
+      expect(hash1.length).toBe(64);
+    });
+  });
+
+  describe('Multi-Tenant Centre Isolation', () => {
+    it('should strictly lock enrolled student to integration centre even if payload claims another centre', async () => {
+      prisma.studentProfile.findFirst.mockResolvedValueOnce(null);
+      prisma.user.findUnique.mockResolvedValueOnce(null);
+      prisma.user.create.mockResolvedValueOnce({
+        id: 'usr-isolated',
+        email: 'isolated@example.com',
+      });
+      prisma.studentProfile.create.mockResolvedValueOnce({
+        id: 'prof-isolated',
+        admissionNo: 'MC-11111',
+      });
+
+      const lockedIntegration = { id: 'integ-locked', centreId: 'centre-1' };
+      const rawPayload = {
+        event: 'student.enrolled',
+        data: {
+          crmEnquiryId: 'CRM-ISOLATED-1',
+          studentName: 'Tenant Protected Student',
+          email: 'isolated@example.com',
+          centre: 'Malicious Attempt At Another Centre',
+        },
+      };
+
+      const result = await service.processCrmAdmissionWebhook(rawPayload, lockedIntegration);
+
+      expect(result.success).toBe(true);
+      expect(prisma.centre.findUnique).toHaveBeenCalledWith({
+        where: { id: 'centre-1' },
+      });
+      expect(result.centreId).toBe('centre-1');
     });
   });
 

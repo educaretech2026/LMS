@@ -98,3 +98,4 @@ export class CrmAdmissionWebhookDto {
   @IsString()
   notes?: string;
 }
+

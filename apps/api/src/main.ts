@@ -268,6 +268,8 @@ async function bootstrap() {
       'x-api-key',
       'X-Webhook-Signature',
       'x-webhook-signature',
+      'X-Webhook-Timestamp',
+      'x-webhook-timestamp',
       'Access-Control-Request-Headers',
       'Access-Control-Request-Method',
     ],

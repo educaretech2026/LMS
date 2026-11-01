@@ -15,6 +15,7 @@ import { IntegrationsService } from './integrations.service';
 import { ApiKeyWebhookGuard } from './guards/api-key-webhook.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CrmAdmissionWebhookDto } from './dto/crm-webhook.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller()
 export class IntegrationsController {
@@ -23,9 +24,11 @@ export class IntegrationsController {
   /**
    * INCOMING WEBHOOK: Triggered by external CRM on student ENROLLED / opportunity WON.
    * Authenticated via X-API-Key and HMAC SHA-256 X-Webhook-Signature.
+   * Hardened with anti-replay timestamp verification and dedicated ingress throttling.
    */
   @Public()
   @UseGuards(ApiKeyWebhookGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post('webhooks/crm/admissions')
   @HttpCode(HttpStatus.OK)
   async handleCrmAdmissionWebhook(

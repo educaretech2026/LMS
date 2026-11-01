@@ -1490,8 +1490,10 @@ model AuditLog {
 model ApiIntegration {
   id            String    @id @default(uuid())
   name          String    @default("CRM Integration")
-  apiKey        String    @unique
+  apiKey        String?   @unique
+  apiKeyHash    String?   @unique
   keyPrefix     String    @default("edc_live_")
+  keySuffix     String?
   webhookSecret String
   isActive      Boolean   @default(true)
   centreId      String?

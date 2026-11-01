@@ -457,14 +457,17 @@ export default function SettingsPage() {
                   </p>
 
                   <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-slate-200 overflow-x-auto space-y-2">
-                    <div className="text-slate-400">// Node.js / TypeScript Webhook Dispatcher</div>
+                    <div className="text-slate-400">// Node.js / TypeScript Webhook Dispatcher (with Anti-Replay Protection)</div>
                     <div>
                       {`const crypto = require('crypto');
 const axios = require('axios');
 
 const payload = ${samplePayload};
 
+const timestamp = Math.floor(Date.now() / 1000);
 const rawBody = JSON.stringify(payload);
+
+// Compute HMAC SHA-256 signature
 const signature = crypto
   .createHmac('sha256', '${credentials?.webhookSecret || "YOUR_WEBHOOK_SECRET"}')
   .update(rawBody)
@@ -474,7 +477,8 @@ await axios.post('${webhookEndpoint}', payload, {
   headers: {
     'Content-Type': 'application/json',
     'X-API-Key': '${credentials?.apiKey || "YOUR_API_KEY"}',
-    'X-Webhook-Signature': signature
+    'X-Webhook-Signature': signature,
+    'X-Webhook-Timestamp': String(timestamp)
   }
 });`}
                     </div>

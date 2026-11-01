@@ -56,13 +56,35 @@ export class PrismaService
             ) THEN
                 ALTER TABLE "enquiries" ADD COLUMN "externalCrmId" TEXT;
             END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = CURRENT_SCHEMA
+                AND table_name = 'api_integrations'
+                AND column_name = 'apiKeyHash'
+            ) THEN
+                ALTER TABLE "api_integrations" ADD COLUMN "apiKeyHash" TEXT;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = CURRENT_SCHEMA
+                AND table_name = 'api_integrations'
+                AND column_name = 'keySuffix'
+            ) THEN
+                ALTER TABLE "api_integrations" ADD COLUMN "keySuffix" TEXT;
+            END IF;
         END $$;
 
         CREATE TABLE IF NOT EXISTS "api_integrations" (
           "id" TEXT PRIMARY KEY,
           "name" TEXT NOT NULL DEFAULT 'CRM Integration',
-          "apiKey" TEXT NOT NULL UNIQUE,
+          "apiKey" TEXT UNIQUE,
+          "apiKeyHash" TEXT UNIQUE,
           "keyPrefix" TEXT NOT NULL DEFAULT 'edc_live_',
+          "keySuffix" TEXT,
           "webhookSecret" TEXT NOT NULL,
           "isActive" BOOLEAN NOT NULL DEFAULT true,
           "centreId" TEXT,

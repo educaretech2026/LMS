@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 @Injectable()
 export class ApiKeyWebhookGuard implements CanActivate {
   private readonly logger = new Logger(ApiKeyWebhookGuard.name);
+  private static readonly MAX_TIMESTAMP_DRIFT_SECONDS = 300; // 5-minute tolerance
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -41,11 +42,40 @@ export class ApiKeyWebhookGuard implements CanActivate {
       );
     }
 
-    // 3. Find active integration record
+    // 3. Extract & Validate Timestamp for Replay Attack Prevention
+    const timestampHeader =
+      (request.headers['x-webhook-timestamp'] as string) ||
+      (request.headers['X-Webhook-Timestamp'] as string) ||
+      request.body?.timestamp;
+
+    if (timestampHeader) {
+      const parsedTime = Number(timestampHeader);
+      const currentTime = Math.floor(Date.now() / 1000);
+
+      // Support either seconds or milliseconds epoch
+      const normalizedTime = parsedTime > 1e11 ? Math.floor(parsedTime / 1000) : parsedTime;
+
+      if (isNaN(normalizedTime) || Math.abs(currentTime - normalizedTime) > ApiKeyWebhookGuard.MAX_TIMESTAMP_DRIFT_SECONDS) {
+        this.logger.warn(`Rejected replayed or expired webhook. Timestamp: ${timestampHeader}, Current: ${currentTime}`);
+        throw new UnauthorizedException(
+          `Webhook timestamp outside acceptable tolerance (replay prevention). Request must be within 5 minutes of server time.`,
+        );
+      }
+    }
+
+    // 4. Secure API Key Lookup (One-way SHA-256 hash or raw key fallback)
+    const incomingHash = crypto.createHash('sha256').update(apiKey.trim()).digest('hex');
+
     const integration = await this.prisma.apiIntegration.findFirst({
       where: {
-        apiKey,
+        OR: [
+          { apiKeyHash: incomingHash },
+          { apiKey: apiKey.trim() },
+        ],
         isActive: true,
+      },
+      include: {
+        centre: { select: { id: true, name: true, code: true } },
       },
     });
 
@@ -53,36 +83,52 @@ export class ApiKeyWebhookGuard implements CanActivate {
       throw new UnauthorizedException('Invalid, inactive, or revoked API key.');
     }
 
-    // 4. Verify HMAC SHA-256 signature against raw body
+    // 5. Verify HMAC SHA-256 signature against raw body
     const rawBody: Buffer =
       request.rawBody ||
       (typeof request.body === 'string'
         ? Buffer.from(request.body)
         : Buffer.from(JSON.stringify(request.body || {})));
 
-    const expectedDigest = crypto
+    const cleanSignature = signature.trim().replace(/^sha256=/i, '');
+    const providedBuf = Buffer.from(cleanSignature, 'hex');
+
+    // Candidate 1: Direct payload signature HMAC(secret, rawBody)
+    const expectedDirect = crypto
       .createHmac('sha256', integration.webhookSecret)
       .update(rawBody)
       .digest('hex');
+    const directBuf = Buffer.from(expectedDirect, 'hex');
 
-    const cleanSignature = signature.trim().replace(/^sha256=/i, '');
+    // Candidate 2: Timestamp-bound signature HMAC(secret, `${timestamp}.${rawBody}`)
+    let timestampBuf: Buffer | null = null;
+    if (timestampHeader) {
+      const expectedTimestamped = crypto
+        .createHmac('sha256', integration.webhookSecret)
+        .update(Buffer.concat([Buffer.from(`${timestampHeader}.`), rawBody]))
+        .digest('hex');
+      timestampBuf = Buffer.from(expectedTimestamped, 'hex');
+    }
 
-    const expectedBuf = Buffer.from(expectedDigest, 'hex');
-    const providedBuf = Buffer.from(cleanSignature, 'hex');
+    const matchesDirect =
+      directBuf.length === providedBuf.length &&
+      crypto.timingSafeEqual(directBuf, providedBuf);
 
-    if (
-      expectedBuf.length !== providedBuf.length ||
-      !crypto.timingSafeEqual(expectedBuf, providedBuf)
-    ) {
+    const matchesTimestamped =
+      timestampBuf &&
+      timestampBuf.length === providedBuf.length &&
+      crypto.timingSafeEqual(timestampBuf, providedBuf);
+
+    if (!matchesDirect && !matchesTimestamped) {
       this.logger.warn(
-        `Webhook signature mismatch for integration ${integration.id}. Expected: ${expectedDigest.slice(0, 10)}..., Provided: ${cleanSignature.slice(0, 10)}...`,
+        `Webhook signature mismatch for integration ${integration.id}. Provided signature did not match direct or timestamped digest.`,
       );
       throw new UnauthorizedException(
         'Invalid webhook signature. Payload tampering detected or incorrect webhook secret used.',
       );
     }
 
-    // 5. Attach integration to request and record usage in background
+    // 6. Attach integration to request and record usage in background
     request.integration = integration;
     this.prisma.apiIntegration
       .update({
