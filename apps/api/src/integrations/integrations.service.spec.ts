@@ -17,14 +17,17 @@ describe('IntegrationsService & Webhook Ingestion', () => {
       },
       studentProfile: {
         findFirst: jest.fn(),
+        findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn().mockResolvedValue({ id: 'prof-1' }),
         count: jest.fn().mockResolvedValue(10),
         findMany: jest.fn().mockResolvedValue([]),
       },
       user: {
         findUnique: jest.fn(),
         create: jest.fn(),
+        delete: jest.fn().mockResolvedValue({ id: 'user-1' }),
       },
       role: {
         findFirst: jest.fn().mockResolvedValue({ id: 'role-student', name: 'STUDENT' }),
@@ -50,18 +53,34 @@ describe('IntegrationsService & Webhook Ingestion', () => {
       },
       enrollment: {
         create: jest.fn().mockResolvedValue({ id: 'enr-1' }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      feeRecord: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      assignmentSubmission: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      attendanceRecord: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      examResult: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       userCentre: {
         create: jest.fn().mockResolvedValue({ id: 'uc-1' }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       enquiry: {
         findFirst: jest.fn(),
         create: jest.fn().mockResolvedValue({ id: 'enq-1' }),
         update: jest.fn().mockResolvedValue({ id: 'enq-1' }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       webhookLog: {
         create: jest.fn().mockResolvedValue({ id: 'log-1' }),
         findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 5 }),
       },
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(prisma);
@@ -259,6 +278,30 @@ describe('IntegrationsService & Webhook Ingestion', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('Data Cleanup & Purge', () => {
+    it('should permanently purge CRM admission, user, and linked records', async () => {
+      prisma.studentProfile.findUnique.mockResolvedValueOnce({
+        id: 'prof-to-delete',
+        userId: 'usr-to-delete',
+        externalCrmId: 'CRM-PURGE-100',
+        user: { firstName: 'Test', lastName: 'Delete' },
+      });
+
+      const result = await service.deleteCrmAdmission('prof-to-delete');
+      expect(result.success).toBe(true);
+      expect(prisma.studentProfile.delete).toHaveBeenCalledWith({ where: { id: 'prof-to-delete' } });
+      expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: 'usr-to-delete' } });
+      expect(prisma.enquiry.deleteMany).toHaveBeenCalled();
+    });
+
+    it('should clear all webhook delivery audit logs', async () => {
+      const result = await service.clearWebhookLogs();
+      expect(result.success).toBe(true);
+      expect(result.deletedCount).toBe(5);
+      expect(prisma.webhookLog.deleteMany).toHaveBeenCalledWith({});
     });
   });
 });

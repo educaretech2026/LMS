@@ -626,6 +626,7 @@ export class IntegrationsService implements OnModuleInit {
   async getCrmAdmissions(params: {
     centreId?: string;
     search?: string;
+    status?: string;
     page?: number;
     limit?: number;
   }) {
@@ -641,6 +642,7 @@ export class IntegrationsService implements OnModuleInit {
   private async _getCrmAdmissionsInternal(params: {
     centreId?: string;
     search?: string;
+    status?: string;
     page?: number;
     limit?: number;
   }) {
@@ -648,7 +650,11 @@ export class IntegrationsService implements OnModuleInit {
     const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
     const skip = (page - 1) * limit;
 
+    const statusFilter = (params.status || 'ACTIVE').toUpperCase();
     const where: any = {
+      ...(statusFilter === 'ALL'
+        ? {}
+        : { user: { status: statusFilter === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE' } }),
       OR: [
         { source: 'CRM_WEBHOOK' },
         { externalCrmId: { not: null } },
@@ -731,6 +737,65 @@ export class IntegrationsService implements OnModuleInit {
   }
 
   /**
+   * Permanently deletes a CRM admission, cascading to User, Enrollments, linked Enquiry, and Webhook Logs.
+   * This completely clears test data so the CRM ID can be reused fresh.
+   */
+  async deleteCrmAdmission(id: string) {
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(`CRM admission record with ID "${id}" not found.`);
+    }
+
+    const crmId = profile.externalCrmId;
+    const userId = profile.userId;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Delete associated child records
+      await tx.enrollment.deleteMany({ where: { studentProfileId: id } }).catch(() => null);
+      await tx.feeRecord.deleteMany({ where: { studentId: id } }).catch(() => null);
+      await tx.assignmentSubmission.deleteMany({ where: { studentId: id } }).catch(() => null);
+      await tx.attendanceRecord.deleteMany({ where: { studentId: id } }).catch(() => null);
+      await tx.examResult.deleteMany({ where: { studentId: id } }).catch(() => null);
+
+      // 2. Delete linked enquiry if created via CRM
+      if (crmId) {
+        await tx.enquiry.deleteMany({
+          where: {
+            OR: [
+              { externalCrmId: crmId },
+              {
+                AND: [
+                  { studentName: `${profile.user?.firstName || ''} ${profile.user?.lastName || ''}`.trim() },
+                  { source: 'CRM' },
+                ],
+              },
+            ],
+          },
+        }).catch(() => null);
+      }
+
+      // 3. Delete Profile and User account
+      await tx.studentProfile.delete({ where: { id } }).catch(() => null);
+      if (userId) {
+        await tx.userCentre.deleteMany({ where: { userId } }).catch(() => null);
+        await tx.user.delete({ where: { id: userId } }).catch(() => null);
+      }
+
+      // 4. Delete webhook logs matching this CRM ID
+      if (crmId) {
+        await tx.webhookLog.deleteMany({ where: { crmId } }).catch(() => null);
+      }
+    });
+
+    this.logger.log(`Purged CRM admission ${id} (CRM ID: ${crmId || 'N/A'})`);
+    return { success: true, message: 'CRM admission permanently deleted.' };
+  }
+
+  /**
    * Retrieves latest webhook activity logs.
    */
   async getWebhookLogs(limit: number = 50): Promise<any[]> {
@@ -751,5 +816,14 @@ export class IntegrationsService implements OnModuleInit {
         return [];
       }
     }
+  }
+
+  /**
+   * Clears all webhook delivery audit logs.
+   */
+  async clearWebhookLogs(): Promise<{ success: boolean; deletedCount: number }> {
+    const res = await this.prisma.webhookLog.deleteMany({});
+    this.logger.log(`Cleared ${res.count} webhook logs`);
+    return { success: true, deletedCount: res.count };
   }
 }

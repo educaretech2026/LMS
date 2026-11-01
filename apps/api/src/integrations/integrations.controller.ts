@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Query,
   Param,
@@ -66,15 +67,25 @@ export class IntegrationsController {
   async getCrmAdmissions(
     @Query('centreId') centreId?: string,
     @Query('search') search?: string,
+    @Query('status') status?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.integrationsService.getCrmAdmissions({
       centreId,
       search,
+      status,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 20,
     });
+  }
+
+  /**
+   * ADMIN: Permanently delete a CRM admission record and purge associated student test data.
+   */
+  @Delete('integrations/crm-admissions/:id')
+  async deleteCrmAdmission(@Param('id') id: string) {
+    return this.integrationsService.deleteCrmAdmission(id);
   }
 
   /**
@@ -85,5 +96,13 @@ export class IntegrationsController {
     return this.integrationsService.getWebhookLogs(
       limit ? parseInt(limit, 10) : 50,
     );
+  }
+
+  /**
+   * ADMIN: Clear all webhook activity and delivery audit logs.
+   */
+  @Delete('integrations/logs')
+  async clearWebhookLogs() {
+    return this.integrationsService.clearWebhookLogs();
   }
 }

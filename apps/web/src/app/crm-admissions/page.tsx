@@ -21,6 +21,7 @@ import {
   Copy,
   Check,
   Code2,
+  Trash2,
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 
@@ -59,15 +60,17 @@ export default function CrmAdmissionsPage() {
   const [data, setData] = useState<CrmAdmissionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "ALL" | "INACTIVE">("ACTIVE");
   const [total, setTotal] = useState(0);
   const [thisMonth, setThisMonth] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = async (status = statusFilter) => {
     try {
       setRefreshing(true);
-      const res: any = await fetchApi("/integrations/crm-admissions?limit=100");
+      const res: any = await fetchApi(`/integrations/crm-admissions?limit=100&status=${status}`);
       if (res && res.data) {
         setData(res.data);
         setTotal(res.total || 0);
@@ -82,8 +85,26 @@ export default function CrmAdmissionsPage() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(statusFilter);
+  }, [statusFilter]);
+
+  const handleDelete = async (id: string, name: string, crmId?: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete CRM admission for "${name}"${crmId ? ` (CRM ID: ${crmId})` : ""}? This will purge the student profile, user credentials, and allow this CRM ID to be dispatched fresh.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(id);
+    try {
+      await fetchApi(`/integrations/crm-admissions/${id}`, { method: "DELETE" });
+      alert("CRM admission permanently deleted.");
+      await loadData();
+    } catch (err: any) {
+      alert("Failed to delete admission: " + (err?.message || err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -118,7 +139,7 @@ export default function CrmAdmissionsPage() {
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={loadData}
+              onClick={() => loadData()}
               disabled={refreshing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-soft bg-surface-2 hover:bg-white text-text-secondary transition-colors"
             >
@@ -190,9 +211,9 @@ export default function CrmAdmissionsPage() {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="bg-white rounded-xl border border-border-soft p-4 mb-6 shadow-sm">
-          <div className="relative">
+        {/* Search Bar & Status Filter */}
+        <div className="bg-white rounded-xl border border-border-soft p-4 mb-6 shadow-sm flex flex-col md:flex-row gap-3 items-center">
+          <div className="relative flex-1 w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
             <input
               type="text"
@@ -201,6 +222,18 @@ export default function CrmAdmissionsPage() {
               placeholder="Search by student name, admission no, CRM reference ID, email, or parent phone..."
               className="w-full h-10 pl-10 pr-4 rounded-lg border border-border-soft bg-surface-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500/40"
             />
+          </div>
+          <div className="w-full md:w-auto flex items-center gap-2">
+            <span className="text-xs font-semibold text-text-secondary whitespace-nowrap">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e: any) => setStatusFilter(e.target.value)}
+              className="h-10 px-3 rounded-lg border border-border-soft bg-surface-2 text-xs font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+            >
+              <option value="ACTIVE">Active Admissions Only</option>
+              <option value="ALL">All Records (incl. Soft-Deleted)</option>
+              <option value="INACTIVE">Soft-Deleted / Inactive Only</option>
+            </select>
           </div>
         </div>
 
@@ -267,8 +300,15 @@ export default function CrmAdmissionsPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3.5">
-                          <div className="font-bold text-text-primary text-sm">
-                            {item.user?.firstName} {item.user?.lastName}
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-text-primary text-sm">
+                              {item.user?.firstName} {item.user?.lastName}
+                            </span>
+                            {item.user?.status === "INACTIVE" && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                Soft-Deleted
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-text-muted">{item.user?.email}</div>
                         </td>
@@ -326,6 +366,21 @@ export default function CrmAdmissionsPage() {
                             >
                               Profile <ExternalLink className="h-3 w-3" />
                             </Link>
+                            <button
+                              onClick={() =>
+                                handleDelete(
+                                  item.id,
+                                  `${item.user?.firstName || ""} ${item.user?.lastName || ""}`.trim(),
+                                  item.externalCrmId
+                                )
+                              }
+                              disabled={deletingId === item.id}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs disabled:opacity-50"
+                              title="Permanently delete CRM student & clear CRM reference"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              {deletingId === item.id ? "Purging..." : "Delete"}
+                            </button>
                           </div>
                         </td>
                       </tr>

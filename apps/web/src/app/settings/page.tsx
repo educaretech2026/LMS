@@ -72,6 +72,7 @@ export default function SettingsPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [clearingLogs, setClearingLogs] = useState(false);
 
   useEffect(() => {
     if (role === "TEACHER" || role === "STUDENT") return;
@@ -171,6 +172,24 @@ export default function SettingsPage() {
       console.error(err);
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleClearLogs = async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to clear all webhook activity logs? This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setClearingLogs(true);
+    try {
+      await fetchApi("/integrations/logs", { method: "DELETE" });
+      setLogs([]);
+      alert("Webhook activity logs cleared.");
+    } catch (err: any) {
+      alert("Failed to clear logs: " + (err?.message || err));
+    } finally {
+      setClearingLogs(false);
     }
   };
 
@@ -512,12 +531,23 @@ await axios.post('${webhookEndpoint}', payload, {
                       <Clock className="h-4 w-4 text-text-muted" />
                       <h3 className="text-sm font-bold text-text-primary">Recent Webhook Activity Logs</h3>
                     </div>
-                    <button
-                      onClick={loadIntegrationData}
-                      className="text-xs text-brand-blue hover:underline font-semibold"
-                    >
-                      Refresh Logs
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={loadIntegrationData}
+                        className="text-xs text-brand-blue hover:underline font-semibold"
+                      >
+                        Refresh Logs
+                      </button>
+                      {logs.length > 0 && (
+                        <button
+                          onClick={handleClearLogs}
+                          disabled={clearingLogs}
+                          className="text-xs text-rose-600 hover:underline font-semibold disabled:opacity-50"
+                        >
+                          {clearingLogs ? "Clearing..." : "Clear Logs"}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {logs.length === 0 ? (
