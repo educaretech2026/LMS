@@ -68,6 +68,7 @@ export default function SettingsPage() {
   const [credentials, setCredentials] = useState<IntegrationCredentials | null>(null);
   const [logs, setLogs] = useState<WebhookLogItem[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const [credentialsError, setCredentialsError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -84,15 +85,20 @@ export default function SettingsPage() {
 
   const loadIntegrationData = async () => {
     setLoadingCredentials(true);
+    setCredentialsError(null);
     try {
       const [credsRes, logsRes]: [any, any] = await Promise.all([
-        fetchApi("/integrations/credentials"),
+        fetchApi("/integrations/credentials").catch((err: any) => {
+          setCredentialsError(err?.message || "Failed to load integration credentials");
+          return null;
+        }),
         fetchApi("/integrations/logs?limit=20").catch(() => []),
       ]);
       if (credsRes) setCredentials(credsRes);
       if (Array.isArray(logsRes)) setLogs(logsRes);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load integration credentials:", err);
+      setCredentialsError(err?.message || "Failed to load integration credentials");
     } finally {
       setLoadingCredentials(false);
     }
@@ -337,6 +343,20 @@ export default function SettingsPage() {
             {loadingCredentials ? (
               <div className="flex items-center justify-center py-20">
                 <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+              </div>
+            ) : credentialsError && !credentials ? (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 text-center space-y-3">
+                <AlertTriangle className="h-8 w-8 text-rose-600 mx-auto" />
+                <h4 className="text-sm font-bold text-rose-900">Database Initializing</h4>
+                <p className="text-xs text-rose-700 max-w-md mx-auto">
+                  {credentialsError}. The integration tables are currently being prepared on the database.
+                </p>
+                <button
+                  onClick={loadIntegrationData}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-sm"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Retry Connection
+                </button>
               </div>
             ) : (
               <>

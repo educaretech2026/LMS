@@ -1,5 +1,6 @@
 import {
   Injectable,
+  OnModuleInit,
   NotFoundException,
   BadRequestException,
   Logger,
@@ -19,15 +20,82 @@ const SAFE_USER_SELECT = {
 };
 
 @Injectable()
-export class IntegrationsService {
+export class IntegrationsService implements OnModuleInit {
   private readonly logger = new Logger(IntegrationsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  async onModuleInit() {
+    await this.ensureSchema();
+  }
+
+  async ensureSchema(): Promise<void> {
+    const ddlStatements = [
+      `CREATE TABLE IF NOT EXISTS "api_integrations" (
+        "id" TEXT PRIMARY KEY,
+        "name" TEXT NOT NULL DEFAULT 'CRM Integration',
+        "apiKey" TEXT UNIQUE,
+        "apiKeyHash" TEXT UNIQUE,
+        "keyPrefix" TEXT NOT NULL DEFAULT 'edc_live_',
+        "keySuffix" TEXT,
+        "webhookSecret" TEXT NOT NULL,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "centreId" TEXT,
+        "lastUsedAt" TIMESTAMP(3),
+        "totalRequests" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+      `CREATE TABLE IF NOT EXISTS "webhook_logs" (
+        "id" TEXT PRIMARY KEY,
+        "apiIntegrationId" TEXT,
+        "event" TEXT NOT NULL DEFAULT 'student.enrolled',
+        "status" TEXT NOT NULL,
+        "statusCode" INTEGER NOT NULL DEFAULT 200,
+        "crmId" TEXT,
+        "studentName" TEXT,
+        "studentEmail" TEXT,
+        "admissionNo" TEXT,
+        "payload" JSONB,
+        "response" JSONB,
+        "errorMessage" TEXT,
+        "ipAddress" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+      `CREATE INDEX IF NOT EXISTS "webhook_logs_crmId_idx" ON "webhook_logs"("crmId");`,
+      `CREATE INDEX IF NOT EXISTS "webhook_logs_createdAt_idx" ON "webhook_logs"("createdAt" DESC);`,
+      `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "apiKeyHash" TEXT;`,
+      `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "keySuffix" TEXT;`,
+      `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT 'DIRECT';`,
+      `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,
+    ];
+
+    for (const ddl of ddlStatements) {
+      try {
+        if (this.prisma?.$executeRawUnsafe) {
+          await this.prisma.$executeRawUnsafe(ddl);
+        }
+      } catch (err: any) {
+        this.logger.debug?.(`Non-fatal DDL notice: ${err?.message}`);
+      }
+    }
+  }
 
   /**
    * Retrieves active CRM API integration credentials, or initializes a default keypair if none exists.
    */
   async getOrCreateIntegration(centreId?: string) {
+    try {
+      return await this._findOrCreateIntegrationInternal(centreId);
+    } catch (err: any) {
+      this.logger.warn(`Initial getOrCreateIntegration failed (${err?.message}). Attempting self-healing DDL...`);
+      await this.ensureSchema();
+      return await this._findOrCreateIntegrationInternal(centreId);
+    }
+  }
+
+  private async _findOrCreateIntegrationInternal(centreId?: string) {
     const where: any = { isActive: true };
     if (centreId) {
       where.centreId = centreId;
@@ -561,6 +629,21 @@ export class IntegrationsService {
     page?: number;
     limit?: number;
   }) {
+    try {
+      return await this._getCrmAdmissionsInternal(params);
+    } catch (err: any) {
+      this.logger.warn(`Initial getCrmAdmissions failed (${err?.message}). Running self-healing DDL...`);
+      await this.ensureSchema();
+      return await this._getCrmAdmissionsInternal(params);
+    }
+  }
+
+  private async _getCrmAdmissionsInternal(params: {
+    centreId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const page = Math.max(1, Number(params.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
     const skip = (page - 1) * limit;
@@ -651,9 +734,22 @@ export class IntegrationsService {
    * Retrieves latest webhook activity logs.
    */
   async getWebhookLogs(limit: number = 50): Promise<any[]> {
-    return this.prisma.webhookLog.findMany({
-      take: Math.min(100, Math.max(1, limit)),
-      orderBy: { createdAt: 'desc' },
-    });
+    try {
+      return await this.prisma.webhookLog.findMany({
+        take: Math.min(100, Math.max(1, limit)),
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch webhook logs (${err?.message}). Running self-healing DDL...`);
+      await this.ensureSchema();
+      try {
+        return await this.prisma.webhookLog.findMany({
+          take: Math.min(100, Math.max(1, limit)),
+          orderBy: { createdAt: 'desc' },
+        });
+      } catch {
+        return [];
+      }
+    }
   }
 }
