@@ -32,6 +32,7 @@ import {
   ClipboardList,
   MessagesSquare,
   ShieldAlert,
+  Webhook,
 } from "lucide-react";
 
 interface NavItem {
@@ -44,6 +45,7 @@ interface NavItem {
 const mainNav: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Student", href: "/students", icon: Users, module: "STUDENTS" },
+  { label: "CRM Admissions", href: "/crm-admissions", icon: Webhook, module: "STUDENTS" },
   { label: "Attendance", href: "/attendance", icon: CalendarCheck, module: "ATTENDANCE" },
   { label: "Assignments", href: "/assignments", icon: ClipboardList, module: "ASSIGNMENTS" },
   { label: "Doubt Clearance", href: "/doubts", icon: MessagesSquare, module: "DOUBTS" },

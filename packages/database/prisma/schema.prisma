@@ -107,6 +107,7 @@ model Centre {
   auditLogs          AuditLog[]
   enquiries          Enquiry[]
   studyMaterials     StudyMaterial[]
+  apiIntegrations    ApiIntegration[]
 
   @@map("centres")
 }
@@ -344,11 +345,13 @@ model StudentProfile {
   parentName  String?
   parentEmail String?
   parentPhone String?
-  bloodGroup  String?
-  dateOfBirth DateTime?
-  address     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  bloodGroup    String?
+  dateOfBirth   DateTime?
+  address       String?
+  source        String?                @default("DIRECT")
+  externalCrmId String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
   user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   enrollments      Enrollment[]
@@ -917,8 +920,9 @@ model Enquiry {
 
   assignedToId String?
   assignedTo   User?   @relation(fields: [assignedToId], references: [id])
-  centreId     String?
-  centre       Centre? @relation(fields: [centreId], references: [id], onDelete: SetNull)
+  centreId      String?
+  centre        Centre?       @relation(fields: [centreId], references: [id], onDelete: SetNull)
+  externalCrmId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1482,4 +1486,46 @@ model AuditLog {
   @@index([status, createdAt(sort: Desc)])
   @@map("audit_logs")
 }
+
+model ApiIntegration {
+  id            String    @id @default(uuid())
+  name          String    @default("CRM Integration")
+  apiKey        String    @unique
+  keyPrefix     String    @default("edc_live_")
+  webhookSecret String
+  isActive      Boolean   @default(true)
+  centreId      String?
+  centre        Centre?   @relation(fields: [centreId], references: [id], onDelete: SetNull)
+  lastUsedAt    DateTime?
+  totalRequests Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  webhookLogs WebhookLog[]
+
+  @@map("api_integrations")
+}
+
+model WebhookLog {
+  id               String          @id @default(uuid())
+  apiIntegrationId String?
+  apiIntegration   ApiIntegration? @relation(fields: [apiIntegrationId], references: [id], onDelete: SetNull)
+  event            String          @default("student.enrolled")
+  status           String          // SUCCESS, FAILED, DUPLICATE_UPDATED
+  statusCode       Int             @default(200)
+  crmId            String?
+  studentName      String?
+  studentEmail     String?
+  admissionNo      String?
+  payload          Json?
+  response         Json?
+  errorMessage     String?
+  ipAddress        String?
+  createdAt        DateTime        @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([crmId])
+  @@map("webhook_logs")
+}
+
 

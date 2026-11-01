@@ -28,6 +28,7 @@ import { CoursesModule } from './courses/courses.module';
 import { SupportModule } from './support/support.module';
 import { NoticesModule } from './notices/notices.module';
 import { FormsModule } from './forms/forms.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DoubtsModule } from './doubts/doubts.module';
 import { RedisModule } from './redis/redis.module';
@@ -83,6 +84,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     SupportModule,
     NoticesModule,
     FormsModule,
+    IntegrationsModule,
     NotificationsModule,
     DoubtsModule,
     AuditModule,

@@ -137,7 +137,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   // SEC-07: Configure explicit body parser limits (15MB) for mobile photo and signature payloads
-  app.use(json({ limit: '15mb' }));
+  app.use(
+    json({
+      limit: '15mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: '15mb' }));
 
   // SEC-09: HTTP security headers with Content Security Policy
@@ -257,6 +264,10 @@ async function bootstrap() {
       'Pragma',
       'Range',
       'X-Tenant-Id',
+      'X-API-Key',
+      'x-api-key',
+      'X-Webhook-Signature',
+      'x-webhook-signature',
       'Access-Control-Request-Headers',
       'Access-Control-Request-Method',
     ],

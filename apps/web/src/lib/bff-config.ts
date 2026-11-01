@@ -201,6 +201,7 @@ export const ALLOWED_API_PREFIXES = [
   'fee',
   'finance',
   'forms',
+  'integrations',
   'live-class',
   'notices',
   'notifications',

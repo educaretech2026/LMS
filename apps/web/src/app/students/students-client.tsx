@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { fetchApi } from "@/lib/api";
-import { Users, Plus, Search, Filter, MoreVertical, X, User, ChevronRight, CheckCircle2, ChevronLeft, Building, BookOpen, GraduationCap, CreditCard, ChevronDown } from "lucide-react";
+import { Users, Plus, Search, Filter, MoreVertical, X, User, ChevronRight, CheckCircle2, ChevronLeft, Building, BookOpen, GraduationCap, CreditCard, ChevronDown, Webhook } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -28,6 +28,8 @@ interface Student {
   bloodGroup?: string;
   dateOfBirth?: string;
   status?: string;
+  source?: string;
+  externalCrmId?: string;
   address?: string;
   createdAt?: string;
 }
@@ -43,6 +45,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
   const [filterClass, setFilterClass] = useState("All Classes");
   const [filterCentre, setFilterCentre] = useState("All Centres");
   const [filterDivision, setFilterDivision] = useState("All Divisions");
+  const [filterSource, setFilterSource] = useState("All Sources");
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<Student | null>(null);
 
@@ -92,8 +95,12 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
     const matchClass = filterClass === "All Classes" || s.classLevel === filterClass;
     const matchCentre = filterCentre === "All Centres" || s.centre === filterCentre;
     const matchDivision = filterDivision === "All Divisions" || s.division === filterDivision;
+    const matchSource =
+      filterSource === "All Sources" ||
+      (filterSource === "CRM Webhook" && (s.source === "CRM_WEBHOOK" || Boolean(s.externalCrmId))) ||
+      (filterSource === "Direct Entry" && s.source !== "CRM_WEBHOOK" && !s.externalCrmId);
     
-    return matchSearch && matchYear && matchBoard && matchClass && matchCentre && matchDivision;
+    return matchSearch && matchYear && matchBoard && matchClass && matchCentre && matchDivision && matchSource;
   });
 
   return (
@@ -111,12 +118,20 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
               <p className="text-xs text-text-muted mt-1">Manage student admissions, information, and records</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
-          >
-            <Plus className="h-4 w-4" /> Add Student
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/crm-admissions"
+              className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3.5 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-100 transition-colors shadow-sm"
+            >
+              <Webhook className="h-4 w-4 text-purple-600" /> CRM Admissions
+            </Link>
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-blue-dark transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Add Student
+            </button>
+          </div>
         </div>
 
         {/* Breadcrumb */}
@@ -152,8 +167,9 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
               </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-6">
               {[
+                { label: "Source", state: filterSource, set: setFilterSource, options: ["All Sources", "Direct Entry", "CRM Webhook"] },
                 { label: "Academic Year", state: filterYear, set: setFilterYear, options: ["All Years", "2025-26", "2026-27"] },
                 { label: "Board", state: filterBoard, set: setFilterBoard, options: ["All Boards", "State", "CBSE", "ICSE", "ISC"] },
                 { label: "Class", state: filterClass, set: setFilterClass, options: ["All Classes", "Class 11", "Class 12 (A)"] },
@@ -251,9 +267,19 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                         </td>
                         <td className="px-4 py-4 font-semibold text-text-primary">{idx + 1}</td>
                         <td className="px-4 py-4">
-                          <span className="inline-flex items-center justify-center px-2 py-1 rounded bg-brand-blue/10 text-brand-blue font-bold text-xs min-w-[28px]">
-                            {s.admissionNo}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center justify-center px-2 py-1 rounded bg-brand-blue/10 text-brand-blue font-bold text-xs min-w-[28px]">
+                              {s.admissionNo}
+                            </span>
+                            {(s.source === "CRM_WEBHOOK" || s.externalCrmId) && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200"
+                                title={`Enrolled via CRM Dispatch (${s.externalCrmId || 'CRM'})`}
+                              >
+                                CRM
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-3">

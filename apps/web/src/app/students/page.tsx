@@ -18,6 +18,8 @@ export default async function StudentsPage() {
       email: user.email || '',
       phone: profile.parentPhone || '',
       status: user.status || 'ACTIVE',
+      source: profile.source || 'DIRECT',
+      externalCrmId: profile.externalCrmId || null,
       parentName: profile.parentName || '',
       parentEmail: profile.parentEmail || '',
       parentPhone: profile.parentPhone || '',
