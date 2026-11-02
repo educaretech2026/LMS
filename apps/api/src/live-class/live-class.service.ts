@@ -582,6 +582,7 @@ export class LiveClassService {
       identity,
       name,
       ttl: '6h',
+      metadata: JSON.stringify({ role: normalizedRole, name }),
     });
 
     at.addGrant({
@@ -626,6 +627,7 @@ export class LiveClassService {
       identity,
       name: displayName,
       ttl: '4h',
+      metadata: JSON.stringify({ role: 'PUBLIC_LEARNER', name: displayName }),
     });
 
     at.addGrant({
