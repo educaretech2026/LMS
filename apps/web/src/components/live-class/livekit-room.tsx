@@ -8,6 +8,7 @@ import {
   useRoomContext,
   useTracks,
   ParticipantTile,
+  ParticipantContext,
   FocusLayout,
   ConnectionQualityIndicator,
   useTrackToggle,
@@ -672,8 +673,10 @@ function TileOverlay({
   isHandRaised: boolean;
   onMuteParticipant: (identity: string) => void;
 }) {
-  const participant = trackRef.participant;
+  const participant = trackRef?.participant;
   const isSpeaking = useIsSpeaking(participant);
+
+  if (!participant) return null;
 
   let roleLabel = "Student";
   try {
@@ -690,15 +693,18 @@ function TileOverlay({
   const isSelf = participant.isLocal;
 
   return (
-    <>
+    <ParticipantContext.Provider value={participant}>
+      {/* Speaking Active Glow Border */}
       {isSpeaking && (
         <div className="absolute inset-0 border-2 border-blue-500 rounded-2xl pointer-events-none shadow-[0_0_15px_rgba(59,130,246,0.5)] z-10 transition-all" />
       )}
 
+      {/* Top Left: Connection Quality Indicator */}
       <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 backdrop-blur-md">
-        <ConnectionQualityIndicator />
+        <ConnectionQualityIndicator participant={participant} />
       </div>
 
+      {/* Top Right: Hand Raised Alert */}
       {isHandRaised && (
         <div className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500 text-black text-[11px] font-bold shadow-lg animate-bounce">
           <Hand size={12} />
@@ -706,6 +712,7 @@ function TileOverlay({
         </div>
       )}
 
+      {/* Bottom Information Bar */}
       <div className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-white">
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-xs font-semibold truncate">
@@ -723,6 +730,7 @@ function TileOverlay({
           </span>
         </div>
 
+        {/* Teacher Moderation Action: Mute Student */}
         {isTeacher && !isSelf && (
           <button
             onClick={(e) => {
@@ -736,7 +744,7 @@ function TileOverlay({
           </button>
         )}
       </div>
-    </>
+    </ParticipantContext.Provider>
   );
 }
 
