@@ -8,7 +8,6 @@ import {
   useRoomContext,
   useTracks,
   ParticipantTile,
-  GridLayout,
   FocusLayout,
   ConnectionQualityIndicator,
   useTrackToggle,
@@ -133,12 +132,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       },
       publishDefaults: {
         simulcast: true,
-        videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
-        screenShareSimulcastLayers: [ScreenSharePresets.h720fps15],
         stopMicTrackOnMute: false,
-        audioPreset: AudioPresets.speech,
-        dtx: true,
-        red: true,
         videoCodec: "vp8",
       },
     }),
@@ -148,8 +142,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const connectOptions: RoomConnectOptions = useMemo(
     () => ({
       autoSubscribe: true,
-      maxRetries: 10,
-      peerConnectionTimeout: 15000,
+      maxRetries: 5,
     }),
     []
   );
@@ -627,40 +620,42 @@ function ClassVideoGrid({
   }
 
   return (
-    <div className="h-full w-full p-3">
-      <GridLayout tracks={cameraTracks} style={{ height: "100%", width: "100%" }}>
-        <EnhancedTileContainer
-          isTeacher={isTeacher}
-          raisedHands={raisedHands}
-          onMuteParticipant={onMuteParticipant}
-        />
-      </GridLayout>
-    </div>
-  );
-}
-
-function EnhancedTileContainer({
-  isTeacher,
-  raisedHands,
-  onMuteParticipant,
-}: {
-  isTeacher: boolean;
-  raisedHands: Set<string>;
-  onMuteParticipant: (identity: string) => void;
-}) {
-  const trackRef = useMaybeTrackRefContext();
-  const isHandRaised = trackRef ? raisedHands.has(trackRef.participant.identity) : false;
-
-  return (
-    <div className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#161820] shadow-lg group">
-      <ParticipantTile trackRef={trackRef} style={{ width: "100%", height: "100%" }} />
-      {trackRef && (
-        <TileOverlay
-          trackRef={trackRef}
-          isTeacher={isTeacher}
-          isHandRaised={isHandRaised}
-          onMuteParticipant={onMuteParticipant}
-        />
+    <div className="h-full w-full p-3 overflow-hidden">
+      {cameraTracks.length === 0 ? (
+        <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-white/40">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          <p className="text-xs">Connecting audio and video...</p>
+        </div>
+      ) : (
+        <div
+          className="h-full w-full grid gap-3"
+          style={{
+            gridTemplateColumns:
+              cameraTracks.length === 1
+                ? "1fr"
+                : cameraTracks.length === 2
+                ? "repeat(2, 1fr)"
+                : cameraTracks.length <= 4
+                ? "repeat(2, 1fr)"
+                : "repeat(auto-fit, minmax(280px, 1fr))",
+            gridAutoRows: cameraTracks.length <= 2 ? "1fr" : "minmax(0, 1fr)",
+          }}
+        >
+          {cameraTracks.map((track) => (
+            <div
+              key={track.participant.identity + "_" + (track.publication?.trackSid || "placeholder")}
+              className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#161820] shadow-lg group"
+            >
+              <ParticipantTile trackRef={track} style={{ width: "100%", height: "100%" }} />
+              <TileOverlay
+                trackRef={track}
+                isTeacher={isTeacher}
+                isHandRaised={raisedHands.has(track.participant.identity)}
+                onMuteParticipant={onMuteParticipant}
+              />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
