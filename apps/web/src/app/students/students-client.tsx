@@ -27,6 +27,7 @@ interface Student {
   subjectIds?: string[];
   bloodGroup?: string;
   dateOfBirth?: string;
+  parentOccupation?: string;
   status?: string;
   source?: string;
   externalCrmId?: string;
@@ -48,6 +49,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
   const [filterSource, setFilterSource] = useState("All Sources");
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<Student | null>(null);
+  const [pendingEnquiryId, setPendingEnquiryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (searchParams.get('add') === 'true') {
@@ -57,6 +59,12 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
       const parentName = searchParams.get('parentName') || "";
       const board = searchParams.get('board') || "";
       const standard = searchParams.get('standard') || "";
+      const address = searchParams.get('address') || "";
+      const dateOfBirth = searchParams.get('dateOfBirth') || "";
+      const bloodGroup = searchParams.get('bloodGroup') || "";
+      const parentOccupation = searchParams.get('parentOccupation') || "";
+      const enquiryId = searchParams.get('enquiryId') || "";
+      if (enquiryId) setPendingEnquiryId(enquiryId);
       
       setEditItem({
         id: "",
@@ -72,6 +80,10 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
         classLevel: standard,
         centre: "",
         division: "",
+        address,
+        dateOfBirth,
+        bloodGroup,
+        parentOccupation,
       });
       setShowModal(true);
       // Clean up URL so it doesn't open again on refresh
@@ -376,9 +388,9 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
         <AddStudentModal 
           student={editItem} 
           onClose={() => { setShowModal(false); setEditItem(null); }} 
-                    onSave={async (savedStudent) => {
+          onSave={async (savedStudent) => {
             try {
-              if (editItem) {
+              if (editItem && editItem.id) {
                 const updated = await fetchApi<any>(`/students/${savedStudent.id}`, {
                   method: 'PUT',
                   body: JSON.stringify(savedStudent)
@@ -401,6 +413,14 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                   email: newUser.email,
                 };
                 setStudents([newStudentFromDb, ...students]);
+
+                if (pendingEnquiryId) {
+                  await fetchApi(`/enquiry/${pendingEnquiryId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status: 'CONVERTED' }),
+                  }).catch(() => null);
+                  setPendingEnquiryId(null);
+                }
               }
               setShowModal(false);
               setEditItem(null);
@@ -415,6 +435,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
 }
 
 function AddStudentModal({ student, onClose, onSave }: { student: Student | null, onClose: () => void, onSave: (s: Student) => void }) {
+  const isEditing = Boolean(student && student.id);
   const [activeTab, setActiveTab] = useState("Admission");
   
   const [admissionNo, setAdmissionNo] = useState(student?.admissionNo || "");
@@ -428,6 +449,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   const [bloodGroup, setBloodGroup] = useState(student?.bloodGroup || "");
   const [dateOfBirth, setDateOfBirth] = useState(student?.dateOfBirth ? new Date(student.dateOfBirth).toISOString().split('T')[0] : "");
   const [address, setAddress] = useState(student?.address || "");
+  const [parentOccupation, setParentOccupation] = useState(student?.parentOccupation || "");
   const [password, setPassword] = useState("");
 
   // Interactive state for hierarchy
@@ -482,7 +504,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
         
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0">
-          <h2 className="text-base font-bold text-text-primary">{student ? "Edit Student" : "Add Student"}</h2>
+          <h2 className="text-base font-bold text-text-primary">{isEditing ? "Edit Student" : "Add Student"}</h2>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-surface-2 flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
             <X className="h-4 w-4" />
           </button>
@@ -805,7 +827,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Occupation</label>
-                  <input type="text" placeholder="e.g. Engineer" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input type="text" placeholder="e.g. Engineer" value={parentOccupation} onChange={(e) => setParentOccupation(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Emergency Contact Number</label>
@@ -880,7 +902,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
             </button>
             <button 
               onClick={() => {
-                if (activeTab === "Payments" || student) {
+                if (activeTab === "Payments" || isEditing) {
                   // Validate Target Track
                   if (!targetTrack) {
                     alert("Please select a Target Audience (Tuition/Entrance/Both)");
@@ -908,6 +930,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     bloodGroup: bloodGroup || undefined,
                     dateOfBirth: dateOfBirth || undefined,
                     address: address || undefined,
+                    parentOccupation: parentOccupation || undefined,
                   };
                   onSave(newStudentData);
                 } else {
@@ -918,7 +941,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
               }}
               className="inline-flex items-center gap-2 rounded-lg bg-text-primary px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-black transition-colors"
             >
-              {activeTab === "Payments" || student ? (
+              {activeTab === "Payments" || isEditing ? (
                 "Save Student"
               ) : (
                 <>Next <ChevronRight className="h-4 w-4" /></>

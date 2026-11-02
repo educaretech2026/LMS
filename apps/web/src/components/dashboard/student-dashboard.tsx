@@ -60,8 +60,8 @@ export function StudentDashboard({ user, liveClasses = [], notices = [] }: { use
           <div className="h-12 w-12 flex items-center justify-center mb-3 rounded-xl bg-red-50/50 text-brand-red transition-transform">
             <Video className="h-6 w-6" />
           </div>
-          <h3 className="font-bold text-text-primary text-sm transition-colors">Live Classes</h3>
-          <p className="text-xs text-text-muted mt-1">Join upcoming sessions</p>
+          <h3 className="font-bold text-text-primary text-sm transition-colors">Edu-Meet</h3>
+          <p className="text-xs text-text-muted mt-1">Join live interactive sessions</p>
         </Link>
         
         <Link href="/exam" className="group relative bg-white rounded-xl border border-border-soft shadow-sm hover:shadow-md hover:border-warning/30 transition-all duration-200 overflow-hidden p-5 flex flex-col items-center justify-center text-center">

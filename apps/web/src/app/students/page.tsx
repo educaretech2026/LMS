@@ -23,6 +23,7 @@ export default async function StudentsPage() {
       parentName: profile.parentName || '',
       parentEmail: profile.parentEmail || '',
       parentPhone: profile.parentPhone || '',
+      parentOccupation: profile.parentOccupation || '',
       academicYear: batch?.academicYear?.name || 'N/A',
       board: batch?.board?.name || 'N/A',
       classLevel: batch?.standard?.name || 'N/A',

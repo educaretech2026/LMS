@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { AccessToken } from 'livekit-server-sdk';
 import { PrismaService } from '../database/prisma.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
@@ -545,6 +546,101 @@ export class LiveClassService {
       classId: cls.id,
       title: cls.title,
       registrations,
+    };
+  }
+
+  /**
+   * Generates a signed LiveKit JWT room token for a student, teacher, or admin to join the classroom.
+   */
+  async generateLiveKitToken(
+    roomId: string,
+    identityParam?: string,
+    nameParam?: string,
+    roleParam?: string,
+    user?: any,
+  ) {
+    if (!roomId) {
+      throw new BadRequestException('roomId is required to generate a classroom token.');
+    }
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_WS_URL || 'wss://live.educarelearning.in';
+
+    if (!apiKey || !apiSecret) {
+      throw new BadRequestException('LiveKit credentials are not configured on the server.');
+    }
+
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || roleParam || '').toUpperCase().replace(/[\s_]+/g, '_');
+    const isHost = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER'].includes(normalizedRole);
+
+    const identity = identityParam || user?.id || `user_${Math.random().toString(36).slice(2, 9)}`;
+    const name = nameParam || user?.name || user?.email || (isHost ? 'Teacher' : 'Student');
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity,
+      name,
+      ttl: '6h',
+    });
+
+    at.addGrant({
+      roomJoin: true,
+      room: roomId,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      roomAdmin: isHost,
+    });
+
+    const token = await at.toJwt();
+    return {
+      token,
+      wsUrl,
+    };
+  }
+
+  /**
+   * Generates a signed LiveKit JWT room token for registered attendees of a public webinar.
+   */
+  async generatePublicLiveKitToken(id: string, email?: string, name?: string) {
+    const cls = await this.prisma.liveClass.findUnique({
+      where: { id },
+    });
+    if (!cls || !cls.isPublic) {
+      throw new NotFoundException('Public live class not found.');
+    }
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_WS_URL || 'wss://live.educarelearning.in';
+
+    if (!apiKey || !apiSecret) {
+      throw new BadRequestException('LiveKit credentials are not configured on the server.');
+    }
+
+    const identity = email ? `public_${email.replace(/[^a-zA-Z0-9]/g, '_')}` : `public_${Math.random().toString(36).slice(2, 9)}`;
+    const displayName = name || 'Learner';
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity,
+      name: displayName,
+      ttl: '4h',
+    });
+
+    at.addGrant({
+      roomJoin: true,
+      room: cls.id,
+      canPublish: false,
+      canSubscribe: true,
+      canPublishData: true,
+      roomAdmin: false,
+    });
+
+    const token = await at.toJwt();
+    return {
+      token,
+      wsUrl,
     };
   }
 }

@@ -68,7 +68,11 @@ export class IntegrationsService implements OnModuleInit {
       `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "keySuffix" TEXT;`,
       `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT 'DIRECT';`,
       `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,
+      `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "parentOccupation" TEXT;`,
       `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "parentOccupation" TEXT;`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "dateOfBirth" TIMESTAMP(3);`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT;`,
     ];
 
     for (const ddl of ddlStatements) {
@@ -204,6 +208,7 @@ export class IntegrationsService implements OnModuleInit {
     const parentEmail = data.parentEmail ? String(data.parentEmail).trim() : null;
     const address = data.address ? String(data.address).trim() : null;
     const bloodGroup = data.bloodGroup ? String(data.bloodGroup).trim() : null;
+    const parentOccupation = data.parentOccupation || data.occupation ? String(data.parentOccupation || data.occupation).trim() : null;
     const notes = data.notes ? String(data.notes).trim() : `Enrolled via CRM Dispatch (${crmId})`;
 
     let dateOfBirth: Date | null = null;
@@ -501,6 +506,7 @@ export class IntegrationsService implements OnModuleInit {
             bloodGroup,
             dateOfBirth,
             address,
+            parentOccupation,
             source: 'CRM_WEBHOOK',
             externalCrmId: crmId,
           },

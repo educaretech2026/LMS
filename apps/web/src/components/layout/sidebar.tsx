@@ -49,7 +49,7 @@ const mainNav: NavItem[] = [
   { label: "Attendance", href: "/attendance", icon: CalendarCheck, module: "ATTENDANCE" },
   { label: "Assignments", href: "/assignments", icon: ClipboardList, module: "ASSIGNMENTS" },
   { label: "Doubt Clearance", href: "/doubts", icon: MessagesSquare, module: "DOUBTS" },
-  { label: "Live Class", href: "/live-class", icon: Video, module: "LIVE_CLASSES" },
+  { label: "Edu-Meet", href: "/live-class", icon: Video, module: "LIVE_CLASSES" },
   { label: "Fee", href: "/fee", icon: CreditCard, module: "FEES" },
   { label: "Exam", href: "/exam", icon: FileText, module: "EXAMS" },
   { label: "eStudy", href: "/estudy", icon: BookOpen, module: "ESTUDY" },
@@ -122,13 +122,14 @@ export function Sidebar({
 
   const visibleMainNav = mainNav.filter(item => {
     if (r === 'PUBLIC_LEARNER') {
-      return item.label === 'Live Class' || item.label === 'Dashboard';
+      return item.label === 'Edu-Meet' || item.label === 'Live Class' || item.label === 'Dashboard';
     }
     if (r === 'STUDENT') {
       const allowedStudentLabels = [
         'Dashboard',
         'Assignments',
         'Doubt Clearance',
+        'Edu-Meet',
         'Live Class',
         'Fee',
         'Exam',

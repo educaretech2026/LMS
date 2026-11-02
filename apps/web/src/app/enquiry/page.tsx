@@ -15,6 +15,9 @@ interface Enquiry {
   contactNumber: string;
   email?: string;
   address?: string;
+  parentOccupation?: string;
+  dateOfBirth?: string;
+  bloodGroup?: string;
   source?: string;
   targetBoard?: string;
   targetStandard?: string;
@@ -152,8 +155,17 @@ export default function EnquiryPage() {
                     <tr key={e.id} className="hover:bg-surface-2/30 transition-colors">
                       <td className="px-5 py-4">
                         <p className="font-bold text-text-primary">{e.studentName}</p>
-                        {e.parentName && <p className="text-[11px] text-text-muted mt-0.5">Parent: {e.parentName}</p>}
-                        {e.source && <span className="inline-block mt-1 text-[9px] font-bold bg-surface px-2 py-0.5 rounded text-text-secondary">{e.source}</span>}
+                        {e.parentName && (
+                          <p className="text-[11px] text-text-muted mt-0.5">
+                            Parent: {e.parentName}
+                            {e.parentOccupation ? ` (${e.parentOccupation})` : ''}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {e.source && <span className="text-[9px] font-bold bg-surface px-2 py-0.5 rounded text-text-secondary">{e.source}</span>}
+                          {e.bloodGroup && <span className="text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-200">🩸 {e.bloodGroup}</span>}
+                          {e.dateOfBirth && <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200">DOB: {new Date(e.dateOfBirth).toLocaleDateString()}</span>}
+                        </div>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1.5 text-xs text-text-primary mb-1">
@@ -162,6 +174,11 @@ export default function EnquiryPage() {
                         {e.email && (
                           <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
                             <Mail className="h-3 w-3" /> {e.email}
+                          </div>
+                        )}
+                        {e.address && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-0.5 truncate max-w-[200px]" title={e.address}>
+                            <MapPin className="h-3 w-3 shrink-0" /> {e.address}
                           </div>
                         )}
                       </td>
@@ -192,12 +209,17 @@ export default function EnquiryPage() {
                               onClick={() => {
                                 const params = new URLSearchParams({
                                   add: 'true',
+                                  enquiryId: e.id || '',
                                   name: e.studentName || '',
                                   phone: e.contactNumber || '',
                                   email: e.email || '',
                                   parentName: e.parentName || '',
                                   board: e.targetBoard || '',
-                                  standard: e.targetStandard || ''
+                                  standard: e.targetStandard || '',
+                                  address: e.address || '',
+                                  dateOfBirth: e.dateOfBirth ? new Date(e.dateOfBirth).toISOString().split('T')[0] : '',
+                                  bloodGroup: e.bloodGroup || '',
+                                  parentOccupation: e.parentOccupation || '',
                                 });
                                 window.location.href = `/students?${params.toString()}`;
                               }}
@@ -243,6 +265,10 @@ function EnquiryModal({ onClose, onSuccess, editingId, initialData }: any) {
     parentName: initialData?.parentName || "",
     contactNumber: initialData?.contactNumber || "",
     email: initialData?.email || "",
+    address: initialData?.address || "",
+    parentOccupation: initialData?.parentOccupation || "",
+    dateOfBirth: initialData?.dateOfBirth ? new Date(initialData.dateOfBirth).toISOString().split('T')[0] : "",
+    bloodGroup: initialData?.bloodGroup || "",
     source: initialData?.source || "Walk-in",
     targetBoard: initialData?.targetBoard || "",
     targetStandard: initialData?.targetStandard || "",
@@ -307,6 +333,32 @@ function EnquiryModal({ onClose, onSuccess, editingId, initialData }: any) {
             <div>
               <label className="block text-xs font-bold text-text-secondary mb-1.5">Email Address</label>
               <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full h-9 rounded-lg border border-border-soft bg-surface pl-3 text-sm focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Parent Occupation</label>
+              <input value={formData.parentOccupation} onChange={e => setFormData({...formData, parentOccupation: e.target.value})} placeholder="e.g. Engineer, Business" className="w-full h-9 rounded-lg border border-border-soft bg-surface pl-3 text-sm focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Date of Birth</label>
+              <input type="date" value={formData.dateOfBirth} onChange={e => setFormData({...formData, dateOfBirth: e.target.value})} className="w-full h-9 rounded-lg border border-border-soft bg-surface pl-3 text-sm focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Blood Group</label>
+              <select value={formData.bloodGroup} onChange={e => setFormData({...formData, bloodGroup: e.target.value})} className="w-full h-9 rounded-lg border border-border-soft bg-surface px-3 text-sm focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
+                <option value="">--Select--</option>
+                <option value="A+ve">A+ve</option>
+                <option value="A-ve">A-ve</option>
+                <option value="B+ve">B+ve</option>
+                <option value="B-ve">B-ve</option>
+                <option value="AB+ve">AB+ve</option>
+                <option value="AB-ve">AB-ve</option>
+                <option value="O+ve">O+ve</option>
+                <option value="O-ve">O-ve</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1.5">Residential Address</label>
+              <input value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="House / street address" className="w-full h-9 rounded-lg border border-border-soft bg-surface pl-3 text-sm focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
             </div>
           </div>
 

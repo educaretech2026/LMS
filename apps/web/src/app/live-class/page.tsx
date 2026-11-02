@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { fetchApi } from "@/lib/api";
@@ -10,6 +11,19 @@ import {
   Copy, Check, ExternalLink, Image as ImageIcon, UploadCloud,
   Download, Search, Sparkles
 } from "lucide-react";
+
+const LiveKitClassRoom = dynamic(
+  () => import("@/components/live-class/livekit-room").then((m) => m.LiveKitClassRoom),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-col items-center justify-center h-full gap-3 bg-[#0b0c10] text-white">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-blue border-t-transparent" />
+        <p className="text-xs text-white/60">Loading Classroom...</p>
+      </div>
+    ),
+  }
+);
 
 /* ── Types ── */
 interface ApiLiveClass {
@@ -48,6 +62,7 @@ export default function LiveClassPage() {
   const [showScheduleClass, setShowScheduleClass] = useState(false);
   const [showHostWebinar, setShowHostWebinar] = useState(false);
   const [selectedRegistrationsClass, setSelectedRegistrationsClass] = useState<ApiLiveClass | null>(null);
+  const [activeLiveRoom, setActiveLiveRoom] = useState<ApiLiveClass | null>(null);
   const [activeTab, setActiveTab] = useState<"ALL" | "CLASSES" | "WEBINARS">("ALL");
   const [stats, setStats] = useState({ total: 0, live: 0 });
   const { role, email } = useAuth();
@@ -109,12 +124,16 @@ export default function LiveClassPage() {
 
   /* ── Join Class ── */
   const handleJoin = (cls: ApiLiveClass) => {
-    let url = cls.roomId;
-    if (!url.startsWith('http')) {
-      alert("Invalid Google Meet link provided for this class.");
-      return;
+    const rawLink = cls.roomId || "";
+    const isZoom = rawLink.includes("zoom.us");
+    const isGoogleMeet = rawLink.includes("meet.google.com");
+
+    if (isZoom || isGoogleMeet || rawLink.startsWith("http://") || rawLink.startsWith("https://")) {
+      window.open(rawLink, "_blank");
+    } else {
+      // In-app Edu-Meet interactive classroom
+      setActiveLiveRoom(cls);
     }
-    window.open(url, "_blank");
   };
 
   // Filter based on active tab
@@ -132,17 +151,22 @@ export default function LiveClassPage() {
   const totalWebinarsCount = classes.filter(c => c.isPublic).length;
 
   return (
-    <DashboardLayout title="Live Class">
+    <DashboardLayout title="Edu-Meet">
       <div className="flex flex-col h-full">
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 lg:px-8 py-5 border-b border-border-soft bg-white gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-brand-blue/8 flex items-center justify-center">
-              <Video className="h-4.5 w-4.5 text-brand-blue" />
+            <div className="h-9 w-9 rounded-lg bg-gradient-to-tr from-brand-blue to-purple-600 text-white flex items-center justify-center shadow-xs">
+              <Video className="h-4.5 w-4.5" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-text-primary">Live Classes & Webinars</h2>
-              <p className="text-xs text-text-muted mt-0.5">Powered by Google Meet</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-text-primary">Edu-Meet</h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                  Live Classroom
+                </span>
+              </div>
+              <p className="text-xs text-text-muted mt-0.5">Edu-Meet Live • Google Meet • Zoom</p>
             </div>
           </div>
 
@@ -302,27 +326,6 @@ export default function LiveClassPage() {
             </>
           )}
 
-          {/* Restored Original Edu-Meet Banner */}
-          <div className="mt-8 rounded-3xl bg-gradient-to-br from-brand-blue-dark via-brand-blue to-brand-blue-light p-8 md:p-12 shadow-xl relative overflow-hidden flex flex-col items-center justify-center text-center">
-            {/* Background Decorations */}
-            <div className="absolute inset-0 opacity-10 pointer-events-none">
-              <div className="absolute -top-10 -right-10 w-64 h-64 rounded-full border-[32px] border-white" />
-              <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full border-[16px] border-white" />
-              <div className="absolute top-1/2 left-1/4 w-96 h-96 rounded-full border-[4px] border-white -translate-y-1/2" />
-            </div>
-
-            <div className="h-16 w-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-inner relative z-10 border border-white/30">
-              <Video className="h-8 w-8 text-white" />
-            </div>
-
-            <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white tracking-tight relative z-10 mb-3">
-              Edu-Meet is Rolling Out Soon!
-            </h3>
-            <p className="text-white/80 max-w-xl text-sm md:text-base font-medium relative z-10 leading-relaxed">
-              We are upgrading your live classes. Get ready for a seamless, lightning-fast, and integrated meeting experience built directly into your LMS. Stay tuned!
-            </p>
-          </div>
-
         </div>
       </div>
 
@@ -350,6 +353,23 @@ export default function LiveClassPage() {
           cls={selectedRegistrationsClass}
           onClose={() => setSelectedRegistrationsClass(null)}
         />
+      )}
+
+      {/* In-App LiveKit Virtual Classroom Modal / Fullscreen */}
+      {activeLiveRoom && (
+        <div className="fixed inset-0 z-50 bg-[#0b0c10] flex flex-col">
+          <LiveKitClassRoom
+            roomId={activeLiveRoom.id || activeLiveRoom.roomId}
+            identity={email || `user_${Date.now()}`}
+            name={
+              normalizedRole === 'TEACHER'
+                ? (activeLiveRoom.teacherName || 'Teacher')
+                : (email ? email.split('@')[0] : 'Student')
+            }
+            role={normalizedRole || 'STUDENT'}
+            onLeave={() => setActiveLiveRoom(null)}
+          />
+        </div>
       )}
     </DashboardLayout>
   );
@@ -391,6 +411,11 @@ function ClassCard({
   const isLearner = ["STUDENT", "PUBLIC_LEARNER"].includes(normalizedRole);
   const [copied, setCopied] = useState(false);
 
+  const rawRoom = (cls.roomId || "").toLowerCase();
+  const isZoom = rawRoom.includes("zoom.us");
+  const isGoogleMeet = rawRoom.includes("meet.google.com");
+  const isEduMeet = !isZoom && !isGoogleMeet;
+
   const scheduledDate = new Date(cls.scheduledAt);
   const dateStr = scheduledDate.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
   const timeStr = scheduledDate.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
@@ -415,15 +440,16 @@ function ClassCard({
           </div>
         ) : (
           <div className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center ${
-            isLive ? "bg-brand-red/10" : isEnded ? "bg-surface-3" : "bg-brand-blue/8"
+            isLive ? "bg-brand-red/10" : isEnded ? "bg-surface-3" : isEduMeet ? "bg-purple-100/70" : isGoogleMeet ? "bg-emerald-50" : "bg-sky-50"
           }`}>
             {isLive ? <Wifi className="h-5 w-5 text-brand-red" /> :
              isEnded ? <CheckCircle2 className="h-5 w-5 text-text-muted" /> :
-             <Video className="h-5 w-5 text-brand-blue" />}
+             isEduMeet ? <Sparkles className="h-5 w-5 text-purple-600" /> :
+             <Video className={`h-5 w-5 ${isGoogleMeet ? "text-emerald-600" : "text-sky-600"}`} />}
           </div>
         )}
         {cls.isPublic && (
-          <div className="absolute -bottom-1 -right-1 bg-emerald-600 text-white rounded-full p-0.5 shadow" title="Public Webinar">
+          <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white rounded-full p-0.5 shadow" title="Public Webinar">
             <Globe className="h-3 w-3" />
           </div>
         )}
@@ -442,6 +468,22 @@ function ClassCard({
               Cohort Class
             </span>
           )}
+
+          {/* Platform badge */}
+          {isEduMeet ? (
+            <span className="flex items-center gap-1 rounded-full bg-purple-50 border border-purple-200/70 px-2 py-0.5 text-[10px] font-bold text-purple-700">
+              <Sparkles className="h-2.5 w-2.5 text-purple-600" /> Edu-Meet
+            </span>
+          ) : isGoogleMeet ? (
+            <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+              <Video className="h-2.5 w-2.5 text-emerald-600" /> Google Meet
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 rounded-full bg-sky-50 border border-sky-200/70 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+              <Video className="h-2.5 w-2.5 text-sky-600" /> Zoom
+            </span>
+          )}
+
           {isLive && (
             <span className="flex items-center gap-1 rounded-full bg-brand-red/10 border border-brand-red/25 px-2 py-0.5 text-[10px] font-bold text-brand-red shrink-0">
               <span className="h-1.5 w-1.5 rounded-full bg-brand-red animate-pulse" /> LIVE
@@ -529,20 +571,42 @@ function ClassCard({
 
         {/* Join button */}
         {!isEnded && (
-          <button
-            onClick={onJoin}
-            disabled={isLearner && !isLive}
-            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors shadow-sm ${
-              isLearner && !isLive
-                ? "bg-surface-3 text-text-muted cursor-not-allowed"
-                : isLive
-                ? "bg-brand-red hover:bg-brand-red-dark text-white"
-                : "bg-brand-blue hover:bg-brand-blue-dark text-white"
-            }`}
-          >
-            <Play className="h-3.5 w-3.5" />
-            {isLearner ? (isLive ? "Join" : "Waiting...") : (isLive ? "Join Live" : "Start Session")}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onJoin}
+              disabled={isLearner && !isLive}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors shadow-sm ${
+                isLearner && !isLive
+                  ? "bg-surface-3 text-text-muted cursor-not-allowed"
+                  : isLive
+                  ? "bg-brand-red hover:bg-brand-red-dark text-white"
+                  : isEduMeet
+                  ? "bg-purple-600 hover:bg-purple-700 text-white"
+                  : isGoogleMeet
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-brand-blue hover:bg-brand-blue-dark text-white"
+              }`}
+            >
+              <Play className="h-3.5 w-3.5" />
+              {isLearner
+                ? (isLive ? (isEduMeet ? "Join Edu-Meet" : isGoogleMeet ? "Join Meet" : "Join Zoom") : "Waiting...")
+                : (isLive ? "Join Live" : isEduMeet ? "Start Edu-Meet" : isGoogleMeet ? "Launch Meet" : "Launch Zoom")}
+            </button>
+
+            {/* Optional external Google Meet / Zoom link if configured */}
+            {cls.roomId && cls.roomId.startsWith('http') && (
+              <a
+                href={cls.roomId}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg border border-border-soft bg-surface-2 hover:bg-surface-3 px-2.5 py-2 text-xs font-medium text-text-secondary transition-colors"
+                title={`Open in ${isGoogleMeet ? "Google Meet" : isZoom ? "Zoom" : "External Meeting"}`}
+              >
+                <ExternalLink className="h-3.5 w-3.5 text-text-muted" />
+                <span className="hidden sm:inline">{isGoogleMeet ? "Meet" : isZoom ? "Zoom" : "Meet"}</span>
+              </a>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -560,6 +624,7 @@ function HostWebinarModal({
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [teacherName, setTeacherName] = useState(email ? email.split("@")[0] : "Educare Faculty");
+  const [platform, setPlatform] = useState<"EDUMEET" | "GOOGLE_MEET" | "ZOOM">("EDUMEET");
   const [zoomLink, setZoomLink] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [duration, setDuration] = useState("60");
@@ -605,9 +670,22 @@ function HostWebinarModal({
       setError("Please fill in Webinar Title, Subject / Topic and Date & Time.");
       return;
     }
+    if (platform === "ZOOM" && !zoomLink.trim()) {
+      setError("Please enter a Zoom Meeting link.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
+      let finalZoomLink: string | undefined = undefined;
+      if (platform === "EDUMEET") {
+        finalZoomLink = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      } else if (platform === "GOOGLE_MEET") {
+        finalZoomLink = zoomLink.trim() || undefined;
+      } else if (platform === "ZOOM") {
+        finalZoomLink = zoomLink.trim();
+      }
+
       const created = await fetchApi<ApiLiveClass>("/live-class", {
         method: "POST",
         body: JSON.stringify({
@@ -616,7 +694,8 @@ function HostWebinarModal({
           teacherName: teacherName.trim() || "Host",
           scheduledAt: new Date(dateTime).toISOString(),
           duration: Number(duration) || 60,
-          zoomLink: zoomLink.trim() || undefined,
+          platform,
+          zoomLink: finalZoomLink,
           isPublic: true, // Marked as public webinar
           description: description.trim() || undefined,
           backgroundImageUrl: backgroundImageUrl.trim() || undefined,
@@ -691,18 +770,91 @@ function HostWebinarModal({
             </Field>
           </div>
 
-          {/* Google Meet Link */}
-          <Field label="Google Meet Link">
-            <input
-              type="url"
-              value={zoomLink}
-              onChange={e => setZoomLink(e.target.value)}
-              placeholder="https://meet.google.com/xxx-yyyy-zzz (leave empty to auto-generate)"
-              className="input-base"
-            />
-            <p className="text-[11px] text-text-muted mt-1">
-              Attendees unlock this Google Meet link immediately after completing your public form.
-            </p>
+          {/* Meeting Platform Selector */}
+          <Field label="Choose Meeting Platform *">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => { setPlatform("EDUMEET"); setZoomLink(""); }}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                  platform === "EDUMEET"
+                    ? "border-purple-600 bg-purple-50/70 text-purple-900 shadow-xs ring-1 ring-purple-600"
+                    : "border-border-soft bg-surface-1 hover:bg-surface-2 text-text-secondary"
+                }`}
+              >
+                <Sparkles className={`h-4 w-4 mb-1.5 ${platform === "EDUMEET" ? "text-purple-600" : "text-text-muted"}`} />
+                <span className="text-xs font-bold leading-tight">Edu-Meet</span>
+                <span className="text-[10px] text-text-muted mt-0.5">Built-in Live</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setPlatform("GOOGLE_MEET"); setZoomLink(""); }}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                  platform === "GOOGLE_MEET"
+                    ? "border-emerald-600 bg-emerald-50/70 text-emerald-900 shadow-xs ring-1 ring-emerald-600"
+                    : "border-border-soft bg-surface-1 hover:bg-surface-2 text-text-secondary"
+                }`}
+              >
+                <Video className={`h-4 w-4 mb-1.5 ${platform === "GOOGLE_MEET" ? "text-emerald-600" : "text-text-muted"}`} />
+                <span className="text-xs font-bold leading-tight">Google Meet</span>
+                <span className="text-[10px] text-text-muted mt-0.5">Auto or Link</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setPlatform("ZOOM"); setZoomLink(""); }}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                  platform === "ZOOM"
+                    ? "border-sky-600 bg-sky-50/70 text-sky-900 shadow-xs ring-1 ring-sky-600"
+                    : "border-border-soft bg-surface-1 hover:bg-surface-2 text-text-secondary"
+                }`}
+              >
+                <Video className={`h-4 w-4 mb-1.5 ${platform === "ZOOM" ? "text-sky-600" : "text-text-muted"}`} />
+                <span className="text-xs font-bold leading-tight">Zoom</span>
+                <span className="text-[10px] text-text-muted mt-0.5">Zoom URL</span>
+              </button>
+            </div>
+
+            {platform === "EDUMEET" && (
+              <div className="mt-2.5 rounded-lg bg-purple-50/70 border border-purple-200/70 p-2.5 text-[11px] text-purple-900 flex items-start gap-2">
+                <Sparkles className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Edu-Meet Live Classroom:</strong> Integrated video classroom with screen sharing, participant list, whiteboard, and live attendance logging directly in Educare.
+                </span>
+              </div>
+            )}
+
+            {platform === "GOOGLE_MEET" && (
+              <div className="mt-2.5 space-y-1">
+                <input
+                  type="url"
+                  value={zoomLink}
+                  onChange={e => setZoomLink(e.target.value)}
+                  placeholder="https://meet.google.com/xxx-yyyy-zzz (leave empty to auto-generate)"
+                  className="input-base"
+                />
+                <p className="text-[11px] text-text-muted">
+                  Leave blank to auto-generate a Google Meet link, or paste your own meeting link.
+                </p>
+              </div>
+            )}
+
+            {platform === "ZOOM" && (
+              <div className="mt-2.5 space-y-1">
+                <input
+                  type="url"
+                  value={zoomLink}
+                  onChange={e => setZoomLink(e.target.value)}
+                  placeholder="https://zoom.us/j/1234567890?pwd=..."
+                  className="input-base"
+                  required
+                />
+                <p className="text-[11px] text-text-muted">
+                  Paste your Zoom Meeting join URL or personal meeting room link.
+                </p>
+              </div>
+            )}
           </Field>
 
           {/* Date & Duration */}
@@ -801,6 +953,7 @@ function ScheduleClassModal({
 }) {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
+  const [platform, setPlatform] = useState<"EDUMEET" | "GOOGLE_MEET" | "ZOOM">("EDUMEET");
   const [zoomLink, setZoomLink] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [duration, setDuration] = useState("60");
@@ -832,10 +985,23 @@ function ScheduleClassModal({
       setError("Please fill in Title, Subject and Date & Time.");
       return;
     }
+    if (platform === "ZOOM" && !zoomLink.trim()) {
+      setError("Please enter a Zoom Meeting link.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
       const teacherName = email ? email.split("@")[0] : "Admin";
+      let finalZoomLink: string | undefined = undefined;
+      if (platform === "EDUMEET") {
+        finalZoomLink = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      } else if (platform === "GOOGLE_MEET") {
+        finalZoomLink = zoomLink.trim() || undefined;
+      } else if (platform === "ZOOM") {
+        finalZoomLink = zoomLink.trim();
+      }
+
       const created = await fetchApi<ApiLiveClass>("/live-class", {
         method: "POST",
         body: JSON.stringify({
@@ -844,7 +1010,8 @@ function ScheduleClassModal({
           teacherName,
           scheduledAt: new Date(dateTime).toISOString(),
           duration: Number(duration) || 60,
-          zoomLink: zoomLink.trim() || undefined,
+          platform,
+          zoomLink: finalZoomLink,
           isPublic: false,
           boardId: boardId || undefined,
           standardId: standardId || undefined,
@@ -905,15 +1072,91 @@ function ScheduleClassModal({
             />
           </Field>
 
-          {/* Google Meet Link */}
-          <Field label="Google Meet Link (Optional)">
-            <input
-              type="url"
-              value={zoomLink}
-              onChange={e => setZoomLink(e.target.value)}
-              placeholder="Leave empty to auto-generate"
-              className="input-base"
-            />
+          {/* Meeting Platform Selector */}
+          <Field label="Choose Meeting Platform *">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => { setPlatform("EDUMEET"); setZoomLink(""); }}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                  platform === "EDUMEET"
+                    ? "border-purple-600 bg-purple-50/70 text-purple-900 shadow-xs ring-1 ring-purple-600"
+                    : "border-border-soft bg-surface-1 hover:bg-surface-2 text-text-secondary"
+                }`}
+              >
+                <Sparkles className={`h-4 w-4 mb-1.5 ${platform === "EDUMEET" ? "text-purple-600" : "text-text-muted"}`} />
+                <span className="text-xs font-bold leading-tight">Edu-Meet</span>
+                <span className="text-[10px] text-text-muted mt-0.5">Built-in Live</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setPlatform("GOOGLE_MEET"); setZoomLink(""); }}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                  platform === "GOOGLE_MEET"
+                    ? "border-emerald-600 bg-emerald-50/70 text-emerald-900 shadow-xs ring-1 ring-emerald-600"
+                    : "border-border-soft bg-surface-1 hover:bg-surface-2 text-text-secondary"
+                }`}
+              >
+                <Video className={`h-4 w-4 mb-1.5 ${platform === "GOOGLE_MEET" ? "text-emerald-600" : "text-text-muted"}`} />
+                <span className="text-xs font-bold leading-tight">Google Meet</span>
+                <span className="text-[10px] text-text-muted mt-0.5">Auto or Link</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setPlatform("ZOOM"); setZoomLink(""); }}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                  platform === "ZOOM"
+                    ? "border-sky-600 bg-sky-50/70 text-sky-900 shadow-xs ring-1 ring-sky-600"
+                    : "border-border-soft bg-surface-1 hover:bg-surface-2 text-text-secondary"
+                }`}
+              >
+                <Video className={`h-4 w-4 mb-1.5 ${platform === "ZOOM" ? "text-sky-600" : "text-text-muted"}`} />
+                <span className="text-xs font-bold leading-tight">Zoom</span>
+                <span className="text-[10px] text-text-muted mt-0.5">Zoom URL</span>
+              </button>
+            </div>
+
+            {platform === "EDUMEET" && (
+              <div className="mt-2.5 rounded-lg bg-purple-50/70 border border-purple-200/70 p-2.5 text-[11px] text-purple-900 flex items-start gap-2">
+                <Sparkles className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Edu-Meet Live Classroom:</strong> Integrated video classroom with screen sharing, participant list, whiteboard, and live attendance logging directly in Educare.
+                </span>
+              </div>
+            )}
+
+            {platform === "GOOGLE_MEET" && (
+              <div className="mt-2.5 space-y-1">
+                <input
+                  type="url"
+                  value={zoomLink}
+                  onChange={e => setZoomLink(e.target.value)}
+                  placeholder="https://meet.google.com/xxx-yyyy-zzz (leave empty to auto-generate)"
+                  className="input-base"
+                />
+                <p className="text-[11px] text-text-muted">
+                  Leave blank to auto-generate a Google Meet link, or paste your own meeting link.
+                </p>
+              </div>
+            )}
+
+            {platform === "ZOOM" && (
+              <div className="mt-2.5 space-y-1">
+                <input
+                  type="url"
+                  value={zoomLink}
+                  onChange={e => setZoomLink(e.target.value)}
+                  placeholder="https://zoom.us/j/1234567890?pwd=..."
+                  className="input-base"
+                  required
+                />
+                <p className="text-[11px] text-text-muted">
+                  Paste your Zoom Meeting join URL or personal meeting room link.
+                </p>
+              </div>
+            )}
           </Field>
 
           {/* Board / Class / Centre */}

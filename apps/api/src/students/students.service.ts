@@ -93,6 +93,7 @@ export class StudentsService {
             bloodGroup: data.bloodGroup,
             dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
             address: data.address,
+            parentOccupation: data.parentOccupation || null,
           }
         });
 
@@ -351,6 +352,7 @@ export class StudentsService {
           bloodGroup: data.bloodGroup || undefined,
           dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
           address: data.address || undefined,
+          parentOccupation: data.parentOccupation || undefined,
         }
       });
 

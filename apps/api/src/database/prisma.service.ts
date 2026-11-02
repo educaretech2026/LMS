@@ -55,7 +55,11 @@ export class PrismaService
       `ALTER TABLE "custom_forms" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;`,
       `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT 'DIRECT';`,
       `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,
+      `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "parentOccupation" TEXT;`,
       `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "parentOccupation" TEXT;`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "dateOfBirth" TIMESTAMP(3);`,
+      `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT;`,
       `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "apiKeyHash" TEXT;`,
       `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "keySuffix" TEXT;`,
     ];

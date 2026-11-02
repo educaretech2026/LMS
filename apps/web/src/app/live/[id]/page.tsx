@@ -434,14 +434,25 @@ export default function PublicLiveClassPage() {
                   {/* Meet link or waiting */}
                   {meetUrl ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                      <a
-                        href={meetUrl} target="_blank" rel="noreferrer"
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "46px", borderRadius: "10px", background: "#0162b1", color: "white", fontSize: "13px", fontWeight: 700, textDecoration: "none", boxShadow: "0 4px 16px rgba(1,98,177,0.35)", transition: "opacity 0.2s" }}
-                      >
-                        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                        Join Google Meet
-                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      </a>
+                      {(() => {
+                        const isZoom = meetUrl.includes("zoom.us");
+                        const isGMeet = meetUrl.includes("meet.google.com");
+                        const isEduMeet = !isZoom && !isGMeet;
+                        const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Join Edu-Meet Live";
+                        const targetUrl = meetUrl.startsWith("http") ? meetUrl : `/live-class?room=${encodeURIComponent(meetUrl)}`;
+                        const btnBg = isEduMeet ? "#9333ea" : isGMeet ? "#059669" : "#0284c7";
+
+                        return (
+                          <a
+                            href={targetUrl} target="_blank" rel="noreferrer"
+                            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "46px", borderRadius: "10px", background: btnBg, color: "white", fontSize: "13px", fontWeight: 700, textDecoration: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.25)", transition: "opacity 0.2s" }}
+                          >
+                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                            {label}
+                            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                          </a>
+                        );
+                      })()}
 
                       <button
                         onClick={handleCopy}

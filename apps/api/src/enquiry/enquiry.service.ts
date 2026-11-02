@@ -233,7 +233,24 @@ export class EnquiryService {
       signatureAuditNote = `[DIGITAL SIGNATURE ACCEPTANCE]\nSigner: ${signer}\nType: ${sigType}\nAccepted Rules: Yes\nTimestamp: ${new Date().toISOString()}\nSignature: ${signatureUrl ? signatureUrl : sigData.slice(0, 5000)}`;
     }
 
+    let dateOfBirth: Date | null = null;
+    if (data.dateOfBirth || data.dob) {
+      try {
+        const parsed = new Date(data.dateOfBirth || data.dob);
+        if (!isNaN(parsed.getTime())) dateOfBirth = parsed;
+      } catch {}
+    }
+    const bloodGroup = data.bloodGroup ? String(data.bloodGroup).trim() : null;
+    const parentOccupation = data.parentOccupation || data.occupation ? String(data.parentOccupation || data.occupation).trim() : null;
+
     const notesSections: string[] = [];
+    if (parentOccupation || dateOfBirth || bloodGroup) {
+      const metaLines: string[] = ['[APPLICANT DETAILS]'];
+      if (parentOccupation) metaLines.push(`Parent Occupation: ${parentOccupation}`);
+      if (dateOfBirth) metaLines.push(`Date of Birth: ${dateOfBirth.toISOString().split('T')[0]}`);
+      if (bloodGroup) metaLines.push(`Blood Group: ${bloodGroup}`);
+      notesSections.push(metaLines.join('\n'));
+    }
     if (photoUrl) {
       notesSections.push(`[STUDENT PHOTO]\nPhoto: ${photoUrl}`);
     } else if (data.studentPhoto || data.photo) {
@@ -253,6 +270,9 @@ export class EnquiryService {
           contactNumber,
           email,
           address: data.address ? String(data.address).trim().slice(0, 300) : null,
+          parentOccupation,
+          dateOfBirth,
+          bloodGroup,
           source: data.source ? String(data.source).trim().slice(0, 100) : 'Website Form',
           targetBoard: data.targetBoard ? String(data.targetBoard).trim().slice(0, 100) : null,
           targetStandard: data.targetStandard ? String(data.targetStandard).trim().slice(0, 100) : null,
@@ -276,6 +296,9 @@ export class EnquiryService {
           contactNumber,
           email,
           address: data.address ? String(data.address).trim().slice(0, 300) : null,
+          parentOccupation,
+          dateOfBirth,
+          bloodGroup,
           source: data.source ? String(data.source).trim().slice(0, 100) : 'Website Form',
           targetBoard: data.targetBoard ? String(data.targetBoard).trim().slice(0, 100) : null,
           targetStandard: data.targetStandard ? String(data.targetStandard).trim().slice(0, 100) : null,
@@ -330,6 +353,16 @@ export class EnquiryService {
       }
     }
 
+    let dateOfBirth: Date | null = null;
+    if (data.dateOfBirth || data.dob) {
+      try {
+        const parsed = new Date(data.dateOfBirth || data.dob);
+        if (!isNaN(parsed.getTime())) dateOfBirth = parsed;
+      } catch {}
+    }
+    const bloodGroup = data.bloodGroup ? String(data.bloodGroup).trim() : null;
+    const parentOccupation = data.parentOccupation || data.occupation ? String(data.parentOccupation || data.occupation).trim() : null;
+
     try {
       return await this.prisma.enquiry.create({
         data: {
@@ -338,6 +371,9 @@ export class EnquiryService {
           contactNumber: data.contactNumber,
           email: data.email || null,
           address: data.address || null,
+          parentOccupation,
+          dateOfBirth,
+          bloodGroup,
           source: data.source || 'Direct',
           targetBoard: data.targetBoard || null,
           targetStandard: data.targetStandard || null,
@@ -364,6 +400,9 @@ export class EnquiryService {
           contactNumber: data.contactNumber,
           email: data.email || null,
           address: data.address || null,
+          parentOccupation,
+          dateOfBirth,
+          bloodGroup,
           source: data.source || 'Direct',
           targetBoard: data.targetBoard || null,
           targetStandard: data.targetStandard || null,
@@ -570,6 +609,9 @@ export class EnquiryService {
           contactNumber: data.contactNumber !== undefined ? data.contactNumber : undefined,
           email: data.email !== undefined ? data.email : undefined,
           address: data.address !== undefined ? data.address : undefined,
+          parentOccupation: data.parentOccupation !== undefined ? data.parentOccupation : undefined,
+          dateOfBirth: data.dateOfBirth !== undefined ? (data.dateOfBirth ? new Date(data.dateOfBirth) : null) : undefined,
+          bloodGroup: data.bloodGroup !== undefined ? data.bloodGroup : undefined,
           source: data.source !== undefined ? data.source : undefined,
           targetBoard: data.targetBoard !== undefined ? data.targetBoard : undefined,
           targetStandard: data.targetStandard !== undefined ? data.targetStandard : undefined,
@@ -599,6 +641,9 @@ export class EnquiryService {
           contactNumber: data.contactNumber !== undefined ? data.contactNumber : undefined,
           email: data.email !== undefined ? data.email : undefined,
           address: data.address !== undefined ? data.address : undefined,
+          parentOccupation: data.parentOccupation !== undefined ? data.parentOccupation : undefined,
+          dateOfBirth: data.dateOfBirth !== undefined ? (data.dateOfBirth ? new Date(data.dateOfBirth) : null) : undefined,
+          bloodGroup: data.bloodGroup !== undefined ? data.bloodGroup : undefined,
           source: data.source !== undefined ? data.source : undefined,
           targetBoard: data.targetBoard !== undefined ? data.targetBoard : undefined,
           targetStandard: data.targetStandard !== undefined ? data.targetStandard : undefined,

@@ -196,7 +196,10 @@ export default function AdmissionPage() {
   // Form State
   const [formData, setFormData] = useState({
     studentName: "",
+    dateOfBirth: "",
+    bloodGroup: "",
     parentName: "",
+    parentOccupation: "",
     countryCode: "+91",
     contactNumber: "",
     email: "",
@@ -593,6 +596,21 @@ export default function AdmissionPage() {
       newErrors.studentName = "Please enter a valid legal name using letters only.";
     }
 
+    const dob = formData.dateOfBirth.trim();
+    if (!dob) {
+      newErrors.dateOfBirth = "Date of birth is required.";
+    } else {
+      const parsedDate = new Date(dob);
+      if (isNaN(parsedDate.getTime()) || parsedDate > new Date()) {
+        newErrors.dateOfBirth = "Please enter a valid past date of birth.";
+      }
+    }
+
+    const blood = formData.bloodGroup.trim();
+    if (!blood) {
+      newErrors.bloodGroup = "Blood group is required.";
+    }
+
     const parent = formData.parentName.trim();
     if (!parent) {
       newErrors.parentName = "Parent / guardian full name is required.";
@@ -602,6 +620,13 @@ export default function AdmissionPage() {
       newErrors.parentName = "Parent name cannot exceed 100 characters.";
     } else if (!/^[a-zA-Z\s.'-]+$/.test(parent)) {
       newErrors.parentName = "Please enter a valid legal name using letters only.";
+    }
+
+    const parentOcc = formData.parentOccupation.trim();
+    if (!parentOcc) {
+      newErrors.parentOccupation = "Parent / guardian occupation is required.";
+    } else if (parentOcc.length < 2) {
+      newErrors.parentOccupation = "Parent occupation must be at least 2 characters.";
     }
 
     const cleanDigits = formData.contactNumber.replace(/[\s\-\(\)\+]/g, "").replace(/^0+/, "");
@@ -623,6 +648,13 @@ export default function AdmissionPage() {
       if (!emailRegex.test(formData.email.trim())) {
         newErrors.email = "Please enter a valid email address (e.g. name@domain.com).";
       }
+    }
+
+    const addr = formData.address.trim();
+    if (!addr) {
+      newErrors.address = "Residential address is required.";
+    } else if (addr.length < 5) {
+      newErrors.address = "Please enter a full residential address.";
     }
 
     setErrors(newErrors);
@@ -738,7 +770,10 @@ export default function AdmissionPage() {
 
       const payload = {
         studentName: formData.studentName.trim(),
+        dateOfBirth: formData.dateOfBirth || undefined,
+        bloodGroup: formData.bloodGroup || undefined,
         parentName: formData.parentName.trim(),
+        parentOccupation: formData.parentOccupation.trim() || undefined,
         contactNumber: fullPhoneNumber,
         email: formData.email.trim() || undefined,
         address: [formData.city.trim(), formData.address.trim()].filter(Boolean).join(", "),
@@ -864,10 +899,16 @@ export default function AdmissionPage() {
                   <div>
                     <span className="text-[11px] text-text-muted block">Student</span>
                     <strong className="text-xs font-bold text-text-primary block truncate">{formData.studentName}</strong>
+                    {formData.bloodGroup && (
+                      <span className="text-[10px] text-rose-600 font-semibold block">Blood: {formData.bloodGroup}</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[11px] text-text-muted block">Parent / Guardian</span>
                     <strong className="text-xs font-bold text-text-primary block truncate">{formData.parentName}</strong>
+                    {formData.parentOccupation && (
+                      <span className="text-[10px] text-text-muted block truncate">{formData.parentOccupation}</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[11px] text-text-muted block">Campus</span>
@@ -941,7 +982,10 @@ export default function AdmissionPage() {
                   setStepError(null);
                   setFormData({
                     studentName: "",
+                    dateOfBirth: "",
+                    bloodGroup: "",
                     parentName: "",
+                    parentOccupation: "",
                     countryCode: "+91",
                     contactNumber: "",
                     email: "",
@@ -1213,6 +1257,7 @@ export default function AdmissionPage() {
                   </div>
                 </div>
 
+                {/* Row 1: Student Name & Date of Birth */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">
@@ -1242,32 +1287,69 @@ export default function AdmissionPage() {
 
                   <div>
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                      Parent / Guardian Name <span className="text-rose-500">*</span>
+                      Date of Birth <span className="text-rose-500">*</span>
                     </label>
                     <input
-                      type="text"
-                      value={formData.parentName}
+                      type="date"
+                      value={formData.dateOfBirth}
                       onChange={(e) => {
-                        setFormData({ ...formData, parentName: e.target.value });
-                        clearFieldError("parentName");
+                        setFormData({ ...formData, dateOfBirth: e.target.value });
+                        clearFieldError("dateOfBirth");
                       }}
-                      placeholder="e.g. Thomas K. Jacob"
-                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
-                        errors.parentName
+                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary focus:bg-white focus:ring-2 transition-all ${
+                        errors.dateOfBirth
                           ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
                           : "border-border-soft focus:ring-brand-blue/20"
                       }`}
                     />
-                    {errors.parentName && (
+                    {errors.dateOfBirth && (
                       <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                        {errors.parentName}
+                        {errors.dateOfBirth}
                       </p>
                     )}
                   </div>
                 </div>
 
+                {/* Row 2: Blood Group & Mobile */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                      Blood Group <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={formData.bloodGroup}
+                        onChange={(e) => {
+                          setFormData({ ...formData, bloodGroup: e.target.value });
+                          clearFieldError("bloodGroup");
+                        }}
+                        className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary appearance-none focus:bg-white focus:ring-2 transition-all ${
+                          errors.bloodGroup
+                            ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                            : "border-border-soft focus:ring-brand-blue/20"
+                        }`}
+                      >
+                        <option value="">Select Blood Group</option>
+                        <option value="A+ve">A+ve</option>
+                        <option value="A-ve">A-ve</option>
+                        <option value="B+ve">B+ve</option>
+                        <option value="B-ve">B-ve</option>
+                        <option value="AB+ve">AB+ve</option>
+                        <option value="AB-ve">AB-ve</option>
+                        <option value="O+ve">O+ve</option>
+                        <option value="O-ve">O-ve</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-text-muted pointer-events-none absolute right-4 top-1/2 -translate-y-1/2" />
+                    </div>
+                    {errors.bloodGroup && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.bloodGroup}
+                      </p>
+                    )}
+                  </div>
+
                   <div>
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">
                       Contact / WhatsApp Mobile <span className="text-rose-500">*</span>
@@ -1321,7 +1403,65 @@ export default function AdmissionPage() {
                       <span className="text-[11px] text-text-muted mt-1 block">Course timetable & notifications will be communicated to this number.</span>
                     )}
                   </div>
+                </div>
 
+                {/* Row 3: Parent Name & Parent Occupation */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                      Parent / Guardian Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.parentName}
+                      onChange={(e) => {
+                        setFormData({ ...formData, parentName: e.target.value });
+                        clearFieldError("parentName");
+                      }}
+                      placeholder="e.g. Thomas K. Jacob"
+                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
+                        errors.parentName
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
+                    />
+                    {errors.parentName && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.parentName}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                      Parent's / Guardian's Occupation <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.parentOccupation}
+                      onChange={(e) => {
+                        setFormData({ ...formData, parentOccupation: e.target.value });
+                        clearFieldError("parentOccupation");
+                      }}
+                      placeholder="e.g. Civil Engineer, Teacher, Business"
+                      className={`w-full h-12 rounded-xl border bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all ${
+                        errors.parentOccupation
+                          ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                          : "border-border-soft focus:ring-brand-blue/20"
+                      }`}
+                    />
+                    {errors.parentOccupation && (
+                      <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {errors.parentOccupation}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 4: Email & City */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">Email Address</label>
                     <input
@@ -1347,9 +1487,7 @@ export default function AdmissionPage() {
                       <span className="text-[11px] text-text-muted mt-1 block">Optional: for digital receipts and student portal links.</span>
                     )}
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary mb-1.5">City / Town of Residence</label>
                     <input
@@ -1360,17 +1498,33 @@ export default function AdmissionPage() {
                       className="w-full h-12 rounded-xl border border-border-soft bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 focus:ring-brand-blue/20 transition-all"
                     />
                   </div>
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1.5">Residential Address (Optional)</label>
-                    <input
-                      type="text"
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      placeholder="House / Street address"
-                      className="w-full h-12 rounded-xl border border-border-soft bg-surface px-4 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 focus:ring-brand-blue/20 transition-all"
-                    />
-                  </div>
+                {/* Row 5: Full Residential Address (Mandatory) */}
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5">
+                    Residential Address <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={formData.address}
+                    onChange={(e) => {
+                      setFormData({ ...formData, address: e.target.value });
+                      clearFieldError("address");
+                    }}
+                    placeholder="House / Apartment name, Street, Landmark, PIN Code"
+                    className={`w-full rounded-xl border bg-surface p-3 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:ring-2 transition-all resize-none ${
+                      errors.address
+                        ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50/20"
+                        : "border-border-soft focus:ring-brand-blue/20"
+                    }`}
+                  />
+                  {errors.address && (
+                    <p className="text-xs text-rose-500 font-semibold mt-1.5 flex items-center gap-1.5 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      {errors.address}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

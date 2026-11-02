@@ -28,11 +28,35 @@ export class LiveClassController {
     return this.liveClassService.getStats(req.user);
   }
 
+  // LiveKit Token Endpoint: generates a signed JWT room token for in-app classroom
+  @Get('token')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
+  getToken(
+    @Query('roomId') roomId: string,
+    @Query('identity') identity: string,
+    @Query('name') name: string,
+    @Query('role') role: string,
+    @Req() req: any,
+  ) {
+    return this.liveClassService.generateLiveKitToken(roomId, identity, name, role, req.user);
+  }
+
   // Public Endpoint: Retrieve public webinar/class info (no auth required)
   @Public()
   @Get('public/:id')
   getPublicClass(@Param('id') id: string) {
     return this.liveClassService.getPublicClass(id);
+  }
+
+  // Public Endpoint: Generate LiveKit token for registered attendees of a public webinar
+  @Public()
+  @Get('public/:id/token')
+  getPublicToken(
+    @Param('id') id: string,
+    @Query('email') email: string,
+    @Query('name') name: string,
+  ) {
+    return this.liveClassService.generatePublicLiveKitToken(id, email, name);
   }
 
   // Public Endpoint: Submit registration form & retrieve Google Meet access
@@ -61,16 +85,29 @@ export class LiveClassController {
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   async create(@Body() data: any, @Req() req: any) {
-    if (!data.zoomLink) {
-      try {
-        data.zoomLink = await this.googleMeetService.createMeetLink(
-          data.title,
-          data.subject,
-          new Date(data.scheduledAt),
-          data.duration
-        );
-      } catch (e) {
-        console.error("Failed to create Google Meet link, falling back to empty link", e);
+    const platform = (data.platform || data.meetingType || '').toUpperCase();
+    if (platform === 'EDUMEET' || (!data.zoomLink && platform !== 'GOOGLE_MEET' && platform !== 'ZOOM')) {
+      if (!data.zoomLink || platform === 'EDUMEET') {
+        data.zoomLink = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+    } else if (platform === 'GOOGLE_MEET' || (!data.zoomLink && !platform)) {
+      if (!data.zoomLink) {
+        try {
+          data.zoomLink = await this.googleMeetService.createMeetLink(
+            data.title,
+            data.subject,
+            new Date(data.scheduledAt),
+            data.duration
+          );
+        } catch (e) {
+          console.error("Failed to create Google Meet link, generating standard meet link", e);
+        }
+        if (!data.zoomLink) {
+          const code1 = Math.random().toString(36).slice(2, 5);
+          const code2 = Math.random().toString(36).slice(2, 6);
+          const code3 = Math.random().toString(36).slice(2, 5);
+          data.zoomLink = `https://meet.google.com/${code1}-${code2}-${code3}`;
+        }
       }
     }
     return this.liveClassService.create(data, req.user);

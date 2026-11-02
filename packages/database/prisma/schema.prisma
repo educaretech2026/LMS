@@ -345,6 +345,7 @@ model StudentProfile {
   parentName  String?
   parentEmail String?
   parentPhone String?
+  parentOccupation String?
   bloodGroup    String?
   dateOfBirth   DateTime?
   address       String?
@@ -923,6 +924,9 @@ model Enquiry {
   centreId      String?
   centre        Centre?       @relation(fields: [centreId], references: [id], onDelete: SetNull)
   externalCrmId String?
+  parentOccupation String?
+  dateOfBirth   DateTime?
+  bloodGroup    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
