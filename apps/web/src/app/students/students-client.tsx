@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { fetchApi } from "@/lib/api";
 import { Users, Plus, Search, Filter, MoreVertical, X, User, ChevronRight, CheckCircle2, ChevronLeft, Building, BookOpen, GraduationCap, CreditCard, ChevronDown, Webhook } from "lucide-react";
@@ -50,6 +50,64 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<Student | null>(null);
   const [pendingEnquiryId, setPendingEnquiryId] = useState<string | null>(null);
+
+  // Live master setup data for filters
+  const [liveBatches, setLiveBatches] = useState<any[]>([]);
+  const [liveYears, setLiveYears] = useState<any[]>([]);
+  const [liveBoards, setLiveBoards] = useState<any[]>([]);
+  const [liveStandards, setLiveStandards] = useState<any[]>([]);
+  const [liveCentres, setLiveCentres] = useState<any[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      fetchApi("/setup/batches").catch(() => []),
+      fetchApi("/setup/academic-years").catch(() => []),
+      fetchApi("/setup/boards").catch(() => []),
+      fetchApi("/setup/standards").catch(() => []),
+      fetchApi("/setup/centres").catch(() => []),
+    ]).then(([ba, y, bo, st, ce]: any[]) => {
+      setLiveBatches(Array.isArray(ba) ? ba : []);
+      setLiveYears(Array.isArray(y) ? y : []);
+      setLiveBoards(Array.isArray(bo) ? bo : []);
+      setLiveStandards(Array.isArray(st) ? st : []);
+      setLiveCentres(Array.isArray(ce) ? ce : []);
+    });
+  }, []);
+
+  const divisionOptions = useMemo(() => {
+    const set = new Set<string>();
+    liveBatches.forEach(b => { if (b.name) set.add(b.name); });
+    students.forEach(s => { if (s.division && s.division !== "N/A") set.add(s.division); });
+    return ["All Divisions", ...Array.from(set).sort()];
+  }, [liveBatches, students]);
+
+  const yearOptions = useMemo(() => {
+    const set = new Set<string>();
+    liveYears.forEach(y => { if (y.name) set.add(y.name); });
+    students.forEach(s => { if (s.academicYear && s.academicYear !== "N/A") set.add(s.academicYear); });
+    return ["All Years", ...Array.from(set).sort()];
+  }, [liveYears, students]);
+
+  const boardOptions = useMemo(() => {
+    const set = new Set<string>();
+    liveBoards.forEach(b => { if (b.name) set.add(b.name); });
+    students.forEach(s => { if (s.board && s.board !== "N/A") set.add(s.board); });
+    return ["All Boards", ...Array.from(set).sort()];
+  }, [liveBoards, students]);
+
+  const classOptions = useMemo(() => {
+    const set = new Set<string>();
+    liveStandards.forEach(s => { if (s.name) set.add(s.name); });
+    students.forEach(s => { if (s.classLevel && s.classLevel !== "N/A") set.add(s.classLevel); });
+    return ["All Classes", ...Array.from(set).sort()];
+  }, [liveStandards, students]);
+
+  const centreOptions = useMemo(() => {
+    const set = new Set<string>();
+    liveCentres.forEach(c => { if (c.name) set.add(c.name); });
+    students.forEach(s => { if (s.centre && s.centre !== "N/A") set.add(s.centre); });
+    return ["All Centres", ...Array.from(set).sort()];
+  }, [liveCentres, students]);
 
   useEffect(() => {
     if (searchParams.get('add') === 'true') {
@@ -182,11 +240,11 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
             <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-6">
               {[
                 { label: "Source", state: filterSource, set: setFilterSource, options: ["All Sources", "Direct Entry", "CRM Webhook"] },
-                { label: "Academic Year", state: filterYear, set: setFilterYear, options: ["All Years", "2025-26", "2026-27"] },
-                { label: "Board", state: filterBoard, set: setFilterBoard, options: ["All Boards", "State", "CBSE", "ICSE", "ISC"] },
-                { label: "Class", state: filterClass, set: setFilterClass, options: ["All Classes", "Class 11", "Class 12 (A)"] },
-                { label: "Centre", state: filterCentre, set: setFilterCentre, options: ["All Centres", "Neyyattinkara", "Manacaud"] },
-                { label: "Division", state: filterDivision, set: setFilterDivision, options: ["All Divisions", "Division A", "Division B"] },
+                { label: "Academic Year", state: filterYear, set: setFilterYear, options: yearOptions },
+                { label: "Board", state: filterBoard, set: setFilterBoard, options: boardOptions },
+                { label: "Class", state: filterClass, set: setFilterClass, options: classOptions },
+                { label: "Centre", state: filterCentre, set: setFilterCentre, options: centreOptions },
+                { label: "Division", state: filterDivision, set: setFilterDivision, options: divisionOptions },
                 { label: "Rows", options: ["10", "20", "50"] },
               ].map((f) => (
                 <div key={f.label}>
@@ -197,7 +255,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                       onChange={(e) => f.set && f.set(e.target.value)}
                       className="w-full h-9 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
                     >
-                      {f.options.map(o => <option key={o}>{o}</option>)}
+                      {f.options.map((o: string) => <option key={o}>{o}</option>)}
                     </select>
                     <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
                   </div>
@@ -478,6 +536,29 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
     fetchApi("/setup/batches").then(d => setApiBatches(Array.isArray(d) ? d : [])).catch(console.error);
   }, []);
 
+  // Filter batches by selected criteria if available
+  const matchingBatches = useMemo(() => {
+    return apiBatches.filter(b => {
+      const matchCentre = !centre || !b.centre?.name || b.centre.name.toLowerCase() === centre.toLowerCase();
+      const matchBoard = !board || !b.board?.name || b.board.name.toLowerCase() === board.toLowerCase();
+      const matchClass = !classLevel || !b.standard?.name || b.standard.name.toLowerCase() === classLevel.toLowerCase();
+      return matchCentre && matchBoard && matchClass;
+    });
+  }, [apiBatches, centre, board, classLevel]);
+
+  // Available batch names: exact matches first, then centre/class matches, then all live batches
+  const availableBatchNames = useMemo(() => {
+    const list = matchingBatches.length > 0
+      ? matchingBatches
+      : apiBatches.filter(b => (!centre || !b.centre?.name || b.centre.name.toLowerCase() === centre.toLowerCase()) && (!classLevel || !b.standard?.name || b.standard.name.toLowerCase() === classLevel.toLowerCase()));
+    const fallbackList = list.length > 0 ? list : apiBatches;
+    const names = new Set<string>();
+    fallbackList.forEach((b: any) => { if (b.name) names.add(b.name); });
+    if (division) names.add(division);
+    if (student?.division && student.division !== "N/A") names.add(student.division);
+    return Array.from(names);
+  }, [matchingBatches, apiBatches, centre, classLevel, division, student]);
+
   useEffect(() => {
     if (board) {
       const bObj = apiBoards.find(b => b.name === board);
@@ -658,18 +739,34 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                   <select 
                     value={division} 
                     onChange={(e) => setDivision(e.target.value)}
-                    disabled={!classLevel || !centre}
-                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20 disabled:opacity-50"
+                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm text-text-primary focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
                   >
-                    <option value="">---Select---</option>
-                    {apiBatches.filter(b => b.centre?.name === centre && b.board?.name === board && b.standard?.name === classLevel).map(b => (
-                      <option key={b.id} value={b.name}>{b.name}</option>
+                    <option value="">---Select Division / Batch---</option>
+                    {availableBatchNames.map((bName: string) => (
+                      <option key={bName} value={bName}>{bName}</option>
                     ))}
+                    {division && !availableBatchNames.includes(division) && (
+                      <option value={division}>{division}</option>
+                    )}
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
                     <ChevronDown className="h-3 w-3 text-text-muted" />
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-1 text-[11px] text-text-muted">
+                  <span>{availableBatchNames.length} live division(s) found</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const custom = prompt("Enter custom Division / Batch name:", division);
+                      if (custom && custom.trim()) setDivision(custom.trim());
+                    }}
+                    className="text-brand-blue font-semibold hover:underline"
+                  >
+                    + Enter Custom
+                  </button>
                 </div>
               </div>
 

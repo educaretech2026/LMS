@@ -59,7 +59,23 @@ export default function AttendancePage() {
   useEffect(() => {
     if (selectedCentre && selectedBoard && selectedStandard) {
       const query = `?centreId=${selectedCentre}&boardId=${selectedBoard}&standardId=${selectedStandard}${selectedTrack ? `&trackId=${selectedTrack}` : ''}`;
-      fetchApi(`/attendance/batches/filter${query}`).then(d => setBatches(Array.isArray(d) ? d : [])).catch(() => {});
+      fetchApi(`/attendance/batches/filter${query}`)
+        .then((d: any) => {
+          const list = Array.isArray(d) ? d : [];
+          if (list.length > 0) {
+            setBatches(list);
+          } else {
+            // Fallback: fetch batches for this centre and standard directly
+            fetchApi(`/setup/batches?centreId=${selectedCentre}&standardId=${selectedStandard}`)
+              .then((fb: any) => setBatches(Array.isArray(fb) ? fb : []))
+              .catch(() => setBatches([]));
+          }
+        })
+        .catch(() => {
+          fetchApi(`/setup/batches?centreId=${selectedCentre}&standardId=${selectedStandard}`)
+            .then((fb: any) => setBatches(Array.isArray(fb) ? fb : []))
+            .catch(() => setBatches([]));
+        });
     } else {
       setBatches([]);
       setSelectedBatch("");

@@ -283,18 +283,26 @@ export class AttendanceService {
       }
     }
 
+    const whereClause: any = {
+      ...(centreId ? { centreId } : {}),
+      ...(boardId ? { boardId } : {}),
+      ...(standardId ? { standardId } : {}),
+      ...(trackId && trackId.trim() ? { trackId: trackId.trim() } : {}),
+      ...(isTeacher && assignedBatchIds !== null && assignedStandardIds !== null ? {
+        OR: [
+          ...(assignedBatchIds.length > 0 ? [{ id: { in: assignedBatchIds } }] : []),
+          ...(assignedStandardIds.length > 0 ? [{ standardId: { in: assignedStandardIds } }] : []),
+        ]
+      } : {})
+    };
+
     return this.prisma.batch.findMany({
-      where: {
-        centreId,
-        boardId,
-        standardId,
-        trackId,
-        ...(isTeacher && assignedBatchIds !== null && assignedStandardIds !== null ? {
-          OR: [
-            ...(assignedBatchIds.length > 0 ? [{ id: { in: assignedBatchIds } }] : []),
-            ...(assignedStandardIds.length > 0 ? [{ standardId: { in: assignedStandardIds } }] : []),
-          ]
-        } : {})
+      where: whereClause,
+      include: {
+        board: true,
+        standard: true,
+        centre: true,
+        track: true,
       }
     });
   }

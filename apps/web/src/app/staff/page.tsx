@@ -3,14 +3,15 @@ import { StaffClient } from "./staff-client";
 
 export default async function StaffPage() {
   try {
-    const [data, centres, boards, standards, academicYears, roles, subjects] = await Promise.all([
+    const [data, centres, boards, standards, academicYears, roles, subjects, batches] = await Promise.all([
       fetchApiServer<any[]>('/staff').catch(() => []),
       fetchApiServer<any[]>('/setup/centres').catch(() => []),
       fetchApiServer<any[]>('/setup/boards').catch(() => []),
       fetchApiServer<any[]>('/setup/standards').catch(() => []),
       fetchApiServer<any[]>('/setup/academic-years').catch(() => []),
       fetchApiServer<any[]>('/setup/roles').catch(() => []),
-      fetchApiServer<any[]>('/setup/subjects').catch(() => [])
+      fetchApiServer<any[]>('/setup/subjects').catch(() => []),
+      fetchApiServer<any[]>('/setup/batches').catch(() => [])
     ]);
 
     const staffArray = Array.isArray(data) ? data : [];
@@ -20,6 +21,7 @@ export default async function StaffPage() {
     const yearsArray = Array.isArray(academicYears) ? academicYears : [];
     const rolesArray = Array.isArray(roles) ? roles : [];
     const subjectsArray = Array.isArray(subjects) ? subjects : [];
+    const batchesArray = Array.isArray(batches) ? batches : [];
     
     const mapped = staffArray.map(user => {
       const profile = user.teacherProfile;
@@ -67,7 +69,8 @@ export default async function StaffPage() {
       }),
       subjects: subjectsArray.map((sub: any) => sub.name).filter(Boolean),
       academicYears: yearsArray.map(y => y.name).filter(Boolean),
-      roles: rolesArray.map(r => r.name).filter(Boolean)
+      roles: rolesArray.map(r => r.name).filter(Boolean),
+      batches: batchesArray.map((ba: any) => ba.name).filter(Boolean)
     };
 
     return <StaffClient initialStaffList={mapped} config={config} />;
@@ -76,7 +79,7 @@ export default async function StaffPage() {
     return (
       <StaffClient 
         initialStaffList={[]} 
-        config={{ centres: [], boards: [], classes: [], subjects: [], academicYears: [], roles: [] }} 
+        config={{ centres: [], boards: [], classes: [], subjects: [], academicYears: [], roles: [], batches: [] }} 
       />
     );
   }

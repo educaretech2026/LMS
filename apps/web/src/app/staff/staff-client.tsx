@@ -583,11 +583,15 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                       <label className="block text-xs font-bold text-text-secondary mb-1">Division / Section</label>
                       <input 
                         type="text" 
+                        list="staff-division-options"
                         placeholder="e.g. Division A" 
                         value={newAssignment.division} 
                         onChange={e => setNewAssignment({...newAssignment, division: e.target.value})} 
                         className="w-full h-10 rounded-lg text-sm px-3 border border-border-soft bg-white" 
                       />
+                      <datalist id="staff-division-options">
+                        {(config.batches || []).map((b: string) => <option key={b} value={b} />)}
+                      </datalist>
                     </div>
                   </div>
 
