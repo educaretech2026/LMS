@@ -27,16 +27,17 @@ import {
   AudioPresets,
   ScreenSharePresets,
   RoomEvent,
-  ConnectionState,
+  DisconnectReason,
 } from "livekit-client";
 import { fetchApi } from "@/lib/api";
 import {
   Loader2, WifiOff, FileDown, Upload, MicOff, StopCircle,
   Video, VideoOff, Mic, MonitorUp, MonitorOff, LogOut, FileText,
   Monitor, AlertCircle, Hand, MessageSquare, Send, CheckCircle2,
-  ChevronRight, Minimize2, Maximize2, Shield, Users,
+  ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
+  Trash2, Edit3,
 } from "lucide-react";
-import { Tldraw, getSnapshot, loadSnapshot } from "tldraw";
+import { Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 
 interface LiveKitRoomProps {
@@ -84,6 +85,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [whiteboardEverOpened, setWhiteboardEverOpened] = useState(false);
+  const [allowStudentDraw, setAllowStudentDraw] = useState(false);
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [activeTab, setActiveTab] = useState<"chat" | "files">("chat");
@@ -92,6 +94,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [networkAlert, setNetworkAlert] = useState<string | null>(null);
+  const [isUnexpectedDisconnect, setIsUnexpectedDisconnect] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingAudioCtxRef = useRef<AudioContext | null>(null);
@@ -99,6 +102,21 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const tldrawEditorRef = useRef<any>(null);
 
   const isTeacher = role?.toUpperCase() !== "STUDENT" && role?.toUpperCase() !== "PUBLIC_LEARNER";
+
+  // Re-calculate viewport screen bounds whenever whiteboard is displayed
+  useEffect(() => {
+    if (showWhiteboard) {
+      const timer = setTimeout(() => {
+        if (tldrawEditorRef.current) {
+          try {
+            tldrawEditorRef.current.updateViewportScreenBounds();
+            window.dispatchEvent(new Event("resize"));
+          } catch {}
+        }
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [showWhiteboard]);
 
   // High-performance Room Configuration
   const roomOptions: RoomOptions = useMemo(
@@ -145,7 +163,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         preferCurrentTab: true,
       } as any);
 
-      // Create AudioContext to mix display audio and local microphone
       let finalAudioTrack: MediaStreamTrack | null = null;
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -155,14 +172,12 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
           const dest = audioCtx.createMediaStreamDestination();
           let hasAudioSource = false;
 
-          // Connect display audio if provided by browser
           if (stream.getAudioTracks().length > 0) {
             const displaySrc = audioCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
             displaySrc.connect(dest);
             hasAudioSource = true;
           }
 
-          // Also capture local microphone for clear teacher narration
           try {
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             if (micStream.getAudioTracks().length > 0) {
@@ -216,7 +231,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       };
 
       stream.getVideoTracks()[0].onended = () => recorder.stop();
-      recorder.start(1000); // 1s slice interval
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
     } catch (e) {
@@ -263,7 +278,15 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       audio={true}
       options={roomOptions}
       connectOptions={connectOptions}
-      onDisconnected={onLeave}
+      onDisconnected={(reason) => {
+        console.log("LiveKit disconnected with reason:", reason);
+        if (reason === DisconnectReason.CLIENT_INITIATED) {
+          onLeave();
+        } else {
+          // Unexpected disconnect (network reset, sctp interruption) - do NOT kick out, show reconnect prompt!
+          setIsUnexpectedDisconnect(true);
+        }
+      }}
       className="h-full w-full flex flex-col relative"
       style={{ background: "#0b0c10" }}
     >
@@ -274,8 +297,11 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         setChatMessages={setChatMessages}
         setActiveTab={setActiveTab}
         setUnreadChatCount={setUnreadChatCount}
+        showWhiteboard={showWhiteboard}
         setShowWhiteboard={setShowWhiteboard}
         setWhiteboardEverOpened={setWhiteboardEverOpened}
+        allowStudentDraw={allowStudentDraw}
+        setAllowStudentDraw={setAllowStudentDraw}
         setRaisedHands={setRaisedHands}
         setIsHandRaised={setIsHandRaised}
         setNetworkAlert={setNetworkAlert}
@@ -296,6 +322,39 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs shadow-lg backdrop-blur-md">
           <AlertCircle size={14} className="animate-pulse" />
           <span>{networkAlert}</span>
+        </div>
+      )}
+
+      {/* Unexpected Disconnection Guard Overlay */}
+      {isUnexpectedDisconnect && (
+        <div className="absolute inset-0 z-50 bg-black/85 flex flex-col items-center justify-center gap-4 p-6 text-center backdrop-blur-md">
+          <div className="h-14 w-14 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 animate-pulse">
+            <AlertCircle size={28} />
+          </div>
+          <div className="max-w-md">
+            <h3 className="text-white text-lg font-bold">Classroom Connection Interrupted</h3>
+            <p className="text-white/60 text-xs mt-1">
+              Your connection to the live classroom was momentarily lost. We can restore your session without leaving.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              onClick={() => {
+                setIsUnexpectedDisconnect(false);
+                fetchToken();
+              }}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors flex items-center gap-2 shadow-lg"
+            >
+              <RefreshCw size={14} />
+              Reconnect Now
+            </button>
+            <button
+              onClick={onLeave}
+              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 text-xs transition-colors"
+            >
+              Exit Class
+            </button>
+          </div>
         </div>
       )}
 
@@ -341,7 +400,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                 const payload = JSON.stringify({ type: "LOWER_ALL_HANDS" });
                 const room = (window as any).__lk_room;
                 if (room?.localParticipant) {
-                  room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+                  room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
                 }
                 setRaisedHands(new Set());
               }}
@@ -357,9 +416,12 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
             showWhiteboard={showWhiteboard}
             setShowWhiteboard={setShowWhiteboard}
             setWhiteboardEverOpened={setWhiteboardEverOpened}
+            allowStudentDraw={allowStudentDraw}
+            setAllowStudentDraw={setAllowStudentDraw}
             isRecording={isRecording}
             startRecording={startRecording}
             stopRecording={stopRecording}
+            tldrawEditorRef={tldrawEditorRef}
           />
         )}
       </div>
@@ -377,7 +439,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                 const room = (window as any).__lk_room;
                 if (room?.localParticipant) {
                   const payload = JSON.stringify({ type: "MUTE_STUDENT", targetId });
-                  room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+                  room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
                 }
               }}
             />
@@ -397,6 +459,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                 isTeacher={isTeacher}
                 roomId={roomId}
                 editorRef={tldrawEditorRef}
+                allowStudentDraw={allowStudentDraw}
               />
 
               {/* Floating Picture-in-Picture Mini Video Dock */}
@@ -469,7 +532,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                   timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                 };
                 const payload = JSON.stringify({ type: "CHAT_MESSAGE", ...newMsg });
-                room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+                room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
                 setChatMessages((prev) => [...prev, newMsg]);
               }}
             />
@@ -497,7 +560,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
             name,
             raised: nextState,
           });
-          room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+          room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
           setRaisedHands((prev) => {
             const next = new Set(prev);
             if (nextState) next.add(identity);
@@ -532,11 +595,9 @@ function ClassVideoGrid({
   const screenTrack = tracks.find((t) => t.source === Track.Source.ScreenShare);
   const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
 
-  // When Screen Share is active, give it 85% of stage with sharp 1080p rendering
   if (screenTrack) {
     return (
       <div className="h-full w-full flex flex-col p-2 gap-2">
-        {/* Main Stage */}
         <div className="flex-1 relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 shadow-2xl">
           <FocusLayout trackRef={screenTrack} style={{ height: "100%", width: "100%" }} />
           <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5 backdrop-blur-md">
@@ -545,7 +606,6 @@ function ClassVideoGrid({
           </div>
         </div>
 
-        {/* Horizontal Filmstrip of Camera Tracks */}
         <div className="h-28 shrink-0 flex gap-2 overflow-x-auto pb-1 items-center px-1">
           {cameraTracks.map((track) => (
             <div
@@ -566,7 +626,6 @@ function ClassVideoGrid({
     );
   }
 
-  // Standard Balanced Grid
   return (
     <div className="h-full w-full p-3">
       <GridLayout tracks={cameraTracks} style={{ height: "100%", width: "100%" }}>
@@ -637,17 +696,14 @@ function TileOverlay({
 
   return (
     <>
-      {/* Speaking Active Glow Border */}
       {isSpeaking && (
         <div className="absolute inset-0 border-2 border-blue-500 rounded-2xl pointer-events-none shadow-[0_0_15px_rgba(59,130,246,0.5)] z-10 transition-all" />
       )}
 
-      {/* Top Left: Connection Quality Indicator */}
       <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 backdrop-blur-md">
         <ConnectionQualityIndicator />
       </div>
 
-      {/* Top Right: Hand Raised Alert */}
       {isHandRaised && (
         <div className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500 text-black text-[11px] font-bold shadow-lg animate-bounce">
           <Hand size={12} />
@@ -655,7 +711,6 @@ function TileOverlay({
         </div>
       )}
 
-      {/* Bottom Information Bar */}
       <div className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-white">
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-xs font-semibold truncate">
@@ -673,7 +728,6 @@ function TileOverlay({
           </span>
         </div>
 
-        {/* Teacher Moderation Action: Mute Student */}
         {isTeacher && !isSelf && (
           <button
             onClick={(e) => {
@@ -863,8 +917,11 @@ function ClassroomLogic({
   setChatMessages,
   setActiveTab,
   setUnreadChatCount,
+  showWhiteboard,
   setShowWhiteboard,
   setWhiteboardEverOpened,
+  allowStudentDraw,
+  setAllowStudentDraw,
   setRaisedHands,
   setIsHandRaised,
   setNetworkAlert,
@@ -876,8 +933,11 @@ function ClassroomLogic({
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setActiveTab: React.Dispatch<React.SetStateAction<"chat" | "files">>;
   setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
+  showWhiteboard: boolean;
   setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>>;
   setWhiteboardEverOpened: React.Dispatch<React.SetStateAction<boolean>>;
+  allowStudentDraw: boolean;
+  setAllowStudentDraw: React.Dispatch<React.SetStateAction<boolean>>;
   setRaisedHands: React.Dispatch<React.SetStateAction<Set<string>>>;
   setIsHandRaised: React.Dispatch<React.SetStateAction<boolean>>;
   setNetworkAlert: React.Dispatch<React.SetStateAction<string | null>>;
@@ -900,24 +960,88 @@ function ClassroomLogic({
           setSharedFiles((prev) => [...prev, { name: data.name, url: data.url }]);
         } else if (data.type === "WHITEBOARD_TOGGLE") {
           if (data.state) setWhiteboardEverOpened(true);
-          setShowWhiteboard(data.state);
-        } else if (data.type === "WHITEBOARD_SNAPSHOT" && !isTeacher) {
-          // Sync remote teacher drawing to student board
+          setShowWhiteboard(Boolean(data.state));
+        } else if (data.type === "WHITEBOARD_PERMISSION") {
+          setAllowStudentDraw(Boolean(data.allowStudentDraw));
+        } else if (data.type === "WHITEBOARD_DELTA") {
+          // Efficient differential delta syncing
           const editor = tldrawEditorRef.current;
-          if (editor && data.snapshot) {
+          if (editor && data.changes) {
             try {
-              loadSnapshot(editor.store, data.snapshot);
+              editor.store.mergeRemoteChanges(() => {
+                if (data.changes.added && Object.keys(data.changes.added).length > 0) {
+                  editor.store.put(Object.values(data.changes.added));
+                }
+                if (data.changes.updated && Object.keys(data.changes.updated).length > 0) {
+                  const toRecords = Object.values(data.changes.updated).map((u: any) =>
+                    Array.isArray(u) ? u[1] : u
+                  );
+                  editor.store.put(toRecords);
+                }
+                if (data.changes.removed && Object.keys(data.changes.removed).length > 0) {
+                  editor.store.remove(Object.keys(data.changes.removed));
+                }
+              });
             } catch (err) {
-              console.error("Error loading synced whiteboard snapshot", err);
+              console.error("Error applying remote whiteboard delta", err);
+            }
+          } else {
+            // Queue pending delta if Tldraw is still initializing
+            if (!(window as any).__lk_pending_whiteboard_deltas) {
+              (window as any).__lk_pending_whiteboard_deltas = [];
+            }
+            (window as any).__lk_pending_whiteboard_deltas.push(data.changes);
+          }
+        } else if (data.type === "WHITEBOARD_CLEAR") {
+          const editor = tldrawEditorRef.current;
+          if (editor) {
+            try {
+              editor.store.mergeRemoteChanges(() => {
+                const shapeIds = editor.store
+                  .allRecords()
+                  .filter((r: any) => r.typeName === "shape")
+                  .map((r: any) => r.id);
+                if (shapeIds.length > 0) {
+                  editor.store.remove(shapeIds);
+                }
+              });
+            } catch (err) {
+              console.error("Error clearing whiteboard remotely", err);
             }
           }
         } else if (data.type === "REQUEST_WHITEBOARD_STATE" && isTeacher) {
-          // Student requested current whiteboard snapshot
+          // Send active state to late-joining attendee safely chunked
           const editor = tldrawEditorRef.current;
           if (editor) {
-            const snapshot = getSnapshot(editor.store);
-            const res = JSON.stringify({ type: "WHITEBOARD_SNAPSHOT", snapshot });
-            room.localParticipant.publishData(new TextEncoder().encode(res), { reliable: true });
+            if (showWhiteboard) {
+              const toggleMsg = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: true });
+              room.localParticipant.publishData(new TextEncoder().encode(toggleMsg), { reliable: true }).catch(() => {});
+            }
+
+            const shapes = editor.store
+              .allRecords()
+              .filter((r: any) => r.typeName === "shape" || r.typeName === "asset" || r.typeName === "binding");
+
+            const CHUNK_SIZE = 20;
+            for (let i = 0; i < shapes.length; i += CHUNK_SIZE) {
+              const chunk = shapes.slice(i, i + CHUNK_SIZE);
+              const batchPayload = JSON.stringify({
+                type: "WHITEBOARD_BATCH",
+                records: chunk,
+              });
+              room.localParticipant.publishData(new TextEncoder().encode(batchPayload), { reliable: true }).catch(() => {});
+            }
+          }
+        } else if (data.type === "WHITEBOARD_BATCH") {
+          const editor = tldrawEditorRef.current;
+          if (editor && Array.isArray(data.records)) {
+            try {
+              editor.store.mergeRemoteChanges(() => {
+                editor.store.put(data.records);
+              });
+            } catch (err) {
+              console.error("Error applying batch records", err);
+            }
           }
         } else if (data.type === "CHAT_MESSAGE") {
           setChatMessages((prev) => [...prev, data]);
@@ -951,14 +1075,14 @@ function ClassroomLogic({
     room.on(RoomEvent.Reconnecting, handleReconnecting);
     room.on(RoomEvent.Reconnected, handleReconnected);
 
-    // If joining as student, request current whiteboard state in case class is already underway
+    // If joining as student, request current whiteboard state after joining
     if (!isTeacher) {
       setTimeout(() => {
         try {
           const req = JSON.stringify({ type: "REQUEST_WHITEBOARD_STATE" });
-          room.localParticipant?.publishData(new TextEncoder().encode(req), { reliable: true });
+          room.localParticipant?.publishData(new TextEncoder().encode(req), { reliable: true }).catch(() => {});
         } catch {}
-      }, 1000);
+      }, 1200);
     }
 
     return () => {
@@ -971,10 +1095,12 @@ function ClassroomLogic({
     room,
     isTeacher,
     myIdentity,
+    showWhiteboard,
     setSharedFiles,
     setChatMessages,
     setShowWhiteboard,
     setWhiteboardEverOpened,
+    setAllowStudentDraw,
     setRaisedHands,
     setIsHandRaised,
     setNetworkAlert,
@@ -990,9 +1116,12 @@ function TeacherControls({
   showWhiteboard,
   setShowWhiteboard,
   setWhiteboardEverOpened,
+  allowStudentDraw,
+  setAllowStudentDraw,
   isRecording,
   startRecording,
   stopRecording,
+  tldrawEditorRef,
 }: any) {
   const room = useRoomContext();
   const [uploading, setUploading] = useState(false);
@@ -1000,7 +1129,7 @@ function TeacherControls({
   const muteAll = () => {
     if (!room) return;
     const payload = JSON.stringify({ type: "MUTE_ALL" });
-    room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+    room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
   };
 
   const toggleWhiteboard = () => {
@@ -1009,7 +1138,36 @@ function TeacherControls({
     if (newState) setWhiteboardEverOpened(true);
     if (room) {
       const payload = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: newState });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+    }
+  };
+
+  const toggleStudentDraw = () => {
+    const nextVal = !allowStudentDraw;
+    setAllowStudentDraw(nextVal);
+    if (room) {
+      const payload = JSON.stringify({ type: "WHITEBOARD_PERMISSION", allowStudentDraw: nextVal });
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+    }
+  };
+
+  const clearWhiteboard = () => {
+    if (!confirm("Are you sure you want to clear the whiteboard for all participants?")) return;
+    const editor = tldrawEditorRef.current;
+    if (editor) {
+      try {
+        editor.store.mergeRemoteChanges(() => {
+          const shapeIds = editor.store
+            .allRecords()
+            .filter((r: any) => r.typeName === "shape")
+            .map((r: any) => r.id);
+          if (shapeIds.length > 0) editor.store.remove(shapeIds);
+        });
+      } catch {}
+    }
+    if (room) {
+      const payload = JSON.stringify({ type: "WHITEBOARD_CLEAR" });
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
     }
   };
 
@@ -1024,7 +1182,7 @@ function TeacherControls({
       const { uploadUrl, finalUrl } = res;
       await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       const payload = JSON.stringify({ type: "FILE_SHARED", name: file.name, url: finalUrl });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
     } catch (err) {
       console.error("File upload failed", err);
       alert("Failed to share file.");
@@ -1048,6 +1206,7 @@ function TeacherControls({
 
   return (
     <div className="flex items-center gap-2">
+      {/* Whiteboard Toggle */}
       <button
         onClick={toggleWhiteboard}
         style={{
@@ -1061,6 +1220,40 @@ function TeacherControls({
         {showWhiteboard ? "Close Board" : "Whiteboard"}
       </button>
 
+      {/* Whiteboard Utility Controls (when open) */}
+      {showWhiteboard && (
+        <>
+          <button
+            onClick={toggleStudentDraw}
+            title={allowStudentDraw ? "Students can draw (Click to lock)" : "Students view only (Click to allow drawing)"}
+            style={{
+              ...hdrBtn,
+              background: allowStudentDraw ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.08)",
+              color: allowStudentDraw ? "#34d399" : "rgba(255,255,255,0.7)",
+              border: `1px solid ${allowStudentDraw ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.1)"}`,
+            }}
+          >
+            <Edit3 size={13} />
+            {allowStudentDraw ? "Students Drawing: ON" : "Allow Student Draw"}
+          </button>
+
+          <button
+            onClick={clearWhiteboard}
+            title="Clear canvas for everyone"
+            style={{
+              ...hdrBtn,
+              background: "rgba(239,68,68,0.12)",
+              color: "#f87171",
+              border: "1px solid rgba(239,68,68,0.25)",
+            }}
+          >
+            <Trash2 size={13} />
+            Clear Board
+          </button>
+        </>
+      )}
+
+      {/* Mute All */}
       <button
         onClick={muteAll}
         style={{
@@ -1073,6 +1266,7 @@ function TeacherControls({
         <MicOff size={14} /> Mute All
       </button>
 
+      {/* Record */}
       <button
         onClick={isRecording ? stopRecording : startRecording}
         style={{
@@ -1086,6 +1280,7 @@ function TeacherControls({
         {isRecording ? "Stop Rec" : "Record"}
       </button>
 
+      {/* Share File */}
       <label
         style={{
           ...hdrBtn,
@@ -1241,46 +1436,132 @@ const Whiteboard = memo(function Whiteboard({
   isTeacher,
   roomId,
   editorRef,
+  allowStudentDraw,
 }: {
   isTeacher: boolean;
   roomId: string;
   editorRef: React.MutableRefObject<any>;
+  allowStudentDraw: boolean;
 }) {
   const room = useRoomContext();
-  const broadcastTimeoutRef = useRef<any>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
+  const broadcastTimerRef = useRef<any>(null);
+  const pendingDeltasQueue = useRef<{ added: any; updated: any; removed: any }>({
+    added: {},
+    updated: {},
+    removed: {},
+  });
 
   const handleMount = useCallback(
     (editor: any) => {
       editorRef.current = editor;
 
-      if (!isTeacher) {
-        editor.updateInstanceState({ isReadonly: true });
-      } else {
-        // Teacher draws -> debounced snapshot broadcast to room participants
-        editor.store.listen((entry: any) => {
+      // Clean up any stale listener from prior mount
+      if (unsubRef.current) {
+        unsubRef.current();
+        unsubRef.current = null;
+      }
+
+      const canDraw = isTeacher || allowStudentDraw;
+      editor.updateInstanceState({ isReadonly: !canDraw });
+
+      // Flush any queued deltas that arrived while Tldraw was mounting
+      const pending = (window as any).__lk_pending_whiteboard_deltas;
+      if (Array.isArray(pending) && pending.length > 0) {
+        try {
+          editor.store.mergeRemoteChanges(() => {
+            for (const p of pending) {
+              if (p.added && Object.keys(p.added).length > 0) {
+                editor.store.put(Object.values(p.added));
+              }
+              if (p.updated && Object.keys(p.updated).length > 0) {
+                const toRecords = Object.values(p.updated).map((u: any) =>
+                  Array.isArray(u) ? u[1] : u
+                );
+                editor.store.put(toRecords);
+              }
+              if (p.removed && Object.keys(p.removed).length > 0) {
+                editor.store.remove(Object.keys(p.removed));
+              }
+            }
+          });
+        } catch (err) {
+          console.warn("Error flushing pending deltas on mount", err);
+        }
+        (window as any).__lk_pending_whiteboard_deltas = [];
+      }
+
+      // Attach lightweight differential delta listener
+      unsubRef.current = editor.store.listen(
+        (entry: any) => {
           if (entry.source !== "user") return;
-          if (broadcastTimeoutRef.current) clearTimeout(broadcastTimeoutRef.current);
-          broadcastTimeoutRef.current = setTimeout(() => {
+          const canUserDraw = isTeacher || allowStudentDraw;
+          if (!canUserDraw) return;
+
+          const { added, updated, removed } = entry.changes;
+          if (added) Object.assign(pendingDeltasQueue.current.added, added);
+          if (updated) Object.assign(pendingDeltasQueue.current.updated, updated);
+          if (removed) Object.assign(pendingDeltasQueue.current.removed, removed);
+
+          if (broadcastTimerRef.current) clearTimeout(broadcastTimerRef.current);
+          broadcastTimerRef.current = setTimeout(async () => {
             try {
               if (!room?.localParticipant) return;
-              const snapshot = getSnapshot(editor.store);
-              const payload = JSON.stringify({ type: "WHITEBOARD_SNAPSHOT", snapshot });
-              room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true });
+              const batch = { ...pendingDeltasQueue.current };
+              pendingDeltasQueue.current = { added: {}, updated: {}, removed: {} };
+
+              const hasChanges =
+                Object.keys(batch.added).length > 0 ||
+                Object.keys(batch.updated).length > 0 ||
+                Object.keys(batch.removed).length > 0;
+
+              if (!hasChanges) return;
+
+              const payload = JSON.stringify({
+                type: "WHITEBOARD_DELTA",
+                changes: batch,
+              });
+              const encoded = new TextEncoder().encode(payload);
+              // Safe packet size check (< 50KB, well under 64KB limit)
+              if (encoded.byteLength < 55000) {
+                await room.localParticipant.publishData(encoded, { reliable: true });
+              }
             } catch (err) {
-              console.error("Failed to broadcast whiteboard change", err);
+              console.error("Safe broadcast whiteboard error", err);
             }
-          }, 100);
-        });
-      }
+          }, 60);
+        },
+        { scope: "document", source: "user" }
+      );
 
       setTimeout(() => {
         try {
           editor.updateViewportScreenBounds();
-        } catch (e) {}
+        } catch {}
       }, 100);
     },
-    [isTeacher, room, editorRef]
+    [isTeacher, allowStudentDraw, room, editorRef]
   );
+
+  useEffect(() => {
+    return () => {
+      if (unsubRef.current) {
+        unsubRef.current();
+        unsubRef.current = null;
+      }
+      if (broadcastTimerRef.current) {
+        clearTimeout(broadcastTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Update readonly state dynamically when allowStudentDraw changes
+  useEffect(() => {
+    if (editorRef.current) {
+      const canDraw = isTeacher || allowStudentDraw;
+      editorRef.current.updateInstanceState({ isReadonly: !canDraw });
+    }
+  }, [isTeacher, allowStudentDraw, editorRef]);
 
   return <Tldraw onMount={handleMount} />;
 });
