@@ -66,6 +66,43 @@ interface SharedFile {
   url: string;
 }
 
+/**
+ * Safely publishes data over LiveKit data channel without throwing or breaking PC state
+ */
+export function safePublishData(
+  room: any,
+  payload: any,
+  options: { reliable?: boolean } = { reliable: true }
+): boolean {
+  try {
+    if (!room || room.state !== "connected" || !room.localParticipant) {
+      return false;
+    }
+    const bytes =
+      typeof payload === "string"
+        ? new TextEncoder().encode(payload)
+        : payload instanceof Uint8Array
+        ? payload
+        : new TextEncoder().encode(JSON.stringify(payload));
+
+    if (bytes.byteLength > 62000) {
+      console.warn("Payload exceeds single packet threshold (byteLength):", bytes.byteLength);
+      return false;
+    }
+
+    room.localParticipant.publishData(bytes, options).catch((err: any) => {
+      // Gracefully swallow disconnect/publisher closed errors
+      const msg = String(err?.message || "");
+      if (!msg.includes("closed") && !msg.includes("not establish")) {
+        console.warn("safePublishData async warning:", msg);
+      }
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: LiveKitRoomProps) {
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +180,16 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const connectOptions: RoomConnectOptions = useMemo(
     () => ({
       autoSubscribe: true,
-      maxRetries: 5,
+      peerConnectionTimeout: 30000,
+      maxRetries: 10,
+      rtcConfig: {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+          { urls: "stun:stun2.l.google.com:19302" },
+        ],
+        iceCandidatePoolSize: 10,
+      },
     }),
     []
   );
@@ -265,10 +311,11 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
   return (
     <LiveKitRoom
+      key={tokenData.token}
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={true}
+      video={isTeacher}
       audio={true}
       options={roomOptions}
       connectOptions={connectOptions}
@@ -393,9 +440,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
               onClick={() => {
                 const payload = JSON.stringify({ type: "LOWER_ALL_HANDS" });
                 const room = (window as any).__lk_room;
-                if (room?.localParticipant) {
-                  room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
-                }
+                safePublishData(room, payload);
                 setRaisedHands(new Set());
               }}
               className="ml-2 underline text-[11px] hover:text-white"
@@ -431,10 +476,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
               raisedHands={raisedHands}
               onMuteParticipant={(targetId) => {
                 const room = (window as any).__lk_room;
-                if (room?.localParticipant) {
-                  const payload = JSON.stringify({ type: "MUTE_STUDENT", targetId });
-                  room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
-                }
+                safePublishData(room, JSON.stringify({ type: "MUTE_STUDENT", targetId }));
               }}
             />
           </div>
@@ -517,7 +559,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
               messages={chatMessages}
               onSendMessage={(text) => {
                 const room = (window as any).__lk_room;
-                if (!room?.localParticipant) return;
                 const newMsg: ChatMessage = {
                   id: Math.random().toString(36).slice(2, 9),
                   sender: name || "Anonymous",
@@ -526,7 +567,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                   timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                 };
                 const payload = JSON.stringify({ type: "CHAT_MESSAGE", ...newMsg });
-                room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+                safePublishData(room, payload);
                 setChatMessages((prev) => [...prev, newMsg]);
               }}
             />
@@ -545,7 +586,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         isHandRaised={isHandRaised}
         onToggleHand={() => {
           const room = (window as any).__lk_room;
-          if (!room?.localParticipant) return;
           const nextState = !isHandRaised;
           setIsHandRaised(nextState);
           const payload = JSON.stringify({
@@ -554,7 +594,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
             name,
             raised: nextState,
           });
-          room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+          safePublishData(room, payload);
           setRaisedHands((prev) => {
             const next = new Set(prev);
             if (nextState) next.add(identity);
@@ -976,10 +1016,12 @@ function ClassroomLogic({
                   editor.store.put(Object.values(data.changes.added));
                 }
                 if (data.changes.updated && Object.keys(data.changes.updated).length > 0) {
-                  const toRecords = Object.values(data.changes.updated).map((u: any) =>
-                    Array.isArray(u) ? u[1] : u
-                  );
-                  editor.store.put(toRecords);
+                  const toRecords = Object.values(data.changes.updated)
+                    .map((u: any) => (Array.isArray(u) ? u[1] : u))
+                    .filter(Boolean);
+                  if (toRecords.length > 0) {
+                    editor.store.put(toRecords);
+                  }
                 }
                 if (data.changes.removed && Object.keys(data.changes.removed).length > 0) {
                   editor.store.remove(Object.keys(data.changes.removed));
@@ -1018,21 +1060,21 @@ function ClassroomLogic({
           if (editor) {
             if (showWhiteboard) {
               const toggleMsg = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: true });
-              room.localParticipant.publishData(new TextEncoder().encode(toggleMsg), { reliable: true }).catch(() => {});
+              safePublishData(room, toggleMsg);
             }
 
             const shapes = editor.store
               .allRecords()
               .filter((r: any) => r.typeName === "shape" || r.typeName === "asset" || r.typeName === "binding");
 
-            const CHUNK_SIZE = 20;
+            const CHUNK_SIZE = 15;
             for (let i = 0; i < shapes.length; i += CHUNK_SIZE) {
               const chunk = shapes.slice(i, i + CHUNK_SIZE);
               const batchPayload = JSON.stringify({
                 type: "WHITEBOARD_BATCH",
                 records: chunk,
               });
-              room.localParticipant.publishData(new TextEncoder().encode(batchPayload), { reliable: true }).catch(() => {});
+              safePublishData(room, batchPayload);
             }
           }
         } else if (data.type === "WHITEBOARD_BATCH") {
@@ -1081,10 +1123,7 @@ function ClassroomLogic({
     // If joining as student, request current whiteboard state after joining
     if (!isTeacher) {
       setTimeout(() => {
-        try {
-          const req = JSON.stringify({ type: "REQUEST_WHITEBOARD_STATE" });
-          room.localParticipant?.publishData(new TextEncoder().encode(req), { reliable: true }).catch(() => {});
-        } catch {}
+        safePublishData(room, JSON.stringify({ type: "REQUEST_WHITEBOARD_STATE" }));
       }, 1200);
     }
 
@@ -1130,28 +1169,20 @@ function TeacherControls({
   const [uploading, setUploading] = useState(false);
 
   const muteAll = () => {
-    if (!room) return;
-    const payload = JSON.stringify({ type: "MUTE_ALL" });
-    room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+    safePublishData(room, JSON.stringify({ type: "MUTE_ALL" }));
   };
 
   const toggleWhiteboard = () => {
     const newState = !showWhiteboard;
     setShowWhiteboard(newState);
     if (newState) setWhiteboardEverOpened(true);
-    if (room) {
-      const payload = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: newState });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
-    }
+    safePublishData(room, JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: newState }));
   };
 
   const toggleStudentDraw = () => {
     const nextVal = !allowStudentDraw;
     setAllowStudentDraw(nextVal);
-    if (room) {
-      const payload = JSON.stringify({ type: "WHITEBOARD_PERMISSION", allowStudentDraw: nextVal });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
-    }
+    safePublishData(room, JSON.stringify({ type: "WHITEBOARD_PERMISSION", allowStudentDraw: nextVal }));
   };
 
   const clearWhiteboard = () => {
@@ -1168,10 +1199,7 @@ function TeacherControls({
         });
       } catch {}
     }
-    if (room) {
-      const payload = JSON.stringify({ type: "WHITEBOARD_CLEAR" });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
-    }
+    safePublishData(room, JSON.stringify({ type: "WHITEBOARD_CLEAR" }));
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1185,7 +1213,7 @@ function TeacherControls({
       const { uploadUrl, finalUrl } = res;
       await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       const payload = JSON.stringify({ type: "FILE_SHARED", name: file.name, url: finalUrl });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+      safePublishData(room, payload);
     } catch (err) {
       console.error("File upload failed", err);
       alert("Failed to share file.");
@@ -1448,12 +1476,104 @@ const Whiteboard = memo(function Whiteboard({
 }) {
   const room = useRoomContext();
   const unsubRef = useRef<(() => void) | null>(null);
-  const broadcastTimerRef = useRef<any>(null);
+  const flushIntervalRef = useRef<any>(null);
   const pendingDeltasQueue = useRef<{ added: any; updated: any; removed: any }>({
     added: {},
     updated: {},
     removed: {},
   });
+
+  // Safe flush routine
+  const flushPendingDeltas = useCallback(() => {
+    try {
+      if (!room || room.state !== "connected" || !room.localParticipant) {
+        return;
+      }
+
+      const q = pendingDeltasQueue.current;
+      const addedKeys = Object.keys(q.added);
+      const updatedKeys = Object.keys(q.updated);
+      const removedKeys = Object.keys(q.removed);
+
+      if (addedKeys.length === 0 && updatedKeys.length === 0 && removedKeys.length === 0) {
+        return;
+      }
+
+      // Snapshot and reset current queue
+      const batch = { ...q };
+      pendingDeltasQueue.current = { added: {}, updated: {}, removed: {} };
+
+      // Helper to chunk records so we never exceed SCTP packet size
+      const CHUNK_SIZE = 15;
+      const chunks: { added: any; updated: any; removed: any }[] = [];
+
+      let curChunk: { added: any; updated: any; removed: any } = { added: {}, updated: {}, removed: {} };
+      let curCount = 0;
+
+      for (const k of addedKeys) {
+        curChunk.added[k] = batch.added[k];
+        curCount++;
+        if (curCount >= CHUNK_SIZE) {
+          chunks.push(curChunk);
+          curChunk = { added: {}, updated: {}, removed: {} };
+          curCount = 0;
+        }
+      }
+
+      for (const k of updatedKeys) {
+        curChunk.updated[k] = batch.updated[k];
+        curCount++;
+        if (curCount >= CHUNK_SIZE) {
+          chunks.push(curChunk);
+          curChunk = { added: {}, updated: {}, removed: {} };
+          curCount = 0;
+        }
+      }
+
+      for (const k of removedKeys) {
+        curChunk.removed[k] = batch.removed[k];
+        curCount++;
+        if (curCount >= CHUNK_SIZE) {
+          chunks.push(curChunk);
+          curChunk = { added: {}, updated: {}, removed: {} };
+          curCount = 0;
+        }
+      }
+
+      if (curCount > 0) {
+        chunks.push(curChunk);
+      }
+
+      // Transmit each chunk safely
+      for (const ch of chunks) {
+        const payload = JSON.stringify({
+          type: "WHITEBOARD_DELTA",
+          changes: ch,
+        });
+        const success = safePublishData(room, payload, { reliable: true });
+        if (!success) {
+          // Put back in queue if unable to send
+          Object.assign(pendingDeltasQueue.current.added, ch.added);
+          Object.assign(pendingDeltasQueue.current.updated, ch.updated);
+          Object.assign(pendingDeltasQueue.current.removed, ch.removed);
+          break;
+        }
+      }
+    } catch (err) {
+      console.warn("Whiteboard delta flush error", err);
+    }
+  }, [room]);
+
+  // Periodic flush interval (every 75ms for silky smooth real-time streaming)
+  useEffect(() => {
+    flushIntervalRef.current = setInterval(flushPendingDeltas, 75);
+    return () => {
+      if (flushIntervalRef.current) {
+        clearInterval(flushIntervalRef.current);
+      }
+      flushPendingDeltas();
+    };
+  }, [flushPendingDeltas]);
 
   const handleMount = useCallback(
     (editor: any) => {
@@ -1474,16 +1594,16 @@ const Whiteboard = memo(function Whiteboard({
         try {
           editor.store.mergeRemoteChanges(() => {
             for (const p of pending) {
-              if (p.added && Object.keys(p.added).length > 0) {
+              if (p?.added && Object.keys(p.added).length > 0) {
                 editor.store.put(Object.values(p.added));
               }
-              if (p.updated && Object.keys(p.updated).length > 0) {
+              if (p?.updated && Object.keys(p.updated).length > 0) {
                 const toRecords = Object.values(p.updated).map((u: any) =>
                   Array.isArray(u) ? u[1] : u
                 );
                 editor.store.put(toRecords);
               }
-              if (p.removed && Object.keys(p.removed).length > 0) {
+              if (p?.removed && Object.keys(p.removed).length > 0) {
                 editor.store.remove(Object.keys(p.removed));
               }
             }
@@ -1494,7 +1614,7 @@ const Whiteboard = memo(function Whiteboard({
         (window as any).__lk_pending_whiteboard_deltas = [];
       }
 
-      // Attach lightweight differential delta listener
+      // Attach lightweight differential delta listener (accumulates changes for periodic throttle flush)
       unsubRef.current = editor.store.listen(
         (entry: any) => {
           if (entry.source !== "user") return;
@@ -1505,34 +1625,6 @@ const Whiteboard = memo(function Whiteboard({
           if (added) Object.assign(pendingDeltasQueue.current.added, added);
           if (updated) Object.assign(pendingDeltasQueue.current.updated, updated);
           if (removed) Object.assign(pendingDeltasQueue.current.removed, removed);
-
-          if (broadcastTimerRef.current) clearTimeout(broadcastTimerRef.current);
-          broadcastTimerRef.current = setTimeout(async () => {
-            try {
-              if (!room?.localParticipant) return;
-              const batch = { ...pendingDeltasQueue.current };
-              pendingDeltasQueue.current = { added: {}, updated: {}, removed: {} };
-
-              const hasChanges =
-                Object.keys(batch.added).length > 0 ||
-                Object.keys(batch.updated).length > 0 ||
-                Object.keys(batch.removed).length > 0;
-
-              if (!hasChanges) return;
-
-              const payload = JSON.stringify({
-                type: "WHITEBOARD_DELTA",
-                changes: batch,
-              });
-              const encoded = new TextEncoder().encode(payload);
-              // Safe packet size check (< 50KB, well under 64KB limit)
-              if (encoded.byteLength < 55000) {
-                await room.localParticipant.publishData(encoded, { reliable: true });
-              }
-            } catch (err) {
-              console.error("Safe broadcast whiteboard error", err);
-            }
-          }, 60);
         },
         { scope: "document", source: "user" }
       );
@@ -1543,7 +1635,7 @@ const Whiteboard = memo(function Whiteboard({
         } catch {}
       }, 100);
     },
-    [isTeacher, allowStudentDraw, room, editorRef]
+    [isTeacher, allowStudentDraw, editorRef]
   );
 
   useEffect(() => {
@@ -1551,9 +1643,6 @@ const Whiteboard = memo(function Whiteboard({
       if (unsubRef.current) {
         unsubRef.current();
         unsubRef.current = null;
-      }
-      if (broadcastTimerRef.current) {
-        clearTimeout(broadcastTimerRef.current);
       }
     };
   }, []);
