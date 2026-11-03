@@ -123,7 +123,7 @@ export default function LiveClassPage() {
   };
 
   /* ── Join Class ── */
-  const handleJoin = (cls: ApiLiveClass) => {
+  const handleJoin = useCallback((cls: ApiLiveClass) => {
     const rawLink = cls.roomId || "";
     const isZoom = rawLink.includes("zoom.us");
     const isGoogleMeet = rawLink.includes("meet.google.com");
@@ -134,7 +134,7 @@ export default function LiveClassPage() {
       // In-app Edu-Meet interactive classroom
       setActiveLiveRoom(cls);
     }
-  };
+  }, []);
 
   // Auto-join from URL parameter ?room=... or ?id=... (e.g. from public webinar or shared link)
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function LiveClassPage() {
         }
       }
     } catch {}
-  }, [classes, loading, activeLiveRoom]);
+  }, [classes, loading, activeLiveRoom, handleJoin]);
 
   // Filter based on active tab
   const filteredClasses = classes.filter(cls => {

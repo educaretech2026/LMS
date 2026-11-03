@@ -15,7 +15,6 @@ import {
   useDisconnectButton,
   useLocalParticipant,
   useIsSpeaking,
-  useMaybeTrackRefContext,
   TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
@@ -24,8 +23,6 @@ import {
   RoomOptions,
   RoomConnectOptions,
   VideoPresets,
-  AudioPresets,
-  ScreenSharePresets,
   RoomEvent,
   DisconnectReason,
 } from "livekit-client";
@@ -128,6 +125,11 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   useEffect(() => { fetchToken(); }, [fetchToken]);
 
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const showWhiteboardRef = useRef(false);
+  useEffect(() => {
+    showWhiteboardRef.current = showWhiteboard;
+  }, [showWhiteboard]);
+
   const [whiteboardEverOpened, setWhiteboardEverOpened] = useState(false);
   const [allowStudentDraw, setAllowStudentDraw] = useState(false);
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
@@ -139,6 +141,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const [isRecording, setIsRecording] = useState(false);
   const [networkAlert, setNetworkAlert] = useState<string | null>(null);
   const [isUnexpectedDisconnect, setIsUnexpectedDisconnect] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingAudioCtxRef = useRef<AudioContext | null>(null);
@@ -322,7 +325,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={true}
+      video={isTeacher}
       audio={true}
       options={roomOptions}
       connectOptions={connectOptions}
@@ -345,7 +348,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         setChatMessages={setChatMessages}
         setActiveTab={setActiveTab}
         setUnreadChatCount={setUnreadChatCount}
-        showWhiteboard={showWhiteboard}
+        showWhiteboardRef={showWhiteboardRef}
         setShowWhiteboard={setShowWhiteboard}
         setWhiteboardEverOpened={setWhiteboardEverOpened}
         allowStudentDraw={allowStudentDraw}
@@ -387,14 +390,21 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
           </div>
           <div className="flex items-center gap-3 mt-2">
             <button
-              onClick={() => {
-                setIsUnexpectedDisconnect(false);
-                fetchToken();
+              onClick={async () => {
+                if (isReconnecting) return;
+                setIsReconnecting(true);
+                try {
+                  await fetchToken();
+                  setIsUnexpectedDisconnect(false);
+                } finally {
+                  setIsReconnecting(false);
+                }
               }}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors flex items-center gap-2 shadow-lg"
+              disabled={isReconnecting}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors flex items-center gap-2 shadow-lg disabled:opacity-50"
             >
-              <RefreshCw size={14} />
-              Reconnect Now
+              <RefreshCw size={14} className={isReconnecting ? "animate-spin" : ""} />
+              {isReconnecting ? "Reconnecting..." : "Reconnect Now"}
             </button>
             <button
               onClick={onLeave}
@@ -506,7 +516,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
               />
 
               {/* Floating Picture-in-Picture Mini Video Dock */}
-              <FloatingVideoDock isTeacher={isTeacher} raisedHands={raisedHands} />
+              <FloatingVideoDock />
             </div>
           )}
         </div>
@@ -630,8 +640,8 @@ function ClassVideoGrid({
     { source: Track.Source.ScreenShare, withPlaceholder: false },
   ]);
 
-  const screenTrack = tracks.find((t) => t.source === Track.Source.ScreenShare);
-  const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
+  const screenTrack = tracks.find((t) => t.source === Track.Source.ScreenShare && t.participant);
+  const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera && t.participant);
 
   if (screenTrack) {
     return (
@@ -640,21 +650,21 @@ function ClassVideoGrid({
           <FocusLayout trackRef={screenTrack} style={{ height: "100%", width: "100%" }} />
           <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5 backdrop-blur-md">
             <Monitor size={13} />
-            <span>Screen Presentation ({screenTrack.participant.name || "Presenter"})</span>
+            <span>Screen Presentation ({screenTrack.participant?.name || "Presenter"})</span>
           </div>
         </div>
 
         <div className="h-28 shrink-0 flex gap-2 overflow-x-auto pb-1 items-center px-1">
-          {cameraTracks.map((track) => (
+          {cameraTracks.map((track, i) => (
             <div
-              key={track.participant.identity}
+              key={track.participant?.identity || `cam-${i}`}
               className="w-44 h-full shrink-0 relative rounded-xl overflow-hidden border border-white/10 bg-black/40 shadow-md"
             >
               <ParticipantTile trackRef={track} style={{ width: "100%", height: "100%" }} />
               <TileOverlay
                 trackRef={track}
                 isTeacher={isTeacher}
-                isHandRaised={raisedHands.has(track.participant.identity)}
+                isHandRaised={Boolean(track.participant?.identity && raisedHands.has(track.participant.identity))}
                 onMuteParticipant={onMuteParticipant}
               />
             </div>
@@ -686,16 +696,16 @@ function ClassVideoGrid({
             gridAutoRows: cameraTracks.length <= 2 ? "1fr" : "minmax(0, 1fr)",
           }}
         >
-          {cameraTracks.map((track) => (
+          {cameraTracks.map((track, i) => (
             <div
-              key={track.participant.identity + "_" + (track.publication?.trackSid || "placeholder")}
+              key={track.participant?.identity ? `${track.participant.identity}_${track.publication?.trackSid || "placeholder"}` : `cam-grid-${i}`}
               className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#161820] shadow-lg group"
             >
               <ParticipantTile trackRef={track} style={{ width: "100%", height: "100%" }} />
               <TileOverlay
                 trackRef={track}
                 isTeacher={isTeacher}
-                isHandRaised={raisedHands.has(track.participant.identity)}
+                isHandRaised={Boolean(track.participant?.identity && raisedHands.has(track.participant.identity))}
                 onMuteParticipant={onMuteParticipant}
               />
             </div>
@@ -793,24 +803,27 @@ function TileOverlay({
 }
 
 /* ── FLOATING VIDEO DOCK IN WHITEBOARD MODE ── */
-function FloatingVideoDock({ isTeacher, raisedHands }: { isTeacher: boolean; raisedHands: Set<string> }) {
+function FloatingVideoDock() {
   const [minimized, setMinimized] = useState(false);
-  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]);
 
-  if (tracks.length === 0) return null;
+  const validTracks = tracks.filter((t) => t.participant);
+  if (validTracks.length === 0) return null;
 
   // Prioritize showing instructor/teacher or remote presenter in whiteboard mode
   const targetTrack =
-    tracks.find((t) => {
+    validTracks.find((t) => {
       try {
-        const meta = JSON.parse(t.participant.metadata || "{}");
+        const meta = JSON.parse(t.participant?.metadata || "{}");
         return ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER"].includes(meta.role?.toUpperCase());
       } catch {
         return false;
       }
     }) ||
-    tracks.find((t) => !t.participant.isLocal) ||
-    tracks[0];
+    validTracks.find((t) => !t.participant?.isLocal) ||
+    validTracks[0];
+
+  if (!targetTrack || !targetTrack.participant) return null;
 
   return (
     <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-1 pointer-events-auto">
@@ -977,7 +990,7 @@ function ClassroomLogic({
   setChatMessages,
   setActiveTab,
   setUnreadChatCount,
-  showWhiteboard,
+  showWhiteboardRef,
   setShowWhiteboard,
   setWhiteboardEverOpened,
   allowStudentDraw,
@@ -993,7 +1006,7 @@ function ClassroomLogic({
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setActiveTab: React.Dispatch<React.SetStateAction<"chat" | "files">>;
   setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
-  showWhiteboard: boolean;
+  showWhiteboardRef: React.MutableRefObject<boolean>;
   setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>>;
   setWhiteboardEverOpened: React.Dispatch<React.SetStateAction<boolean>>;
   allowStudentDraw: boolean;
@@ -1075,7 +1088,7 @@ function ClassroomLogic({
           // Send active state to late-joining attendee safely chunked
           const editor = tldrawEditorRef.current;
           if (editor) {
-            if (showWhiteboard) {
+            if (showWhiteboardRef.current) {
               const toggleMsg = JSON.stringify({ type: "WHITEBOARD_TOGGLE", state: true });
               safePublishData(room, toggleMsg);
             }
@@ -1106,7 +1119,10 @@ function ClassroomLogic({
             }
           }
         } else if (data.type === "CHAT_MESSAGE") {
-          setChatMessages((prev) => [...prev, data]);
+          setChatMessages((prev) => {
+            if (prev.some((m) => m.id === data.id)) return prev;
+            return [...prev, data];
+          });
           setUnreadChatCount((prev) => prev + 1);
         } else if (data.type === "HAND_RAISE") {
           setRaisedHands((prev) => {
@@ -1148,15 +1164,17 @@ function ClassroomLogic({
       room.off(RoomEvent.DataReceived, handleData);
       room.off(RoomEvent.Reconnecting, handleReconnecting);
       room.off(RoomEvent.Reconnected, handleReconnected);
-      delete (window as any).__lk_room;
+      if (room.state !== "connected") {
+        delete (window as any).__lk_room;
+      }
     };
   }, [
     room,
     isTeacher,
     myIdentity,
-    showWhiteboard,
     setSharedFiles,
     setChatMessages,
+    setActiveTab,
     setShowWhiteboard,
     setWhiteboardEverOpened,
     setAllowStudentDraw,
@@ -1164,7 +1182,6 @@ function ClassroomLogic({
     setIsHandRaised,
     setNetworkAlert,
     setUnreadChatCount,
-    tldrawEditorRef,
   ]);
 
   return null;
