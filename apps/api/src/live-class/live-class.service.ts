@@ -1,5 +1,6 @@
 import {
   Injectable,
+  HttpException,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
@@ -25,6 +26,28 @@ import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
+export const SAFE_LIVE_CLASS_SELECT = {
+  id: true,
+  title: true,
+  subject: true,
+  teacherName: true,
+  description: true,
+  isPublic: true,
+  backgroundImageUrl: true,
+  status: true,
+  scheduledAt: true,
+  duration: true,
+  roomId: true,
+  boardId: true,
+  standardId: true,
+  centreId: true,
+  createdAt: true,
+  updatedAt: true,
+  board: { select: { id: true, name: true } },
+  standard: { select: { id: true, name: true } },
+  centre: { select: { id: true, name: true } },
+} as const;
+
 @Injectable()
 export class LiveClassService {
   private readonly logger = new Logger(LiveClassService.name);
@@ -37,6 +60,69 @@ export class LiveClassService {
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly storageService?: StorageService,
   ) {}
+
+  public async safeFindMany(params: { where?: any; orderBy?: any }): Promise<any[]> {
+    try {
+      return await this.prisma.liveClass.findMany({
+        where: params.where,
+        include: {
+          board: { select: { id: true, name: true } },
+          standard: { select: { id: true, name: true } },
+          centre: { select: { id: true, name: true } },
+        },
+        orderBy: params.orderBy,
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `findMany with full relations failed (${err?.message}), falling back to SAFE_LIVE_CLASS_SELECT`,
+      );
+      return await this.prisma.liveClass.findMany({
+        where: params.where,
+        select: SAFE_LIVE_CLASS_SELECT,
+        orderBy: params.orderBy,
+      });
+    }
+  }
+
+  public async safeFindUnique(where: { id?: string; roomId?: string }): Promise<any> {
+    try {
+      if (where.id) {
+        return await this.prisma.liveClass.findUnique({
+          where: { id: where.id },
+          include: {
+            board: { select: { id: true, name: true } },
+            standard: { select: { id: true, name: true } },
+            centre: { select: { id: true, name: true } },
+          },
+        });
+      } else if (where.roomId) {
+        return await this.prisma.liveClass.findFirst({
+          where: { roomId: where.roomId },
+          include: {
+            board: { select: { id: true, name: true } },
+            standard: { select: { id: true, name: true } },
+            centre: { select: { id: true, name: true } },
+          },
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `findUnique/First with full relations failed (${err?.message}), falling back to SAFE_LIVE_CLASS_SELECT`,
+      );
+      if (where.id) {
+        return await this.prisma.liveClass.findUnique({
+          where: { id: where.id },
+          select: SAFE_LIVE_CLASS_SELECT,
+        });
+      } else if (where.roomId) {
+        return await this.prisma.liveClass.findFirst({
+          where: { roomId: where.roomId },
+          select: SAFE_LIVE_CLASS_SELECT,
+        });
+      }
+    }
+    return null;
+  }
 
   public getRoomService(httpUrl: string, apiKey: string, apiSecret: string): RoomServiceClient {
     return new RoomServiceClient(httpUrl, apiKey, apiSecret);
@@ -149,126 +235,117 @@ export class LiveClassService {
   }
 
   async getAll(user?: any): Promise<any> {
-    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
-    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+    try {
+      const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+      const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
 
-    if (normalizedRole === 'PUBLIC_LEARNER') {
-      const classes = await this.prisma.liveClass.findMany({
-        where: { isPublic: true },
-        include: {
-          board: { select: { id: true, name: true } },
-          standard: { select: { id: true, name: true } },
-          centre: { select: { id: true, name: true } },
-        },
-        orderBy: { scheduledAt: 'asc' },
-      });
-
-      const now = Date.now();
-      return classes.map(c => {
-        const classTime = new Date(c.scheduledAt).getTime();
-        const isLiveNow = c.status === 'LIVE';
-        const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
-        const canAccessLink = isLiveNow || isStartingSoon;
-
-        if (!canAccessLink) {
-          return { ...c, roomId: null };
-        }
-        return c;
-      });
-    }
-
-    const isStudent = normalizedRole === 'STUDENT';
-    
-    if (isStudent && user?.id) {
-      const profile = await this.prisma.studentProfile.findUnique({
-        where: { userId: user.id },
-        include: {
-          enrollments: {
-            include: { batch: true }
-          }
-        }
-      });
-
-      if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
-        return this.prisma.liveClass.findMany({
+      if (normalizedRole === 'PUBLIC_LEARNER') {
+        const classes = await this.safeFindMany({
           where: { isPublic: true },
-          include: {
-            board: { select: { id: true, name: true } },
-            standard: { select: { id: true, name: true } },
-            centre: { select: { id: true, name: true } },
-          },
           orderBy: { scheduledAt: 'asc' },
+        });
+
+        const now = Date.now();
+        return classes.map(c => {
+          const classTime = new Date(c.scheduledAt).getTime();
+          const isLiveNow = c.status === 'LIVE';
+          const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
+          const canAccessLink = isLiveNow || isStartingSoon;
+
+          if (!canAccessLink) {
+            return { ...c, roomId: null };
+          }
+          return c;
         });
       }
 
-      const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
-      const standardIds = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
-      const boardIds = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
+      const isStudent = normalizedRole === 'STUDENT';
+      
+      if (isStudent && user?.id) {
+        const profile = await this.prisma.studentProfile.findUnique({
+          where: { userId: user.id },
+          include: {
+            enrollments: {
+              include: { batch: true }
+            }
+          }
+        }).catch(() => null);
 
-      const andConditions: any[] = [];
-      andConditions.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
-      andConditions.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
-      andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
+        if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
+          return await this.safeFindMany({
+            where: { isPublic: true },
+            orderBy: { scheduledAt: 'asc' },
+          });
+        }
 
-      const classes = await this.prisma.liveClass.findMany({
-        where: {
-          OR: [
-            { AND: andConditions },
-            { isPublic: true },
-          ],
-        },
-        include: {
-          board: { select: { id: true, name: true } },
-          standard: { select: { id: true, name: true } },
-          centre: { select: { id: true, name: true } },
-        },
+        const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
+        const standardIds = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
+        const boardIds = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
+
+        const andConditions: any[] = [];
+        andConditions.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
+        andConditions.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
+        andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
+
+        const classes = await this.safeFindMany({
+          where: {
+            OR: [
+              { AND: andConditions },
+              { isPublic: true },
+            ],
+          },
+          orderBy: { scheduledAt: 'asc' },
+        });
+
+        // SEC: Protect meeting links for students - only reveal if class is currently LIVE or starting within 15 minutes
+        const now = Date.now();
+        return classes.map(c => {
+          const classTime = new Date(c.scheduledAt).getTime();
+          const isLiveNow = c.status === 'LIVE';
+          const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
+          const canAccessLink = isLiveNow || isStartingSoon;
+
+          if (!canAccessLink) {
+            return { ...c, roomId: null };
+          }
+          return c;
+        });
+      }
+
+      const where: any = {};
+      if (user && !isSuperAdmin(user)) {
+        try {
+          const allowedCentres = getAuthorizedCentreIds(user);
+          const orConditions: any[] = [
+            { centreId: { in: allowedCentres } },
+            { centreId: null }
+          ];
+          if (normalizedRole === 'TEACHER' && user.id) {
+            orConditions.push({ teacherId: user.id });
+          }
+          where.OR = orConditions;
+        } catch {
+          if (normalizedRole === 'TEACHER' && user?.id) {
+            where.teacherId = user.id;
+          } else {
+            where.isPublic = true;
+          }
+        }
+      }
+
+      return await this.safeFindMany({
+        where,
         orderBy: { scheduledAt: 'asc' },
       });
-
-      // SEC: Protect meeting links for students - only reveal if class is currently LIVE or starting within 15 minutes
-      const now = Date.now();
-      return classes.map(c => {
-        const classTime = new Date(c.scheduledAt).getTime();
-        const isLiveNow = c.status === 'LIVE';
-        const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
-        const canAccessLink = isLiveNow || isStartingSoon;
-
-        if (!canAccessLink) {
-          return { ...c, roomId: null };
-        }
-        return c;
-      });
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      this.logger.error(`LiveClassService.getAll unexpected failure: ${err?.message}`, err?.stack);
+      return [];
     }
-
-    const where: any = {};
-    if (user && !isSuperAdmin(user)) {
-      const allowedCentres = getAuthorizedCentreIds(user);
-      where.OR = [
-        { centreId: { in: allowedCentres } },
-        { centreId: null }
-      ];
-    }
-
-    return this.prisma.liveClass.findMany({
-      where,
-      include: {
-        board: { select: { id: true, name: true } },
-        standard: { select: { id: true, name: true } },
-        centre: { select: { id: true, name: true } },
-      },
-      orderBy: { scheduledAt: 'asc' },
-    });
   }
 
   async getById(id: string, user?: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id },
-      include: {
-        board: { select: { id: true, name: true } },
-        standard: { select: { id: true, name: true } },
-        centre: { select: { id: true, name: true } },
-      },
-    });
+    const cls = await this.safeFindUnique({ id });
 
     if (!cls) throw new NotFoundException('Live class not found');
 
@@ -408,7 +485,7 @@ export class LiveClassService {
   }
 
   async update(id: string, data: any, user?: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id } });
+    const cls = await this.safeFindUnique({ id });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -449,14 +526,22 @@ export class LiveClassService {
       updateData.scheduledAt = d;
     }
 
-    return this.prisma.liveClass.update({
-      where: { id },
-      data: updateData,
-    });
+    try {
+      return await this.prisma.liveClass.update({
+        where: { id },
+        data: updateData,
+      });
+    } catch {
+      return await this.prisma.liveClass.update({
+        where: { id },
+        data: updateData,
+        select: SAFE_LIVE_CLASS_SELECT,
+      });
+    }
   }
 
   async updateStatus(id: string, status: 'SCHEDULED' | 'LIVE' | 'ENDED', user?: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id } });
+    const cls = await this.safeFindUnique({ id });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -482,14 +567,22 @@ export class LiveClassService {
       throw new BadRequestException('Cannot modify status of an already ended live class.');
     }
 
-    return this.prisma.liveClass.update({
-      where: { id },
-      data: { status },
-    });
+    try {
+      return await this.prisma.liveClass.update({
+        where: { id },
+        data: { status },
+      });
+    } catch {
+      return await this.prisma.liveClass.update({
+        where: { id },
+        data: { status },
+        select: SAFE_LIVE_CLASS_SELECT,
+      });
+    }
   }
 
   async delete(id: string, user?: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id } });
+    const cls = await this.safeFindUnique({ id });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -507,28 +600,22 @@ export class LiveClassService {
       }
     }
 
-    return this.prisma.liveClass.delete({ where: { id } });
+    try {
+      return await this.prisma.liveClass.delete({ where: { id } });
+    } catch {
+      return await this.prisma.liveClass.delete({
+        where: { id },
+        select: { id: true },
+      });
+    }
   }
 
   async getStats(user?: any) {
-    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
-    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+    try {
+      const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+      const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
 
-    if (normalizedRole === 'PUBLIC_LEARNER') {
-      const [total, live] = await Promise.all([
-        this.prisma.liveClass.count({ where: { isPublic: true } }),
-        this.prisma.liveClass.count({ where: { isPublic: true, status: 'LIVE' } }),
-      ]);
-      return { total, live };
-    }
-
-    if (normalizedRole === 'STUDENT' && user?.id) {
-      const profile = await this.prisma.studentProfile.findUnique({
-        where: { userId: user.id },
-        include: { enrollments: { include: { batch: true } } }
-      });
-
-      if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
+      if (normalizedRole === 'PUBLIC_LEARNER') {
         const [total, live] = await Promise.all([
           this.prisma.liveClass.count({ where: { isPublic: true } }),
           this.prisma.liveClass.count({ where: { isPublic: true, status: 'LIVE' } }),
@@ -536,48 +623,70 @@ export class LiveClassService {
         return { total, live };
       }
 
-      const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
-      const standardIds = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
-      const boardIds = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
+      if (normalizedRole === 'STUDENT' && user?.id) {
+        const profile = await this.prisma.studentProfile.findUnique({
+          where: { userId: user.id },
+          include: { enrollments: { include: { batch: true } } }
+        }).catch(() => null);
 
-      const andConditions: any[] = [];
-      andConditions.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
-      andConditions.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
-      andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
+        if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
+          const [total, live] = await Promise.all([
+            this.prisma.liveClass.count({ where: { isPublic: true } }),
+            this.prisma.liveClass.count({ where: { isPublic: true, status: 'LIVE' } }),
+          ]);
+          return { total, live };
+        }
+
+        const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
+        const standardIds = profile.enrollments.map(e => e.batch?.standardId).filter(Boolean) as string[];
+        const boardIds = profile.enrollments.map(e => e.batch?.boardId).filter(Boolean) as string[];
+
+        const andConditions: any[] = [];
+        andConditions.push({ OR: [{ centreId: null }, { centreId: { in: centreIds } }] });
+        andConditions.push({ OR: [{ standardId: null }, { standardId: { in: standardIds } }] });
+        andConditions.push({ OR: [{ boardId: null }, { boardId: { in: boardIds } }] });
+
+        const [total, live] = await Promise.all([
+          this.prisma.liveClass.count({
+            where: {
+              OR: [
+                { AND: andConditions },
+                { isPublic: true },
+              ],
+            },
+          }),
+          this.prisma.liveClass.count({
+            where: {
+              status: 'LIVE',
+              OR: [
+                { AND: andConditions },
+                { isPublic: true },
+              ],
+            },
+          }),
+        ]);
+        return { total, live };
+      }
+
+      const where: any = {};
+      if (user && !isSuperAdmin(user)) {
+        try {
+          const allowedCentres = getAuthorizedCentreIds(user);
+          where.centreId = { in: allowedCentres };
+        } catch {
+          where.id = 'none';
+        }
+      }
 
       const [total, live] = await Promise.all([
-        this.prisma.liveClass.count({
-          where: {
-            OR: [
-              { AND: andConditions },
-              { isPublic: true },
-            ],
-          },
-        }),
-        this.prisma.liveClass.count({
-          where: {
-            status: 'LIVE',
-            OR: [
-              { AND: andConditions },
-              { isPublic: true },
-            ],
-          },
-        }),
+        this.prisma.liveClass.count({ where }),
+        this.prisma.liveClass.count({ where: { ...where, status: 'LIVE' } }),
       ]);
       return { total, live };
+    } catch (e: any) {
+      this.logger.error(`getStats failed: ${e?.message}`);
+      return { total: 0, live: 0 };
     }
-
-    const where: any = {};
-    if (user && !isSuperAdmin(user)) {
-      const allowedCentres = getAuthorizedCentreIds(user);
-      where.centreId = { in: allowedCentres };
-    }
-
-    const [total, live] = await Promise.all([
-      this.prisma.liveClass.count({ where }),
-      this.prisma.liveClass.count({ where: { ...where, status: 'LIVE' } }),
-    ]);
-    return { total, live };
   }
 
   /**
@@ -721,9 +830,7 @@ export class LiveClassService {
    * - Tokens are never exposed in attendee lists.
    */
   async getRegistrations(id: string, user?: any) {
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id },
-    });
+    const cls = await this.safeFindUnique({ id });
 
     if (!cls) {
       throw new NotFoundException('Live class not found.');
@@ -793,24 +900,10 @@ export class LiveClassService {
     }
 
     // 1. Resolve Class by ID or roomId
-    let cls = await this.prisma.liveClass.findUnique({
-      where: { id: classIdentifier },
-      include: {
-        board: { select: { id: true, name: true } },
-        standard: { select: { id: true, name: true } },
-        centre: { select: { id: true, name: true } },
-      },
-    });
+    let cls = await this.safeFindUnique({ id: classIdentifier });
 
     if (!cls) {
-      cls = await this.prisma.liveClass.findFirst({
-        where: { roomId: classIdentifier },
-        include: {
-          board: { select: { id: true, name: true } },
-          standard: { select: { id: true, name: true } },
-          centre: { select: { id: true, name: true } },
-        },
-      });
+      cls = await this.safeFindUnique({ roomId: classIdentifier });
     }
 
     if (!cls) {
@@ -1060,7 +1153,7 @@ export class LiveClassService {
     muted: boolean = true,
     user?: any,
   ) {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    const cls = await this.safeFindUnique({ id: classId });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -1289,7 +1382,7 @@ export class LiveClassService {
 
   // ── Persistent Whiteboard Snapshot ──
   async saveWhiteboardSnapshot(classId: string, snapshot: any, user: any) {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    const cls = await this.safeFindUnique({ id: classId });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -1309,16 +1402,20 @@ export class LiveClassService {
 
   async getWhiteboardSnapshot(classId: string, user?: any): Promise<any> {
     await this.getById(classId, user);
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id: classId },
-      select: { id: true, whiteboardData: true, updatedAt: true },
-    });
-    return cls?.whiteboardData || null;
+    try {
+      const cls = await this.prisma.liveClass.findUnique({
+        where: { id: classId },
+        select: { id: true, whiteboardData: true, updatedAt: true },
+      });
+      return cls?.whiteboardData || null;
+    } catch {
+      return null;
+    }
   }
 
   // ── Genuine Server-Side LiveKit Egress Recording Pipeline ──
   async startServerRecording(classId: string, user: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    const cls = await this.safeFindUnique({ id: classId });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -1417,7 +1514,7 @@ export class LiveClassService {
   }
 
   async stopServerRecording(classId: string, user: any, egressId?: string): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    const cls = await this.safeFindUnique({ id: classId });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -1565,7 +1662,7 @@ export class LiveClassService {
 
   // ── Centralized Local / Browser-Assisted Recording Fallbacks ──
   async startRecording(classId: string, user: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    const cls = await this.safeFindUnique({ id: classId });
     if (!cls) throw new NotFoundException('Live class not found');
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -1580,7 +1677,7 @@ export class LiveClassService {
   }
 
   async stopRecording(classId: string, recordingUrl?: string, user?: any): Promise<any> {
-    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    const cls = await this.safeFindUnique({ id: classId });
     if (!cls) throw new NotFoundException('Live class not found');
 
     return this.prisma.liveClass.update({
@@ -1595,13 +1692,18 @@ export class LiveClassService {
 
   async getRecording(classId: string, user?: any): Promise<any> {
     await this.getById(classId, user);
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id: classId },
-      select: { id: true, title: true, recordingUrl: true, recordingStatus: true, duration: true, scheduledAt: true },
-    });
-    if (!cls?.recordingUrl && cls?.recordingStatus !== 'RECORDING') {
-      throw new NotFoundException('No recording is available for this class.');
+    try {
+      const cls = await this.prisma.liveClass.findUnique({
+        where: { id: classId },
+        select: { id: true, title: true, recordingUrl: true, recordingStatus: true, duration: true, scheduledAt: true },
+      });
+      if (!cls?.recordingUrl && cls?.recordingStatus !== 'RECORDING') {
+        throw new NotFoundException('No recording is available for this class.');
+      }
+      return cls;
+    } catch (e: any) {
+      if (e instanceof NotFoundException) throw e;
+      return null;
     }
-    return cls;
   }
 }

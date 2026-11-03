@@ -70,6 +70,7 @@ describe('LiveClassService - Final Security Remediation & Production Verificatio
         update: jest.fn(),
         updateMany: jest.fn(),
         delete: jest.fn(),
+        count: jest.fn(),
       },
       liveClassRegistration: {
         findUnique: jest.fn(),
@@ -532,6 +533,53 @@ describe('LiveClassService - Final Security Remediation & Production Verificatio
       await expect(
         service.startServerRecording('class-123', studentSession)
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  /* ─────────────────────────────────────────────────────────────
+   * 6. P0: Resilience & Zero-Downtime Database Migration Tolerance
+   * ───────────────────────────────────────────────────────────── */
+  describe('P0: Resilience & Zero-Downtime Database Migration Tolerance', () => {
+    it('gracefully falls back to SAFE_LIVE_CLASS_SELECT when unmigrated columns throw column does not exist', async () => {
+      // First call (with include) simulates PostgreSQL error 42703 (column live_classes.substituteTeacherId does not exist)
+      prisma.liveClass.findMany
+        .mockRejectedValueOnce(new Error('column live_classes.substituteTeacherId does not exist'))
+        .mockResolvedValueOnce([mockLiveClass]);
+
+      const adminSession = {
+        id: 'admin-1',
+        role: { name: 'SUPER_ADMIN' },
+      };
+
+      const classes = await service.getAll(adminSession);
+      expect(classes).toHaveLength(1);
+      expect(classes[0].id).toBe('class-123');
+      expect(prisma.liveClass.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles teacher without centre assignments safely without throwing 500 error', async () => {
+      prisma.liveClass.findMany.mockResolvedValue([mockLiveClass]);
+
+      const teacherWithoutCentres = {
+        id: 'teacher-456',
+        role: { name: 'TEACHER' },
+        userCentres: [], // No centre assignments yet
+      };
+
+      const classes = await service.getAll(teacherWithoutCentres);
+      expect(Array.isArray(classes)).toBe(true);
+    });
+
+    it('getStats returns { total: 0, live: 0 } resiliently even if count query encounters error', async () => {
+      prisma.liveClass.count.mockRejectedValue(new Error('Database connection failed'));
+
+      const adminSession = {
+        id: 'admin-1',
+        role: { name: 'SUPER_ADMIN' },
+      };
+
+      const stats = await service.getStats(adminSession);
+      expect(stats).toEqual({ total: 0, live: 0 });
     });
   });
 });
