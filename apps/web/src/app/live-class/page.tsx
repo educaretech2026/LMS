@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -65,10 +65,17 @@ export default function LiveClassPage() {
   const [activeLiveRoom, setActiveLiveRoom] = useState<ApiLiveClass | null>(null);
   const [activeTab, setActiveTab] = useState<"ALL" | "CLASSES" | "WEBINARS">("ALL");
   const [stats, setStats] = useState({ total: 0, live: 0 });
-  const { role, email } = useAuth();
+  const { role, email, userId } = useAuth();
 
   const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
   const isStaff = Boolean(normalizedRole && !["STUDENT", "PUBLIC_LEARNER"].includes(normalizedRole));
+
+  // Stable identity for virtual classroom session to prevent unneeded token regeneration / room unmounting
+  const stableIdentity = useMemo(() => {
+    if (userId) return `user_${userId}`;
+    if (email) return `user_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    return `guest_${Math.random().toString(36).slice(2, 9)}`;
+  }, [userId, email]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -382,8 +389,8 @@ export default function LiveClassPage() {
         <div className="fixed inset-0 z-50 bg-[#0b0c10] flex flex-col">
           <LiveKitClassRoom
             classId={activeLiveRoom.id}
-            roomId={activeLiveRoom.id || activeLiveRoom.roomId}
-            identity={email || `user_${Date.now()}`}
+            roomId={activeLiveRoom.roomId || activeLiveRoom.id}
+            identity={stableIdentity}
             name={
               normalizedRole === 'TEACHER'
                 ? (activeLiveRoom.teacherName || 'Teacher')

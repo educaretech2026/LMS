@@ -246,30 +246,38 @@ export class StudioVideoProcessor {
         const frameData = tctx.getImageData(0, 0, cw, ch);
         const data = frameData.data;
         const keyRgb = hexToRgb(chroma.keyColor || "#00FF00");
-        const threshold = chroma.threshold;
-        const smoothness = Math.max(0.01, chroma.smoothness);
+        const keyR = keyRgb.r;
+        const keyG = keyRgb.g;
+        const keyB = keyRgb.b;
+
+        // Pre-compute squared Euclidean distances in integer [0..255] RGB space for zero-overhead processing
+        const threshDist = chroma.threshold * 1.732 * 255;
+        const threshSq = threshDist * threshDist;
+        const outerDist = (chroma.threshold + Math.max(0.01, chroma.smoothness)) * 1.732 * 255;
+        const outerSq = outerDist * outerDist;
+        const invSmoothness = 255 / Math.max(1, outerDist - threshDist);
 
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i];
           const g = data[i + 1];
           const b = data[i + 2];
 
-          // Normalized color distance from key color
-          const diffR = (r - keyRgb.r) / 255;
-          const diffG = (g - keyRgb.g) / 255;
-          const diffB = (b - keyRgb.b) / 255;
-          const dist = Math.sqrt(diffR * diffR + diffG * diffG + diffB * diffB) / 1.732;
+          const diffR = r - keyR;
+          const diffG = g - keyG;
+          const diffB = b - keyB;
+          const distSq = diffR * diffR + diffG * diffG + diffB * diffB;
 
-          if (dist < threshold) {
+          if (distSq < threshSq) {
             data[i + 3] = 0; // Fully transparent
-          } else if (dist < threshold + smoothness) {
-            // Soft feathered boundary
-            const alphaFactor = (dist - threshold) / smoothness;
-            data[i + 3] = Math.floor(alphaFactor * 255);
+          } else if (distSq < outerSq) {
+            // Soft feathered boundary (sqrt only computed for boundary pixels)
+            const dist = Math.sqrt(distSq);
+            data[i + 3] = Math.min(255, Math.floor((dist - threshDist) * invSmoothness));
           } else {
             // Despill green fringe around edges
-            if (g > (r + b) / 2) {
-              data[i + 1] = Math.floor((r + b) / 2);
+            const avgRB = (r + b) >> 1;
+            if (g > avgRB) {
+              data[i + 1] = avgRB;
             }
           }
         }

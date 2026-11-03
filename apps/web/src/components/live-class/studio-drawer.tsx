@@ -34,6 +34,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { Track } from "livekit-client";
+import { useRoomContext } from "@livekit/components-react";
 
 interface StudioDrawerProps {
   isOpen: boolean;
@@ -58,6 +59,9 @@ export function StudioDrawer({
   onEndBreak,
   onExtendBreak,
 }: StudioDrawerProps) {
+  const contextRoom = useRoomContext();
+  const activeRoom = room || contextRoom || (typeof window !== "undefined" ? (window as any).__lk_room : null);
+
   const [activeTab, setActiveTab] = useState<"camera" | "audio" | "break">("camera");
 
   // Audio device enumeration & VU Meter (T4)
@@ -94,13 +98,13 @@ export function StudioDrawer({
 
   // Start live VU meter on current mic track
   useEffect(() => {
-    if (!isOpen || activeTab !== "audio" || !room) {
+    if (!isOpen || activeTab !== "audio" || !activeRoom) {
       audioMeterRef.current?.stop();
       return;
     }
 
     try {
-      const pub = Array.from(room.localParticipant?.audioTrackPublications?.values() || []).find(
+      const pub = Array.from(activeRoom.localParticipant?.audioTrackPublications?.values() || []).find(
         (p: any) => p.source === Track.Source.Microphone
       ) as any;
       const track = pub?.track?.mediaStreamTrack;
@@ -118,7 +122,7 @@ export function StudioDrawer({
     return () => {
       audioMeterRef.current?.stop();
     };
-  }, [isOpen, activeTab, room, settings.selectedMicId]);
+  }, [isOpen, activeTab, activeRoom, settings.selectedMicId]);
 
   if (!isOpen) return null;
 
@@ -142,9 +146,9 @@ export function StudioDrawer({
   // Switch mic
   const handleSelectMic = async (deviceId: string) => {
     updateSetting("selectedMicId", deviceId);
-    if (room && deviceId) {
+    if (activeRoom && deviceId) {
       try {
-        await room.switchActiveDevice("audioinput", deviceId);
+        await activeRoom.switchActiveDevice("audioinput", deviceId);
       } catch (err) {
         console.warn("Failed to switch mic:", err);
       }
@@ -154,9 +158,9 @@ export function StudioDrawer({
   // Switch speaker
   const handleSelectSpeaker = async (deviceId: string) => {
     updateSetting("selectedSpeakerId", deviceId);
-    if (room && deviceId) {
+    if (activeRoom && deviceId) {
       try {
-        await room.switchActiveDevice("audiooutput", deviceId);
+        await activeRoom.switchActiveDevice("audiooutput", deviceId);
       } catch (err) {
         console.warn("Failed to switch speaker:", err);
       }
@@ -168,12 +172,12 @@ export function StudioDrawer({
     const kbps = customKbps !== undefined ? customKbps : settings.customBitrateKbps;
     updateSetting("bitratePreset", preset);
     if (customKbps !== undefined) updateSetting("customBitrateKbps", customKbps);
-    await applySenderBitrate(room, preset, kbps);
+    await applySenderBitrate(activeRoom, preset, kbps);
   };
 
   // Desktop Audio Screen Share (T5)
   const handleShareScreenWithAudio = async () => {
-    if (!room || !room.localParticipant) return;
+    if (!activeRoom || !activeRoom.localParticipant) return;
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
@@ -188,10 +192,10 @@ export function StudioDrawer({
       const audioTrack = stream.getAudioTracks()[0];
 
       if (videoTrack) {
-        await room.localParticipant.publishTrack(videoTrack, { source: Track.Source.ScreenShare });
+        await activeRoom.localParticipant.publishTrack(videoTrack, { source: Track.Source.ScreenShare });
       }
       if (audioTrack) {
-        await room.localParticipant.publishTrack(audioTrack, { source: Track.Source.ScreenShareAudio });
+        await activeRoom.localParticipant.publishTrack(audioTrack, { source: Track.Source.ScreenShareAudio });
       }
     } catch (e) {
       console.warn("Desktop audio share cancelled or failed", e);

@@ -805,6 +805,7 @@ export class LiveClassService {
           duration: true,
           status: true,
           isPublic: true,
+          roomId: true,
           backgroundImageUrl: true,
           deliveryProvider: true,
           createdAt: true,
@@ -823,6 +824,7 @@ export class LiveClassService {
           duration: true,
           status: true,
           isPublic: true,
+          roomId: true,
           backgroundImageUrl: true,
           createdAt: true,
         },
@@ -1073,7 +1075,7 @@ export class LiveClassService {
         throw new ForbiddenException('Access denied: Private session.');
       }
       isHost = false;
-      canPublish = false;
+      canPublish = true;
     } else {
       throw new ForbiddenException('Invalid or unauthenticated user role.');
     }
@@ -1238,7 +1240,7 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: false, // Public learners are view-only by default
+      canPublish: !isMuted,
       canSubscribe: true,
       canPublishData: true,
       roomAdmin: false,
