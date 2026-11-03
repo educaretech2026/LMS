@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, memo, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef, memo, useMemo, Component, ReactNode } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -331,7 +331,6 @@ export function LiveKitClassRoom({ classId, roomId, identity, name, role, onLeav
         if (tldrawEditorRef.current) {
           try {
             tldrawEditorRef.current.updateViewportScreenBounds();
-            window.dispatchEvent(new Event("resize"));
           } catch {}
         }
       }, 120);
@@ -668,8 +667,12 @@ export function LiveKitClassRoom({ classId, roomId, identity, name, role, onLeav
       <div className="flex-1 flex overflow-hidden relative">
         {/* Stage & Whiteboard Canvas */}
         <div className="flex-1 relative overflow-hidden flex flex-col bg-[#0b0c10]">
-          {/* Main Video Stage (hidden when whiteboard is full screen) */}
-          <div className="flex-1 relative overflow-hidden" style={{ display: showWhiteboard ? "none" : "block" }}>
+          {/* Main Video Stage (kept mounted behind whiteboard to prevent WebRTC stream suspension) */}
+          <div
+            className={`flex-1 relative overflow-hidden ${
+              showWhiteboard ? "invisible pointer-events-none absolute inset-0 -z-10" : "visible z-0"
+            }`}
+          >
             <ClassVideoGrid
               isTeacher={isTeacher}
               classId={classId}
@@ -702,13 +705,15 @@ export function LiveKitClassRoom({ classId, roomId, identity, name, role, onLeav
                 height: "100%",
               }}
             >
-              <Whiteboard
-                isTeacher={isTeacher}
-                classId={classId}
-                roomId={roomId}
-                editorRef={tldrawEditorRef}
-                allowStudentDraw={allowStudentDraw}
-              />
+              <WhiteboardErrorBoundary>
+                <Whiteboard
+                  isTeacher={isTeacher}
+                  classId={classId}
+                  roomId={roomId}
+                  editorRef={tldrawEditorRef}
+                  allowStudentDraw={allowStudentDraw}
+                />
+              </WhiteboardErrorBoundary>
 
               {/* Floating Picture-in-Picture Mini Video Dock */}
               <FloatingVideoDock />
@@ -931,7 +936,7 @@ function ClassVideoGrid({
       const id = t.participant?.identity;
       if (!id) continue;
       const prev = map.get(id);
-      if (!prev || (!prev.publication && t.publication)) {
+      if (!prev || t.publication) {
         map.set(id, t);
       }
     }
@@ -1952,6 +1957,46 @@ function CustomControlBar({
       </button>
     </div>
   );
+}
+
+/* ── WHITEBOARD ERROR BOUNDARY ── */
+class WhiteboardErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("Whiteboard caught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-full w-full flex flex-col items-center justify-center bg-gray-900 text-white p-6 gap-4">
+          <p className="text-sm text-red-400 font-semibold">
+            The interactive whiteboard encountered a drawing or render error.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+            }}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md"
+          >
+            Reload Whiteboard Canvas
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /* ── SYNCHRONIZED INTERACTIVE WHITEBOARD ── */
