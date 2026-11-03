@@ -59,6 +59,7 @@ export default function PublicLiveClassPage() {
   const [submitError, setSubmitError] = useState("");
   const [registered, setRegistered] = useState(false);
   const [meetUrl, setMeetUrl] = useState<string | null>(null);
+  const [registrationToken, setRegistrationToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const [timeLeft, setTimeLeft] = useState<{
@@ -75,6 +76,7 @@ export default function PublicLiveClassPage() {
         if (p.meetUrl) {
           setMeetUrl(p.meetUrl);
           setRegistered(true);
+          if (p.registrationToken) setRegistrationToken(p.registrationToken);
           if (p.name) setFormData(prev => ({ ...prev, name: p.name, email: p.email || "", phone: p.phone || "", organization: p.organization || "" }));
         }
       }
@@ -125,14 +127,23 @@ export default function PublicLiveClassPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Registration failed. Please try again.");
-      setMeetUrl(data.meetUrl); setRegistered(true);
-      localStorage.setItem(`live_access_${id}`, JSON.stringify({ meetUrl: data.meetUrl, name: n, email: em, phone: ph, organization: org }));
+      setMeetUrl(data.meetUrl);
+      if (data.registrationToken) setRegistrationToken(data.registrationToken);
+      setRegistered(true);
+      localStorage.setItem(`live_access_${id}`, JSON.stringify({
+        meetUrl: data.meetUrl,
+        registrationToken: data.registrationToken,
+        name: n,
+        email: em,
+        phone: ph,
+        organization: org
+      }));
     } catch (e: any) { setSubmitError(e.message || "Something went wrong. Please try again."); }
     finally { setSubmitting(false); }
   };
 
   const handleCopy = () => { if (!meetUrl) return; navigator.clipboard.writeText(meetUrl); setCopied(true); setTimeout(() => setCopied(false), 2500); };
-  const handleReset = () => { if (confirm("Register with a different profile?")) { localStorage.removeItem(`live_access_${id}`); setRegistered(false); setMeetUrl(null); setFormData({ name: "", email: "", phone: "", organization: "", honeypot: "" }); setTouched({ name: false, email: false, phone: false, organization: false }); } };
+  const handleReset = () => { if (confirm("Register with a different profile?")) { localStorage.removeItem(`live_access_${id}`); setRegistered(false); setMeetUrl(null); setRegistrationToken(null); setFormData({ name: "", email: "", phone: "", organization: "", honeypot: "" }); setTouched({ name: false, email: false, phone: false, organization: false }); } };
 
   const calUrl = useMemo(() => {
     if (!webinar) return "";
@@ -439,7 +450,9 @@ export default function PublicLiveClassPage() {
                         const isGMeet = meetUrl.includes("meet.google.com");
                         const isEduMeet = !isZoom && !isGMeet;
                         const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Join Edu-Meet Live";
-                        const targetUrl = meetUrl.startsWith("http") ? meetUrl : `/live-class?room=${encodeURIComponent(meetUrl)}`;
+                        const targetUrl = meetUrl.startsWith("http")
+                          ? meetUrl
+                          : `/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}`;
                         const btnBg = isEduMeet ? "#9333ea" : isGMeet ? "#059669" : "#0284c7";
 
                         return (

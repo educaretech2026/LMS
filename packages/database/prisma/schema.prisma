@@ -38,6 +38,8 @@ model User {
   doubtsAssigned       Doubt[]         @relation("TeacherDoubts")
   doubtMessagesSent    DoubtMessage[]  @relation("DoubtMessageSender")
   auditLogs            AuditLog[]
+  liveClassesTaught    LiveClass[]     @relation("TeacherLiveClasses")
+  substituteLiveClasses LiveClass[]    @relation("SubstituteTeacherLiveClasses")
 
   @@map("users")
 }
@@ -625,42 +627,134 @@ model LiveClass {
   duration    Int // in minutes
   roomId      String          @default(uuid())
 
-  boardId    String?
-  standardId String?
-  centreId   String?
+  // Delivery & Integration
+  deliveryProvider    DeliveryProvider @default(LIVEKIT)
+  externalMeetingUrl  String?
+  recordingUrl        String?
+  recordingStatus     RecordingStatus  @default(NOT_RECORDED)
+  egressId            String?
+  whiteboardData      Json?
 
-  board    Board?    @relation(fields: [boardId], references: [id])
-  standard Standard? @relation(fields: [standardId], references: [id])
-  centre   Centre?   @relation(fields: [centreId], references: [id])
+  teacherId           String?
+  substituteTeacherId String?
+  boardId             String?
+  standardId          String?
+  centreId            String?
+
+  teacher           User?     @relation("TeacherLiveClasses", fields: [teacherId], references: [id], onDelete: SetNull)
+  substituteTeacher User?     @relation("SubstituteTeacherLiveClasses", fields: [substituteTeacherId], references: [id], onDelete: SetNull)
+  board             Board?    @relation(fields: [boardId], references: [id])
+  standard          Standard? @relation(fields: [standardId], references: [id])
+  centre            Centre?   @relation(fields: [centreId], references: [id])
 
   registrations LiveClassRegistration[]
+  recordings    LiveClassRecording[]
+  messages      LiveClassMessage[]
+  files         LiveClassFile[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([scheduledAt, status])
+  @@index([centreId, status])
+  @@index([teacherId])
+  @@index([substituteTeacherId])
   @@map("live_classes")
 }
 
 model LiveClassRegistration {
-  id           String    @id @default(uuid())
-  liveClassId  String
-  name         String
-  email        String
-  phone        String?
-  organization String?
-  registeredAt DateTime  @default(now())
+  id                String    @id @default(uuid())
+  liveClassId       String
+  name              String
+  email             String
+  phone             String?
+  organization      String?
+  registrationToken String?   @unique
+  status            String    @default("REGISTERED")
+  registeredAt      DateTime  @default(now())
 
   liveClass    LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
 
+  @@unique([liveClassId, email])
   @@index([liveClassId])
   @@index([email])
+  @@index([registrationToken])
   @@map("live_class_registrations")
+}
+
+model LiveClassRecording {
+  id            String          @id @default(uuid())
+  liveClassId   String
+  egressId      String?         @unique
+  status        RecordingStatus @default(NOT_RECORDED)
+  fileUrl       String?
+  fileSize      BigInt?
+  duration      Int?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  errorMessage  String?
+  storageKey    String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  liveClass     LiveClass       @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@index([liveClassId])
+  @@index([egressId])
+  @@map("live_class_recordings")
+}
+
+model LiveClassMessage {
+  id          String    @id @default(uuid())
+  liveClassId String
+  senderId    String
+  senderName  String
+  senderRole  String
+  content     String
+  createdAt   DateTime  @default(now())
+
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@index([liveClassId, createdAt])
+  @@map("live_class_messages")
+}
+
+model LiveClassFile {
+  id          String    @id @default(uuid())
+  liveClassId String
+  uploaderId  String
+  fileName    String
+  fileUrl     String
+  fileSize    Int?
+  mimeType    String?
+  createdAt   DateTime  @default(now())
+
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@index([liveClassId])
+  @@map("live_class_files")
 }
 
 enum LiveClassStatus {
   SCHEDULED
   LIVE
   ENDED
+  CANCELLED
+}
+
+enum DeliveryProvider {
+  LIVEKIT
+  GOOGLE_MEET
+  ZOOM
+  JITSI
+}
+
+enum RecordingStatus {
+  NOT_RECORDED
+  RECORDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }
 
 model FeeRecord {
