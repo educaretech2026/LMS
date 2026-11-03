@@ -25,6 +25,7 @@ import {
   VideoPresets,
   RoomEvent,
   DisconnectReason,
+  LocalVideoTrack,
 } from "livekit-client";
 import { fetchApi } from "@/lib/api";
 import {
@@ -32,8 +33,12 @@ import {
   Video, VideoOff, Mic, MonitorUp, MonitorOff, LogOut, FileText,
   Monitor, AlertCircle, Hand, MessageSquare, Send, CheckCircle2,
   ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
-  Trash2, Edit3,
+  Trash2, Edit3, SlidersHorizontal,
 } from "lucide-react";
+import { StudioDrawer } from "./studio-drawer";
+import { IntermissionStage } from "./intermission-stage";
+import { StudioSettings, BreakState, DEFAULT_STUDIO_SETTINGS } from "./studio-types";
+import { StudioVideoProcessor } from "./studio-pipeline";
 import { Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 
@@ -100,6 +105,60 @@ export function safePublishData(
   }
 }
 
+/* ── STUDIO PIPELINE MANAGER (T1, T3, T7, T8) ── */
+function StudioPipelineManager({
+  isTeacher,
+  settings,
+  processorRef,
+}: {
+  isTeacher: boolean;
+  settings: StudioSettings;
+  processorRef: React.MutableRefObject<StudioVideoProcessor | null>;
+}) {
+  const { cameraTrack } = useLocalParticipant();
+
+  // Keep processor settings in sync in real time
+  useEffect(() => {
+    if (processorRef.current) {
+      processorRef.current.updateSettings(settings);
+    }
+  }, [settings, processorRef]);
+
+  // Attach or detach processor based on whether any effect is enabled
+  useEffect(() => {
+    if (!isTeacher || !cameraTrack || !cameraTrack.track) return;
+    const localVideoTrack = cameraTrack.track as LocalVideoTrack;
+
+    const isStudioEffectActive =
+      settings.mirror ||
+      settings.crop.zoom > 1.0 ||
+      settings.crop.panX !== 0 ||
+      settings.crop.panY !== 0 ||
+      settings.crop.aspectRatio !== "16:9" ||
+      settings.color.brightness !== 100 ||
+      settings.color.contrast !== 100 ||
+      settings.color.saturation !== 100 ||
+      settings.color.warmth !== 0 ||
+      settings.color.exposure !== 0 ||
+      settings.chromaKey.enabled;
+
+    const currentProcessor = localVideoTrack.getProcessor();
+
+    if (isStudioEffectActive && !currentProcessor) {
+      const processor = new StudioVideoProcessor(settings);
+      processorRef.current = processor;
+      localVideoTrack.setProcessor(processor as any, true).catch((err) => {
+        console.warn("Failed to set studio video processor:", err);
+      });
+    } else if (!isStudioEffectActive && currentProcessor) {
+      localVideoTrack.stopProcessor().catch(() => {});
+      processorRef.current = null;
+    }
+  }, [isTeacher, cameraTrack, settings, processorRef]);
+
+  return null;
+}
+
 export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: LiveKitRoomProps) {
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +201,24 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const [networkAlert, setNetworkAlert] = useState<string | null>(null);
   const [isUnexpectedDisconnect, setIsUnexpectedDisconnect] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+
+  // Studio & Intermission State (T1 - T8)
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [studioSettings, setStudioSettings] = useState<StudioSettings>(DEFAULT_STUDIO_SETTINGS);
+  const [breakState, setBreakState] = useState<BreakState | null>(null);
+  const breakStateRef = useRef<BreakState | null>(null);
+  useEffect(() => {
+    breakStateRef.current = breakState;
+  }, [breakState]);
+  const studioProcessorRef = useRef<StudioVideoProcessor | null>(null);
+  const recordingMicStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    return () => {
+      recordingMicStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recordingMicStreamRef.current = null;
+    };
+  }, []);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingAudioCtxRef = useRef<AudioContext | null>(null);
@@ -222,6 +299,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
           try {
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            recordingMicStreamRef.current = micStream;
             if (micStream.getAudioTracks().length > 0) {
               const micSrc = audioCtx.createMediaStreamSource(micStream);
               micSrc.connect(dest);
@@ -267,6 +345,8 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         chunksRef.current = [];
         setIsRecording(false);
         stream.getTracks().forEach((t) => t.stop());
+        recordingMicStreamRef.current?.getTracks().forEach((t) => t.stop());
+        recordingMicStreamRef.current = null;
         if (recordingAudioCtxRef.current?.state !== "closed") {
           recordingAudioCtxRef.current?.close();
         }
@@ -349,6 +429,13 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         setIsHandRaised={setIsHandRaised}
         setNetworkAlert={setNetworkAlert}
         tldrawEditorRef={tldrawEditorRef}
+        breakStateRef={breakStateRef}
+        setBreakState={setBreakState}
+      />
+      <StudioPipelineManager
+        isTeacher={isTeacher}
+        settings={studioSettings}
+        processorRef={studioProcessorRef}
       />
       <RoomAudioRenderer />
 
@@ -470,12 +557,14 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
             startRecording={startRecording}
             stopRecording={stopRecording}
             tldrawEditorRef={tldrawEditorRef}
+            isStudioOpen={isStudioOpen}
+            setIsStudioOpen={setIsStudioOpen}
           />
         )}
       </div>
 
       {/* ── MAIN AREA ── */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Stage & Whiteboard Canvas */}
         <div className="flex-1 relative overflow-hidden flex flex-col bg-[#0b0c10]">
           {/* Main Video Stage (hidden when whiteboard is full screen) */}
@@ -510,6 +599,62 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
               {/* Floating Picture-in-Picture Mini Video Dock */}
               <FloatingVideoDock />
             </div>
+          )}
+
+          {/* ── BREAK / INTERMISSION STAGE OVERLAY (T6) ── */}
+          {breakState?.isActive && (
+            <IntermissionStage
+              breakState={breakState}
+              isTeacher={isTeacher}
+              onEndBreak={() => {
+                const room = (window as any).__lk_room;
+                safePublishData(room, { type: "BREAK_STATE", isActive: false });
+                setBreakState(null);
+              }}
+              onExtendBreak={(mins) => {
+                const room = (window as any).__lk_room;
+                const updated = {
+                  ...breakState,
+                  endsAt: Math.max(Date.now(), breakState.endsAt) + mins * 60 * 1000,
+                  durationMinutes: breakState.durationMinutes + mins,
+                };
+                safePublishData(room, { type: "BREAK_STATE", ...updated });
+                setBreakState(updated);
+              }}
+            />
+          )}
+
+          {/* ── TEACHER LIVE STUDIO DRAWER (T1 – T8) ── */}
+          {isTeacher && (
+            <StudioDrawer
+              isOpen={isStudioOpen}
+              onClose={() => setIsStudioOpen(false)}
+              room={(window as any).__lk_room}
+              settings={studioSettings}
+              onUpdateSettings={setStudioSettings}
+              breakState={breakState}
+              onStartBreak={(state) => {
+                const room = (window as any).__lk_room;
+                safePublishData(room, { type: "BREAK_STATE", ...state });
+                setBreakState(state);
+              }}
+              onEndBreak={() => {
+                const room = (window as any).__lk_room;
+                safePublishData(room, { type: "BREAK_STATE", isActive: false });
+                setBreakState(null);
+              }}
+              onExtendBreak={(mins) => {
+                const room = (window as any).__lk_room;
+                if (!breakState) return;
+                const updated = {
+                  ...breakState,
+                  endsAt: Math.max(Date.now(), breakState.endsAt) + mins * 60 * 1000,
+                  durationMinutes: breakState.durationMinutes + mins,
+                };
+                safePublishData(room, { type: "BREAK_STATE", ...updated });
+                setBreakState(updated);
+              }}
+            />
           )}
         </div>
 
@@ -991,6 +1136,8 @@ function ClassroomLogic({
   setIsHandRaised,
   setNetworkAlert,
   tldrawEditorRef,
+  breakStateRef,
+  setBreakState,
 }: {
   isTeacher: boolean;
   myIdentity: string;
@@ -1007,6 +1154,8 @@ function ClassroomLogic({
   setIsHandRaised: React.Dispatch<React.SetStateAction<boolean>>;
   setNetworkAlert: React.Dispatch<React.SetStateAction<string | null>>;
   tldrawEditorRef: React.MutableRefObject<any>;
+  breakStateRef: React.MutableRefObject<BreakState | null>;
+  setBreakState: React.Dispatch<React.SetStateAction<BreakState | null>>;
 }) {
   const room = useRoomContext();
 
@@ -1017,7 +1166,7 @@ function ClassroomLogic({
     const handleData = (payload: Uint8Array) => {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
-        if (data.type === "MUTE_ALL") {
+        if (data.type === "MUTE_ALL" && !isTeacher) {
           room.localParticipant.setMicrophoneEnabled(false);
         } else if (data.type === "MUTE_STUDENT" && data.targetId === myIdentity) {
           room.localParticipant.setMicrophoneEnabled(false);
@@ -1077,6 +1226,11 @@ function ClassroomLogic({
             }
           }
         } else if (data.type === "REQUEST_WHITEBOARD_STATE" && isTeacher) {
+          // Send active break state to late-joining attendee
+          if (breakStateRef.current?.isActive) {
+            safePublishData(room, { type: "BREAK_STATE", ...breakStateRef.current });
+          }
+
           // Send active state to late-joining attendee safely chunked
           const editor = tldrawEditorRef.current;
           if (editor) {
@@ -1126,6 +1280,12 @@ function ClassroomLogic({
         } else if (data.type === "LOWER_ALL_HANDS") {
           setRaisedHands(new Set());
           setIsHandRaised(false);
+        } else if (data.type === "BREAK_STATE") {
+          if (data.isActive) {
+            setBreakState(data);
+          } else {
+            setBreakState(null);
+          }
         }
       } catch (e) {
         console.error("Data parse error", e);
@@ -1174,6 +1334,8 @@ function ClassroomLogic({
     setIsHandRaised,
     setNetworkAlert,
     setUnreadChatCount,
+    breakStateRef,
+    setBreakState,
   ]);
 
   return null;
@@ -1190,6 +1352,8 @@ function TeacherControls({
   startRecording,
   stopRecording,
   tldrawEditorRef,
+  isStudioOpen,
+  setIsStudioOpen,
 }: any) {
   const room = useRoomContext();
   const [uploading, setUploading] = useState(false);
@@ -1263,6 +1427,21 @@ function TeacherControls({
 
   return (
     <div className="flex items-center gap-2">
+      {/* Studio Controls (T1 - T8) */}
+      <button
+        onClick={() => setIsStudioOpen(!isStudioOpen)}
+        title="Toggle Studio Broadcasting Tools (Crop, Bitrate, Colors, Audio, Green Screen)"
+        style={{
+          ...hdrBtn,
+          background: isStudioOpen ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.1)",
+          color: isStudioOpen ? "#60a5fa" : "#fff",
+          border: `1px solid ${isStudioOpen ? "rgba(59,130,246,0.5)" : "rgba(255,255,255,0.15)"}`,
+        }}
+      >
+        <SlidersHorizontal size={14} />
+        Studio Tools
+      </button>
+
       {/* Whiteboard Toggle */}
       <button
         onClick={toggleWhiteboard}
@@ -1470,7 +1649,10 @@ function CustomControlBar({
       {/* Leave Classroom */}
       <button
         {...leaveProps}
-        onClick={onLeave}
+        onClick={(e) => {
+          leaveProps.onClick?.(e);
+          onLeave();
+        }}
         style={leaveBtn}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "rgb(220,38,38)";
