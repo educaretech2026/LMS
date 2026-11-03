@@ -53,6 +53,7 @@ export class LiveClassController {
   }
 
   // Public Endpoint: Generate LiveKit token for registered attendees of a public webinar
+  // Strictly requires registrationToken. Email-only auth is forbidden.
   @Public()
   @UseGuards(StrictThrottlerGuard)
   @Throttle({ default: { limit: 15, ttl: 60000 } })
@@ -60,10 +61,9 @@ export class LiveClassController {
   getPublicToken(
     @Param('id') id: string,
     @Query('registrationToken') registrationToken: string,
-    @Query('email') email: string,
     @Query('name') name: string,
   ) {
-    return this.liveClassService.generatePublicLiveKitToken(id, registrationToken, email, name);
+    return this.liveClassService.generatePublicLiveKitToken(id, registrationToken, undefined, name);
   }
 
   // Public Endpoint: Submit registration form & retrieve session access credential
@@ -85,13 +85,13 @@ export class LiveClassController {
     return this.liveClassService.getRegistrations(id, req.user);
   }
 
-  // Server-Side Moderation: Mute Student, Mute All, Remove Participant
+  // Server-Side Moderation: Mute Student, Unmute Student, Mute All, Remove Participant
   @Post(':id/moderate')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   moderate(
     @Param('id') id: string,
     @Body() body: {
-      action: 'MUTE_STUDENT' | 'MUTE_ALL' | 'REMOVE_PARTICIPANT';
+      action: 'MUTE_STUDENT' | 'UNMUTE_STUDENT' | 'MUTE_ALL' | 'REMOVE_PARTICIPANT';
       targetIdentity?: string;
       trackSid?: string;
       muted?: boolean;
@@ -160,7 +160,7 @@ export class LiveClassController {
     return this.liveClassService.saveWhiteboardSnapshot(id, snapshot, req.user);
   }
 
-  // Centralized Recording
+  // Centralized Recording (Local Browser Fallbacks)
   @Post(':id/recording/start')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   startRecording(@Param('id') id: string, @Req() req: any): Promise<any> {
@@ -175,6 +175,38 @@ export class LiveClassController {
     @Req() req: any,
   ): Promise<any> {
     return this.liveClassService.stopRecording(id, recordingUrl, req.user);
+  }
+
+  // LiveKit Server-Side Egress Recording
+  @Post(':id/recording/server/start')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  startServerRecording(@Param('id') id: string, @Req() req: any): Promise<any> {
+    return this.liveClassService.startServerRecording(id, req.user);
+  }
+
+  @Post(':id/recording/server/stop')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  stopServerRecording(
+    @Param('id') id: string,
+    @Body('egressId') egressId: string,
+    @Req() req: any,
+  ): Promise<any> {
+    return this.liveClassService.stopServerRecording(id, req.user, egressId);
+  }
+
+  @Get(':id/recordings')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT')
+  getRecordingsForClass(@Param('id') id: string, @Req() req: any): Promise<any> {
+    return this.liveClassService.getRecordingsForClass(id, req.user);
+  }
+
+  // LiveKit Webhook Receiver for Egress & Room Status Events
+  @Public()
+  @Post('webhook/livekit')
+  handleLiveKitWebhook(@Req() req: any): Promise<any> {
+    const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
+    const authHeader = req.headers['authorization'] || '';
+    return this.liveClassService.handleLiveKitWebhook(rawBody, authHeader);
   }
 
   @Get(':id/recording')

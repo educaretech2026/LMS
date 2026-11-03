@@ -1,14 +1,152 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+  Logger,
+  Optional,
+} from '@nestjs/common';
+import {
+  AccessToken,
+  RoomServiceClient,
+  EgressClient,
+  WebhookReceiver,
+  EncodedFileOutput,
+  EncodedFileType,
+  S3Upload,
+  TrackSource,
+  TrackType,
+} from 'livekit-server-sdk';
 import * as crypto from 'crypto';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { StorageService } from '../storage/storage.service';
 import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 @Injectable()
 export class LiveClassService {
   private readonly logger = new Logger(LiveClassService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  // In-memory moderation cache as standalone fallback or cache layer
+  private inMemoryModeration = new Map<string, { mutedAudio?: boolean; kicked?: boolean; updatedAt: number }>();
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly redisService?: RedisService,
+    @Optional() private readonly storageService?: StorageService,
+  ) {}
+
+  public getRoomService(httpUrl: string, apiKey: string, apiSecret: string): RoomServiceClient {
+    return new RoomServiceClient(httpUrl, apiKey, apiSecret);
+  }
+
+  public getEgressClient(httpUrl: string, apiKey: string, apiSecret: string): EgressClient {
+    return new EgressClient(httpUrl, apiKey, apiSecret);
+  }
+
+  private getModerationKey(classId: string, identity: string) {
+    return `live_class:mod:${classId}:${identity}`;
+  }
+
+  async isParticipantKicked(classId: string, identity: string): Promise<boolean> {
+    const key = this.getModerationKey(classId, identity);
+    if (this.redisService?.isConnected) {
+      try {
+        const val = await this.redisService.getRaw(key);
+        if (val) {
+          const parsed = JSON.parse(val);
+          if (parsed.kicked) return true;
+        }
+      } catch {}
+    }
+    const mem = this.inMemoryModeration.get(key);
+    return Boolean(mem?.kicked);
+  }
+
+  async isParticipantMuted(classId: string, identity: string): Promise<boolean> {
+    const key = this.getModerationKey(classId, identity);
+    if (this.redisService?.isConnected) {
+      try {
+        const val = await this.redisService.getRaw(key);
+        if (val) {
+          const parsed = JSON.parse(val);
+          return Boolean(parsed.mutedAudio);
+        }
+      } catch {}
+    }
+    const mem = this.inMemoryModeration.get(key);
+    return Boolean(mem?.mutedAudio);
+  }
+
+  async setModerationState(classId: string, identity: string, state: { mutedAudio?: boolean; kicked?: boolean }, ttlSeconds = 14400) {
+    const key = this.getModerationKey(classId, identity);
+    const current = this.inMemoryModeration.get(key) || { updatedAt: Date.now() };
+    const updated = { ...current, ...state, updatedAt: Date.now() };
+    this.inMemoryModeration.set(key, updated);
+    if (this.redisService?.isConnected) {
+      try {
+        await this.redisService.setRaw(key, JSON.stringify(updated), ttlSeconds);
+      } catch {}
+    }
+  }
+
+  private async recordAudit(user: any, action: string, details: string, classId?: string) {
+    if (!this.prisma?.auditLog) return;
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user?.id || null,
+          userEmail: user?.email || null,
+          action,
+          category: 'SECURITY',
+          entityType: 'LiveClass',
+          entityId: classId || null,
+          status: 'SUCCESS',
+          details: { details, classId },
+        },
+      });
+    } catch {
+      // Non-blocking audit log failure
+    }
+  }
+
+  /**
+   * Validates scheduling boundaries and join window for a live class.
+   * Prevents expired classes from being joined even if marked SCHEDULED or LIVE.
+   * Enforces early-join windows: 30m for hosts, 15m for attendees.
+   */
+  public validateClassTiming(cls: any, isHost: boolean) {
+    if (cls.status === 'ENDED') {
+      throw new BadRequestException('This live class has already ended.');
+    }
+    if (cls.status === 'CANCELLED') {
+      throw new BadRequestException('This live class has been cancelled.');
+    }
+
+    const now = Date.now();
+    const classTime = new Date(cls.scheduledAt).getTime();
+    const durationMs = (cls.duration || 60) * 60 * 1000;
+    const maxEndGraceMs = 30 * 60 * 1000; // 30-minute buffer after scheduled end
+    const classEndTime = classTime + durationMs + maxEndGraceMs;
+
+    // Check expiration: even if status is LIVE or SCHEDULED, if elapsed past classEndTime, it is strictly expired!
+    if (now > classEndTime) {
+      throw new BadRequestException('This live class session has expired.');
+    }
+
+    // Early join check: hosts get 30 mins prep, attendees get 15 mins
+    const earlyAllowanceMs = isHost ? 30 * 60 * 1000 : 15 * 60 * 1000;
+    const earliestJoinTime = classTime - earlyAllowanceMs;
+
+    if (now < earliestJoinTime) {
+      const minutesAllowed = isHost ? 30 : 15;
+      throw new BadRequestException(`Classroom access opens ${minutesAllowed} minutes before the scheduled start time.`);
+    }
+
+    return { classTime, durationMs, classEndTime };
+  }
 
   async getAll(user?: any): Promise<any> {
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -494,7 +632,8 @@ export class LiveClassService {
 
   /**
    * Public Registration: Captures attendee details and unlocks the session.
-   * Issues a cryptographically unique registrationToken for joining verification.
+   * Generates a cryptographically secure random registration token (reg_...)
+   * and stores its SHA-256 hash in the database. Returns the raw token to the attendee.
    */
   async registerAttendee(
     id: string,
@@ -533,7 +672,10 @@ export class LiveClassService {
     const trimmedEmail = data.email.trim().toLowerCase().slice(0, 150);
     const trimmedPhone = data.phone ? data.phone.trim().slice(0, 25) : null;
     const trimmedOrg = data.organization ? data.organization.trim().slice(0, 100) : null;
-    const registrationToken = `reg_${crypto.randomBytes(20).toString('hex')}`;
+
+    // Cryptographically secure token generation (24 bytes hex)
+    const rawRegistrationToken = `reg_${crypto.randomBytes(24).toString('hex')}`;
+    const hashedToken = crypto.createHash('sha256').update(rawRegistrationToken).digest('hex');
 
     const registration = await this.prisma.liveClassRegistration.upsert({
       where: {
@@ -546,7 +688,8 @@ export class LiveClassService {
         name: trimmedName,
         phone: trimmedPhone,
         organization: trimmedOrg,
-        registrationToken,
+        registrationToken: hashedToken,
+        status: 'REGISTERED',
       },
       create: {
         liveClassId: id,
@@ -554,13 +697,14 @@ export class LiveClassService {
         email: trimmedEmail,
         phone: trimmedPhone,
         organization: trimmedOrg,
-        registrationToken,
+        registrationToken: hashedToken,
+        status: 'REGISTERED',
       },
     });
 
     return {
       success: true,
-      registrationToken: registration.registrationToken,
+      registrationToken: rawRegistrationToken, // Client receives raw unhashed credential
       meetUrl: cls.roomId,
       title: cls.title,
       scheduledAt: cls.scheduledAt,
@@ -574,6 +718,7 @@ export class LiveClassService {
    * Centre isolation & PII protection enforced:
    * - Global classes require SUPER_ADMIN.
    * - Non-superadmins receive masked phone numbers and email addresses.
+   * - Tokens are never exposed in attendee lists.
    */
   async getRegistrations(id: string, user?: any) {
     const cls = await this.prisma.liveClass.findUnique({
@@ -604,7 +749,7 @@ export class LiveClassService {
 
     // Mask PII if caller is not a Super Administrator
     const sanitized = registrations.map(r => {
-      if (isSuper) return r;
+      if (isSuper) return { ...r, registrationToken: undefined };
       const maskedPhone = r.phone ? r.phone.replace(/(\d{2})\d+(\d{2})/, '$1******$2') : null;
       const maskedEmail = r.email ? r.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : null;
       return {
@@ -626,6 +771,7 @@ export class LiveClassService {
   /**
    * Generates a signed LiveKit JWT room token for a student, teacher, or admin to join the classroom.
    * Authorization, room name, role, and schedule validity are derived strictly from database records and session.
+   * Enforces bounded scheduling windows, teacher substitution rules, and moderation blacklisting.
    */
   async generateLiveKitToken(
     classIdentifier: string,
@@ -671,17 +817,13 @@ export class LiveClassService {
       throw new NotFoundException(`Classroom with identifier "${classIdentifier}" not found.`);
     }
 
-    // 2. Validate Class Status and Timing
+    // 2. Class Status Validation
     if (cls.status === 'ENDED') {
       throw new BadRequestException('This live class has already ended.');
     }
-
-    const now = Date.now();
-    const classTime = new Date(cls.scheduledAt).getTime();
-    const durationMs = (cls.duration || 60) * 60 * 1000;
-    const isLive = cls.status === 'LIVE';
-    const isStartingSoon = (classTime - now) <= 15 * 60 * 1000;
-    const isWithinClassWindow = now >= classTime && (now - classTime) <= (durationMs + 30 * 60 * 1000);
+    if (cls.status === 'CANCELLED') {
+      throw new BadRequestException('This live class has been cancelled.');
+    }
 
     // 3. User Identity & Role Resolution
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -694,7 +836,7 @@ export class LiveClassService {
 
     if (normalizedRole === 'SUPER_ADMIN') {
       isHost = true;
-    } else if (normalizedRole === 'CENTRE_ADMIN') {
+    } else if (normalizedRole === 'CENTRE_ADMIN' || normalizedRole === 'ADMIN') {
       if (cls.centreId) {
         assertCentreAccess(user, cls.centreId);
       }
@@ -703,44 +845,24 @@ export class LiveClassService {
       if (cls.centreId) {
         assertCentreAccess(user, cls.centreId);
       }
-      if (cls.teacherId && cls.teacherId !== user?.id && !isSuperAdmin(user)) {
-        const allowedCentres = getAuthorizedCentreIds(user);
-        if (cls.centreId && !allowedCentres.includes(cls.centreId)) {
-          throw new ForbiddenException('You are not authorized to host this live class.');
-        }
+      // Explicit Teacher Authorization:
+      // Must be either:
+      // 1. The assigned teacher: cls.teacherId === user.id
+      // 2. The designated substitute teacher: cls.substituteTeacherId === user.id
+      const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
+      const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
+
+      if (!isAssigned && !isSubstitute && !isSuperAdmin(user)) {
+        throw new ForbiddenException(
+          'You are not authorized to host this live class. Only the assigned teacher or designated substitute may host.',
+        );
       }
       isHost = true;
     } else if (normalizedRole === 'STUDENT') {
-      if (!isLive && !isStartingSoon && !isWithinClassWindow) {
-        throw new ForbiddenException('Class is not live yet. You can join 15 minutes before the scheduled time.');
-      }
-
-      if (!cls.isPublic) {
-        const profile = await this.prisma.studentProfile.findUnique({
-          where: { userId: user?.id },
-          include: { enrollments: { include: { batch: true } } },
-        });
-
-        const centreIds = profile?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
-        const standardIds = profile?.enrollments?.map(e => e.batch?.standardId).filter(Boolean) || [];
-        const boardIds = profile?.enrollments?.map(e => e.batch?.boardId).filter(Boolean) || [];
-
-        const matchesCentre = !cls.centreId || centreIds.includes(cls.centreId);
-        const matchesStandard = !cls.standardId || standardIds.includes(cls.standardId);
-        const matchesBoard = !cls.boardId || boardIds.includes(cls.boardId);
-
-        if (!matchesCentre || !matchesStandard || !matchesBoard) {
-          throw new ForbiddenException('You are not enrolled in the batch, standard, or centre for this class.');
-        }
-      }
-
       isHost = false;
     } else if (normalizedRole === 'PUBLIC_LEARNER') {
       if (!cls.isPublic) {
         throw new ForbiddenException('Access denied: Private session.');
-      }
-      if (!isLive && !isStartingSoon && !isWithinClassWindow) {
-        throw new ForbiddenException('Session is not live yet.');
       }
       isHost = false;
       canPublish = false;
@@ -748,13 +870,45 @@ export class LiveClassService {
       throw new ForbiddenException('Invalid or unauthenticated user role.');
     }
 
-    // Authoritative identity derivation
+    // 4. Validate Timing Boundaries (30m host prep, 15m attendee window, expired session restriction)
+    const { classTime, durationMs } = this.validateClassTiming(cls, isHost);
+
+    // 5. Enforce Student Batch/Centre Enrollment
+    if (normalizedRole === 'STUDENT' && !cls.isPublic) {
+      const profile = await this.prisma.studentProfile.findUnique({
+        where: { userId: user?.id },
+        include: { enrollments: { include: { batch: true } } },
+      });
+
+      const centreIds = profile?.enrollments?.map(e => e.batch?.centreId).filter(Boolean) || [];
+      const standardIds = profile?.enrollments?.map(e => e.batch?.standardId).filter(Boolean) || [];
+      const boardIds = profile?.enrollments?.map(e => e.batch?.boardId).filter(Boolean) || [];
+
+      const matchesCentre = !cls.centreId || centreIds.includes(cls.centreId);
+      const matchesStandard = !cls.standardId || standardIds.includes(cls.standardId);
+      const matchesBoard = !cls.boardId || boardIds.includes(cls.boardId);
+
+      if (!matchesCentre || !matchesStandard || !matchesBoard) {
+        throw new ForbiddenException('You are not enrolled in the batch, standard, or centre for this class.');
+      }
+    }
+
+    // 4. Authoritative Identity Derivation
     const identity = user?.id ? `user_${user.id}` : `user_${Date.now()}`;
     const displayName = user?.firstName
       ? `${user.firstName} ${user.lastName || ''}`.trim()
       : user?.name || user?.email || (isHost ? 'Teacher' : 'Student');
 
+    // 5. Moderation Verification (Reconnection & Blacklist Enforcement)
+    const isKicked = await this.isParticipantKicked(cls.id, identity);
+    if (isKicked) {
+      throw new ForbiddenException('You have been removed from this live class by the teacher and cannot rejoin.');
+    }
+
+    const isMuted = await this.isParticipantMuted(cls.id, identity);
+
     // Dynamic TTL capped at remaining class time + 30m (min 30m, max 180m)
+    const now = Date.now();
     const remainingMinutes = Math.max(30, Math.ceil((classTime + durationMs - now) / 60000) + 30);
     const ttlSeconds = Math.min(180 * 60, remainingMinutes * 60);
 
@@ -767,6 +921,7 @@ export class LiveClassService {
         name: displayName,
         userId: user?.id,
         isHost,
+        isMutedByHost: isMuted,
       }),
     });
 
@@ -775,10 +930,11 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish,
+      canPublish: isMuted ? false : canPublish,
       canSubscribe,
       canPublishData,
       roomAdmin: isHost,
+      canUpdateOwnMetadata: false, // Students cannot tamper with own metadata to elevate privileges
     });
 
     const token = await at.toJwt();
@@ -793,9 +949,10 @@ export class LiveClassService {
 
   /**
    * Generates a signed LiveKit JWT room token for registered attendees of a public webinar.
-   * Requires proof of registration via registrationToken or registered email.
+   * Strictly requires a valid cryptographic registration credential (registrationToken).
+   * Email-only authentication is prohibited to prevent attendee impersonation.
    */
-  async generatePublicLiveKitToken(id: string, registrationToken?: string, email?: string, name?: string) {
+  async generatePublicLiveKitToken(id: string, registrationToken?: string, _email?: string, name?: string) {
     const cls = await this.prisma.liveClass.findUnique({
       where: { id },
     });
@@ -803,24 +960,40 @@ export class LiveClassService {
       throw new NotFoundException('Public live class not found or is private.');
     }
 
-    if (cls.status === 'ENDED') {
-      throw new BadRequestException('This webinar has already ended.');
+    // Timing and schedule boundary check for public webinar
+    this.validateClassTiming(cls, false);
+
+    // Strict registration token verification (email is not accepted as credential)
+    if (!registrationToken || !registrationToken.trim()) {
+      throw new ForbiddenException('Access denied: Valid registration credential is required to join this webinar.');
     }
 
-    // Enforce registration check
-    let reg: any = null;
-    if (registrationToken && registrationToken.trim()) {
+    const trimmedToken = registrationToken.trim();
+    const tokenHash = crypto.createHash('sha256').update(trimmedToken).digest('hex');
+
+    // Query by hashed token, or fallback to raw token for legacy unhashed rows
+    let reg = await this.prisma.liveClassRegistration.findFirst({
+      where: {
+        liveClassId: id,
+        registrationToken: tokenHash,
+      },
+    });
+
+    if (!reg) {
       reg = await this.prisma.liveClassRegistration.findFirst({
-        where: { liveClassId: id, registrationToken: registrationToken.trim() },
-      });
-    } else if (email && email.trim()) {
-      reg = await this.prisma.liveClassRegistration.findFirst({
-        where: { liveClassId: id, email: email.trim().toLowerCase() },
+        where: {
+          liveClassId: id,
+          registrationToken: trimmedToken,
+        },
       });
     }
 
     if (!reg) {
-      throw new ForbiddenException('Access denied: You must register for this webinar before joining.');
+      throw new ForbiddenException('Access denied: Invalid or unrecognized registration credential for this webinar.');
+    }
+
+    if (reg.status && reg.status !== 'REGISTERED') {
+      throw new ForbiddenException('Access denied: This registration has been revoked or cancelled.');
     }
 
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -834,11 +1007,24 @@ export class LiveClassService {
     const identity = `pub_${reg.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}`;
     const displayName = reg.name || name || 'Learner';
 
+    // Moderation check for public attendee
+    const isKicked = await this.isParticipantKicked(cls.id, identity);
+    if (isKicked) {
+      throw new ForbiddenException('Access denied: You have been removed from this webinar and cannot rejoin.');
+    }
+
+    const isMuted = await this.isParticipantMuted(cls.id, identity);
+
     const at = new AccessToken(apiKey, apiSecret, {
       identity,
       name: displayName,
       ttl: '2h',
-      metadata: JSON.stringify({ role: 'PUBLIC_LEARNER', name: displayName, isRegistered: true }),
+      metadata: JSON.stringify({
+        role: 'PUBLIC_LEARNER',
+        name: displayName,
+        isRegistered: true,
+        isMutedByHost: isMuted,
+      }),
     });
 
     const roomName = cls.roomId || cls.id;
@@ -846,10 +1032,11 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: false,
+      canPublish: false, // Public learners are view-only by default
       canSubscribe: true,
       canPublishData: true,
       roomAdmin: false,
+      canUpdateOwnMetadata: false, // Forbid altering own metadata
     });
 
     const token = await at.toJwt();
@@ -862,11 +1049,12 @@ export class LiveClassService {
 
   /**
    * Server-side classroom moderation using LiveKit RoomServiceClient.
-   * Enforces server authentication and permission verification before executing SFU track muting / participant disconnection.
+   * Authoritatively updates SFU permissions, mutes tracks, maintains persistent state,
+   * and prevents participants from republishing restricted tracks.
    */
   async moderateParticipant(
     classId: string,
-    action: 'MUTE_STUDENT' | 'MUTE_ALL' | 'REMOVE_PARTICIPANT',
+    action: 'MUTE_STUDENT' | 'UNMUTE_STUDENT' | 'MUTE_ALL' | 'REMOVE_PARTICIPANT',
     targetIdentity?: string,
     trackSid?: string,
     muted: boolean = true,
@@ -877,13 +1065,17 @@ export class LiveClassService {
 
     const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
     const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
-    const isModerator = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER'].includes(normalizedRole);
 
-    if (!isModerator) {
-      throw new ForbiddenException('Only teachers and administrators can moderate classroom participants.');
+    const isSuper = isSuperAdmin(user);
+    const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
+    const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
+    const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN' && (!cls.centreId || getAuthorizedCentreIds(user).includes(cls.centreId));
+
+    if (!isSuper && !isCentreAdmin && !isAssigned && !isSubstitute) {
+      throw new ForbiddenException('Only assigned teachers or authorized administrators may moderate participants.');
     }
 
-    if (cls.centreId && !isSuperAdmin(user)) {
+    if (cls.centreId && !isSuper) {
       assertCentreAccess(user, cls.centreId);
     }
 
@@ -896,24 +1088,73 @@ export class LiveClassService {
     }
 
     const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-    const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+    const roomService = this.getRoomService(httpUrl, apiKey, apiSecret);
     const roomName = cls.roomId || cls.id;
 
     if (action === 'MUTE_STUDENT') {
       if (!targetIdentity) throw new BadRequestException('targetIdentity is required for MUTE_STUDENT');
+
+      // 1. Mute active audio track
       if (trackSid) {
-        await roomService.mutePublishedTrack(roomName, targetIdentity, trackSid, muted);
+        await roomService.mutePublishedTrack(roomName, targetIdentity, trackSid, muted).catch(() => null);
       } else {
         const participant = await roomService.getParticipant(roomName, targetIdentity).catch(() => null);
         if (participant) {
           for (const track of participant.tracks) {
-            if (track.type === 0 /* Audio */) {
+            if (track.type === TrackType.AUDIO) {
               await roomService.mutePublishedTrack(roomName, targetIdentity, track.sid, muted).catch(() => null);
             }
           }
         }
       }
-      return { success: true, message: `Participant ${targetIdentity} muted.` };
+
+      // 2. Authoritatively restrict publishing permission at the SFU level
+      // Muted: only CAMERA allowed (forbids MICROPHONE). Unmuted: CAMERA + MICROPHONE allowed.
+      const allowedSources = muted ? [TrackSource.CAMERA] : [TrackSource.CAMERA, TrackSource.MICROPHONE];
+      await roomService.updateParticipant(roomName, targetIdentity, {
+        permission: {
+          canPublish: true,
+          canSubscribe: true,
+          canPublishData: true,
+          canPublishSources: allowedSources,
+          canUpdateMetadata: false,
+        },
+      }).catch((err) => {
+        this.logger.warn(`Failed to update SFU permission for ${targetIdentity}: ${err.message}`);
+      });
+
+      // 3. Persist moderation state independently of frontend
+      await this.setModerationState(cls.id, targetIdentity, { mutedAudio: muted });
+
+      // 4. Record audit log
+      await this.recordAudit(user, 'MODERATE_PARTICIPANT', `Muted participant ${targetIdentity}: ${muted}`, cls.id);
+
+      return {
+        success: true,
+        message: `Participant ${targetIdentity} audio ${muted ? 'muted and restricted' : 'unmuted and permitted'}.`,
+      };
+    }
+
+    if (action === 'UNMUTE_STUDENT') {
+      if (!targetIdentity) throw new BadRequestException('targetIdentity is required for UNMUTE_STUDENT');
+
+      // Restore microphone publishing permission at SFU level
+      await roomService.updateParticipant(roomName, targetIdentity, {
+        permission: {
+          canPublish: true,
+          canSubscribe: true,
+          canPublishData: true,
+          canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE],
+          canUpdateMetadata: false,
+        },
+      }).catch((err) => {
+        this.logger.warn(`Failed to restore SFU permission for ${targetIdentity}: ${err.message}`);
+      });
+
+      await this.setModerationState(cls.id, targetIdentity, { mutedAudio: false });
+      await this.recordAudit(user, 'UNMUTE_PARTICIPANT', `Unmuted participant ${targetIdentity}`, cls.id);
+
+      return { success: true, message: `Participant ${targetIdentity} audio permission restored.` };
     }
 
     if (action === 'MUTE_ALL') {
@@ -923,19 +1164,42 @@ export class LiveClassService {
         try { meta = JSON.parse(p.metadata); } catch {}
         if (meta.role === 'TEACHER' || meta.role === 'SUPER_ADMIN' || meta.isHost) continue;
 
+        // Mute tracks
         for (const track of p.tracks) {
-          if (track.type === 0 /* Audio */) {
+          if (track.type === TrackType.AUDIO) {
             await roomService.mutePublishedTrack(roomName, p.identity, track.sid, true).catch(() => null);
           }
         }
+
+        // Restrict SFU publishing permission
+        await roomService.updateParticipant(roomName, p.identity, {
+          permission: {
+            canPublish: true,
+            canSubscribe: true,
+            canPublishData: true,
+            canPublishSources: [TrackSource.CAMERA],
+            canUpdateMetadata: false,
+          },
+        }).catch(() => null);
+
+        await this.setModerationState(cls.id, p.identity, { mutedAudio: true });
       }
-      return { success: true, message: 'All students muted on SFU.' };
+
+      await this.recordAudit(user, 'MODERATE_ALL', `Muted all student participants in class ${cls.id}`, cls.id);
+      return { success: true, message: 'All students muted and audio publishing restricted on SFU.' };
     }
 
     if (action === 'REMOVE_PARTICIPANT') {
       if (!targetIdentity) throw new BadRequestException('targetIdentity is required for REMOVE_PARTICIPANT');
-      await roomService.removeParticipant(roomName, targetIdentity);
-      return { success: true, message: `Participant ${targetIdentity} removed from room.` };
+
+      // 1. Kick immediately from LiveKit room
+      await roomService.removeParticipant(roomName, targetIdentity).catch(() => null);
+
+      // 2. Blacklist from re-joining
+      await this.setModerationState(cls.id, targetIdentity, { kicked: true });
+
+      await this.recordAudit(user, 'REMOVE_PARTICIPANT', `Removed and barred participant ${targetIdentity}`, cls.id);
+      return { success: true, message: `Participant ${targetIdentity} removed and barred from re-entering.` };
     }
 
     throw new BadRequestException(`Unknown moderation action: ${action}`);
@@ -1052,7 +1316,254 @@ export class LiveClassService {
     return cls?.whiteboardData || null;
   }
 
-  // ── Centralized Recording ──
+  // ── Genuine Server-Side LiveKit Egress Recording Pipeline ──
+  async startServerRecording(classId: string, user: any): Promise<any> {
+    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    if (!cls) throw new NotFoundException('Live class not found');
+
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+    const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
+    const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
+    const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN' && (!cls.centreId || getAuthorizedCentreIds(user).includes(cls.centreId));
+    const isSuper = isSuperAdmin(user);
+
+    if (!isSuper && !isCentreAdmin && !isAssigned && !isSubstitute) {
+      throw new ForbiddenException('Only authorized teachers or administrators can record classes.');
+    }
+
+    if (cls.recordingStatus === 'RECORDING') {
+      throw new BadRequestException('A recording is already in progress for this class.');
+    }
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_WS_URL || 'wss://live.educarelearning.in';
+
+    if (!apiKey || !apiSecret) {
+      throw new ServiceUnavailableException('LiveKit API credentials are not configured on this server.');
+    }
+
+    const r2Config = this.storageService?.getConfig();
+    const accountId = r2Config?.accountId || process.env.CLOUDFLARE_R2_ACCOUNT_ID;
+    const accessKey = r2Config?.accessKeyId || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+    const secret = r2Config?.secretAccessKey || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+    const bucket = r2Config?.bucketName || process.env.CLOUDFLARE_R2_BUCKET_NAME || 'educare';
+
+    if (!accountId || !accessKey || !secret) {
+      throw new ServiceUnavailableException(
+        'Cloudflare R2 storage credentials are not configured for LiveKit Egress recordings.',
+      );
+    }
+
+    const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+    const egressClient = this.getEgressClient(httpUrl, apiKey, apiSecret);
+    const roomName = cls.roomId || cls.id;
+
+    const s3Upload = new S3Upload({
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      accessKey,
+      secret,
+      region: 'auto',
+      bucket,
+      forcePathStyle: true,
+    });
+
+    const fileOutput = new EncodedFileOutput({
+      fileType: EncodedFileType.MP4,
+      filepath: `recordings/live-classes/${cls.id}/{room_name}-{time}.mp4`,
+      output: {
+        case: 's3',
+        value: s3Upload,
+      },
+    });
+
+    try {
+      const egressInfo = await egressClient.startRoomCompositeEgress(
+        roomName,
+        fileOutput,
+        { layout: 'speaker' },
+      );
+
+      const recording = await this.prisma.liveClassRecording.create({
+        data: {
+          liveClassId: cls.id,
+          egressId: egressInfo.egressId,
+          status: 'RECORDING',
+          startedAt: new Date(),
+        },
+      });
+
+      await this.prisma.liveClass.update({
+        where: { id: cls.id },
+        data: {
+          recordingStatus: 'RECORDING',
+          egressId: egressInfo.egressId,
+        },
+      });
+
+      await this.recordAudit(user, 'START_RECORDING', `Started server-side egress recording ${egressInfo.egressId}`, cls.id);
+
+      return {
+        success: true,
+        egressId: egressInfo.egressId,
+        recordingId: recording.id,
+        status: 'RECORDING',
+      };
+    } catch (err: any) {
+      this.logger.error(`LiveKit Egress startup failed: ${err.message}`, err.stack);
+      throw new ServiceUnavailableException(`Failed to start server-side recording: ${err.message}`);
+    }
+  }
+
+  async stopServerRecording(classId: string, user: any, egressId?: string): Promise<any> {
+    const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
+    if (!cls) throw new NotFoundException('Live class not found');
+
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+    const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
+    const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
+    const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN' && (!cls.centreId || getAuthorizedCentreIds(user).includes(cls.centreId));
+    const isSuper = isSuperAdmin(user);
+
+    if (!isSuper && !isCentreAdmin && !isAssigned && !isSubstitute) {
+      throw new ForbiddenException('Only authorized teachers or administrators can stop recordings.');
+    }
+
+    const targetEgressId = egressId || cls.egressId;
+    if (!targetEgressId) {
+      throw new BadRequestException('No active egress recording session found for this class.');
+    }
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_WS_URL || 'wss://live.educarelearning.in';
+
+    if (!apiKey || !apiSecret) {
+      throw new ServiceUnavailableException('LiveKit API credentials are not configured on this server.');
+    }
+
+    const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+    const egressClient = this.getEgressClient(httpUrl, apiKey, apiSecret);
+
+    try {
+      await egressClient.stopEgress(targetEgressId);
+
+      await this.prisma.liveClassRecording.updateMany({
+        where: { egressId: targetEgressId },
+        data: { status: 'PROCESSING', endedAt: new Date() },
+      });
+
+      await this.prisma.liveClass.update({
+        where: { id: cls.id },
+        data: { recordingStatus: 'PROCESSING' },
+      });
+
+      await this.recordAudit(user, 'STOP_RECORDING', `Stopped server-side egress recording ${targetEgressId}`, cls.id);
+
+      return { success: true, message: 'Server-side recording stopped; processing in background.' };
+    } catch (err: any) {
+      this.logger.error(`LiveKit stopEgress failed: ${err.message}`);
+      throw new ServiceUnavailableException(`Failed to stop server-side recording: ${err.message}`);
+    }
+  }
+
+  async handleLiveKitWebhook(rawBody: string, authHeader: string): Promise<any> {
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+    if (!apiKey || !apiSecret) {
+      throw new ServiceUnavailableException('LiveKit webhook verification not configured.');
+    }
+
+    const receiver = new WebhookReceiver(apiKey, apiSecret);
+    let event: any;
+    try {
+      event = await receiver.receive(rawBody, authHeader);
+    } catch (err: any) {
+      this.logger.warn(`LiveKit webhook signature verification failed: ${err.message}`);
+      throw new UnauthorizedException('Invalid LiveKit webhook signature.');
+    }
+
+    this.logger.log(`Received LiveKit webhook: ${event.event} for room: ${event.room?.name || event.egressInfo?.roomName}`);
+
+    if (event.event === 'egress_started' && event.egressInfo) {
+      const egressId = event.egressInfo.egressId;
+      await this.prisma.liveClassRecording.updateMany({
+        where: { egressId },
+        data: { status: 'RECORDING', startedAt: new Date() },
+      });
+    }
+
+    if (event.event === 'egress_ended' && event.egressInfo) {
+      const info = event.egressInfo;
+      const egressId = info.egressId;
+      const isError = Boolean(info.error || info.status === 3 /* EGRESS_FAILED */);
+
+      if (isError) {
+        await this.prisma.liveClassRecording.updateMany({
+          where: { egressId },
+          data: {
+            status: 'FAILED',
+            errorMessage: info.error || 'Egress failed during encoding/upload',
+            endedAt: new Date(),
+          },
+        });
+        await this.prisma.liveClass.updateMany({
+          where: { egressId },
+          data: { recordingStatus: 'FAILED' },
+        });
+      } else {
+        const fileResult = info.fileResults?.[0] || info.file;
+        const fileUrl = fileResult?.location || fileResult?.filename || '';
+        const durationSec = Math.round(Number(info.duration || 0) / 1000000000);
+        const fileSize = fileResult?.size ? BigInt(fileResult.size) : null;
+
+        await this.prisma.liveClassRecording.updateMany({
+          where: { egressId },
+          data: {
+            status: 'COMPLETED',
+            fileUrl,
+            storageKey: fileResult?.filename,
+            duration: durationSec,
+            fileSize,
+            endedAt: new Date(),
+          },
+        });
+
+        await this.prisma.liveClass.updateMany({
+          where: { egressId },
+          data: {
+            recordingStatus: 'COMPLETED',
+            recordingUrl: fileUrl,
+          },
+        });
+      }
+    }
+
+    return { received: true };
+  }
+
+  async getRecordingsForClass(classId: string, user: any): Promise<any> {
+    await this.getById(classId, user);
+    const recordings = await this.prisma.liveClassRecording.findMany({
+      where: { liveClassId: classId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return recordings.map(r => ({
+      id: r.id,
+      egressId: r.egressId,
+      status: r.status,
+      fileUrl: r.fileUrl,
+      duration: r.duration,
+      startedAt: r.startedAt,
+      endedAt: r.endedAt,
+      errorMessage: isSuperAdmin(user) ? r.errorMessage : undefined,
+    }));
+  }
+
+  // ── Centralized Local / Browser-Assisted Recording Fallbacks ──
   async startRecording(classId: string, user: any): Promise<any> {
     const cls = await this.prisma.liveClass.findUnique({ where: { id: classId } });
     if (!cls) throw new NotFoundException('Live class not found');

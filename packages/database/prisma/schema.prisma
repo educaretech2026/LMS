@@ -39,6 +39,7 @@ model User {
   doubtMessagesSent    DoubtMessage[]  @relation("DoubtMessageSender")
   auditLogs            AuditLog[]
   liveClassesTaught    LiveClass[]     @relation("TeacherLiveClasses")
+  substituteLiveClasses LiveClass[]    @relation("SubstituteTeacherLiveClasses")
 
   @@map("users")
 }
@@ -631,19 +632,23 @@ model LiveClass {
   externalMeetingUrl  String?
   recordingUrl        String?
   recordingStatus     RecordingStatus  @default(NOT_RECORDED)
+  egressId            String?
   whiteboardData      Json?
 
-  teacherId  String?
-  boardId    String?
-  standardId String?
-  centreId   String?
+  teacherId           String?
+  substituteTeacherId String?
+  boardId             String?
+  standardId          String?
+  centreId            String?
 
-  teacher  User?     @relation("TeacherLiveClasses", fields: [teacherId], references: [id], onDelete: SetNull)
-  board    Board?    @relation(fields: [boardId], references: [id])
-  standard Standard? @relation(fields: [standardId], references: [id])
-  centre   Centre?   @relation(fields: [centreId], references: [id])
+  teacher           User?     @relation("TeacherLiveClasses", fields: [teacherId], references: [id], onDelete: SetNull)
+  substituteTeacher User?     @relation("SubstituteTeacherLiveClasses", fields: [substituteTeacherId], references: [id], onDelete: SetNull)
+  board             Board?    @relation(fields: [boardId], references: [id])
+  standard          Standard? @relation(fields: [standardId], references: [id])
+  centre            Centre?   @relation(fields: [centreId], references: [id])
 
   registrations LiveClassRegistration[]
+  recordings    LiveClassRecording[]
   messages      LiveClassMessage[]
   files         LiveClassFile[]
 
@@ -653,6 +658,7 @@ model LiveClass {
   @@index([scheduledAt, status])
   @@index([centreId, status])
   @@index([teacherId])
+  @@index([substituteTeacherId])
   @@map("live_classes")
 }
 
@@ -664,6 +670,7 @@ model LiveClassRegistration {
   phone             String?
   organization      String?
   registrationToken String?   @unique
+  status            String    @default("REGISTERED")
   registeredAt      DateTime  @default(now())
 
   liveClass    LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
@@ -673,6 +680,28 @@ model LiveClassRegistration {
   @@index([email])
   @@index([registrationToken])
   @@map("live_class_registrations")
+}
+
+model LiveClassRecording {
+  id            String          @id @default(uuid())
+  liveClassId   String
+  egressId      String?         @unique
+  status        RecordingStatus @default(NOT_RECORDED)
+  fileUrl       String?
+  fileSize      BigInt?
+  duration      Int?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  errorMessage  String?
+  storageKey    String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  liveClass     LiveClass       @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+
+  @@index([liveClassId])
+  @@index([egressId])
+  @@map("live_class_recordings")
 }
 
 model LiveClassMessage {
@@ -710,6 +739,7 @@ enum LiveClassStatus {
   SCHEDULED
   LIVE
   ENDED
+  CANCELLED
 }
 
 enum DeliveryProvider {

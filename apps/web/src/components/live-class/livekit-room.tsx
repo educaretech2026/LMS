@@ -178,21 +178,27 @@ export function LiveKitClassRoom({ classId, roomId, identity, name, role, onLeav
       const regToken = typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("regToken")
         : null;
-      const query = new URLSearchParams({
-        roomId: roomId || "",
-        identity: effectiveIdentity,
-        name: name || "",
-        role: role || "",
-      });
-      if (classId) {
-        query.set("classId", classId);
+
+      let data: TokenResponse;
+      if (regToken && classId) {
+        // Public webinar attendee using cryptographic registration token
+        data = await fetchApi<TokenResponse>(
+          `/live-class/public/${classId}/token?registrationToken=${encodeURIComponent(regToken)}&name=${encodeURIComponent(name || "")}`
+        );
+      } else {
+        const query = new URLSearchParams({
+          roomId: roomId || "",
+          identity: effectiveIdentity,
+          name: name || "",
+          role: role || "",
+        });
+        if (classId) {
+          query.set("classId", classId);
+        }
+        data = await fetchApi<TokenResponse>(
+          `/live-class/token?${query.toString()}`
+        );
       }
-      if (regToken) {
-        query.set("registrationToken", regToken);
-      }
-      const data = await fetchApi<TokenResponse>(
-        `/live-class/token?${query.toString()}`
-      );
       setTokenData(data);
     } catch (e: any) {
       setError(e.message || "Failed to connect to the classroom.");
