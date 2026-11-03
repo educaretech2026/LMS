@@ -581,5 +581,70 @@ describe('LiveClassService - Final Security Remediation & Production Verificatio
       const stats = await service.getStats(adminSession);
       expect(stats).toEqual({ total: 0, live: 0 });
     });
+
+    it('create gracefully falls back to SAFE_LIVE_CLASS_SELECT and baseline columns when unmigrated columns throw', async () => {
+      // Tier 1 fails (unmigrated returning columns like substituteTeacherId)
+      // Tier 2 fails (unmigrated insert columns like deliveryProvider)
+      // Tier 3 succeeds with baseline columns
+      prisma.liveClass.create
+        .mockRejectedValueOnce(new Error('column live_classes.substituteTeacherId does not exist'))
+        .mockRejectedValueOnce(new Error('column "deliveryProvider" of relation "live_classes" does not exist'))
+        .mockResolvedValueOnce(mockLiveClass);
+
+      const created = await service.create({
+        title: 'Crash Course Physics',
+        subject: 'Physics',
+        teacherName: 'Dr. Anand',
+        scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+        duration: 60,
+      }, { id: 'admin-1', role: { name: 'SUPER_ADMIN' } });
+
+      expect(created).toBeDefined();
+      expect(created.id).toBe('class-123');
+      expect(prisma.liveClass.create).toHaveBeenCalledTimes(3);
+    });
+
+    it('create translates foreign key constraint violation (P2003) into BadRequestException', async () => {
+      const p2003Err: any = new Error('Foreign key constraint failed on the field: `standardId`');
+      p2003Err.code = 'P2003';
+      p2003Err.meta = { field_name: 'standardId' };
+      prisma.liveClass.create.mockRejectedValue(p2003Err);
+
+      await expect(
+        service.create({
+          title: 'Chemistry 101',
+          subject: 'Chemistry',
+          teacherName: 'Prof. Miller',
+          scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+          duration: 45,
+          standardId: 'non-existent-standard-id',
+        }, { id: 'admin-1', role: { name: 'SUPER_ADMIN' } })
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('create allows teacher to create a public webinar without throwing centre isolation error', async () => {
+      prisma.liveClass.create.mockResolvedValue({
+        ...mockPublicWebinar,
+        id: 'webinar-new',
+      });
+
+      const teacherSession = {
+        id: 'teacher-456',
+        role: { name: 'TEACHER' },
+        userCentres: [], // Empty centre assignments
+      };
+
+      const result = await service.create({
+        title: 'Global NEET Orientation',
+        subject: 'Orientation',
+        teacherName: 'Dr. Anand',
+        scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+        duration: 90,
+        isPublic: true,
+      }, teacherSession);
+
+      expect(result).toBeDefined();
+      expect(result.id).toBe('webinar-new');
+    });
   });
 });

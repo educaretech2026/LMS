@@ -111,3 +111,4 @@ describe('Admission Number Generation Utilities', () => {
     });
   });
 });
+
