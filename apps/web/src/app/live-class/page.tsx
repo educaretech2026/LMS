@@ -81,8 +81,8 @@ export default function LiveClassPage() {
           ? fetchApi<{ total: number; live: number }>("/live-class/stats", { silent: true }).catch(() => ({ total: 0, live: 0 }))
           : Promise.resolve({ total: 0, live: 0 }),
       ]);
-      setClasses(data);
-      setStats(s);
+      setClasses(Array.isArray(data) ? data : []);
+      setStats(s || { total: 0, live: 0 });
     } catch (e: any) {
       setError(e.message);
     } finally {
