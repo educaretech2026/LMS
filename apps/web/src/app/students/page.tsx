@@ -13,7 +13,9 @@ export default async function StudentsPage() {
     
     return {
       id: profile.id || '',
-      admissionNo: profile.admissionNo || '',
+      admissionNo: (profile.admissionNo && !profile.admissionNo.includes('@') && !/admin/i.test(profile.admissionNo))
+        ? profile.admissionNo
+        : (profile.id ? `ADM-${profile.id.replace(/[^a-zA-Z0-9]/g, '').slice(-5).toUpperCase()}` : ''),
       name: `${user.firstName || 'Unknown'} ${user.lastName || ''}`.trim(),
       email: user.email || '',
       phone: profile.parentPhone || '',

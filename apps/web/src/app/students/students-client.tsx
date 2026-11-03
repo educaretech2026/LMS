@@ -339,7 +339,9 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="inline-flex items-center justify-center px-2 py-1 rounded bg-brand-blue/10 text-brand-blue font-bold text-xs min-w-[28px]">
-                              {s.admissionNo}
+                              {(s.admissionNo && !s.admissionNo.includes('@') && !/admin/i.test(s.admissionNo))
+                                ? s.admissionNo
+                                : `ADM-${(s.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-5).toUpperCase()}`}
                             </span>
                             {(s.source === "CRM_WEBHOOK" || s.externalCrmId) && (
                               <span
@@ -496,7 +498,10 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   const isEditing = Boolean(student && student.id);
   const [activeTab, setActiveTab] = useState("Admission");
   
-  const [admissionNo, setAdmissionNo] = useState(student?.admissionNo || "");
+  const [admissionNo, setAdmissionNo] = useState(() => {
+    const raw = student?.admissionNo || "";
+    return raw.includes("@") || /admin/i.test(raw) || /educare/i.test(raw) ? "" : raw;
+  });
   const [firstName, setFirstName] = useState(student?.name?.split(" ")[0] || "");
   const [lastName, setLastName] = useState(student?.name?.split(" ").slice(1).join(" ") || "");
   const [email, setEmail] = useState(student?.email || "");
@@ -625,10 +630,40 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
               
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Admission No <span className="text-brand-red">*</span>
+                  Admission No <span className="text-text-muted font-normal">(Leave blank to auto-generate)</span>
                 </label>
                 <div className="relative">
-                  <input type="text" value={admissionNo} onChange={(e) => setAdmissionNo(e.target.value)} placeholder="Auto-generated if left blank" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input 
+                    type="text" 
+                    name="student_admission_number_custom"
+                    id="student_admission_number_custom"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-form-type="other"
+                    spellCheck={false}
+                    value={admissionNo} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes('@') || /admin/i.test(val) || /educare/i.test(val)) {
+                        setAdmissionNo('');
+                      } else {
+                        setAdmissionNo(val);
+                      }
+                    }} 
+                    placeholder="Auto-generated if left blank (e.g. ADM-12345)" 
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
+                  />
+                  {admissionNo && (
+                    <button
+                      type="button"
+                      onClick={() => setAdmissionNo("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-muted hover:text-text-primary font-bold px-1.5 py-0.5 rounded bg-surface-3"
+                      title="Clear to auto-generate"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -637,7 +672,18 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                   Account Password <span className="text-brand-red">*</span>
                 </label>
                 <div className="relative">
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password for student" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input 
+                    type="password" 
+                    name="student_new_account_password"
+                    id="student_new_account_password"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    placeholder="Enter password for student" 
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
+                  />
                 </div>
               </div>
 
@@ -1010,7 +1056,9 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                   const newStudentData: Student = {
                     id: student?.id || Math.random().toString(36).substr(2, 9),
                     name: `${firstName} ${lastName}`.trim() || "New Student",
-                    admissionNo: admissionNo || "",
+                    admissionNo: (admissionNo && !admissionNo.includes('@') && !/admin/i.test(admissionNo) && !/educare/i.test(admissionNo))
+                      ? admissionNo.trim()
+                      : "",
                     email: email || "student@example.com",
                     phone: phone || "+91 9999999999",
                     parentName: parentName || "Parent",

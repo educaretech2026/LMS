@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
@@ -6,11 +6,46 @@ import * as crypto from 'crypto';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
-export class StudentsService {
+export class StudentsService implements OnModuleInit {
+  private readonly logger = new Logger(StudentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private redisService: RedisService,
   ) {}
+
+  async onModuleInit() {
+    try {
+      // Self-healing migration: sanitize any legacy student admissionNo containing an email address or autofill string
+      const erroneousStudents = await this.prisma.studentProfile.findMany({
+        where: {
+          OR: [
+            { admissionNo: { contains: '@' } },
+            { admissionNo: { contains: 'admin' } },
+            { admissionNo: { contains: 'educare' } },
+          ],
+        },
+        select: { id: true, admissionNo: true },
+        take: 100,
+      });
+
+      if (erroneousStudents.length > 0) {
+        this.logger.warn(`Found ${erroneousStudents.length} student profiles with invalid email/autofill admission numbers. Self-healing...`);
+        for (const s of erroneousStudents) {
+          const fixedAdmNo = `ADM-${s.id.replace(/[^a-zA-Z0-9]/g, '').slice(-5).toUpperCase()}`;
+          await this.prisma.studentProfile.update({
+            where: { id: s.id },
+            data: { admissionNo: fixedAdmNo },
+          }).catch((err) => {
+            this.logger.error(`Failed to heal student admission number for ${s.id}: ${err.message}`);
+          });
+        }
+        this.logger.log(`Successfully healed ${erroneousStudents.length} student admission numbers.`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not run admissionNo self-healing migration: ${err?.message}`);
+    }
+  }
 
   async createStudent(data: any, currentUser?: any) {
     try {
@@ -83,10 +118,18 @@ export class StudentsService {
           }
         });
 
+        // Ensure admissionNo is clean, institutional, and never populated with an email address or autofill string
+        const rawAdmNo = typeof data.admissionNo === 'string' ? data.admissionNo.trim() : '';
+        const isEmailOrAutofill = rawAdmNo.includes('@') || /admin/i.test(rawAdmNo) || /educare/i.test(rawAdmNo);
+        const isValidAdmissionNo = rawAdmNo !== '' && rawAdmNo !== 'ADM-999' && !isEmailOrAutofill;
+        const admissionNo = isValidAdmissionNo
+          ? rawAdmNo
+          : `${centre.code || 'ADM'}-${Date.now().toString().slice(-5)}`;
+
         const profile = await prisma.studentProfile.create({
           data: {
             userId: user.id,
-            admissionNo: data.admissionNo && data.admissionNo !== "ADM-999" ? data.admissionNo : `${centre.code || 'ADM'}-${Date.now().toString().slice(-5)}`,
+            admissionNo,
             parentName: data.parentName,
             parentEmail: data.parentEmail,
             parentPhone: data.parentPhone,
@@ -342,10 +385,14 @@ export class StudentsService {
         });
       }
 
+      const rawUpdateAdmNo = typeof data.admissionNo === 'string' ? data.admissionNo.trim() : '';
+      const isUpdateEmailOrAutofill = rawUpdateAdmNo.includes('@') || /admin/i.test(rawUpdateAdmNo) || /educare/i.test(rawUpdateAdmNo);
+      const isValidUpdateAdmNo = rawUpdateAdmNo !== '' && !isUpdateEmailOrAutofill;
+
       const updatedProfile = await prisma.studentProfile.update({
         where: { id },
         data: {
-          admissionNo: data.admissionNo || undefined,
+          admissionNo: isValidUpdateAdmNo ? rawUpdateAdmNo : undefined,
           parentName: data.parentName || undefined,
           parentEmail: data.parentEmail || undefined,
           parentPhone: data.parentPhone || undefined,
