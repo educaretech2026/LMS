@@ -33,7 +33,7 @@ import {
   Video, VideoOff, Mic, MonitorUp, MonitorOff, LogOut, FileText,
   Monitor, AlertCircle, Hand, MessageSquare, Send, CheckCircle2,
   ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
-  Trash2, Edit3, SlidersHorizontal,
+  Trash2, Edit3, SlidersHorizontal, X,
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -193,8 +193,19 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const [allowStudentDraw, setAllowStudentDraw] = useState(false);
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const chatMessagesRef = useRef<ChatMessage[]>(chatMessages);
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
+
   const [activeTab, setActiveTab] = useState<"chat" | "files">("chat");
+  const activeTabRef = useRef<"chat" | "files">(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -418,7 +429,9 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         myIdentity={effectiveIdentity}
         setSharedFiles={setSharedFiles}
         setChatMessages={setChatMessages}
+        chatMessagesRef={chatMessagesRef}
         setActiveTab={setActiveTab}
+        activeTabRef={activeTabRef}
         setUnreadChatCount={setUnreadChatCount}
         showWhiteboardRef={showWhiteboardRef}
         setShowWhiteboard={setShowWhiteboard}
@@ -660,7 +673,11 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
         {/* ── RIGHT COLLAPSIBLE SIDEBAR (CHAT & SHARED FILES) ── */}
         <div
-          className="w-80 shrink-0 flex flex-col hidden md:flex"
+          className={`w-80 shrink-0 flex flex-col ${
+            isMobileChatOpen
+              ? "flex fixed inset-y-0 right-0 z-50 shadow-2xl bg-[#111318]"
+              : "hidden md:flex"
+          }`}
           style={{ background: "#111318", borderLeft: "1px solid rgba(255,255,255,0.08)" }}
         >
           {/* Tab Navigation */}
@@ -705,6 +722,16 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                 {sharedFiles.length}
               </span>
             </button>
+
+            {isMobileChatOpen && (
+              <button
+                onClick={() => setIsMobileChatOpen(false)}
+                className="md:hidden p-2 text-white/50 hover:text-white ml-1"
+                title="Close chat"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
 
           {/* Tab Content: Live Chat */}
@@ -738,6 +765,12 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       <CustomControlBar
         isTeacher={isTeacher}
         isHandRaised={isHandRaised}
+        unreadChatCount={unreadChatCount}
+        isMobileChatOpen={isMobileChatOpen}
+        onToggleChat={() => {
+          setIsMobileChatOpen(!isMobileChatOpen);
+          if (!isMobileChatOpen) setUnreadChatCount(0);
+        }}
         onToggleHand={() => {
           const room = (window as any).__lk_room;
           const nextState = !isHandRaised;
@@ -780,6 +813,20 @@ function ClassVideoGrid({
   const screenTrack = tracks.find((t) => t.source === Track.Source.ScreenShare && t.participant);
   const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera && t.participant);
 
+  // Deduplicate camera tracks per participant: prioritize real published tracks over placeholders
+  const uniqueCameraTracks = useMemo(() => {
+    const map = new Map<string, TrackReferenceOrPlaceholder>();
+    for (const t of cameraTracks) {
+      const id = t.participant?.identity;
+      if (!id) continue;
+      const prev = map.get(id);
+      if (!prev || (!prev.publication && t.publication)) {
+        map.set(id, t);
+      }
+    }
+    return Array.from(map.values());
+  }, [cameraTracks]);
+
   if (screenTrack) {
     return (
       <div className="h-full w-full flex flex-col p-2 gap-2">
@@ -792,7 +839,7 @@ function ClassVideoGrid({
         </div>
 
         <div className="h-28 shrink-0 flex gap-2 overflow-x-auto pb-1 items-center px-1">
-          {cameraTracks.map((track, i) => (
+          {uniqueCameraTracks.map((track, i) => (
             <div
               key={track.participant?.identity || `cam-${i}`}
               className="w-44 h-full shrink-0 relative rounded-xl overflow-hidden border border-white/10 bg-black/40 shadow-md"
@@ -813,7 +860,7 @@ function ClassVideoGrid({
 
   return (
     <div className="h-full w-full p-3 overflow-hidden">
-      {cameraTracks.length === 0 ? (
+      {uniqueCameraTracks.length === 0 ? (
         <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-white/40">
           <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
           <p className="text-xs">Connecting audio and video...</p>
@@ -823,19 +870,19 @@ function ClassVideoGrid({
           className="h-full w-full grid gap-3"
           style={{
             gridTemplateColumns:
-              cameraTracks.length === 1
+              uniqueCameraTracks.length === 1
                 ? "1fr"
-                : cameraTracks.length === 2
+                : uniqueCameraTracks.length === 2
                 ? "repeat(2, 1fr)"
-                : cameraTracks.length <= 4
+                : uniqueCameraTracks.length <= 4
                 ? "repeat(2, 1fr)"
                 : "repeat(auto-fit, minmax(280px, 1fr))",
-            gridAutoRows: cameraTracks.length <= 2 ? "1fr" : "minmax(0, 1fr)",
+            gridAutoRows: uniqueCameraTracks.length <= 2 ? "1fr" : "minmax(0, 1fr)",
           }}
         >
-          {cameraTracks.map((track, i) => (
+          {uniqueCameraTracks.map((track, i) => (
             <div
-              key={track.participant?.identity ? `${track.participant.identity}_${track.publication?.trackSid || "placeholder"}` : `cam-grid-${i}`}
+              key={track.participant?.identity || `cam-grid-${i}`}
               className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#161820] shadow-lg group"
             >
               <ParticipantTile trackRef={track} style={{ width: "100%", height: "100%" }} />
@@ -918,6 +965,14 @@ function TileOverlay({
             }}
           >
             {roleLabel}
+          </span>
+          {/* Live Mic Status Indicator */}
+          <span className="flex items-center" title={participant.isMicrophoneEnabled ? "Microphone active" : "Microphone muted"}>
+            {participant.isMicrophoneEnabled ? (
+              <Mic size={12} className="text-emerald-400" />
+            ) : (
+              <MicOff size={12} className="text-red-400/80" />
+            )}
           </span>
         </div>
 
@@ -1125,7 +1180,9 @@ function ClassroomLogic({
   myIdentity,
   setSharedFiles,
   setChatMessages,
+  chatMessagesRef,
   setActiveTab,
+  activeTabRef,
   setUnreadChatCount,
   showWhiteboardRef,
   setShowWhiteboard,
@@ -1143,7 +1200,9 @@ function ClassroomLogic({
   myIdentity: string;
   setSharedFiles: React.Dispatch<React.SetStateAction<SharedFile[]>>;
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  chatMessagesRef: React.MutableRefObject<ChatMessage[]>;
   setActiveTab: React.Dispatch<React.SetStateAction<"chat" | "files">>;
+  activeTabRef: React.MutableRefObject<"chat" | "files">;
   setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
   showWhiteboardRef: React.MutableRefObject<boolean>;
   setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1167,9 +1226,17 @@ function ClassroomLogic({
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data.type === "MUTE_ALL" && !isTeacher) {
-          room.localParticipant.setMicrophoneEnabled(false);
+          room.localParticipant.setMicrophoneEnabled(false).catch((err: any) => {
+            console.warn("Could not mute microphone on MUTE_ALL:", err);
+          });
+          setNetworkAlert("Your microphone was muted by the teacher.");
+          setTimeout(() => setNetworkAlert(null), 3500);
         } else if (data.type === "MUTE_STUDENT" && data.targetId === myIdentity) {
-          room.localParticipant.setMicrophoneEnabled(false);
+          room.localParticipant.setMicrophoneEnabled(false).catch((err: any) => {
+            console.warn("Could not mute microphone on MUTE_STUDENT:", err);
+          });
+          setNetworkAlert("Your microphone was muted by the teacher.");
+          setTimeout(() => setNetworkAlert(null), 3500);
         } else if (data.type === "FILE_SHARED") {
           setSharedFiles((prev) => [...prev, { name: data.name, url: data.url }]);
         } else if (data.type === "WHITEBOARD_TOGGLE") {
@@ -1226,12 +1293,20 @@ function ClassroomLogic({
             }
           }
         } else if (data.type === "REQUEST_WHITEBOARD_STATE" && isTeacher) {
-          // Send active break state to late-joining attendee
+          // 1. Send active break state to late-joining attendee
           if (breakStateRef.current?.isActive) {
             safePublishData(room, { type: "BREAK_STATE", ...breakStateRef.current });
           }
 
-          // Send active state to late-joining attendee safely chunked
+          // 2. Send recent chat history to late-joining attendee
+          if (chatMessagesRef.current && chatMessagesRef.current.length > 0) {
+            safePublishData(room, {
+              type: "CHAT_HISTORY",
+              messages: chatMessagesRef.current.slice(-50),
+            });
+          }
+
+          // 3. Send active whiteboard state safely paced to prevent buffer overflow
           const editor = tldrawEditorRef.current;
           if (editor) {
             if (showWhiteboardRef.current) {
@@ -1243,14 +1318,20 @@ function ClassroomLogic({
               .allRecords()
               .filter((r: any) => r.typeName === "shape" || r.typeName === "asset" || r.typeName === "binding");
 
-            const CHUNK_SIZE = 15;
+            const CHUNK_SIZE = 12;
+            let chunkIdx = 0;
             for (let i = 0; i < shapes.length; i += CHUNK_SIZE) {
               const chunk = shapes.slice(i, i + CHUNK_SIZE);
-              const batchPayload = JSON.stringify({
-                type: "WHITEBOARD_BATCH",
-                records: chunk,
-              });
-              safePublishData(room, batchPayload);
+              const delay = chunkIdx * 30; // 30ms pacing prevents socket buffer saturation
+              chunkIdx++;
+              setTimeout(() => {
+                if (room.state === "connected") {
+                  safePublishData(room, {
+                    type: "WHITEBOARD_BATCH",
+                    records: chunk,
+                  });
+                }
+              }, delay);
             }
           }
         } else if (data.type === "WHITEBOARD_BATCH") {
@@ -1269,7 +1350,16 @@ function ClassroomLogic({
             if (prev.some((m) => m.id === data.id)) return prev;
             return [...prev, data];
           });
-          setUnreadChatCount((prev) => prev + 1);
+          if (activeTabRef.current !== "chat") {
+            setUnreadChatCount((prev) => prev + 1);
+          }
+        } else if (data.type === "CHAT_HISTORY" && Array.isArray(data.messages)) {
+          setChatMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const newItems = data.messages.filter((m: ChatMessage) => m && m.id && !existingIds.has(m.id));
+            if (newItems.length === 0) return prev;
+            return [...prev, ...newItems].sort((a, b) => (a.timestamp > b.timestamp ? 1 : -1));
+          });
         } else if (data.type === "HAND_RAISE") {
           setRaisedHands((prev) => {
             const next = new Set(prev);
@@ -1305,7 +1395,7 @@ function ClassroomLogic({
     room.on(RoomEvent.Reconnecting, handleReconnecting);
     room.on(RoomEvent.Reconnected, handleReconnected);
 
-    // If joining as student, request current whiteboard state after joining
+    // If joining as student, request current room state (whiteboard, chat, breaks) after joining
     if (!isTeacher) {
       setTimeout(() => {
         safePublishData(room, JSON.stringify({ type: "REQUEST_WHITEBOARD_STATE" }));
@@ -1326,7 +1416,9 @@ function ClassroomLogic({
     myIdentity,
     setSharedFiles,
     setChatMessages,
+    chatMessagesRef,
     setActiveTab,
+    activeTabRef,
     setShowWhiteboard,
     setWhiteboardEverOpened,
     setAllowStudentDraw,
@@ -1537,11 +1629,17 @@ function TeacherControls({
 function CustomControlBar({
   isTeacher,
   isHandRaised,
+  unreadChatCount,
+  isMobileChatOpen,
+  onToggleChat,
   onToggleHand,
   onLeave,
 }: {
   isTeacher: boolean;
   isHandRaised: boolean;
+  unreadChatCount: number;
+  isMobileChatOpen: boolean;
+  onToggleChat: () => void;
   onToggleHand: () => void;
   onLeave: () => void;
 }) {
@@ -1586,7 +1684,7 @@ function CustomControlBar({
 
   return (
     <div
-      className="h-20 flex items-center justify-center gap-3 shrink-0 z-20"
+      className="h-20 flex items-center justify-center gap-3 shrink-0 z-20 px-2"
       style={{ background: "#111318", borderTop: "1px solid rgba(255,255,255,0.08)" }}
     >
       {/* Microphone Toggle */}
@@ -1624,6 +1722,21 @@ function CustomControlBar({
       >
         {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
         {screenOn ? "Stop Share" : "Share Screen"}
+      </button>
+
+      {/* Mobile Chat Toggle Button */}
+      <button
+        onClick={onToggleChat}
+        className="flex md:hidden flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-xl transition-all relative"
+        style={isMobileChatOpen ? { ...btnBase, background: "rgba(59,130,246,0.25)", color: "#60a5fa" } : activeBtn}
+      >
+        <MessageSquare size={20} />
+        <span className="text-[10px]">Chat</span>
+        {unreadChatCount > 0 && !isMobileChatOpen && (
+          <span className="absolute top-1 right-2 h-4 w-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center">
+            {unreadChatCount}
+          </span>
+        )}
       </button>
 
       {/* Student Hand Raise Toggle */}
@@ -1691,6 +1804,12 @@ const Whiteboard = memo(function Whiteboard({
     removed: {},
   });
 
+  // Filter helper: ONLY synchronize persistent document records (ignore pointer, cursor, camera, presence)
+  const isDocRecord = (r: any) => {
+    const type = r?.typeName;
+    return type === "shape" || type === "asset" || type === "binding";
+  };
+
   // Safe flush routine
   const flushPendingDeltas = useCallback(() => {
     try {
@@ -1712,7 +1831,7 @@ const Whiteboard = memo(function Whiteboard({
       pendingDeltasQueue.current = { added: {}, updated: {}, removed: {} };
 
       // Helper to chunk records so we never exceed SCTP packet size
-      const CHUNK_SIZE = 15;
+      const CHUNK_SIZE = 12;
       const chunks: { added: any; updated: any; removed: any }[] = [];
 
       let curChunk: { added: any; updated: any; removed: any } = { added: {}, updated: {}, removed: {} };
@@ -1760,10 +1879,8 @@ const Whiteboard = memo(function Whiteboard({
         });
         const success = safePublishData(room, payload, { reliable: true });
         if (!success) {
-          // Put back in queue if unable to send
-          Object.assign(pendingDeltasQueue.current.added, ch.added);
-          Object.assign(pendingDeltasQueue.current.updated, ch.updated);
-          Object.assign(pendingDeltasQueue.current.removed, ch.removed);
+          // If backpressure occurs, drop transient frame to protect connection from publisher crash
+          console.warn("Whiteboard backpressure encountered; dropped transient delta to prevent connection drop");
           break;
         }
       }
@@ -1772,9 +1889,9 @@ const Whiteboard = memo(function Whiteboard({
     }
   }, [room]);
 
-  // Periodic flush interval (every 75ms for silky smooth real-time streaming)
+  // Periodic flush interval (every 80ms)
   useEffect(() => {
-    flushIntervalRef.current = setInterval(flushPendingDeltas, 75);
+    flushIntervalRef.current = setInterval(flushPendingDeltas, 80);
     return () => {
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
@@ -1822,7 +1939,7 @@ const Whiteboard = memo(function Whiteboard({
         (window as any).__lk_pending_whiteboard_deltas = [];
       }
 
-      // Attach lightweight differential delta listener (accumulates changes for periodic throttle flush)
+      // Attach lightweight differential delta listener
       unsubRef.current = editor.store.listen(
         (entry: any) => {
           if (entry.source !== "user") return;
@@ -1830,9 +1947,33 @@ const Whiteboard = memo(function Whiteboard({
           if (!canUserDraw) return;
 
           const { added, updated, removed } = entry.changes;
-          if (added) Object.assign(pendingDeltasQueue.current.added, added);
-          if (updated) Object.assign(pendingDeltasQueue.current.updated, updated);
-          if (removed) Object.assign(pendingDeltasQueue.current.removed, removed);
+
+          // Only queue persistent document records (shape, asset, binding)
+          if (added) {
+            for (const [id, r] of Object.entries(added)) {
+              if (isDocRecord(r)) pendingDeltasQueue.current.added[id] = r;
+            }
+          }
+          if (updated) {
+            for (const [id, r] of Object.entries(updated)) {
+              const rec = Array.isArray(r) ? r[1] : r;
+              if (isDocRecord(rec)) pendingDeltasQueue.current.updated[id] = r;
+            }
+          }
+          if (removed) {
+            for (const [id, r] of Object.entries(removed)) {
+              if (isDocRecord(r)) pendingDeltasQueue.current.removed[id] = r;
+            }
+          }
+
+          // Cap queue size to prevent buffer bloat
+          const total =
+            Object.keys(pendingDeltasQueue.current.added).length +
+            Object.keys(pendingDeltasQueue.current.updated).length +
+            Object.keys(pendingDeltasQueue.current.removed).length;
+          if (total > 60) {
+            pendingDeltasQueue.current.updated = {};
+          }
         },
         { scope: "document", source: "user" }
       );
