@@ -224,8 +224,11 @@ export class LiveClassController {
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   async create(@Body() data: any, @Req() req: any): Promise<any> {
-    const platform = (data.platform || data.meetingType || data.deliveryProvider || '').toUpperCase();
-    if (platform === 'GOOGLE_MEET') {
+    const rawPlatform = (data.platform || data.meetingType || data.deliveryProvider || '').toUpperCase();
+    let deliveryProvider: 'LIVEKIT' | 'GOOGLE_MEET' | 'ZOOM' | 'JITSI' = 'LIVEKIT';
+
+    if (rawPlatform === 'GOOGLE_MEET') {
+      deliveryProvider = 'GOOGLE_MEET';
       if (!data.zoomLink) {
         try {
           data.zoomLink = await this.googleMeetService.createMeetLink(
@@ -234,26 +237,30 @@ export class LiveClassController {
             new Date(data.scheduledAt),
             data.duration || 60
           );
-          data.deliveryProvider = 'GOOGLE_MEET';
           data.externalMeetingUrl = data.zoomLink;
         } catch (e: any) {
           // If Google Calendar API fails or is unconfigured, fallback cleanly to internal LiveKit room
-          // Do NOT generate fake Math.random() URLs!
           const generatedRoomId = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           data.zoomLink = generatedRoomId;
-          data.deliveryProvider = 'LIVEKIT';
+          deliveryProvider = 'LIVEKIT';
         }
       } else {
-        data.deliveryProvider = 'GOOGLE_MEET';
         data.externalMeetingUrl = data.zoomLink;
       }
+    } else if (rawPlatform === 'ZOOM') {
+      deliveryProvider = 'ZOOM';
+      data.externalMeetingUrl = data.zoomLink;
+    } else if (rawPlatform === 'JITSI') {
+      deliveryProvider = 'JITSI';
+      data.externalMeetingUrl = data.zoomLink;
     } else {
       // Default to Native LiveKit (Edu-Meet)
-      data.deliveryProvider = 'LIVEKIT';
+      deliveryProvider = 'LIVEKIT';
       if (!data.zoomLink) {
         data.zoomLink = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       }
     }
+    data.deliveryProvider = deliveryProvider;
     return this.liveClassService.create(data, req.user);
   }
 

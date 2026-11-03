@@ -4,6 +4,11 @@ import { RedisService } from '../redis/redis.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { assertCentreAccess, isSuperAdmin, getUserCentreIds, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
+import {
+  buildAdmissionPrefix,
+  formatAdmissionNumber,
+  extractSequenceFromAdmissionNumber,
+} from './utils/admission-number.util';
 
 @Injectable()
 export class StudentsService implements OnModuleInit {
@@ -45,6 +50,157 @@ export class StudentsService implements OnModuleInit {
     } catch (err: any) {
       this.logger.warn(`Could not run admissionNo self-healing migration: ${err?.message}`);
     }
+  }
+
+  /**
+   * Atomically computes the next sequential admission number for a cohort prefix:
+   * Formula: [CENTRE]-[YEAR]-[COURSE]-[CLASS][BATCH]-[NUMBER] (e.g. KL-26-NEET-11A-001)
+   */
+  async generateNextAdmissionNo(
+    params: {
+      centreId?: string;
+      centreName?: string;
+      academicYearId?: string;
+      academicYearName?: string;
+      trackId?: string;
+      trackName?: string;
+      standardId?: string;
+      standardName?: string;
+      batchId?: string;
+      batchName?: string;
+    },
+    txPrisma?: any,
+  ): Promise<{ admissionNo: string; prefix: string; sequence: number }> {
+    const prisma = txPrisma || this.prisma;
+
+    // 1. Resolve Centre
+    let centreCode = '';
+    let resolvedCentreName = params.centreName || '';
+    if (params.centreId) {
+      const c = await prisma.centre.findUnique({
+        where: { id: params.centreId },
+        select: { code: true, name: true },
+      });
+      if (c) {
+        centreCode = c.code;
+        resolvedCentreName = c.name;
+      }
+    } else if (params.centreName) {
+      const c = await prisma.centre.findFirst({
+        where: { OR: [{ name: params.centreName }, { code: params.centreName }] },
+        select: { code: true, name: true },
+      });
+      if (c) {
+        centreCode = c.code;
+        resolvedCentreName = c.name;
+      }
+    }
+
+    // 2. Resolve Academic Year
+    let resolvedYearName = params.academicYearName || '';
+    if (params.academicYearId) {
+      const y = await prisma.academicYear.findUnique({
+        where: { id: params.academicYearId },
+        select: { name: true },
+      });
+      if (y) resolvedYearName = y.name;
+    } else if (!resolvedYearName) {
+      const activeYear = await prisma.academicYear.findFirst({
+        where: { isActive: true },
+        select: { name: true },
+      });
+      if (activeYear) resolvedYearName = activeYear.name;
+    }
+
+    // 3. Resolve Track / Course
+    let resolvedTrackName = params.trackName || '';
+    if (params.trackId) {
+      const t = await prisma.targetTrack.findUnique({
+        where: { id: params.trackId },
+        select: { name: true },
+      });
+      if (t) resolvedTrackName = t.name;
+    }
+
+    // 4. Resolve Standard / Class
+    let resolvedStandardName = params.standardName || '';
+    let standardLevel: number | undefined;
+    if (params.standardId) {
+      const s = await prisma.standard.findUnique({
+        where: { id: params.standardId },
+        select: { name: true, level: true },
+      });
+      if (s) {
+        resolvedStandardName = s.name;
+        standardLevel = s.level;
+      }
+    }
+
+    // 5. Resolve Batch / Division
+    let resolvedBatchName = params.batchName || '';
+    if (params.batchId) {
+      const b = await prisma.batch.findUnique({
+        where: { id: params.batchId },
+        select: { name: true },
+      });
+      if (b) resolvedBatchName = b.name;
+    }
+
+    // 6. Build standardized prefix [CENTRE]-[YEAR]-[COURSE]-[CLASS][BATCH]
+    const prefix = buildAdmissionPrefix({
+      centreCode,
+      centreName: resolvedCentreName,
+      academicYearName: resolvedYearName,
+      trackName: resolvedTrackName,
+      standardName: resolvedStandardName,
+      standardLevel,
+      batchName: resolvedBatchName,
+    });
+
+    // 7. Query existing profiles matching prefix to calculate highest counter
+    const existingProfiles = await prisma.studentProfile.findMany({
+      where: {
+        admissionNo: {
+          startsWith: `${prefix}-`,
+        },
+      },
+      select: { admissionNo: true },
+    });
+
+    let maxSeq = 0;
+    for (const p of existingProfiles) {
+      const seq = extractSequenceFromAdmissionNumber(p.admissionNo, prefix);
+      if (seq !== null && seq > maxSeq) {
+        maxSeq = seq;
+      }
+    }
+
+    const nextSeq = maxSeq + 1;
+    const admissionNo = formatAdmissionNumber(prefix, nextSeq);
+
+    return { admissionNo, prefix, sequence: nextSeq };
+  }
+
+  /**
+   * Previews the next admission number without persisting to database.
+   * Used for real-time frontend pre-fill.
+   */
+  async previewAdmissionNumber(query: any, currentUser?: any) {
+    if (currentUser && !isSuperAdmin(currentUser) && query.centreId) {
+      assertCentreAccess(currentUser, query.centreId);
+    }
+    return this.generateNextAdmissionNo({
+      centreId: query.centreId,
+      centreName: query.centre || query.centreName,
+      academicYearId: query.academicYearId,
+      academicYearName: query.academicYear || query.yearName,
+      trackId: query.trackId,
+      trackName: query.trackName,
+      standardId: query.standardId,
+      standardName: query.classLevel || query.standardName,
+      batchId: query.batchId,
+      batchName: query.division || query.batchName,
+    });
   }
 
   async createStudent(data: any, currentUser?: any) {
@@ -122,9 +278,35 @@ export class StudentsService implements OnModuleInit {
         const rawAdmNo = typeof data.admissionNo === 'string' ? data.admissionNo.trim() : '';
         const isEmailOrAutofill = rawAdmNo.includes('@') || /admin/i.test(rawAdmNo) || /educare/i.test(rawAdmNo);
         const isValidAdmissionNo = rawAdmNo !== '' && rawAdmNo !== 'ADM-999' && !isEmailOrAutofill;
-        const admissionNo = isValidAdmissionNo
-          ? rawAdmNo
-          : `${centre.code || 'ADM'}-${Date.now().toString().slice(-5)}`;
+
+        let admissionNo = rawAdmNo;
+        if (!isValidAdmissionNo) {
+          let trackName = '';
+          if (data.trackId) {
+            const t = await prisma.targetTrack.findUnique({
+              where: { id: data.trackId },
+              select: { name: true },
+            });
+            if (t) trackName = t.name;
+          }
+
+          const generated = await this.generateNextAdmissionNo(
+            {
+              centreId: centre.id,
+              centreName: centre.name,
+              academicYearId: year.id,
+              academicYearName: year.name,
+              trackId: data.trackId,
+              trackName,
+              standardId: standard.id,
+              standardName: standard.name,
+              batchId: batch.id,
+              batchName: batch.name,
+            },
+            prisma,
+          );
+          admissionNo = generated.admissionNo;
+        }
 
         const profile = await prisma.studentProfile.create({
           data: {

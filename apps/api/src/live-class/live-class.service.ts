@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
   ServiceUnavailableException,
   UnauthorizedException,
   Logger,
@@ -444,13 +445,21 @@ export class LiveClassService {
       throw new BadRequestException('Duration must be a positive number.');
     }
 
-    let centreId = data.centreId;
+    const isPublic = Boolean(data.isPublic);
+    let centreId = (typeof data.centreId === 'string' && data.centreId.trim()) ? data.centreId.trim() : null;
+
     if (user && !isSuperAdmin(user)) {
       if (centreId) {
         assertCentreAccess(user, centreId);
-      } else {
-        const allowed = getAuthorizedCentreIds(user);
-        centreId = allowed[0];
+      } else if (!isPublic) {
+        // Only require and bind centre assignment for private non-webinar classes
+        try {
+          const allowed = getAuthorizedCentreIds(user);
+          centreId = allowed[0] || null;
+        } catch {
+          // If staff has no centre assignment, allow null centre for teacher or super admin
+          centreId = null;
+        }
       }
     }
 
@@ -458,30 +467,109 @@ export class LiveClassService {
     const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
     const teacherId = data.teacherId || (normalizedRole === 'TEACHER' ? user?.id : null);
 
-    return this.prisma.liveClass.create({
-      data: {
-        title: data.title,
-        subject: data.subject,
-        teacherName: data.teacherName,
-        teacherId: teacherId || null,
-        scheduledAt: scheduledDate,
-        duration: Number(data.duration),
-        roomId: (typeof data.zoomLink === 'string' && data.zoomLink.trim()) ? data.zoomLink.trim() : undefined,
-        deliveryProvider: data.deliveryProvider || 'LIVEKIT',
-        externalMeetingUrl: data.externalMeetingUrl || (data.zoomLink?.startsWith('http') ? data.zoomLink : null),
-        isPublic: Boolean(data.isPublic),
-        description: data.description ? data.description.trim() : null,
-        backgroundImageUrl: data.backgroundImageUrl ? data.backgroundImageUrl.trim() : null,
-        boardId: data.boardId || null,
-        standardId: data.standardId || null,
-        centreId: centreId || null,
-      },
-      include: {
-        board: { select: { id: true, name: true } },
-        standard: { select: { id: true, name: true } },
-        centre: { select: { id: true, name: true } },
-      },
-    });
+    const roomId = (typeof data.zoomLink === 'string' && data.zoomLink.trim())
+      ? data.zoomLink.trim()
+      : `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const deliveryProvider = data.deliveryProvider || 'LIVEKIT';
+    const externalMeetingUrl = data.externalMeetingUrl || (data.zoomLink?.startsWith('http') ? data.zoomLink.trim() : null);
+
+    const boardId = (typeof data.boardId === 'string' && data.boardId.trim()) ? data.boardId.trim() : null;
+    const standardId = (typeof data.standardId === 'string' && data.standardId.trim()) ? data.standardId.trim() : null;
+
+    // Full creation payload with all modern fields
+    const fullCreateData: any = {
+      title: data.title.trim(),
+      subject: data.subject.trim(),
+      teacherName: data.teacherName.trim(),
+      teacherId: teacherId || null,
+      scheduledAt: scheduledDate,
+      duration: Number(data.duration),
+      roomId,
+      deliveryProvider,
+      externalMeetingUrl,
+      isPublic,
+      description: data.description ? data.description.trim() : null,
+      backgroundImageUrl: data.backgroundImageUrl ? data.backgroundImageUrl.trim() : null,
+      boardId,
+      standardId,
+      centreId,
+    };
+
+    // Baseline creation payload for databases prior to live class hardening migration
+    const baselineCreateData: any = {
+      title: data.title.trim(),
+      subject: data.subject.trim(),
+      teacherName: data.teacherName.trim(),
+      teacherId: teacherId || null,
+      scheduledAt: scheduledDate,
+      duration: Number(data.duration),
+      roomId,
+      isPublic,
+      description: data.description ? data.description.trim() : null,
+      backgroundImageUrl: data.backgroundImageUrl ? data.backgroundImageUrl.trim() : null,
+      boardId,
+      standardId,
+      centreId,
+    };
+
+    // Tier 1: Modern schema with include relations
+    try {
+      return await this.prisma.liveClass.create({
+        data: fullCreateData,
+        include: {
+          board: { select: { id: true, name: true } },
+          standard: { select: { id: true, name: true } },
+          centre: { select: { id: true, name: true } },
+        },
+      });
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+
+      // Translate foreign key constraint violations into clear user-facing BadRequest
+      if (err?.code === 'P2003') {
+        const field = err?.meta?.field_name || 'relation';
+        this.logger.error(`Foreign key validation failed on LiveClass.create: ${field}`, err?.stack);
+        throw new BadRequestException('Selected Board, Standard, or Centre does not exist.');
+      }
+
+      this.logger.warn(`LiveClass.create Tier 1 failed (${err?.message}), attempting Tier 2 with SAFE_LIVE_CLASS_SELECT`);
+
+      // Tier 2: Modern schema with SAFE_LIVE_CLASS_SELECT (avoids returning unmigrated columns)
+      try {
+        return await this.prisma.liveClass.create({
+          data: fullCreateData,
+          select: SAFE_LIVE_CLASS_SELECT,
+        });
+      } catch (tier2Err: any) {
+        if (tier2Err instanceof HttpException) throw tier2Err;
+
+        if (tier2Err?.code === 'P2003') {
+          throw new BadRequestException('Selected Board, Standard, or Centre does not exist.');
+        }
+
+        this.logger.warn(`LiveClass.create Tier 2 failed (${tier2Err?.message}), attempting Tier 3 with baseline schema`);
+
+        // Tier 3: Baseline fields only (in case deliveryProvider or externalMeetingUrl columns do not exist in DB)
+        try {
+          return await this.prisma.liveClass.create({
+            data: baselineCreateData,
+            select: SAFE_LIVE_CLASS_SELECT,
+          });
+        } catch (tier3Err: any) {
+          if (tier3Err instanceof HttpException) throw tier3Err;
+
+          if (tier3Err?.code === 'P2003') {
+            throw new BadRequestException('Selected Board, Standard, or Centre does not exist.');
+          }
+
+          this.logger.error(`LiveClass.create failed across all tiers: ${tier3Err?.message}`, tier3Err?.stack);
+          throw new InternalServerErrorException(
+            tier3Err?.message ? `Failed to create live class: ${tier3Err.message}` : 'Failed to create live class in database.'
+          );
+        }
+      }
+    }
   }
 
   async update(id: string, data: any, user?: any): Promise<any> {
@@ -532,11 +620,20 @@ export class LiveClassService {
         data: updateData,
       });
     } catch {
-      return await this.prisma.liveClass.update({
-        where: { id },
-        data: updateData,
-        select: SAFE_LIVE_CLASS_SELECT,
-      });
+      try {
+        return await this.prisma.liveClass.update({
+          where: { id },
+          data: updateData,
+          select: SAFE_LIVE_CLASS_SELECT,
+        });
+      } catch {
+        const { deliveryProvider, externalMeetingUrl, substituteTeacherId, egressId, whiteboardData, ...baselineUpdateData } = updateData;
+        return await this.prisma.liveClass.update({
+          where: { id },
+          data: baselineUpdateData,
+          select: SAFE_LIVE_CLASS_SELECT,
+        });
+      }
     }
   }
 
@@ -694,23 +791,43 @@ export class LiveClassService {
    * Does NOT leak the meeting URL before registration to prevent scraping.
    */
   async getPublicClass(id: string) {
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        title: true,
-        subject: true,
-        teacherName: true,
-        description: true,
-        scheduledAt: true,
-        duration: true,
-        status: true,
-        isPublic: true,
-        backgroundImageUrl: true,
-        deliveryProvider: true,
-        createdAt: true,
-      },
-    });
+    let cls: any;
+    try {
+      cls = await this.prisma.liveClass.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          subject: true,
+          teacherName: true,
+          description: true,
+          scheduledAt: true,
+          duration: true,
+          status: true,
+          isPublic: true,
+          backgroundImageUrl: true,
+          deliveryProvider: true,
+          createdAt: true,
+        },
+      });
+    } catch {
+      cls = await this.prisma.liveClass.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          subject: true,
+          teacherName: true,
+          description: true,
+          scheduledAt: true,
+          duration: true,
+          status: true,
+          isPublic: true,
+          backgroundImageUrl: true,
+          createdAt: true,
+        },
+      });
+    }
 
     if (!cls || !cls.isPublic) {
       throw new NotFoundException('Public live class / webinar not found or is private.');
@@ -769,9 +886,7 @@ export class LiveClassService {
       throw new BadRequestException('School, College, or Organization name is required.');
     }
 
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id },
-    });
+    const cls = await this.safeFindUnique({ id });
 
     if (!cls || !cls.isPublic) {
       throw new NotFoundException('Live class / webinar not found or is private.');
@@ -1046,9 +1161,7 @@ export class LiveClassService {
    * Email-only authentication is prohibited to prevent attendee impersonation.
    */
   async generatePublicLiveKitToken(id: string, registrationToken?: string, _email?: string, name?: string) {
-    const cls = await this.prisma.liveClass.findUnique({
-      where: { id },
-    });
+    const cls = await this.safeFindUnique({ id });
     if (!cls || !cls.isPublic) {
       throw new NotFoundException('Public live class not found or is private.');
     }

@@ -9,6 +9,11 @@ import { PrismaService } from '../database/prisma.service';
 import { EnquiryStatus } from '@educare/database';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
+import {
+  buildAdmissionPrefix,
+  formatAdmissionNumber,
+  extractSequenceFromAdmissionNumber,
+} from '../students/utils/admission-number.util';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -480,10 +485,31 @@ export class IntegrationsService implements OnModuleInit {
       const firstName = nameParts[0] || 'CRM';
       const lastName = nameParts.slice(1).join(' ') || 'Student';
 
-      const admissionNo = `${centre.code || 'ADM'}-${Date.now().toString().slice(-5)}`;
-
       // 5. TRANSACTIONAL CREATION
       const createdRecord = await this.prisma.$transaction(async (tx) => {
+        // Derive structured admission number [CENTRE]-[YEAR]-[COURSE]-[CLASS][BATCH]-[NUMBER]
+        const prefix = buildAdmissionPrefix({
+          centreCode: centre.code,
+          centreName: centre.name,
+          academicYearName: academicYear.name,
+          standardName: standard.name,
+          standardLevel: standard.level,
+          batchName: batch.name,
+        });
+
+        const existing = await tx.studentProfile.findMany({
+          where: { admissionNo: { startsWith: `${prefix}-` } },
+          select: { admissionNo: true },
+        });
+
+        let maxSeq = 0;
+        for (const p of existing) {
+          const s = extractSequenceFromAdmissionNumber(p.admissionNo, prefix);
+          if (s !== null && s > maxSeq) maxSeq = s;
+        }
+
+        const admissionNo = formatAdmissionNumber(prefix, maxSeq + 1);
+
         // Create User
         const user = await tx.user.create({
           data: {
@@ -594,14 +620,14 @@ export class IntegrationsService implements OnModuleInit {
           crmId,
           studentName: fullName,
           studentEmail,
-          admissionNo,
+          admissionNo: createdRecord.profile.admissionNo,
           payload: rawPayload,
           response: responsePayload,
           ipAddress: ip || null,
         },
       });
 
-      this.logger.log(`Successfully enrolled CRM student: ${fullName} (${admissionNo})`);
+      this.logger.log(`Successfully enrolled CRM student: ${fullName} (${createdRecord.profile.admissionNo})`);
       return responsePayload;
     } catch (err: any) {
       this.logger.error(`Failed to process CRM webhook: ${err.message}`, err.stack);
