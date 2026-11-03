@@ -115,8 +115,10 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
       const phone = searchParams.get('phone') || "";
       const email = searchParams.get('email') || "";
       const parentName = searchParams.get('parentName') || "";
+      const centre = searchParams.get('centre') || "";
       const board = searchParams.get('board') || "";
       const standard = searchParams.get('standard') || "";
+      const course = searchParams.get('course') || "";
       const address = searchParams.get('address') || "";
       const dateOfBirth = searchParams.get('dateOfBirth') || "";
       const bloodGroup = searchParams.get('bloodGroup') || "";
@@ -136,8 +138,9 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
         academicYear: "",
         board,
         classLevel: standard,
-        centre: "",
+        centre,
         division: "",
+        trackId: course,
         address,
         dateOfBirth,
         bloodGroup,
@@ -502,6 +505,8 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
     const raw = student?.admissionNo || "";
     return raw.includes("@") || /admin/i.test(raw) || /educare/i.test(raw) ? "" : raw;
   });
+  const [isCustomAdmissionNo, setIsCustomAdmissionNo] = useState(Boolean(student?.admissionNo));
+  const [isGeneratingAdmNo, setIsGeneratingAdmNo] = useState(false);
   const [firstName, setFirstName] = useState(student?.name?.split(" ")[0] || "");
   const [lastName, setLastName] = useState(student?.name?.split(" ").slice(1).join(" ") || "");
   const [email, setEmail] = useState(student?.email || "");
@@ -577,6 +582,31 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
     }
   }, [board, apiBoards]);
 
+  // Auto-generate structured admission number based on centre, year, course, class, batch
+  useEffect(() => {
+    if (!isEditing && !isCustomAdmissionNo) {
+      const selectedTrack = apiTracks.find(t => t.id === targetTrack);
+      const params = new URLSearchParams({
+        centre: centre || '',
+        academicYear: year || '',
+        classLevel: classLevel || '',
+        division: division || '',
+        trackId: targetTrack || '',
+        trackName: selectedTrack?.name || '',
+      });
+
+      setIsGeneratingAdmNo(true);
+      fetchApi<{ admissionNo: string }>(`/students/generate-admission-no?${params.toString()}`)
+        .then(res => {
+          if (res?.admissionNo && !isCustomAdmissionNo) {
+            setAdmissionNo(res.admissionNo);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsGeneratingAdmNo(false));
+    }
+  }, [centre, year, classLevel, division, targetTrack, apiTracks, isEditing, isCustomAdmissionNo]);
+
   const TABS = [
     { id: "Admission", icon: User },
     { id: "Basic Information", icon: BookOpen },
@@ -629,9 +659,27 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
               <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Admission No <span className="text-text-muted font-normal">(Leave blank to auto-generate)</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-text-secondary">
+                    Admission No
+                  </label>
+                  {!isCustomAdmissionNo && admissionNo ? (
+                    <span className="text-[10px] font-bold text-brand-blue bg-brand-blue/10 px-2 py-0.5 rounded-full">
+                      Auto-generated
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomAdmissionNo(false);
+                        setAdmissionNo("");
+                      }}
+                      className="text-[11px] font-semibold text-brand-blue hover:underline"
+                    >
+                      Reset to Auto-generate
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <input 
                     type="text" 
@@ -648,23 +696,30 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                       if (val.includes('@') || /admin/i.test(val) || /educare/i.test(val)) {
                         setAdmissionNo('');
                       } else {
+                        setIsCustomAdmissionNo(true);
                         setAdmissionNo(val);
                       }
                     }} 
-                    placeholder="Auto-generated if left blank (e.g. ADM-12345)" 
+                    placeholder={isGeneratingAdmNo ? "Generating admission number..." : "Auto-generated (e.g. KL-26-NEET-11A-001)"} 
                     className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
                   />
                   {admissionNo && (
                     <button
                       type="button"
-                      onClick={() => setAdmissionNo("")}
+                      onClick={() => {
+                        setIsCustomAdmissionNo(false);
+                        setAdmissionNo("");
+                      }}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-text-muted hover:text-text-primary font-bold px-1.5 py-0.5 rounded bg-surface-3"
-                      title="Clear to auto-generate"
+                      title="Reset to auto-generate"
                     >
-                      Clear
+                      Reset
                     </button>
                   )}
                 </div>
+                <p className="text-[11px] text-text-muted mt-1">
+                  Format: <span className="font-mono text-text-secondary">[CENTRE]-[YEAR]-[COURSE]-[CLASS][BATCH]-[NUMBER]</span>
+                </p>
               </div>
 
               <div>

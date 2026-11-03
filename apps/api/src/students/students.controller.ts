@@ -17,6 +17,13 @@ export class StudentsController {
     return this.studentsService.createStudent(data, req.user);
   }
 
+  @Get('generate-admission-no')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'COUNSELOR', 'STAFF')
+  @Permissions('STUDENTS')
+  generateAdmissionNo(@Query() query: any, @Req() req: any) {
+    return this.studentsService.previewAdmissionNumber(query, req.user);
+  }
+
   @Get('birthdays/today')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'ACCOUNTANT', 'COUNSELOR')
   getTodayBirthdays(@Req() req: any) {
