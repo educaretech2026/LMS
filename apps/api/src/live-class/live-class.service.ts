@@ -137,7 +137,26 @@ export class LiveClassService {
     return `live_class:mod:${classId}:${identity}`;
   }
 
+  private getBaseIdentity(identity: string): string {
+    // If identity has a session suffix (e.g. user_1_k9a2f or pub_regId_k9a2f), extract core user/reg identity
+    const parts = identity.split('_');
+    if (parts.length >= 3) {
+      return parts.slice(0, 2).join('_');
+    }
+    return identity;
+  }
+
   async isParticipantKicked(classId: string, identity: string): Promise<boolean> {
+    const isDirectKicked = await this.checkSingleKicked(classId, identity);
+    if (isDirectKicked) return true;
+    const base = this.getBaseIdentity(identity);
+    if (base !== identity) {
+      return await this.checkSingleKicked(classId, base);
+    }
+    return false;
+  }
+
+  private async checkSingleKicked(classId: string, identity: string): Promise<boolean> {
     const key = this.getModerationKey(classId, identity);
     if (this.redisService?.isConnected) {
       try {
@@ -153,6 +172,16 @@ export class LiveClassService {
   }
 
   async isParticipantMuted(classId: string, identity: string): Promise<boolean> {
+    const isDirectMuted = await this.checkSingleMuted(classId, identity);
+    if (isDirectMuted) return true;
+    const base = this.getBaseIdentity(identity);
+    if (base !== identity) {
+      return await this.checkSingleMuted(classId, base);
+    }
+    return false;
+  }
+
+  private async checkSingleMuted(classId: string, identity: string): Promise<boolean> {
     const key = this.getModerationKey(classId, identity);
     if (this.redisService?.isConnected) {
       try {
@@ -168,6 +197,14 @@ export class LiveClassService {
   }
 
   async setModerationState(classId: string, identity: string, state: { mutedAudio?: boolean; kicked?: boolean }, ttlSeconds = 14400) {
+    await this.applySingleModerationState(classId, identity, state, ttlSeconds);
+    const base = this.getBaseIdentity(identity);
+    if (base !== identity) {
+      await this.applySingleModerationState(classId, base, state, ttlSeconds);
+    }
+  }
+
+  private async applySingleModerationState(classId: string, identity: string, state: { mutedAudio?: boolean; kicked?: boolean }, ttlSeconds = 14400) {
     const key = this.getModerationKey(classId, identity);
     const current = this.inMemoryModeration.get(key) || { updatedAt: Date.now() };
     const updated = { ...current, ...state, updatedAt: Date.now() };
@@ -1104,7 +1141,14 @@ export class LiveClassService {
     }
 
     // 4. Authoritative Identity Derivation
-    const identity = user?.id ? `user_${user.id}` : `user_${Date.now()}`;
+    // Extract sanitized client session suffix (e.g. user_1_k9a2f) to prevent LiveKit duplicate identity kicks across tabs/reconnections
+    let identity = user?.id ? `user_${user.id}` : `user_${Date.now()}`;
+    if (clientIdentity && typeof clientIdentity === 'string') {
+      const match = clientIdentity.match(/_([a-z0-9]{3,8})$/i);
+      if (match) {
+        identity = `${identity}_${match[1]}`;
+      }
+    }
     const displayName = user?.firstName
       ? `${user.firstName} ${user.lastName || ''}`.trim()
       : user?.name || user?.email || (isHost ? 'Teacher' : 'Student');
@@ -1212,7 +1256,8 @@ export class LiveClassService {
       throw new BadRequestException('LiveKit credentials are not configured on the server.');
     }
 
-    const identity = `pub_${reg.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}`;
+    const sessionSuffix = Math.random().toString(36).slice(2, 7);
+    const identity = `pub_${reg.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}_${sessionSuffix}`;
     const displayName = reg.name || name || 'Learner';
 
     // Moderation check for public attendee
