@@ -168,8 +168,8 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   // High-performance Room Configuration
   const roomOptions: RoomOptions = useMemo(
     () => ({
-      adaptiveStream: true,
-      dynacast: true,
+      adaptiveStream: false,
+      dynacast: false,
       audioCaptureDefaults: {
         autoGainControl: true,
         echoCancellation: true,
@@ -192,14 +192,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       autoSubscribe: true,
       peerConnectionTimeout: 30000,
       maxRetries: 10,
-      rtcConfig: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" },
-        ],
-        iceCandidatePoolSize: 10,
-      },
     }),
     []
   );
@@ -325,7 +317,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={isTeacher}
+      video={true}
       audio={true}
       options={roomOptions}
       connectOptions={connectOptions}
