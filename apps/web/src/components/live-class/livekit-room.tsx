@@ -43,6 +43,7 @@ import { Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 
 interface LiveKitRoomProps {
+  classId?: string;
   roomId: string;
   identity: string;
   name: string;
@@ -159,7 +160,7 @@ function StudioPipelineManager({
   return null;
 }
 
-export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: LiveKitRoomProps) {
+export function LiveKitClassRoom({ classId, roomId, identity, name, role, onLeave }: LiveKitRoomProps) {
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -170,16 +171,33 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
     return `${raw}_${sessionSuffix}`;
   }, [identity, sessionSuffix]);
 
+  const isTeacher = role?.toUpperCase() !== "STUDENT" && role?.toUpperCase() !== "PUBLIC_LEARNER";
+
   const fetchToken = useCallback(async () => {
     try {
+      const regToken = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("regToken")
+        : null;
+      const query = new URLSearchParams({
+        roomId: roomId || "",
+        identity: effectiveIdentity,
+        name: name || "",
+        role: role || "",
+      });
+      if (classId) {
+        query.set("classId", classId);
+      }
+      if (regToken) {
+        query.set("registrationToken", regToken);
+      }
       const data = await fetchApi<TokenResponse>(
-        `/live-class/token?roomId=${encodeURIComponent(roomId)}&identity=${encodeURIComponent(effectiveIdentity)}&name=${encodeURIComponent(name)}&role=${encodeURIComponent(role)}`
+        `/live-class/token?${query.toString()}`
       );
       setTokenData(data);
     } catch (e: any) {
       setError(e.message || "Failed to connect to the classroom.");
     }
-  }, [roomId, effectiveIdentity, name, role]);
+  }, [classId, roomId, effectiveIdentity, name, role]);
 
   useEffect(() => { fetchToken(); }, [fetchToken]);
 
@@ -197,6 +215,70 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   useEffect(() => {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
+
+  // Load persistent chat history, shared files, and whiteboard snapshot on mount
+  useEffect(() => {
+    if (!classId) return;
+
+    // 1. Fetch persistent chat messages
+    fetchApi<any[]>(`/live-class/${classId}/messages`, { silent: true })
+      .then((msgs) => {
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          const mapped: ChatMessage[] = msgs.map((m) => ({
+            id: m.id,
+            sender: m.senderName,
+            role: m.senderRole === "TEACHER" ? "Teacher" : "Student",
+            text: m.message,
+            timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }));
+          setChatMessages(mapped);
+        }
+      })
+      .catch(() => {});
+
+    // 2. Fetch persistent files
+    fetchApi<any[]>(`/live-class/${classId}/files`, { silent: true })
+      .then((files) => {
+        if (Array.isArray(files) && files.length > 0) {
+          const mapped: SharedFile[] = files.map((f) => ({
+            name: f.name,
+            url: f.url,
+          }));
+          setSharedFiles(mapped);
+        }
+      })
+      .catch(() => {});
+
+    // 3. Fetch persistent whiteboard snapshot
+    fetchApi<{ snapshot: any }>(`/live-class/${classId}/whiteboard-snapshot`, { silent: true })
+      .then((res) => {
+        if (res?.snapshot) {
+          (window as any).__lk_persisted_whiteboard_snapshot = res.snapshot;
+        }
+      })
+      .catch(() => {});
+  }, [classId]);
+
+  // Periodic whiteboard auto-snapshot save by teacher (every 30s)
+  useEffect(() => {
+    if (!isTeacher || !classId) return;
+    const interval = setInterval(() => {
+      const editor = tldrawEditorRef.current;
+      if (!editor) return;
+      try {
+        const shapes = editor.store.allRecords().filter((r: any) => r.typeName === "shape");
+        if (shapes.length > 0) {
+          const snapshot = editor.store.getSnapshot();
+          fetchApi(`/live-class/${classId}/whiteboard-snapshot`, {
+            method: "POST",
+            body: JSON.stringify({ snapshot }),
+            silent: true,
+          }).catch(() => {});
+        }
+      } catch {}
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isTeacher, classId]);
 
   const [activeTab, setActiveTab] = useState<"chat" | "files">("chat");
   const activeTabRef = useRef<"chat" | "files">(activeTab);
@@ -235,8 +317,6 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const recordingAudioCtxRef = useRef<AudioContext | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const tldrawEditorRef = useRef<any>(null);
-
-  const isTeacher = role?.toUpperCase() !== "STUDENT" && role?.toUpperCase() !== "PUBLIC_LEARNER";
 
   // Re-calculate viewport screen bounds whenever whiteboard is displayed
   useEffect(() => {
@@ -425,6 +505,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       style={{ background: "#0b0c10" }}
     >
       <ClassroomLogic
+        classId={classId}
         isTeacher={isTeacher}
         myIdentity={effectiveIdentity}
         setSharedFiles={setSharedFiles}
@@ -561,6 +642,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 
         {isTeacher && (
           <TeacherControls
+            classId={classId}
             showWhiteboard={showWhiteboard}
             setShowWhiteboard={setShowWhiteboard}
             setWhiteboardEverOpened={setWhiteboardEverOpened}
@@ -584,10 +666,22 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
           <div className="flex-1 relative overflow-hidden" style={{ display: showWhiteboard ? "none" : "block" }}>
             <ClassVideoGrid
               isTeacher={isTeacher}
+              classId={classId}
               raisedHands={raisedHands}
-              onMuteParticipant={(targetId) => {
+              onMuteParticipant={async (targetId) => {
                 const room = (window as any).__lk_room;
                 safePublishData(room, JSON.stringify({ type: "MUTE_STUDENT", targetId }));
+                if (classId) {
+                  try {
+                    await fetchApi(`/live-class/${classId}/moderate`, {
+                      method: "POST",
+                      body: JSON.stringify({ action: "MUTE_STUDENT", participantIdentity: targetId }),
+                      silent: true,
+                    });
+                  } catch (err) {
+                    console.warn("Backend moderation mute failed:", err);
+                  }
+                }
               }}
             />
           </div>
@@ -604,6 +698,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
             >
               <Whiteboard
                 isTeacher={isTeacher}
+                classId={classId}
                 roomId={roomId}
                 editorRef={tldrawEditorRef}
                 allowStudentDraw={allowStudentDraw}
@@ -750,6 +845,14 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
                 const payload = JSON.stringify({ type: "CHAT_MESSAGE", ...newMsg });
                 safePublishData(room, payload);
                 setChatMessages((prev) => [...prev, newMsg]);
+
+                if (classId) {
+                  fetchApi(`/live-class/${classId}/messages`, {
+                    method: "POST",
+                    body: JSON.stringify({ message: text }),
+                    silent: true,
+                  }).catch((err) => console.warn("Failed to persist message:", err));
+                }
               }}
             />
           )}
@@ -798,10 +901,12 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
 /* ── CLASS VIDEO GRID WITH STAGE SPOTLIGHT ── */
 function ClassVideoGrid({
   isTeacher,
+  classId,
   raisedHands,
   onMuteParticipant,
 }: {
   isTeacher: boolean;
+  classId?: string;
   raisedHands: Set<string>;
   onMuteParticipant: (identity: string) => void;
 }) {
@@ -1176,6 +1281,7 @@ function SharedFilesPanel({ sharedFiles }: { sharedFiles: SharedFile[] }) {
 
 /* ── CLASSROOM LOGIC & SYNCHRONIZATION ── */
 function ClassroomLogic({
+  classId,
   isTeacher,
   myIdentity,
   setSharedFiles,
@@ -1196,6 +1302,7 @@ function ClassroomLogic({
   breakStateRef,
   setBreakState,
 }: {
+  classId?: string;
   isTeacher: boolean;
   myIdentity: string;
   setSharedFiles: React.Dispatch<React.SetStateAction<SharedFile[]>>;
@@ -1217,34 +1324,56 @@ function ClassroomLogic({
   setBreakState: React.Dispatch<React.SetStateAction<BreakState | null>>;
 }) {
   const room = useRoomContext();
+  const lastWhiteboardStateSentRef = useRef<number>(0);
 
   useEffect(() => {
     if (!room) return;
     (window as any).__lk_room = room;
 
-    const handleData = (payload: Uint8Array) => {
+    const handleData = (payload: Uint8Array, participant?: any) => {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
-        if (data.type === "MUTE_ALL" && !isTeacher) {
-          room.localParticipant.setMicrophoneEnabled(false).catch((err: any) => {
-            console.warn("Could not mute microphone on MUTE_ALL:", err);
-          });
-          setNetworkAlert("Your microphone was muted by the teacher.");
-          setTimeout(() => setNetworkAlert(null), 3500);
-        } else if (data.type === "MUTE_STUDENT" && data.targetId === myIdentity) {
-          room.localParticipant.setMicrophoneEnabled(false).catch((err: any) => {
-            console.warn("Could not mute microphone on MUTE_STUDENT:", err);
-          });
-          setNetworkAlert("Your microphone was muted by the teacher.");
-          setTimeout(() => setNetworkAlert(null), 3500);
+        let senderRole = "";
+        try {
+          if (participant?.metadata) {
+            const meta = JSON.parse(participant.metadata);
+            senderRole = (meta.role || "").toUpperCase();
+          }
+        } catch {}
+        const isSenderStaff = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN"].includes(senderRole);
+
+        if (data.type === "MUTE_ALL") {
+          if (!isSenderStaff) return;
+          if (!isTeacher) {
+            room.localParticipant.setMicrophoneEnabled(false).catch((err: any) => {
+              console.warn("Could not mute microphone on MUTE_ALL:", err);
+            });
+            setNetworkAlert("Your microphone was muted by the teacher.");
+            setTimeout(() => setNetworkAlert(null), 3500);
+          }
+        } else if (data.type === "MUTE_STUDENT") {
+          if (!isSenderStaff) return;
+          if (data.targetId === myIdentity) {
+            room.localParticipant.setMicrophoneEnabled(false).catch((err: any) => {
+              console.warn("Could not mute microphone on MUTE_STUDENT:", err);
+            });
+            setNetworkAlert("Your microphone was muted by the teacher.");
+            setTimeout(() => setNetworkAlert(null), 3500);
+          }
         } else if (data.type === "FILE_SHARED") {
-          setSharedFiles((prev) => [...prev, { name: data.name, url: data.url }]);
+          setSharedFiles((prev) => {
+            if (prev.some((f) => f.url === data.url)) return prev;
+            return [...prev, { name: data.name, url: data.url }];
+          });
         } else if (data.type === "WHITEBOARD_TOGGLE") {
+          if (!isSenderStaff) return;
           if (data.state) setWhiteboardEverOpened(true);
           setShowWhiteboard(Boolean(data.state));
         } else if (data.type === "WHITEBOARD_PERMISSION") {
+          if (!isSenderStaff) return;
           setAllowStudentDraw(Boolean(data.allowStudentDraw));
         } else if (data.type === "WHITEBOARD_DELTA") {
+          if (!isSenderStaff && !allowStudentDraw) return;
           // Efficient differential delta syncing
           const editor = tldrawEditorRef.current;
           if (editor && data.changes) {
@@ -1276,6 +1405,7 @@ function ClassroomLogic({
             (window as any).__lk_pending_whiteboard_deltas.push(data.changes);
           }
         } else if (data.type === "WHITEBOARD_CLEAR") {
+          if (!isSenderStaff) return;
           const editor = tldrawEditorRef.current;
           if (editor) {
             try {
@@ -1293,6 +1423,12 @@ function ClassroomLogic({
             }
           }
         } else if (data.type === "REQUEST_WHITEBOARD_STATE" && isTeacher) {
+          const now = Date.now();
+          if (now - lastWhiteboardStateSentRef.current < 4000) {
+            return; // Throttled to prevent flooding
+          }
+          lastWhiteboardStateSentRef.current = now;
+
           // 1. Send active break state to late-joining attendee
           if (breakStateRef.current?.isActive) {
             safePublishData(room, { type: "BREAK_STATE", ...breakStateRef.current });
@@ -1335,6 +1471,7 @@ function ClassroomLogic({
             }
           }
         } else if (data.type === "WHITEBOARD_BATCH") {
+          if (!isSenderStaff && !allowStudentDraw) return;
           const editor = tldrawEditorRef.current;
           if (editor && Array.isArray(data.records)) {
             try {
@@ -1368,9 +1505,11 @@ function ClassroomLogic({
             return next;
           });
         } else if (data.type === "LOWER_ALL_HANDS") {
+          if (!isSenderStaff) return;
           setRaisedHands(new Set());
           setIsHandRaised(false);
         } else if (data.type === "BREAK_STATE") {
+          if (!isSenderStaff) return;
           if (data.isActive) {
             setBreakState(data);
           } else {
@@ -1435,6 +1574,7 @@ function ClassroomLogic({
 
 /* ── TEACHER CONTROLS ── */
 function TeacherControls({
+  classId,
   showWhiteboard,
   setShowWhiteboard,
   setWhiteboardEverOpened,
@@ -1450,8 +1590,19 @@ function TeacherControls({
   const room = useRoomContext();
   const [uploading, setUploading] = useState(false);
 
-  const muteAll = () => {
+  const muteAll = async () => {
     safePublishData(room, JSON.stringify({ type: "MUTE_ALL" }));
+    if (classId) {
+      try {
+        await fetchApi(`/live-class/${classId}/moderate`, {
+          method: "POST",
+          body: JSON.stringify({ action: "MUTE_ALL" }),
+          silent: true,
+        });
+      } catch (err) {
+        console.warn("Server moderation mute-all failed:", err);
+      }
+    }
   };
 
   const toggleWhiteboard = () => {
@@ -1482,6 +1633,13 @@ function TeacherControls({
       } catch {}
     }
     safePublishData(room, JSON.stringify({ type: "WHITEBOARD_CLEAR" }));
+    if (classId) {
+      fetchApi(`/live-class/${classId}/whiteboard-snapshot`, {
+        method: "POST",
+        body: JSON.stringify({ snapshot: null }),
+        silent: true,
+      }).catch(() => {});
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1496,6 +1654,13 @@ function TeacherControls({
       await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       const payload = JSON.stringify({ type: "FILE_SHARED", name: file.name, url: finalUrl });
       safePublishData(room, payload);
+      if (classId) {
+        fetchApi(`/live-class/${classId}/files`, {
+          method: "POST",
+          body: JSON.stringify({ name: file.name, url: finalUrl }),
+          silent: true,
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error("File upload failed", err);
       alert("Failed to share file.");
@@ -1786,11 +1951,13 @@ function CustomControlBar({
 /* ── SYNCHRONIZED INTERACTIVE WHITEBOARD ── */
 const Whiteboard = memo(function Whiteboard({
   isTeacher,
+  classId,
   roomId,
   editorRef,
   allowStudentDraw,
 }: {
   isTeacher: boolean;
+  classId?: string;
   roomId: string;
   editorRef: React.MutableRefObject<any>;
   allowStudentDraw: boolean;
@@ -1912,6 +2079,16 @@ const Whiteboard = memo(function Whiteboard({
 
       const canDraw = isTeacher || allowStudentDraw;
       editor.updateInstanceState({ isReadonly: !canDraw });
+
+      // Restore persisted snapshot if present on mount
+      const persistedSnapshot = (window as any).__lk_persisted_whiteboard_snapshot;
+      if (persistedSnapshot) {
+        try {
+          editor.store.loadSnapshot(persistedSnapshot);
+        } catch (e) {
+          console.warn("Failed to load persisted whiteboard snapshot on mount", e);
+        }
+      }
 
       // Flush any queued deltas that arrived while Tldraw was mounting
       const pending = (window as any).__lk_pending_whiteboard_deltas;

@@ -1,62 +1,72 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { google } from 'googleapis';
-import * as path from 'path';
 
 @Injectable()
-export class GoogleMeetService {
+export class GoogleMeetService implements OnModuleInit {
   private readonly logger = new Logger(GoogleMeetService.name);
   private calendar: any;
+  private initPromise: Promise<void> | null = null;
 
-  constructor() {
-    this.init();
+  async onModuleInit() {
+    await this.init();
+  }
+
+  isAvailable(): boolean {
+    return Boolean(this.calendar);
   }
 
   private async init() {
-    try {
-      const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-      let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = (async () => {
+      try {
+        const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+        let privateKey = process.env.GOOGLE_PRIVATE_KEY;
 
-      if (!clientEmail || !privateKey) {
-        this.logger.warn('GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY not set. Meet links cannot be auto-generated.');
-        return;
-      }
+        if (!clientEmail || !privateKey) {
+          this.logger.warn('GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY not set. Meet links cannot be auto-generated.');
+          return;
+        }
 
-      // Clean up the private key (remove quotes and handle literal \n strings)
-      privateKey = privateKey
-        .replace(/^["']|["']$/g, '') // Remove surrounding quotes if copied accidentally
-        .replace(/\\n/g, '\n'); // Convert literal "\n" to actual newlines
-        
-      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-        this.logger.error('GOOGLE_PRIVATE_KEY format is invalid. Missing header.');
-        return;
-      }
+        // Clean up the private key (remove quotes and handle literal \n strings)
+        privateKey = privateKey
+          .replace(/^["']|["']$/g, '') // Remove surrounding quotes if copied accidentally
+          .replace(/\\n/g, '\n'); // Convert literal "\n" to actual newlines
+          
+        if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+          this.logger.error('GOOGLE_PRIVATE_KEY format is invalid. Missing header.');
+          return;
+        }
 
-      // Robust re-formatting: Extract base64, remove bad whitespaces, and rebuild PEM format.
-      // This fixes the DECODER routines::unsupported error caused by single-line paste or space issues.
-      const match = privateKey.match(/-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----/s);
-      if (match) {
-        const body = match[1].replace(/\s+/g, ''); // strip all inner whitespace/newlines
-        const chunked = body.match(/.{1,64}/g)?.join('\n') || body;
-        privateKey = `-----BEGIN PRIVATE KEY-----\n${chunked}\n-----END PRIVATE KEY-----\n`;
+        // Robust re-formatting: Extract base64, remove bad whitespaces, and rebuild PEM format.
+        const match = privateKey.match(/-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----/s);
+        if (match) {
+          const body = match[1].replace(/\s+/g, ''); // strip all inner whitespace/newlines
+          const chunked = body.match(/.{1,64}/g)?.join('\n') || body;
+          privateKey = `-----BEGIN PRIVATE KEY-----\n${chunked}\n-----END PRIVATE KEY-----\n`;
+        }
+        const auth = new google.auth.GoogleAuth({
+          credentials: {
+            client_email: clientEmail,
+            private_key: privateKey,
+          },
+          scopes: ['https://www.googleapis.com/auth/calendar'],
+        });
+        const client = await auth.getClient();
+        this.calendar = google.calendar({ version: 'v3', auth: client as any });
+        this.logger.log('Google Calendar API initialized via Environment Variables');
+      } catch (error) {
+        this.logger.error('Failed to initialize Google Calendar API:', error);
       }
-      const auth = new google.auth.GoogleAuth({
-        credentials: {
-          client_email: clientEmail,
-          private_key: privateKey,
-        },
-        scopes: ['https://www.googleapis.com/auth/calendar'],
-      });
-      const client = await auth.getClient();
-      this.calendar = google.calendar({ version: 'v3', auth: client as any });
-      this.logger.log('Google Calendar API initialized via Environment Variables');
-    } catch (error) {
-      this.logger.error('Failed to initialize Google Calendar API:', error);
-    }
+    })();
+    return this.initPromise;
   }
 
   async createMeetLink(summary: string, description: string, startTime: Date, durationMinutes: number): Promise<string> {
     if (!this.calendar) {
-      throw new Error('Google Calendar API not initialized');
+      await this.init();
+    }
+    if (!this.calendar) {
+      throw new Error('Google Calendar API is not configured or failed to initialize on the server.');
     }
 
     const endTime = new Date(startTime.getTime() + durationMinutes * 60000);

@@ -138,7 +138,7 @@ export default function LiveClassPage() {
 
   // Auto-join from URL parameter ?room=... or ?id=... (e.g. from public webinar or shared link)
   useEffect(() => {
-    if (typeof window === "undefined" || loading || activeLiveRoom || classes.length === 0) return;
+    if (typeof window === "undefined" || loading || activeLiveRoom) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const targetRoom = params.get("room") || params.get("id");
@@ -146,6 +146,13 @@ export default function LiveClassPage() {
         const found = classes.find((c) => c.id === targetRoom || c.roomId === targetRoom);
         if (found) {
           handleJoin(found);
+        } else if (params.get("id")) {
+          // If not in teacher/enrolled list, load public webinar session
+          fetchApi<ApiLiveClass>(`/live-class/public/${params.get("id")}`, { silent: true })
+            .then((pubCls) => {
+              if (pubCls) handleJoin(pubCls);
+            })
+            .catch(() => {});
         }
       }
     } catch {}
@@ -374,6 +381,7 @@ export default function LiveClassPage() {
       {activeLiveRoom && (
         <div className="fixed inset-0 z-50 bg-[#0b0c10] flex flex-col">
           <LiveKitClassRoom
+            classId={activeLiveRoom.id}
             roomId={activeLiveRoom.id || activeLiveRoom.roomId}
             identity={email || `user_${Date.now()}`}
             name={
