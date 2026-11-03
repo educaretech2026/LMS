@@ -107,16 +107,23 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Generate a persistent, session-unique identity for this tab/client to prevent LiveKit duplicate identity kicks
+  const sessionSuffix = useRef(Math.random().toString(36).slice(2, 7)).current;
+  const effectiveIdentity = useMemo(() => {
+    const raw = (identity || "user").trim();
+    return `${raw}_${sessionSuffix}`;
+  }, [identity, sessionSuffix]);
+
   const fetchToken = useCallback(async () => {
     try {
       const data = await fetchApi<TokenResponse>(
-        `/live-class/token?roomId=${encodeURIComponent(roomId)}&identity=${encodeURIComponent(identity)}&name=${encodeURIComponent(name)}&role=${encodeURIComponent(role)}`
+        `/live-class/token?roomId=${encodeURIComponent(roomId)}&identity=${encodeURIComponent(effectiveIdentity)}&name=${encodeURIComponent(name)}&role=${encodeURIComponent(role)}`
       );
       setTokenData(data);
     } catch (e: any) {
       setError(e.message || "Failed to connect to the classroom.");
     }
-  }, [roomId, identity, name, role]);
+  }, [roomId, effectiveIdentity, name, role]);
 
   useEffect(() => { fetchToken(); }, [fetchToken]);
 
@@ -169,7 +176,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
         resolution: VideoPresets.h720.resolution,
       },
       publishDefaults: {
-        simulcast: true,
+        simulcast: false,
         stopMicTrackOnMute: false,
         videoCodec: "vp8",
       },
@@ -315,7 +322,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={isTeacher}
+      video={true}
       audio={true}
       options={roomOptions}
       connectOptions={connectOptions}
@@ -333,7 +340,7 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
     >
       <ClassroomLogic
         isTeacher={isTeacher}
-        myIdentity={identity}
+        myIdentity={effectiveIdentity}
         setSharedFiles={setSharedFiles}
         setChatMessages={setChatMessages}
         setActiveTab={setActiveTab}
@@ -590,15 +597,15 @@ export function LiveKitClassRoom({ roomId, identity, name, role, onLeave }: Live
           setIsHandRaised(nextState);
           const payload = JSON.stringify({
             type: "HAND_RAISE",
-            identity,
+            identity: effectiveIdentity,
             name,
             raised: nextState,
           });
           safePublishData(room, payload);
           setRaisedHands((prev) => {
             const next = new Set(prev);
-            if (nextState) next.add(identity);
-            else next.delete(identity);
+            if (nextState) next.add(effectiveIdentity);
+            else next.delete(effectiveIdentity);
             return next;
           });
         }}
@@ -618,13 +625,10 @@ function ClassVideoGrid({
   raisedHands: Set<string>;
   onMuteParticipant: (identity: string) => void;
 }) {
-  const tracks = useTracks(
-    [
-      { source: Track.Source.Camera, withPlaceholder: true },
-      { source: Track.Source.ScreenShare, withPlaceholder: false },
-    ],
-    { onlySubscribed: false }
-  );
+  const tracks = useTracks([
+    { source: Track.Source.Camera, withPlaceholder: true },
+    { source: Track.Source.ScreenShare, withPlaceholder: false },
+  ]);
 
   const screenTrack = tracks.find((t) => t.source === Track.Source.ScreenShare);
   const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
@@ -791,9 +795,22 @@ function TileOverlay({
 /* ── FLOATING VIDEO DOCK IN WHITEBOARD MODE ── */
 function FloatingVideoDock({ isTeacher, raisedHands }: { isTeacher: boolean; raisedHands: Set<string> }) {
   const [minimized, setMinimized] = useState(false);
-  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], { onlySubscribed: false });
+  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
 
   if (tracks.length === 0) return null;
+
+  // Prioritize showing instructor/teacher or remote presenter in whiteboard mode
+  const targetTrack =
+    tracks.find((t) => {
+      try {
+        const meta = JSON.parse(t.participant.metadata || "{}");
+        return ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER"].includes(meta.role?.toUpperCase());
+      } catch {
+        return false;
+      }
+    }) ||
+    tracks.find((t) => !t.participant.isLocal) ||
+    tracks[0];
 
   return (
     <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-1 pointer-events-auto">
@@ -817,9 +834,9 @@ function FloatingVideoDock({ isTeacher, raisedHands }: { isTeacher: boolean; rai
 
         {!minimized && (
           <div className="h-36 relative overflow-hidden bg-black">
-            <ParticipantTile trackRef={tracks[0]} style={{ width: "100%", height: "100%" }} />
+            <ParticipantTile trackRef={targetTrack} style={{ width: "100%", height: "100%" }} />
             <div className="absolute bottom-1.5 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] text-white font-medium">
-              {tracks[0].participant.name || "Instructor"}
+              {targetTrack.participant.name || "Instructor"}
             </div>
           </div>
         )}

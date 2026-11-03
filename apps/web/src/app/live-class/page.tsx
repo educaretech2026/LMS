@@ -136,6 +136,21 @@ export default function LiveClassPage() {
     }
   };
 
+  // Auto-join from URL parameter ?room=... or ?id=... (e.g. from public webinar or shared link)
+  useEffect(() => {
+    if (typeof window === "undefined" || loading || activeLiveRoom || classes.length === 0) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const targetRoom = params.get("room") || params.get("id");
+      if (targetRoom) {
+        const found = classes.find((c) => c.id === targetRoom || c.roomId === targetRoom);
+        if (found) {
+          handleJoin(found);
+        }
+      }
+    } catch {}
+  }, [classes, loading, activeLiveRoom]);
+
   // Filter based on active tab
   const filteredClasses = classes.filter(cls => {
     if (activeTab === "CLASSES") return !cls.isPublic;
