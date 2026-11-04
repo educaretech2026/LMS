@@ -204,6 +204,8 @@ export function LiveKitClassRoomV2({
   chatMessagesRef.current = chatMessages;
   const activeTabRef = useRef<"chat" | "files">(activeSidebarTab);
   activeTabRef.current = activeSidebarTab;
+  const breakStateRef = useRef<BreakState | null>(breakState);
+  breakStateRef.current = breakState;
 
   const normalizedRole = (role || "").toUpperCase();
   const isTeacher = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN"].includes(normalizedRole);
@@ -406,7 +408,7 @@ export function LiveKitClassRoomV2({
         setRaisedHands={setRaisedHands}
         setIsHandRaised={setIsHandRaised}
         setNetworkAlert={setNetworkAlert}
-        breakStateRef={useRef<BreakState | null>(breakState)}
+        breakStateRef={breakStateRef}
         setBreakState={setBreakState}
       />
 
