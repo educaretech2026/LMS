@@ -1203,12 +1203,16 @@ export class LiveClassService {
       isHost = true;
     } else if (normalizedRole === 'STUDENT') {
       isHost = false;
+      // In public webinars, students join as audience in listen-only mode
+      if (cls.isPublic) {
+        canPublish = false;
+      }
     } else if (normalizedRole === 'PUBLIC_LEARNER') {
       if (!cls.isPublic) {
         throw new ForbiddenException('Access denied: Private session.');
       }
       isHost = false;
-      canPublish = true;
+      canPublish = false; // Public learners join webinar in listen-only mode
     } else {
       throw new ForbiddenException('Invalid or unauthenticated user role.');
     }
@@ -1420,7 +1424,7 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: true, // Allow publishing so public learners can enable video & microphone
+      canPublish: false, // In public webinars, attendees join as audience in listen-only mode
       canSubscribe: true,
       canPublishData: true,
       roomAdmin: false,

@@ -227,10 +227,11 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
                     <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" />
                   </span>
                   <span className="text-[11px] font-bold tracking-wider text-rose-400 uppercase">
-                    Class In Session Right Now
+                    {primaryLive.isPublic ? "Webinar Broadcast Live Now" : "Class In Session Right Now"}
                   </span>
                   {primaryLive.isPublic && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/30 flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
                       Public Webinar
                     </span>
                   )}
@@ -266,7 +267,7 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
                   className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white px-6 py-3.5 text-sm font-bold shadow-lg shadow-rose-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <Play className="h-4 w-4 fill-white" />
-                  <span>Join Classroom Now</span>
+                  <span>{primaryLive.isPublic ? "Join Webinar Broadcast" : "Join Classroom Now"}</span>
                 </button>
               </div>
             </div>
@@ -331,6 +332,40 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
             )}
           </div>
         </div>
+
+        {/* Dedicated Webinar Section Showcase Banner */}
+        {activeTab === "WEBINARS" && (
+          <div className="rounded-2xl bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 border border-purple-500/30 p-5 sm:p-6 text-white shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mt-10 -mr-10 w-60 h-60 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-xl">
+                <div className="flex items-center gap-2">
+                  <span className="p-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    <Globe className="h-4 w-4" />
+                  </span>
+                  <span className="text-[11px] font-bold tracking-wider text-purple-300 uppercase">
+                    Public Webinars & Masterclasses
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-bold text-white">
+                  Broadcast Masterclasses & Keynote Lectures
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Webinar sessions feature stage keynote presentations, slide decks, and audience-mode broadcasting. Attendees join in listen-only mode with live Q&amp;A chat and hand-raising.
+                </p>
+              </div>
+              {isStaff && (
+                <button
+                  onClick={() => setShowHostWebinar(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-4 py-2.5 text-xs font-bold shadow-md shadow-purple-600/20 transition-all hover:scale-[1.02] shrink-0"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  <span>Host New Webinar</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Sessions Grid */}
         {loading && classes.length === 0 ? (
@@ -479,7 +514,8 @@ function ClassSessionCard({
               </span>
             )}
             {cls.isPublic && (
-              <span className="bg-emerald-600/90 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+              <span className="bg-purple-600/90 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                <Globe className="h-3 w-3" />
                 Webinar
               </span>
             )}
@@ -509,7 +545,8 @@ function ClassSessionCard({
                   </span>
                 )}
                 {cls.isPublic && (
-                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                  <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Globe className="h-3 w-3" />
                     Webinar
                   </span>
                 )}
@@ -531,15 +568,24 @@ function ClassSessionCard({
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
               {cls.subject}
             </span>
-            {cls.standard && (
-              <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                {cls.standard.name}
+            {cls.isPublic ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-medium border border-purple-100 flex items-center gap-1">
+                <Globe className="h-3 w-3" />
+                Public Broadcast
               </span>
-            )}
-            {cls.board && (
-              <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                {cls.board.name}
-              </span>
+            ) : (
+              <>
+                {cls.standard && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    {cls.standard.name}
+                  </span>
+                )}
+                {cls.board && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    {cls.board.name}
+                  </span>
+                )}
+              </>
             )}
           </div>
 
@@ -551,7 +597,7 @@ function ClassSessionCard({
             </div>
             <div className="flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span className="truncate">{cls.teacherName}</span>
+              <span className="truncate">{cls.isPublic ? `Presenter: ${cls.teacherName}` : cls.teacherName}</span>
             </div>
           </div>
         </div>
@@ -567,11 +613,19 @@ function ClassSessionCard({
                 ? "bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/20 active:scale-[0.98]"
                 : isEnded
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : cls.isPublic
+                ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-xs active:scale-[0.98]"
                 : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs active:scale-[0.98]"
             }`}
           >
             <Play className={`h-3.5 w-3.5 ${isLive ? "fill-white animate-pulse" : ""}`} />
-            <span>{isLive ? "Join Live Class" : isEnded ? "Class Completed" : "Enter Room"}</span>
+            <span>
+              {isLive
+                ? (cls.isPublic ? "Join Webinar Broadcast" : "Join Live Class")
+                : isEnded
+                ? (cls.isPublic ? "Webinar Concluded" : "Class Completed")
+                : (cls.isPublic ? "Enter Webinar" : "Enter Room")}
+            </span>
           </button>
 
           {/* Staff controls */}
@@ -580,7 +634,7 @@ function ClassSessionCard({
               <button
                 onClick={onManageAttachments}
                 className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
-                title="Class Attachments & Handouts"
+                title={cls.isPublic ? "Webinar Handouts & Slides" : "Class Attachments & Handouts"}
               >
                 <FileText className="h-3.5 w-3.5" />
               </button>
@@ -600,11 +654,13 @@ function ClassSessionCard({
                   className={`h-9 px-2 rounded-xl text-[11px] font-semibold border transition-colors ${
                     isLive
                       ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                      : cls.isPublic
+                      ? "border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100"
                       : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                   }`}
-                  title={isLive ? "End Class" : "Start Live Session"}
+                  title={isLive ? (cls.isPublic ? "End Webinar" : "End Class") : (cls.isPublic ? "Start Webinar Broadcast" : "Go Live")}
                 >
-                  {isLive ? "End" : "Go Live"}
+                  {isLive ? "End" : (cls.isPublic ? "Broadcast" : "Go Live")}
                 </button>
               )}
 

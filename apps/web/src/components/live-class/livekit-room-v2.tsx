@@ -33,7 +33,7 @@ import {
   ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
   Trash2, Edit3, SlidersHorizontal, X, Presentation, LayoutGrid,
   PenTool, MoreHorizontal, Info, Clock, Download, FileSpreadsheet,
-  UserCheck, UserX, ChevronDown, Check, Search
+  UserCheck, UserX, ChevronDown, Check, Search, Globe, Radio
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -50,6 +50,10 @@ interface LiveKitRoomV2Props {
   identity: string;
   name: string;
   role: string;
+  isWebinar?: boolean;
+  classTitle?: string;
+  subject?: string;
+  teacherName?: string;
   onLeave: () => void;
 }
 
@@ -188,6 +192,10 @@ export function LiveKitClassRoomV2({
   identity,
   name,
   role,
+  isWebinar = false,
+  classTitle,
+  subject,
+  teacherName,
   onLeave,
 }: LiveKitRoomV2Props) {
   // Pre-join Welcome Lobby State
@@ -431,11 +439,12 @@ export function LiveKitClassRoomV2({
   if (!hasJoinedFromLobby) {
     return (
       <PreJoinLobby
-        classTitle="Edu-Meet Interactive Virtual Classroom"
-        subject="Live Cohort Session"
-        teacherName="Educare Instructor"
-        initialName={confirmedDisplayName || name || (isTeacher ? "Instructor" : "Student")}
+        classTitle={classTitle || (isWebinar ? "Public Webinar Masterclass" : "Edu-Meet Interactive Virtual Classroom")}
+        subject={subject || (isWebinar ? "Keynote Webinar" : "Live Cohort Session")}
+        teacherName={teacherName || (isTeacher ? "Presenter" : "Educare Instructor")}
+        initialName={confirmedDisplayName || name || (isTeacher ? (isWebinar ? "Presenter" : "Instructor") : (isWebinar ? "Attendee" : "Student"))}
         isTeacher={isTeacher}
+        isWebinar={isWebinar}
         onJoin={(settings) => {
           setConfirmedDisplayName(settings.name);
           setInitialCameraEnabled(settings.cameraEnabled);
@@ -540,24 +549,35 @@ export function LiveKitClassRoomV2({
       <header className="h-14 sm:h-16 shrink-0 bg-[#111318] border-b border-white/10 px-3 sm:px-6 flex items-center justify-between z-30">
         {/* Left: Class identity */}
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
-            <Video size={16} />
+          <div className={`h-8 w-8 rounded-xl flex items-center justify-center text-white shadow-md ${
+            isWebinar ? "bg-gradient-to-tr from-purple-600 to-indigo-600" : "bg-gradient-to-tr from-blue-600 to-indigo-600"
+          }`}>
+            {isWebinar ? <Globe size={16} /> : <Video size={16} />}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[120px] sm:max-w-xs">
-                Edu-Meet Class
+                {classTitle || (isWebinar ? "Webinar Session" : "Edu-Meet Class")}
               </h2>
               <span
-                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${isTeacher
-                    ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                  isTeacher
+                    ? isWebinar
+                      ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
+                      : "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                    : isWebinar
+                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
                     : "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                  }`}
+                }`}
               >
-                {isTeacher ? "Teacher" : "Student"}
+                {isTeacher
+                  ? (isWebinar ? "Keynote Presenter" : "Teacher")
+                  : (isWebinar ? "Audience (Listen-Only)" : "Student")}
               </span>
             </div>
-            <p className="text-[10px] text-white/40 hidden sm:block">HD Interactive Lecture</p>
+            <p className="text-[10px] text-white/40 hidden sm:block">
+              {isWebinar ? "Public Webinar Broadcast" : "HD Interactive Lecture"}
+            </p>
           </div>
         </div>
 
@@ -571,12 +591,12 @@ export function LiveKitClassRoomV2({
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "grid" });
               }}
               className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${stageMode === "grid"
-                  ? "bg-blue-600 text-white shadow-sm"
+                  ? (isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm")
                   : "text-white/60 hover:text-white hover:bg-white/5"
                 }`}
             >
               <LayoutGrid size={14} />
-              <span className="hidden sm:inline">Camera</span>
+              <span className="hidden sm:inline">{isWebinar ? "Speaker Stage" : "Camera"}</span>
             </button>
 
             <button
@@ -586,7 +606,7 @@ export function LiveKitClassRoomV2({
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
               }}
               className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all relative ${stageMode === "slides"
-                  ? "bg-blue-600 text-white shadow-sm"
+                  ? (isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm")
                   : "text-white/60 hover:text-white hover:bg-white/5"
                 }`}
             >
@@ -604,7 +624,7 @@ export function LiveKitClassRoomV2({
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "whiteboard" });
               }}
               className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${stageMode === "whiteboard"
-                  ? "bg-blue-600 text-white shadow-sm"
+                  ? (isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm")
                   : "text-white/60 hover:text-white hover:bg-white/5"
                 }`}
             >
@@ -617,8 +637,17 @@ export function LiveKitClassRoomV2({
           <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-medium text-white/80 shadow-inner">
             {stageMode === "grid" && (
               <>
-                <LayoutGrid size={13} className="text-emerald-400" />
-                <span>Gallery View</span>
+                {isWebinar ? (
+                  <>
+                    <Globe size={13} className="text-purple-400 animate-pulse" />
+                    <span>Webinar Stage</span>
+                  </>
+                ) : (
+                  <>
+                    <LayoutGrid size={13} className="text-emerald-400" />
+                    <span>Gallery View</span>
+                  </>
+                )}
               </>
             )}
             {stageMode === "slides" && (
@@ -741,10 +770,12 @@ export function LiveKitClassRoomV2({
             <button
               onClick={() => setShowAttendanceModal(true)}
               className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
-              title="Class Attendance & Attendee Roster"
+              title={isWebinar ? "View Registered Attendees & Webinar Roster" : "Class Attendance & Attendee Roster"}
             >
               <Users size={14} />
-              <span className="hidden lg:inline">Attendance ({sessionAttendees.size})</span>
+              <span className="hidden lg:inline">
+                {isWebinar ? "Webinar Roster" : "Attendance"} ({sessionAttendees.size})
+              </span>
             </button>
           )}
 
@@ -820,11 +851,12 @@ export function LiveKitClassRoomV2({
       {/* ── MAIN STAGE AREA ── */}
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0b0c10]">
-          {/* Mode 1: Camera Grid Stage */}
+          {/* Mode 1: Camera Grid / Speaker Stage */}
           <div className={`h-full w-full ${stageMode === "grid" ? "block" : "hidden"}`}>
             <V2ClassVideoGrid
               isTeacher={isTeacher}
               classId={classId}
+              isWebinar={isWebinar}
               raisedHands={new Set(raisedHandsList.map((h) => h.identity))}
             />
           </div>
@@ -1220,12 +1252,14 @@ export function LiveKitClassRoomV2({
           onClose={() => setShowAttendanceModal(false)}
           classId={classId}
           sessionAttendees={sessionAttendees}
+          defaultTab={isWebinar ? "webinar" : "live"}
         />
       )}
 
       {/* ── BOTTOM TOUCH-ENGINEERED CONTROL DOCK ── */}
       <V2BottomControlDock
         isTeacher={isTeacher}
+        isWebinar={isWebinar}
         isImmersed={isImmersed}
         isHandRaised={isHandRaised}
         unreadChatCount={unreadChatCount}
@@ -1270,13 +1304,15 @@ function AttendanceRosterModal({
   onClose,
   classId,
   sessionAttendees,
+  defaultTab = "live",
 }: {
   isOpen: boolean;
   onClose: () => void;
   classId?: string;
   sessionAttendees: Map<string, SessionAttendee>;
+  defaultTab?: "live" | "webinar";
 }) {
-  const [tab, setTab] = useState<"live" | "webinar">("live");
+  const [tab, setTab] = useState<"live" | "webinar">(defaultTab);
   const [search, setSearch] = useState("");
   const [webinarRegistrations, setWebinarRegistrations] = useState<any[]>([]);
   const [loadingWebinar, setLoadingWebinar] = useState(false);
@@ -1521,10 +1557,12 @@ function AttendanceRosterModal({
 function V2ClassVideoGrid({
   isTeacher,
   classId,
+  isWebinar = false,
   raisedHands,
 }: {
   isTeacher: boolean;
   classId?: string;
+  isWebinar?: boolean;
   raisedHands: Set<string>;
 }) {
   const tracks = useTracks([
@@ -1547,6 +1585,24 @@ function V2ClassVideoGrid({
     return Array.from(map.values());
   }, [cameraTracks]);
 
+  // Keynote Presenter track for Webinar Mode
+  const presenterTrack = useMemo(() => {
+    if (!isWebinar) return null;
+    return (
+      uniqueCameras.find((t) => {
+        try {
+          const meta = JSON.parse(t.participant?.metadata || "{}");
+          return (
+            ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER"].includes(meta.role?.toUpperCase()) ||
+            Boolean(meta.isHost)
+          );
+        } catch {
+          return false;
+        }
+      }) || (isTeacher ? uniqueCameras[0] : uniqueCameras.find((t) => !t.participant?.isLocal) || uniqueCameras[0])
+    );
+  }, [isWebinar, uniqueCameras, isTeacher]);
+
   // Screen Share Spotlight View
   if (screenTrack) {
     return (
@@ -1555,7 +1611,9 @@ function V2ClassVideoGrid({
           <FocusLayout trackRef={screenTrack} style={{ height: "100%", width: "100%" }} />
           <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md flex items-center gap-1.5 backdrop-blur-md">
             <Monitor size={13} />
-            <span>Screen Presentation ({screenTrack.participant?.name || "Presenter"})</span>
+            <span>
+              {isWebinar ? "Webinar Presentation" : "Screen Presentation"} ({screenTrack.participant?.name || "Presenter"})
+            </span>
           </div>
         </div>
 
@@ -1589,7 +1647,65 @@ function V2ClassVideoGrid({
     );
   }
 
-  // Gallery Responsive Grid
+  // Webinar Mode Keynote Spotlight Layout
+  if (isWebinar) {
+    if (presenterTrack) {
+      return (
+        <div className="h-full w-full p-2 sm:p-4 flex flex-col items-center justify-center overflow-hidden">
+          <div className="h-full w-full max-w-6xl relative rounded-2xl sm:rounded-3xl overflow-hidden bg-black/80 border border-purple-500/25 shadow-2xl flex flex-col justify-between">
+            <ParticipantTile trackRef={presenterTrack} style={{ width: "100%", height: "100%" }} />
+
+            {/* Top Stage Indicator Badges */}
+            <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600/90 backdrop-blur-md text-white text-[11px] font-bold shadow-md">
+                <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                LIVE WEBINAR
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-white/90 text-[11px] font-medium border border-white/10">
+                <Globe size={12} className="text-purple-400" />
+                Keynote Broadcast
+              </span>
+            </div>
+
+            {/* Bottom Presenter Overlay */}
+            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+              <div className="inline-flex items-center gap-2 bg-black/75 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-xl text-white text-xs font-semibold shadow-lg">
+                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Presenter: {presenterTrack.participant?.name || "Keynote Speaker"}</span>
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-lg text-white/70 text-[11px]">
+                <Users size={12} className="text-purple-400" />
+                <span>Audience Mode</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Webinar Placeholder when presenter has not started video feed yet
+    return (
+      <div className="h-full w-full p-4 flex items-center justify-center">
+        <div className="max-w-md w-full p-8 rounded-3xl bg-gradient-to-b from-[#141624] to-[#0c0d14] border border-purple-500/20 text-center shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="h-16 w-16 rounded-2xl bg-purple-600/20 border border-purple-500/40 text-purple-400 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/10">
+            <Radio size={28} className="animate-pulse" />
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 mb-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-ping" />
+            WEBINAR STAGE ACTIVE
+          </span>
+          <h3 className="text-base font-bold text-white mb-2">Keynote Presentation Stage</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            The broadcast session is live. Presenter camera and shared slides will be spotlighted on this stage. Attendees are in audience mode.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Classroom Gallery Responsive Grid (Cohort Mode)
   return (
     <div className="h-full w-full p-2 sm:p-4 overflow-hidden">
       {uniqueCameras.length === 0 ? (
@@ -1691,6 +1807,7 @@ function FloatingCamPiP({ isTeacher }: { isTeacher: boolean }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function V2BottomControlDock({
   isTeacher,
+  isWebinar = false,
   isImmersed,
   isHandRaised,
   unreadChatCount,
@@ -1699,6 +1816,7 @@ function V2BottomControlDock({
   onLeave,
 }: {
   isTeacher: boolean;
+  isWebinar?: boolean;
   isImmersed: boolean;
   isHandRaised: boolean;
   unreadChatCount: number;
@@ -1745,30 +1863,50 @@ function V2BottomControlDock({
       style={{ paddingBottom: "max(6px, env(safe-area-inset-bottom))" }}
     >
       {/* Microphone Toggle */}
-      <button
-        {...micProps}
-        onClick={handleToggleMic}
-        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${micOn
-            ? "bg-white/10 text-white hover:bg-white/15"
-            : "bg-red-500/20 text-red-400 border border-red-500/30"
-          }`}
-      >
-        {micOn ? <Mic size={18} /> : <MicOff size={18} />}
-        <span>{micOn ? "Mute" : "Unmute"}</span>
-      </button>
+      {isWebinar && !isTeacher ? (
+        <div
+          className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/5 border border-white/10 text-white/40 font-bold text-[10px] sm:text-xs select-none"
+          title="Webinar attendees are in listen-only mode. Use Raise Hand to request speaking permission."
+        >
+          <MicOff size={18} />
+          <span>Listen Only</span>
+        </div>
+      ) : (
+        <button
+          {...micProps}
+          onClick={handleToggleMic}
+          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${micOn
+              ? "bg-white/10 text-white hover:bg-white/15"
+              : "bg-red-500/20 text-red-400 border border-red-500/30"
+            }`}
+        >
+          {micOn ? <Mic size={18} /> : <MicOff size={18} />}
+          <span>{micOn ? "Mute" : "Unmute"}</span>
+        </button>
+      )}
 
       {/* Camera Toggle */}
-      <button
-        {...camProps}
-        onClick={handleToggleCam}
-        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${camOn
-            ? "bg-white/10 text-white hover:bg-white/15"
-            : "bg-red-500/20 text-red-400 border border-red-500/30"
-          }`}
-      >
-        {camOn ? <Video size={18} /> : <VideoOff size={18} />}
-        <span>{camOn ? "Camera" : "Cam Off"}</span>
-      </button>
+      {isWebinar && !isTeacher ? (
+        <div
+          className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/5 border border-white/10 text-white/40 font-bold text-[10px] sm:text-xs select-none"
+          title="Webcam streaming is disabled for webinar attendees to maintain stage focus."
+        >
+          <VideoOff size={18} />
+          <span>Audience</span>
+        </div>
+      ) : (
+        <button
+          {...camProps}
+          onClick={handleToggleCam}
+          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${camOn
+              ? "bg-white/10 text-white hover:bg-white/15"
+              : "bg-red-500/20 text-red-400 border border-red-500/30"
+            }`}
+        >
+          {camOn ? <Video size={18} /> : <VideoOff size={18} />}
+          <span>{camOn ? "Camera" : "Cam Off"}</span>
+        </button>
+      )}
 
       {/* Screen Share (Teacher / Desktop priority) */}
       {isTeacher && (
@@ -1788,13 +1926,17 @@ function V2BottomControlDock({
       {!isTeacher && (
         <button
           onClick={onToggleHand}
-          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${isHandRaised
+          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${
+            isHandRaised
               ? "bg-amber-500 text-black shadow-lg"
+              : isWebinar
+              ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 hover:bg-purple-600/40"
               : "bg-white/10 text-white hover:bg-white/15"
-            }`}
+          }`}
+          title={isHandRaised ? "Lower hand" : isWebinar ? "Raise hand to ask speaker a question" : "Raise hand"}
         >
           <Hand size={18} className={isHandRaised ? "animate-bounce" : ""} />
-          <span>{isHandRaised ? "Lower" : "Hand"}</span>
+          <span>{isHandRaised ? "Lower" : isWebinar ? "Raise Hand" : "Hand"}</span>
         </button>
       )}
 
@@ -1805,7 +1947,7 @@ function V2BottomControlDock({
           className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/10 text-white hover:bg-white/15 font-bold text-[10px] sm:text-xs relative transition-transform active:scale-95"
         >
           <MessageSquare size={18} />
-          <span>Chat</span>
+          <span>{isWebinar ? "Q&A / Chat" : "Chat"}</span>
           {unreadChatCount > 0 && (
             <span className="absolute top-1 right-2 h-4 w-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
               {unreadChatCount}
@@ -1820,7 +1962,7 @@ function V2BottomControlDock({
         className="flex flex-col items-center justify-center gap-1 min-w-[62px] sm:min-w-[78px] h-12 sm:h-14 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow-lg"
       >
         <LogOut size={18} />
-        <span>Leave</span>
+        <span>{isWebinar ? "Exit" : "Leave"}</span>
       </button>
     </footer>
   );

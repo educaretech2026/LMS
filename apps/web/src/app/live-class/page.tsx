@@ -85,6 +85,10 @@ export default function LiveClassPage() {
                 : (authUserName || (email ? email.split("@")[0] : "Student"))
             }
             role={normalizedRole || "STUDENT"}
+            isWebinar={Boolean(activeLiveRoom.isPublic)}
+            classTitle={activeLiveRoom.title}
+            subject={activeLiveRoom.subject}
+            teacherName={activeLiveRoom.teacherName}
             onLeave={() => setActiveLiveRoom(null)}
           />
         </div>
