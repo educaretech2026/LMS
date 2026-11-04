@@ -109,8 +109,8 @@ export function safePublishData(
       typeof payload === "string"
         ? new TextEncoder().encode(payload)
         : payload instanceof Uint8Array
-        ? payload
-        : new TextEncoder().encode(JSON.stringify(payload));
+          ? payload
+          : new TextEncoder().encode(JSON.stringify(payload));
 
     if (bytes.byteLength > 62000) {
       console.warn("Payload exceeds single packet threshold:", bytes.byteLength);
@@ -174,7 +174,7 @@ function StudioPipelineManager({
         console.warn("Failed to set studio video processor:", err);
       });
     } else if (!isStudioEffectActive && currentProcessor) {
-      localVideoTrack.stopProcessor().catch(() => {});
+      localVideoTrack.stopProcessor().catch(() => { });
       processorRef.current = null;
     }
   }, [isTeacher, cameraTrack, settings, processorRef]);
@@ -334,7 +334,7 @@ export function LiveKitClassRoomV2({
           );
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     fetchApi<any[]>(`/live-class/${classId}/messages`, { silent: true })
       .then((msgs) => {
@@ -350,7 +350,7 @@ export function LiveKitClassRoomV2({
           );
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [classId]);
 
   // Room Options
@@ -549,11 +549,10 @@ export function LiveKitClassRoomV2({
                 Edu-Meet Class
               </h2>
               <span
-                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
-                  isTeacher
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${isTeacher
                     ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
                     : "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                }`}
+                  }`}
               >
                 {isTeacher ? "Teacher" : "Student"}
               </span>
@@ -571,11 +570,10 @@ export function LiveKitClassRoomV2({
                 const room = (window as any).__lk_room;
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "grid" });
               }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                stageMode === "grid"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${stageMode === "grid"
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
+                }`}
             >
               <LayoutGrid size={14} />
               <span className="hidden sm:inline">Camera</span>
@@ -587,11 +585,10 @@ export function LiveKitClassRoomV2({
                 const room = (window as any).__lk_room;
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
               }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all relative ${
-                stageMode === "slides"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all relative ${stageMode === "slides"
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
+                }`}
             >
               <Presentation size={14} />
               <span className="hidden sm:inline">Slides</span>
@@ -606,11 +603,10 @@ export function LiveKitClassRoomV2({
                 const room = (window as any).__lk_room;
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "whiteboard" });
               }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                stageMode === "whiteboard"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${stageMode === "whiteboard"
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-white/60 hover:text-white hover:bg-white/5"
-              }`}
+                }`}
             >
               <PenTool size={14} />
               <span className="hidden sm:inline">Board</span>
@@ -654,11 +650,10 @@ export function LiveKitClassRoomV2({
                   allowStudentDraw: nextVal,
                 });
               }}
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                allowStudentWhiteboardDraw
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${allowStudentWhiteboardDraw
                   ? "bg-purple-600/25 border-purple-500/50 text-purple-300"
                   : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-              }`}
+                }`}
               title="Toggle whether students can draw on whiteboard"
             >
               <PenTool size={13} />
@@ -671,11 +666,10 @@ export function LiveKitClassRoomV2({
             <div className="relative">
               <button
                 onClick={() => setShowRaisedHandsPopover(!showRaisedHandsPopover)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                  raisedHandsList.length > 0
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${raisedHandsList.length > 0
                     ? "bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse"
                     : "bg-white/5 border-white/10 text-white/50 hover:text-white"
-                }`}
+                  }`}
                 title="Raised Hands Roster"
               >
                 <Hand size={14} />
@@ -766,7 +760,7 @@ export function LiveKitClassRoomV2({
                       method: "POST",
                       body: JSON.stringify({ action: "MUTE_ALL" }),
                       silent: true,
-                    }).catch(() => {});
+                    }).catch(() => { });
                   }
                 }}
                 className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5"
@@ -799,11 +793,10 @@ export function LiveKitClassRoomV2({
                     setBreakState(b);
                   }
                 }}
-                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
-                  breakState?.isActive
+                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${breakState?.isActive
                     ? "border-amber-500/50 bg-amber-500/20 text-amber-300"
                     : "border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white"
-                }`}
+                  }`}
                 title={breakState?.isActive ? "Resume Class" : "Start 5-min Break"}
               >
                 <Clock size={14} />
@@ -1030,11 +1023,10 @@ export function LiveKitClassRoomV2({
                   setActiveSidebarTab("chat");
                   setUnreadChatCount(0);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${
-                  activeSidebarTab === "chat"
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${activeSidebarTab === "chat"
                     ? "border-blue-500 text-white bg-white/5"
                     : "border-transparent text-white/50 hover:text-white"
-                }`}
+                  }`}
               >
                 <MessageSquare size={14} />
                 <span>Live Chat</span>
@@ -1047,11 +1039,10 @@ export function LiveKitClassRoomV2({
 
               <button
                 onClick={() => setActiveSidebarTab("files")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${
-                  activeSidebarTab === "files"
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${activeSidebarTab === "files"
                     ? "border-blue-500 text-white bg-white/5"
                     : "border-transparent text-white/50 hover:text-white"
-                }`}
+                  }`}
               >
                 <FileText size={14} />
                 <span>Attachments</span>
@@ -1082,7 +1073,7 @@ export function LiveKitClassRoomV2({
                         method: "POST",
                         body: JSON.stringify({ message: text }),
                         silent: true,
-                      }).catch(() => {});
+                      }).catch(() => { });
                     }
                   }}
                 />
@@ -1120,17 +1111,15 @@ export function LiveKitClassRoomV2({
         <div className="flex items-center border-b border-white/10 px-3 bg-black/20 shrink-0">
           <button
             onClick={() => setActiveSidebarTab("chat")}
-            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${
-              activeSidebarTab === "chat" ? "border-blue-500 text-white" : "border-transparent text-white/50"
-            }`}
+            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${activeSidebarTab === "chat" ? "border-blue-500 text-white" : "border-transparent text-white/50"
+              }`}
           >
             Chat
           </button>
           <button
             onClick={() => setActiveSidebarTab("files")}
-            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${
-              activeSidebarTab === "files" ? "border-blue-500 text-white" : "border-transparent text-white/50"
-            }`}
+            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${activeSidebarTab === "files" ? "border-blue-500 text-white" : "border-transparent text-white/50"
+              }`}
           >
             Files ({sharedFiles.length})
           </button>
@@ -1157,7 +1146,7 @@ export function LiveKitClassRoomV2({
                     method: "POST",
                     body: JSON.stringify({ message: text }),
                     silent: true,
-                  }).catch(() => {});
+                  }).catch(() => { });
                 }
               }}
             />
@@ -1357,22 +1346,20 @@ function AttendanceRosterModal({
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               onClick={() => setTab("live")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                tab === "live"
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${tab === "live"
                   ? "bg-blue-600 text-white shadow-md"
                   : "bg-white/5 text-white/60 hover:text-white"
-              }`}
+                }`}
             >
               Live Session Attendees ({attendeesArray.length})
             </button>
             {classId && (
               <button
                 onClick={() => setTab("webinar")}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  tab === "webinar"
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${tab === "webinar"
                     ? "bg-blue-600 text-white shadow-md"
                     : "bg-white/5 text-white/60 hover:text-white"
-                }`}
+                  }`}
               >
                 Webinar Registrations ({webinarRegistrations.length})
               </button>
@@ -1421,11 +1408,10 @@ function AttendanceRosterModal({
                       <td className="py-3 px-3 font-semibold text-white">{a.name}</td>
                       <td className="py-3 px-3">
                         <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
-                            a.role === "TEACHER" || a.role === "SUPER_ADMIN"
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${a.role === "TEACHER" || a.role === "SUPER_ADMIN"
                               ? "bg-blue-500/20 border-blue-500/30 text-blue-300"
                               : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                          }`}
+                            }`}
                         >
                           {a.role}
                         </span>
@@ -1433,16 +1419,14 @@ function AttendanceRosterModal({
                       <td className="py-3 px-3 text-white/50">{a.firstJoinedAt}</td>
                       <td className="py-3 px-3 text-right">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            a.isOnline
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${a.isOnline
                               ? "bg-emerald-500/20 text-emerald-400"
                               : "bg-white/10 text-white/40"
-                          }`}
+                            }`}
                         >
                           <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              a.isOnline ? "bg-emerald-400 animate-pulse" : "bg-white/30"
-                            }`}
+                            className={`h-1.5 w-1.5 rounded-full ${a.isOnline ? "bg-emerald-400 animate-pulse" : "bg-white/30"
+                              }`}
                           />
                           {a.isOnline ? "Online" : "Left"}
                         </span>
@@ -1560,15 +1544,14 @@ function V2ClassVideoGrid({
         </div>
       ) : (
         <div
-          className={`h-full w-full grid gap-2 sm:gap-3 ${
-            uniqueCameras.length === 1
+          className={`h-full w-full grid gap-2 sm:gap-3 ${uniqueCameras.length === 1
               ? "grid-cols-1"
               : uniqueCameras.length === 2
-              ? "grid-cols-1 sm:grid-cols-2"
-              : uniqueCameras.length <= 4
-              ? "grid-cols-2"
-              : "grid-cols-2 lg:grid-cols-3"
-          }`}
+                ? "grid-cols-1 sm:grid-cols-2"
+                : uniqueCameras.length <= 4
+                  ? "grid-cols-2"
+                  : "grid-cols-2 lg:grid-cols-3"
+            }`}
         >
           {uniqueCameras.map((t, i) => {
             const id = t.participant?.identity || "";
@@ -1698,11 +1681,10 @@ function V2BottomControlDock({
       <button
         {...micProps}
         onClick={handleToggleMic}
-        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${
-          micOn
+        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${micOn
             ? "bg-white/10 text-white hover:bg-white/15"
             : "bg-red-500/20 text-red-400 border border-red-500/30"
-        }`}
+          }`}
       >
         {micOn ? <Mic size={18} /> : <MicOff size={18} />}
         <span>{micOn ? "Mute" : "Unmute"}</span>
@@ -1712,11 +1694,10 @@ function V2BottomControlDock({
       <button
         {...camProps}
         onClick={handleToggleCam}
-        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${
-          camOn
+        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${camOn
             ? "bg-white/10 text-white hover:bg-white/15"
             : "bg-red-500/20 text-red-400 border border-red-500/30"
-        }`}
+          }`}
       >
         {camOn ? <Video size={18} /> : <VideoOff size={18} />}
         <span>{camOn ? "Camera" : "Cam Off"}</span>
@@ -1726,11 +1707,10 @@ function V2BottomControlDock({
       {isTeacher && (
         <button
           {...screenProps}
-          className={`hidden sm:flex flex-col items-center justify-center gap-1 min-w-[72px] h-14 rounded-2xl font-bold text-xs transition-transform active:scale-95 ${
-            screenOn
+          className={`hidden sm:flex flex-col items-center justify-center gap-1 min-w-[72px] h-14 rounded-2xl font-bold text-xs transition-transform active:scale-95 ${screenOn
               ? "bg-blue-600 text-white"
               : "bg-white/10 text-white hover:bg-white/15"
-          }`}
+            }`}
         >
           {screenOn ? <MonitorOff size={18} /> : <Monitor size={18} />}
           <span>{screenOn ? "Stop Share" : "Share"}</span>
@@ -1741,11 +1721,10 @@ function V2BottomControlDock({
       {!isTeacher && (
         <button
           onClick={onToggleHand}
-          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${
-            isHandRaised
+          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${isHandRaised
               ? "bg-amber-500 text-black shadow-lg"
               : "bg-white/10 text-white hover:bg-white/15"
-          }`}
+            }`}
         >
           <Hand size={18} className={isHandRaised ? "animate-bounce" : ""} />
           <span>{isHandRaised ? "Lower" : "Hand"}</span>
@@ -1816,11 +1795,10 @@ function ChatContentPanel({
           messages.map((m) => (
             <div
               key={m.id}
-              className={`p-2.5 rounded-2xl border text-xs ${
-                m.role === "Teacher"
+              className={`p-2.5 rounded-2xl border text-xs ${m.role === "Teacher"
                   ? "bg-blue-600/15 border-blue-500/30 text-white"
                   : "bg-white/5 border-white/10 text-white/90"
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between text-[10px] mb-1 opacity-70">
                 <span className="font-bold">{m.sender}</span>
@@ -1887,18 +1865,18 @@ function FilesContentPanel({
         file.type && file.type !== "application/octet-stream"
           ? file.type
           : ext === "pptx"
-          ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-          : ext === "ppt"
-          ? "application/vnd.ms-powerpoint"
-          : ext === "pdf"
-          ? "application/pdf"
-          : ext === "png"
-          ? "image/png"
-          : ext === "jpg" || ext === "jpeg"
-          ? "image/jpeg"
-          : ext === "zip"
-          ? "application/zip"
-          : "application/octet-stream";
+            ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            : ext === "ppt"
+              ? "application/vnd.ms-powerpoint"
+              : ext === "pdf"
+                ? "application/pdf"
+                : ext === "png"
+                  ? "image/png"
+                  : ext === "jpg" || ext === "jpeg"
+                    ? "image/jpeg"
+                    : ext === "zip"
+                      ? "application/zip"
+                      : "application/octet-stream";
 
       let finalFileUrl = "";
 
@@ -2143,7 +2121,7 @@ function ClassroomV2Sync({
         try {
           const meta = JSON.parse(p.metadata || "{}");
           if (meta.role) role = meta.role;
-        } catch {}
+        } catch { }
 
         const existing = nextMap.get(id);
         if (existing) {
@@ -2195,7 +2173,7 @@ function ClassroomV2Sync({
               if (meta.isHost === true || meta.role === "TEACHER" || meta.role === "SUPER_ADMIN" || meta.role === "CENTRE_ADMIN") {
                 isSenderHost = true;
               }
-            } catch {}
+            } catch { }
           }
         }
 
@@ -2259,7 +2237,7 @@ function ClassroomV2Sync({
           if (!isSenderHost) return;
           setBreakState(data.active !== undefined ? (data.active ? data : null) : (data.isActive ? data : null));
         }
-      } catch {}
+      } catch { }
     };
 
     room.on("dataReceived", handleData);

@@ -61,7 +61,7 @@ export class LiveClassService {
     private readonly prisma: PrismaService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly storageService?: StorageService,
-  ) {}
+  ) { }
 
   public async safeFindMany(params: { where?: any; orderBy?: any }): Promise<any[]> {
     try {
@@ -166,7 +166,7 @@ export class LiveClassService {
           const parsed = JSON.parse(val);
           if (parsed.kicked) return true;
         }
-      } catch {}
+      } catch { }
     }
     const mem = this.inMemoryModeration.get(key);
     return Boolean(mem?.kicked);
@@ -191,7 +191,7 @@ export class LiveClassService {
           const parsed = JSON.parse(val);
           return Boolean(parsed.mutedAudio);
         }
-      } catch {}
+      } catch { }
     }
     const mem = this.inMemoryModeration.get(key);
     return Boolean(mem?.mutedAudio);
@@ -213,7 +213,7 @@ export class LiveClassService {
     if (this.redisService?.isConnected) {
       try {
         await this.redisService.setRaw(key, JSON.stringify(updated), ttlSeconds);
-      } catch {}
+      } catch { }
     }
   }
 
@@ -299,7 +299,7 @@ export class LiveClassService {
       }
 
       const isStudent = normalizedRole === 'STUDENT';
-      
+
       if (isStudent && user?.id) {
         const profile = await this.prisma.studentProfile.findUnique({
           where: { userId: user.id },
@@ -1033,7 +1033,7 @@ export class LiveClassService {
     }
 
     // Security: Audit trail for PII access
-    this.recordAudit(user, 'VIEW_ATTENDEES_ROSTER', `Viewed roster for live class ${cls.id}`, cls.id).catch(() => {});
+    this.recordAudit(user, 'VIEW_ATTENDEES_ROSTER', `Viewed roster for live class ${cls.id}`, cls.id).catch(() => { });
 
     let registrations: any[] = [];
     try {
@@ -1436,7 +1436,7 @@ export class LiveClassService {
         where: { id: reg.id },
         data: { status: 'ATTENDED' },
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return {
       token,
@@ -1559,7 +1559,7 @@ export class LiveClassService {
       const participants = await roomService.listParticipants(roomName).catch(() => []);
       for (const p of participants) {
         let meta: any = {};
-        try { meta = JSON.parse(p.metadata); } catch {}
+        try { meta = JSON.parse(p.metadata); } catch { }
         if (meta.role === 'TEACHER' || meta.role === 'SUPER_ADMIN' || meta.isHost) continue;
 
         // Mute tracks

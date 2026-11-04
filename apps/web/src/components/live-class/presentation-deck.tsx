@@ -269,7 +269,7 @@ export function PresentationDeck({
           currentSlideIndex: slideIdx,
         });
         const bytes = new TextEncoder().encode(payload);
-        room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+        room.localParticipant.publishData(bytes, { reliable: true }).catch(() => { });
       }
     },
     [room]
@@ -381,7 +381,7 @@ export function PresentationDeck({
                   }
                 }
               }
-            } catch {}
+            } catch { }
           }
 
           // Render slide onto high-res 16:9 canvas (1920x1080)
@@ -465,7 +465,7 @@ export function PresentationDeck({
                   ctx.drawImage(img, ix, iy, iw, ih);
                 }
               }
-            } catch {}
+            } catch { }
           } else {
             // Full width bullet points
             ctx.fillStyle = "#e2e8f0";
@@ -644,7 +644,7 @@ export function PresentationDeck({
   useEffect(() => {
     if (!isTeacher && slides.length === 0 && room?.localParticipant) {
       const payload = JSON.stringify({ type: "REQUEST_PRESENTATION_STATE" });
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => { });
     }
   }, [isTeacher, slides.length, room]);
 
@@ -686,7 +686,7 @@ export function PresentationDeck({
               if (meta.isHost === true || meta.role === "TEACHER" || meta.role === "SUPER_ADMIN" || meta.role === "CENTRE_ADMIN") {
                 isSenderHost = true;
               }
-            } catch {}
+            } catch { }
           }
         }
 
@@ -739,7 +739,7 @@ export function PresentationDeck({
                 allowStudentDraw: allowStudentDrawRef.current,
               });
               const bytes = new TextEncoder().encode(payload);
-              room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+              room.localParticipant.publishData(bytes, { reliable: true }).catch(() => { });
             }
           }
         } else if (data.type === "SLIDE_DECK_LOADED" && Array.isArray(data.slides)) {
@@ -782,7 +782,7 @@ export function PresentationDeck({
             onToggleStudentDraw(nextAllow);
           }
         }
-      } catch {}
+      } catch { }
     };
 
     room.on("dataReceived", handleIncomingData);
@@ -965,7 +965,7 @@ export function PresentationDeck({
     isPointerDownRef.current = false;
     try {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
+    } catch { }
 
     if (currentDrawingStroke && currentDrawingStroke.points.length > 0) {
       const finalized = currentDrawingStroke;
@@ -987,7 +987,7 @@ export function PresentationDeck({
           stroke: finalized,
         });
         const bytes = new TextEncoder().encode(payload);
-        room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+        room.localParticipant.publishData(bytes, { reliable: true }).catch(() => { });
       }
     }
   };
@@ -1005,7 +1005,7 @@ export function PresentationDeck({
         name: myName,
       });
       const bytes = new TextEncoder().encode(payload);
-      room.localParticipant.publishData(bytes, { reliable: false }).catch(() => {});
+      room.localParticipant.publishData(bytes, { reliable: false }).catch(() => { });
     }
   };
 
@@ -1036,7 +1036,7 @@ export function PresentationDeck({
         index,
       });
       const bytes = new TextEncoder().encode(payload);
-      room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+      room.localParticipant.publishData(bytes, { reliable: true }).catch(() => { });
     }
   };
 
@@ -1052,7 +1052,7 @@ export function PresentationDeck({
         slideIndex: currentSlideIndex,
       });
       const bytes = new TextEncoder().encode(payload);
-      room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+      room.localParticipant.publishData(bytes, { reliable: true }).catch(() => { });
     }
   };
 
@@ -1070,7 +1070,7 @@ export function PresentationDeck({
         allowStudentDraw: nextState,
       });
       const bytes = new TextEncoder().encode(payload);
-      room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+      room.localParticipant.publishData(bytes, { reliable: true }).catch(() => { });
     }
   };
 
@@ -1098,8 +1098,8 @@ export function PresentationDeck({
       const inferredMime = isPptx
         ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         : isPdf
-        ? "application/pdf"
-        : file.type || "image/png";
+          ? "application/pdf"
+          : file.type || "image/png";
 
       let uploadedUrl = "";
 
@@ -1198,7 +1198,7 @@ export function PresentationDeck({
             name: file.name,
             url: uploadedUrl,
           });
-          room.localParticipant.publishData(new TextEncoder().encode(fileSharedPayload), { reliable: true }).catch(() => {});
+          room.localParticipant.publishData(new TextEncoder().encode(fileSharedPayload), { reliable: true }).catch(() => { });
         }
       }
     } catch (err: any) {
@@ -1216,9 +1216,8 @@ export function PresentationDeck({
   return (
     <div
       ref={containerRef}
-      className={`h-full w-full flex flex-col relative overflow-hidden bg-[#0d0f14] ${
-        isFullscreen ? "fixed inset-0 z-50" : ""
-      }`}
+      className={`h-full w-full flex flex-col relative overflow-hidden bg-[#0d0f14] ${isFullscreen ? "fixed inset-0 z-50" : ""
+        }`}
     >
       {/* ── TOP SLIDE NAVIGATION & ACTIONS BAR ── */}
       <div className="h-12 shrink-0 bg-[#161820] border-b border-white/10 px-3 flex items-center justify-between text-white text-xs z-30">
@@ -1227,11 +1226,10 @@ export function PresentationDeck({
           {slides.length > 0 && (
             <button
               onClick={() => setShowThumbnails(!showThumbnails)}
-              className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1.5 ${
-                showThumbnails
+              className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1.5 ${showThumbnails
                   ? "bg-blue-600 border-blue-500 text-white"
                   : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-              }`}
+                }`}
               title="Slide Overview"
             >
               <Layers size={14} />
@@ -1279,11 +1277,10 @@ export function PresentationDeck({
           {isTeacher && (
             <button
               onClick={toggleStudentPermission}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
-                studentDrawAllowed
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${studentDrawAllowed
                   ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-sm"
                   : "bg-white/5 border-white/10 text-white/60 hover:text-white"
-              }`}
+                }`}
               title="Toggle whether students can draw on presentation slides"
             >
               <Users size={13} />
@@ -1344,11 +1341,10 @@ export function PresentationDeck({
               <button
                 key={s.id}
                 onClick={() => goToSlide(idx)}
-                className={`relative rounded-lg overflow-hidden border transition-all text-left group ${
-                  idx === currentSlideIndex
+                className={`relative rounded-lg overflow-hidden border transition-all text-left group ${idx === currentSlideIndex
                     ? "border-blue-500 ring-2 ring-blue-500/30"
                     : "border-white/10 hover:border-white/30 opacity-70 hover:opacity-100"
-                }`}
+                  }`}
               >
                 <div className="aspect-[16/10] bg-black/40 w-full relative">
                   <img src={s.url} alt={`Slide ${idx + 1}`} className="w-full h-full object-contain" />
@@ -1440,9 +1436,8 @@ export function PresentationDeck({
             {/* Tool: Pen */}
             <button
               onClick={() => setCurrentTool("pen")}
-              className={`p-2 rounded-xl transition-colors ${
-                currentTool === "pen" ? "bg-blue-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
-              }`}
+              className={`p-2 rounded-xl transition-colors ${currentTool === "pen" ? "bg-blue-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
               title="Pen (Draw)"
             >
               <PenTool size={16} />
@@ -1451,9 +1446,8 @@ export function PresentationDeck({
             {/* Tool: Highlighter */}
             <button
               onClick={() => setCurrentTool("highlighter")}
-              className={`p-2 rounded-xl transition-colors ${
-                currentTool === "highlighter" ? "bg-amber-500 text-black font-bold" : "text-white/70 hover:text-white hover:bg-white/10"
-              }`}
+              className={`p-2 rounded-xl transition-colors ${currentTool === "highlighter" ? "bg-amber-500 text-black font-bold" : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
               title="Highlighter"
             >
               <Highlighter size={16} />
@@ -1462,9 +1456,8 @@ export function PresentationDeck({
             {/* Tool: Laser Pointer */}
             <button
               onClick={() => setCurrentTool("laser")}
-              className={`p-2 rounded-xl transition-colors ${
-                currentTool === "laser" ? "bg-red-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
-              }`}
+              className={`p-2 rounded-xl transition-colors ${currentTool === "laser" ? "bg-red-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
               title="Laser Pointer (Temporary focus)"
             >
               <Sparkles size={16} />
@@ -1473,9 +1466,8 @@ export function PresentationDeck({
             {/* Tool: Arrow */}
             <button
               onClick={() => setCurrentTool("arrow")}
-              className={`p-2 rounded-xl transition-colors ${
-                currentTool === "arrow" ? "bg-blue-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
-              }`}
+              className={`p-2 rounded-xl transition-colors ${currentTool === "arrow" ? "bg-blue-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
               title="Arrow"
             >
               <ArrowRight size={16} />
@@ -1484,9 +1476,8 @@ export function PresentationDeck({
             {/* Tool: Rectangle */}
             <button
               onClick={() => setCurrentTool("rect")}
-              className={`p-2 rounded-xl transition-colors ${
-                currentTool === "rect" ? "bg-blue-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
-              }`}
+              className={`p-2 rounded-xl transition-colors ${currentTool === "rect" ? "bg-blue-600 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
               title="Box / Rectangle"
             >
               <Square size={16} />
@@ -1495,9 +1486,8 @@ export function PresentationDeck({
             {/* Tool: Eraser */}
             <button
               onClick={() => setCurrentTool("eraser")}
-              className={`p-2 rounded-xl transition-colors ${
-                currentTool === "eraser" ? "bg-white/25 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
-              }`}
+              className={`p-2 rounded-xl transition-colors ${currentTool === "eraser" ? "bg-white/25 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
               title="Eraser"
             >
               <Eraser size={16} />
