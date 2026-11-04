@@ -51,7 +51,35 @@ export class PrismaService
       `CREATE INDEX IF NOT EXISTS "webhook_logs_crmId_idx" ON "webhook_logs"("crmId");`,
       `CREATE INDEX IF NOT EXISTS "webhook_logs_createdAt_idx" ON "webhook_logs"("createdAt" DESC);`,
 
-      // 2. Incremental columns on existing tables
+      // 2. Classroom Registrations & Files tables
+      `CREATE TABLE IF NOT EXISTS "live_class_registrations" (
+        "id" TEXT PRIMARY KEY,
+        "liveClassId" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "email" TEXT NOT NULL,
+        "phone" TEXT,
+        "organization" TEXT,
+        "registrationToken" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'REGISTERED',
+        "registeredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "live_class_registrations_liveClassId_email_key" ON "live_class_registrations"("liveClassId", "email");`,
+      `CREATE INDEX IF NOT EXISTS "live_class_registrations_liveClassId_idx" ON "live_class_registrations"("liveClassId");`,
+      `CREATE INDEX IF NOT EXISTS "live_class_registrations_email_idx" ON "live_class_registrations"("email");`,
+
+      `CREATE TABLE IF NOT EXISTS "live_class_files" (
+        "id" TEXT PRIMARY KEY,
+        "liveClassId" TEXT NOT NULL,
+        "uploaderId" TEXT NOT NULL,
+        "fileName" TEXT NOT NULL,
+        "fileUrl" TEXT NOT NULL,
+        "fileSize" INTEGER,
+        "mimeType" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+      `CREATE INDEX IF NOT EXISTS "live_class_files_liveClassId_idx" ON "live_class_files"("liveClassId");`,
+
+      // 3. Incremental columns on existing tables
       `ALTER TABLE "custom_forms" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;`,
       `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT 'DIRECT';`,
       `ALTER TABLE "student_profiles" ADD COLUMN IF NOT EXISTS "externalCrmId" TEXT;`,

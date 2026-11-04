@@ -1024,17 +1024,27 @@ export class LiveClassService {
     }
 
     // Security: Tenant isolation check for Centre Admins
-    if (userRole === 'CENTRE_ADMIN' && cls.centreId) {
-      assertCentreAccess(user, cls.centreId);
+    if (userRole === 'CENTRE_ADMIN' && cls.centreId && !isSuper) {
+      try {
+        assertCentreAccess(user, cls.centreId);
+      } catch (err: any) {
+        throw new ForbiddenException(err?.message || 'Access denied for this centre.');
+      }
     }
 
     // Security: Audit trail for PII access
     this.recordAudit(user, 'VIEW_ATTENDEES_ROSTER', `Viewed roster for live class ${cls.id}`, cls.id).catch(() => {});
 
-    const registrations = await this.prisma.liveClassRegistration.findMany({
-      where: { liveClassId: id },
-      orderBy: { registeredAt: 'desc' },
-    });
+    let registrations: any[] = [];
+    try {
+      registrations = await this.prisma.liveClassRegistration.findMany({
+        where: { liveClassId: cls.id },
+        orderBy: { registeredAt: 'desc' },
+      });
+    } catch (dbErr: any) {
+      this.logger.warn(`Could not query liveClassRegistration (${dbErr?.message}); falling back to cohort roster.`);
+      registrations = [];
+    }
 
     const attendedEmails = new Set(registrations.map((r) => r.email.toLowerCase()));
 

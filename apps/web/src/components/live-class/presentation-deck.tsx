@@ -151,8 +151,16 @@ export function PresentationDeck({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isPointerDownRef = useRef<boolean>(false);
 
+  // Permission synchronization ref (prevents closure staleness)
+  const [studentDrawAllowed, setStudentDrawAllowed] = useState<boolean>(allowStudentDraw);
+  const allowStudentDrawRef = useRef<boolean>(allowStudentDraw);
+  useEffect(() => {
+    setStudentDrawAllowed(allowStudentDraw);
+    allowStudentDrawRef.current = allowStudentDraw;
+  }, [allowStudentDraw]);
+
   // Permission check
-  const canDraw = isTeacher || allowStudentDraw;
+  const canDraw = isTeacher || studentDrawAllowed;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. PDF.js Dynamic Loader (Loads client-side with Blob Worker to bypass CORS)
@@ -717,6 +725,14 @@ export function PresentationDeck({
               activePresentationRef.current.fileType,
               currentSlideIndex
             );
+            if (room?.localParticipant) {
+              const payload = JSON.stringify({
+                type: "SLIDE_PERMISSIONS_UPDATE",
+                allowStudentDraw: allowStudentDrawRef.current,
+              });
+              const bytes = new TextEncoder().encode(payload);
+              room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+            }
           }
         } else if (data.type === "SLIDE_DECK_LOADED" && Array.isArray(data.slides)) {
           if (!isSenderHost) return;
@@ -726,30 +742,36 @@ export function PresentationDeck({
           if (!isSenderHost) return;
           setCurrentSlideIndex(data.index);
         } else if (data.type === "SLIDE_STROKE_ADDED" && data.stroke) {
-          if (!isSenderHost && !allowStudentDraw) return;
+          if (!isTeacher && !isSenderHost && !allowStudentDrawRef.current) return;
           const s = data.stroke as DrawingStroke;
           setStrokesBySlide((prev) => {
             const list = prev[s.slideIndex] || [];
+            if (list.some((existing) => existing.id === s.id)) return prev;
             return {
               ...prev,
               [s.slideIndex]: [...list, s],
             };
           });
+          requestAnimationFrame(() => redrawCanvas());
         } else if (data.type === "SLIDE_STROKES_CLEARED") {
-          if (!isSenderHost) return;
+          if (!isSenderHost && !isTeacher) return;
           setStrokesBySlide((prev) => ({
             ...prev,
             [data.slideIndex]: [],
           }));
+          requestAnimationFrame(() => redrawCanvas());
         } else if (data.type === "SLIDE_LASER_POINTER") {
-          if (!isSenderHost) return;
+          if (!isSenderHost && !allowStudentDrawRef.current && !isTeacher) return;
           setLaserPosition({ x: data.x, y: data.y, name: data.name || "Speaker" });
           if (laserTimerRef.current) clearTimeout(laserTimerRef.current);
           laserTimerRef.current = setTimeout(() => setLaserPosition(null), 1400);
         } else if (data.type === "SLIDE_PERMISSIONS_UPDATE") {
           if (!isSenderHost) return;
+          const nextAllow = Boolean(data.allowStudentDraw);
+          setStudentDrawAllowed(nextAllow);
+          allowStudentDrawRef.current = nextAllow;
           if (onToggleStudentDraw) {
-            onToggleStudentDraw(Boolean(data.allowStudentDraw));
+            onToggleStudentDraw(nextAllow);
           }
         }
       } catch {}
@@ -1028,7 +1050,9 @@ export function PresentationDeck({
 
   const toggleStudentPermission = () => {
     if (!isTeacher) return;
-    const nextState = !allowStudentDraw;
+    const nextState = !studentDrawAllowed;
+    setStudentDrawAllowed(nextState);
+    allowStudentDrawRef.current = nextState;
     if (onToggleStudentDraw) {
       onToggleStudentDraw(nextState);
     }
@@ -1219,7 +1243,7 @@ export function PresentationDeck({
           <div className="flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-xl border border-white/10">
             <button
               onClick={() => goToSlide(currentSlideIndex - 1)}
-              disabled={currentSlideIndex === 0 || (!isTeacher && !allowStudentDraw)}
+              disabled={currentSlideIndex === 0 || (!isTeacher && !studentDrawAllowed)}
               className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors"
               title="Previous Slide"
             >
@@ -1232,7 +1256,7 @@ export function PresentationDeck({
 
             <button
               onClick={() => goToSlide(currentSlideIndex + 1)}
-              disabled={currentSlideIndex === slides.length - 1 || (!isTeacher && !allowStudentDraw)}
+              disabled={currentSlideIndex === slides.length - 1 || (!isTeacher && !studentDrawAllowed)}
               className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors"
               title="Next Slide"
             >
@@ -1248,7 +1272,7 @@ export function PresentationDeck({
             <button
               onClick={toggleStudentPermission}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
-                allowStudentDraw
+                studentDrawAllowed
                   ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-sm"
                   : "bg-white/5 border-white/10 text-white/60 hover:text-white"
               }`}
@@ -1256,8 +1280,8 @@ export function PresentationDeck({
             >
               <Users size={13} />
               <span className="hidden md:inline">Students Draw:</span>
-              <span className={allowStudentDraw ? "text-emerald-400 font-bold" : "text-white/40"}>
-                {allowStudentDraw ? "ON" : "OFF"}
+              <span className={studentDrawAllowed ? "text-emerald-400 font-bold" : "text-white/40"}>
+                {studentDrawAllowed ? "ON" : "OFF"}
               </span>
             </button>
           )}

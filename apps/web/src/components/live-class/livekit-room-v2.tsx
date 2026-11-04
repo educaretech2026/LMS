@@ -1134,22 +1134,24 @@ export function LiveKitClassRoomV2({
         unreadChatCount={unreadChatCount}
         onToggleHand={() => {
           const room = (window as any).__lk_room;
+          const currentId = room?.localParticipant?.identity || effectiveIdentity;
+          const currentName = room?.localParticipant?.name || confirmedDisplayName || name || "Student";
           const next = !isHandRaised;
           setIsHandRaised(next);
           safePublishData(room, {
             type: "HAND_RAISE",
-            identity: effectiveIdentity,
-            name: confirmedDisplayName || name || "Student",
+            identity: currentId,
+            name: currentName,
             raised: next,
             raisedAt: Date.now(),
           });
           setRaisedHandsList((prev) => {
             if (next) {
-              const existing = prev.find((h) => h.identity === effectiveIdentity);
+              const existing = prev.find((h) => h.identity === currentId);
               if (existing) return prev;
-              return [...prev, { identity: effectiveIdentity, name: confirmedDisplayName || name || "Student", raisedAt: Date.now() }];
+              return [...prev, { identity: currentId, name: currentName, raisedAt: Date.now() }];
             } else {
-              return prev.filter((h) => h.identity !== effectiveIdentity);
+              return prev.filter((h) => h.identity !== currentId);
             }
           });
         }}
@@ -2120,25 +2122,29 @@ function ClassroomV2Sync({
             micPub.track?.mute();
           }
         } else if (data.type === "HAND_RAISE") {
+          const targetId = data.identity || participant?.identity;
+          const targetName = data.name || participant?.name || "Student";
+          if (!targetId) return;
+
           setRaisedHandsList((prev: HandRaiseEntry[]) => {
             if (data.raised) {
-              const existing = prev.find((h) => h.identity === data.identity);
+              const existing = prev.find((h) => h.identity === targetId);
               if (existing) return prev;
               return [
                 ...prev,
                 {
-                  identity: data.identity,
-                  name: data.name || "Student",
+                  identity: targetId,
+                  name: targetName,
                   raisedAt: data.raisedAt || Date.now(),
                 },
               ];
             } else {
-              return prev.filter((h) => h.identity !== data.identity);
+              return prev.filter((h) => h.identity !== targetId);
             }
           });
         } else if (data.type === "LOWER_STUDENT_HAND") {
-          if (!isSenderHost && participant?.identity !== data.identity) return;
-          if (data.identity === myIdentity) {
+          const myLocalId = room?.localParticipant?.identity;
+          if (data.identity === myLocalId || data.identity === myIdentity) {
             setIsHandRaised(false);
           }
           setRaisedHandsList((prev: HandRaiseEntry[]) => prev.filter((h) => h.identity !== data.identity));
