@@ -53,8 +53,23 @@ export default function PublicLiveClassPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", organization: "", honeypot: "" });
-  const [touched, setTouched] = useState({ name: false, email: false, phone: false, organization: false });
+  const [formData, setFormData] = useState({
+    name: "",
+    parentName: "",
+    email: "",
+    phone: "",
+    courseOrClass: "",
+    organization: "",
+    honeypot: "",
+  });
+  const [touched, setTouched] = useState({
+    name: false,
+    parentName: false,
+    email: false,
+    phone: false,
+    courseOrClass: false,
+    organization: false,
+  });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [registered, setRegistered] = useState(false);
@@ -113,17 +128,43 @@ export default function PublicLiveClassPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTouched({ name: true, email: true, phone: true, organization: true });
-    const n = formData.name.trim(), em = formData.email.trim(), ph = formData.phone.trim(), org = formData.organization.trim();
-    if (!n) { setSubmitError("Full name is required."); return; }
+    setTouched({
+      name: true,
+      parentName: true,
+      email: true,
+      phone: true,
+      courseOrClass: true,
+      organization: true,
+    });
+    const n = formData.name.trim();
+    const pn = formData.parentName.trim();
+    const em = formData.email.trim();
+    const ph = formData.phone.trim();
+    const cc = formData.courseOrClass.trim();
+    const org = formData.organization.trim();
+
+    if (!n) { setSubmitError("Student full name is required."); return; }
+    if (!pn) { setSubmitError("Parent name is required."); return; }
     if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setSubmitError("A valid email address is required."); return; }
-    if (!ph || ph.replace(/\D/g, "").length < 7) { setSubmitError("A valid mobile number is required."); return; }
-    if (!org) { setSubmitError("Institution / organization name is required."); return; }
-    setSubmitting(true); setSubmitError("");
+    if (!ph || ph.replace(/\D/g, "").length < 7) { setSubmitError("A valid mobile / WhatsApp number is required."); return; }
+    if (!cc) { setSubmitError("Class or course is required."); return; }
+    if (!org) { setSubmitError("School or institution name is required."); return; }
+
+    setSubmitting(true);
+    setSubmitError("");
     try {
       const res = await fetch(`${getPublicApiUrl()}/live-class/public/${id}/register`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: n, email: em, phone: ph, organization: org, honeypot: formData.honeypot }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: n,
+          parentName: pn,
+          email: em,
+          phone: ph,
+          courseOrClass: cc,
+          organization: org,
+          honeypot: formData.honeypot,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Registration failed. Please try again.");
@@ -134,16 +175,45 @@ export default function PublicLiveClassPage() {
         meetUrl: data.meetUrl,
         registrationToken: data.registrationToken,
         name: n,
+        parentName: pn,
         email: em,
         phone: ph,
-        organization: org
+        courseOrClass: cc,
+        organization: org,
       }));
-    } catch (e: any) { setSubmitError(e.message || "Something went wrong. Please try again."); }
-    finally { setSubmitting(false); }
+    } catch (e: any) {
+      setSubmitError(e.message || "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleCopy = () => { if (!meetUrl) return; navigator.clipboard.writeText(meetUrl); setCopied(true); setTimeout(() => setCopied(false), 2500); };
-  const handleReset = () => { if (confirm("Register with a different profile?")) { localStorage.removeItem(`live_access_${id}`); setRegistered(false); setMeetUrl(null); setRegistrationToken(null); setFormData({ name: "", email: "", phone: "", organization: "", honeypot: "" }); setTouched({ name: false, email: false, phone: false, organization: false }); } };
+  const handleReset = () => {
+    if (confirm("Register with a different profile?")) {
+      localStorage.removeItem(`live_access_${id}`);
+      setRegistered(false);
+      setMeetUrl(null);
+      setRegistrationToken(null);
+      setFormData({
+        name: "",
+        parentName: "",
+        email: "",
+        phone: "",
+        courseOrClass: "",
+        organization: "",
+        honeypot: "",
+      });
+      setTouched({
+        name: false,
+        parentName: false,
+        email: false,
+        phone: false,
+        courseOrClass: false,
+        organization: false,
+      });
+    }
+  };
 
   const calUrl = useMemo(() => {
     if (!webinar) return "";
@@ -193,8 +263,10 @@ export default function PublicLiveClassPage() {
 
   const fieldError = {
     name: touched.name && !formData.name.trim(),
+    parentName: touched.parentName && !formData.parentName.trim(),
     email: touched.email && (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())),
     phone: touched.phone && (!formData.phone.trim() || formData.phone.replace(/\D/g, "").length < 7),
+    courseOrClass: touched.courseOrClass && !formData.courseOrClass.trim(),
     org: touched.organization && !formData.organization.trim(),
   };
 
@@ -348,22 +420,36 @@ export default function PublicLiveClassPage() {
                   <form onSubmit={handleSubmit}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
 
-                      {/* Full Name */}
-                      <div style={{ gridColumn: "1 / -1" }}>
-                        <label htmlFor="f-name" style={labelStyle}>Full Name <span style={{ color: "#ee1b24" }}>*</span></label>
+                      {/* Student Full Name */}
+                      <div>
+                        <label htmlFor="f-name" style={labelStyle}>Student Full Name <span style={{ color: "#ee1b24" }}>*</span></label>
                         <input
                           id="f-name" type="text" required autoComplete="name"
                           value={formData.name}
                           onChange={e => setFormData({ ...formData, name: e.target.value })}
                           onBlur={() => setTouched(t => ({ ...t, name: true }))}
-                          placeholder="Your full name"
+                          placeholder="Student's full name"
                           style={inputStyle(fieldError.name)}
                         />
-                        {fieldError.name && <p style={errorHint}>Full name is required.</p>}
+                        {fieldError.name && <p style={errorHint}>Student name is required.</p>}
+                      </div>
+
+                      {/* Parent Name */}
+                      <div>
+                        <label htmlFor="f-parent" style={labelStyle}>Parent / Guardian Name <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <input
+                          id="f-parent" type="text" required
+                          value={formData.parentName}
+                          onChange={e => setFormData({ ...formData, parentName: e.target.value })}
+                          onBlur={() => setTouched(t => ({ ...t, parentName: true }))}
+                          placeholder="Parent's full name"
+                          style={inputStyle(fieldError.parentName)}
+                        />
+                        {fieldError.parentName && <p style={errorHint}>Parent name is required.</p>}
                       </div>
 
                       {/* Email */}
-                      <div style={{ gridColumn: "1 / -1" }}>
+                      <div>
                         <label htmlFor="f-email" style={labelStyle}>Email Address <span style={{ color: "#ee1b24" }}>*</span></label>
                         <input
                           id="f-email" type="email" required autoComplete="email"
@@ -376,9 +462,9 @@ export default function PublicLiveClassPage() {
                         {fieldError.email && <p style={errorHint}>A valid email is required.</p>}
                       </div>
 
-                      {/* Phone */}
+                      {/* Contact / WhatsApp */}
                       <div>
-                        <label htmlFor="f-phone" style={labelStyle}>WhatsApp / Mobile <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <label htmlFor="f-phone" style={labelStyle}>Contact / WhatsApp Number <span style={{ color: "#ee1b24" }}>*</span></label>
                         <input
                           id="f-phone" type="tel" required autoComplete="tel"
                           value={formData.phone}
@@ -387,18 +473,32 @@ export default function PublicLiveClassPage() {
                           placeholder="+91 98765 43210"
                           style={inputStyle(fieldError.phone)}
                         />
-                        {fieldError.phone && <p style={errorHint}>Valid mobile required.</p>}
+                        {fieldError.phone && <p style={errorHint}>Valid mobile number required.</p>}
                       </div>
 
-                      {/* Organization */}
+                      {/* Class or Course */}
                       <div>
-                        <label htmlFor="f-org" style={labelStyle}>School / College <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <label htmlFor="f-course" style={labelStyle}>Class / Course <span style={{ color: "#ee1b24" }}>*</span></label>
+                        <input
+                          id="f-course" type="text" required
+                          value={formData.courseOrClass}
+                          onChange={e => setFormData({ ...formData, courseOrClass: e.target.value })}
+                          onBlur={() => setTouched(t => ({ ...t, courseOrClass: true }))}
+                          placeholder="e.g. 10th CBSE, 12th State, NEET"
+                          style={inputStyle(fieldError.courseOrClass)}
+                        />
+                        {fieldError.courseOrClass && <p style={errorHint}>Class or course is required.</p>}
+                      </div>
+
+                      {/* Institute / School */}
+                      <div>
+                        <label htmlFor="f-org" style={labelStyle}>School / College / Institute <span style={{ color: "#ee1b24" }}>*</span></label>
                         <input
                           id="f-org" type="text" required
                           value={formData.organization}
                           onChange={e => setFormData({ ...formData, organization: e.target.value })}
                           onBlur={() => setTouched(t => ({ ...t, organization: true }))}
-                          placeholder="Your institution"
+                          placeholder="Your school or college"
                           style={inputStyle(fieldError.org)}
                         />
                         {fieldError.org && <p style={errorHint}>Institution name required.</p>}

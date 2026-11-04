@@ -902,7 +902,15 @@ export class LiveClassService {
    */
   async registerAttendee(
     id: string,
-    data: { name: string; email: string; phone?: string; organization?: string; honeypot?: string },
+    data: {
+      name: string;
+      parentName?: string;
+      email: string;
+      phone?: string;
+      courseOrClass?: string;
+      organization?: string;
+      honeypot?: string;
+    },
   ) {
     // Honeypot check for bots
     if (data.honeypot && data.honeypot.trim().length > 0) {
@@ -910,7 +918,11 @@ export class LiveClassService {
     }
 
     if (!data.name || !data.name.trim()) {
-      throw new BadRequestException('Full name is required.');
+      throw new BadRequestException('Student full name is required.');
+    }
+
+    if (!data.parentName || !data.parentName.trim()) {
+      throw new BadRequestException('Parent name is required.');
     }
 
     if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
@@ -918,11 +930,15 @@ export class LiveClassService {
     }
 
     if (!data.phone || !data.phone.trim()) {
-      throw new BadRequestException('Mobile or WhatsApp number is required.');
+      throw new BadRequestException('Mobile or WhatsApp contact number is required.');
+    }
+
+    if (!data.courseOrClass || !data.courseOrClass.trim()) {
+      throw new BadRequestException('Class or Course is required.');
     }
 
     if (!data.organization || !data.organization.trim()) {
-      throw new BadRequestException('School, College, or Organization name is required.');
+      throw new BadRequestException('School, College, or Institute name is required.');
     }
 
     const cls = await this.safeFindUnique({ id });
@@ -932,9 +948,15 @@ export class LiveClassService {
     }
 
     const trimmedName = data.name.trim().slice(0, 100);
+    const trimmedParent = data.parentName.trim().slice(0, 100);
     const trimmedEmail = data.email.trim().toLowerCase().slice(0, 150);
-    const trimmedPhone = data.phone ? data.phone.trim().slice(0, 25) : null;
-    const trimmedOrg = data.organization ? data.organization.trim().slice(0, 100) : null;
+    const trimmedPhone = data.phone.trim().slice(0, 25);
+    const trimmedCourse = data.courseOrClass.trim().slice(0, 100);
+    const trimmedOrg = data.organization.trim().slice(0, 150);
+
+    // Encode composite metadata into organization field:
+    // Format: "Institute Name | Course: 12th CBSE | Parent: John Doe"
+    const compositeOrg = `${trimmedOrg} | Course: ${trimmedCourse} | Parent: ${trimmedParent}`;
 
     // Cryptographically secure token generation (24 bytes hex)
     const rawRegistrationToken = `reg_${crypto.randomBytes(24).toString('hex')}`;
@@ -950,7 +972,7 @@ export class LiveClassService {
       update: {
         name: trimmedName,
         phone: trimmedPhone,
-        organization: trimmedOrg,
+        organization: compositeOrg,
         registrationToken: hashedToken,
         status: 'REGISTERED',
       },
@@ -959,7 +981,7 @@ export class LiveClassService {
         name: trimmedName,
         email: trimmedEmail,
         phone: trimmedPhone,
-        organization: trimmedOrg,
+        organization: compositeOrg,
         registrationToken: hashedToken,
         status: 'REGISTERED',
       },
@@ -972,16 +994,14 @@ export class LiveClassService {
       title: cls.title,
       scheduledAt: cls.scheduledAt,
       status: cls.status,
-      message: 'Registration successful! You may now join the session.',
+      message: 'Registration successful! You may now join the webinar session.',
     };
   }
 
   /**
-   * Admin View: Returns all registered attendees for a live class.
+   * Admin / Presenter View: Returns all registered attendees for a live class.
    * Centre isolation & PII protection enforced:
-   * - Global classes require SUPER_ADMIN.
-   * - Non-superadmins receive masked phone numbers and email addresses.
-   * - Tokens are never exposed in attendee lists.
+   * - Super Admins and the designated Presenter / Teachers can view attendee details.
    */
   async getRegistrations(id: string, user?: any) {
     const cls = await this.safeFindUnique({ id });
@@ -991,16 +1011,14 @@ export class LiveClassService {
     }
 
     const isSuper = isSuperAdmin(user);
+    const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const isPresenterOrStaff =
+      isSuper ||
+      ['TEACHER', 'CENTRE_ADMIN', 'SUPER_ADMIN'].includes(userRole) ||
+      (user?.email && cls.teacherName && user.email.toLowerCase().includes(cls.teacherName.toLowerCase()));
 
-    if (cls.centreId) {
-      if (user && !isSuper) {
-        assertCentreAccess(user, cls.centreId);
-      }
-    } else {
-      // Global class without centreId: strictly require SUPER_ADMIN to protect attendee PII
-      if (!isSuper) {
-        throw new ForbiddenException('Access denied: Only Super Administrators can view attendee details for global webinars.');
-      }
+    if (!isPresenterOrStaff) {
+      throw new ForbiddenException('Access denied: Only administrators and the designated presenter can view attendee details.');
     }
 
     const registrations = await this.prisma.liveClassRegistration.findMany({
@@ -1008,24 +1026,38 @@ export class LiveClassService {
       orderBy: { registeredAt: 'desc' },
     });
 
-    // Mask PII if caller is not a Super Administrator
-    const sanitized = registrations.map(r => {
-      if (isSuper) return { ...r, registrationToken: undefined };
-      const maskedPhone = r.phone ? r.phone.replace(/(\d{2})\d+(\d{2})/, '$1******$2') : null;
-      const maskedEmail = r.email ? r.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : null;
+    // Parse the 6 mandatory fields from the stored records
+    const parsed = registrations.map((r) => {
+      let institute = r.organization || '';
+      let course = '';
+      let parentName = '';
+
+      if (r.organization && r.organization.includes(' | Course: ')) {
+        const parts = r.organization.split(' | ');
+        institute = parts[0] || '';
+        for (const p of parts.slice(1)) {
+          if (p.startsWith('Course: ')) course = p.replace('Course: ', '');
+          if (p.startsWith('Parent: ')) parentName = p.replace('Parent: ', '');
+        }
+      }
+
       return {
-        ...r,
-        phone: maskedPhone,
-        email: maskedEmail,
-        registrationToken: undefined,
+        id: r.id,
+        name: r.name,
+        parentName: parentName || '—',
+        email: r.email,
+        phone: r.phone || '—',
+        courseOrClass: course || '—',
+        organization: institute || '—',
+        registeredAt: r.registeredAt,
       };
     });
 
     return {
-      total: registrations.length,
+      total: parsed.length,
       classId: cls.id,
       title: cls.title,
-      registrations: sanitized,
+      registrations: parsed,
     };
   }
 

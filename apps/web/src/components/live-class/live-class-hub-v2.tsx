@@ -34,8 +34,10 @@ interface SetupOption { id: string; name: string }
 interface Registration {
   id: string;
   name: string;
+  parentName?: string | null;
   email: string;
   phone?: string | null;
+  courseOrClass?: string | null;
   organization?: string | null;
   registeredAt: string;
 }
@@ -1226,7 +1228,7 @@ function HostWebinarModalV2({
   );
 }
 
-/* ── Modal: Attendee Registrations ── */
+/* ── Modal: Attendee Registrations with 6 Mandatory Fields ── */
 function RegistrationsModalV2({
   cls,
   onClose,
@@ -1249,52 +1251,151 @@ function RegistrationsModalV2({
   const filtered = registrations.filter(
     (r) =>
       r.name.toLowerCase().includes(search.toLowerCase()) ||
+      (r.parentName && r.parentName.toLowerCase().includes(search.toLowerCase())) ||
       r.email.toLowerCase().includes(search.toLowerCase()) ||
+      (r.phone && r.phone.includes(search)) ||
+      (r.courseOrClass && r.courseOrClass.toLowerCase().includes(search.toLowerCase())) ||
       (r.organization && r.organization.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const exportCsv = () => {
+    if (!registrations.length) return;
+    const headers = [
+      "Student Name",
+      "Parent Name",
+      "Phone / WhatsApp",
+      "Email Address",
+      "Class / Course",
+      "School / Institute",
+      "Registered At",
+    ];
+    const rows = registrations.map((r) => [
+      `"${r.name.replace(/"/g, '""')}"`,
+      `"${(r.parentName || "—").replace(/"/g, '""')}"`,
+      `"${(r.phone || "—").replace(/"/g, '""')}"`,
+      `"${r.email.replace(/"/g, '""')}"`,
+      `"${(r.courseOrClass || "—").replace(/"/g, '""')}"`,
+      `"${(r.organization || "—").replace(/"/g, '""')}"`,
+      `"${new Date(r.registeredAt).toLocaleString("en-IN")}"`,
+    ]);
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `webinar-attendees-${cls.title.replace(/[^a-zA-Z0-9]/g, "_")}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Registered Attendees</h2>
-            <p className="text-[11px] text-slate-500">{cls.title} ({registrations.length} registered)</p>
+            <h2 className="text-sm font-bold text-slate-900">Registered Attendees (Full Roster)</h2>
+            <p className="text-[11px] text-slate-500">
+              {cls.title} • {registrations.length} registered candidates
+            </p>
           </div>
-          <button onClick={onClose} aria-label="Close dialog" className="text-slate-400 hover:text-slate-600 p-1">
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportCsv}
+              disabled={registrations.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Export CSV</span>
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+        <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-3">
+          <Search className="h-4 w-4 text-slate-400 shrink-0" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, or school..."
-            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white"
+            placeholder="Search by student name, parent name, email, phone, class, or institute..."
+            className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
           />
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
+          {error && (
+            <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 p-3 rounded-xl mb-4">
+              {error}
+            </p>
+          )}
+
           {loading ? (
-            <div className="py-12 flex justify-center"><RefreshCw className="h-6 w-6 animate-spin text-indigo-600" /></div>
+            <div className="py-12 flex flex-col items-center justify-center gap-2">
+              <RefreshCw className="h-6 w-6 animate-spin text-indigo-600" />
+              <p className="text-xs text-slate-500">Loading attendee roster...</p>
+            </div>
           ) : filtered.length === 0 ? (
-            <p className="text-xs text-center text-slate-400 py-8">No attendees registered yet.</p>
+            <p className="text-xs text-center text-slate-400 py-12">
+              {search ? "No attendees matching your search criteria." : "No attendees registered yet for this webinar."}
+            </p>
           ) : (
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-              {filtered.map((r) => (
-                <div key={r.id} className="p-3.5 flex items-center justify-between text-xs hover:bg-slate-50">
-                  <div>
-                    <p className="font-bold text-slate-800">{r.name}</p>
-                    <p className="text-slate-400 text-[11px]">{r.email}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-slate-600">{r.organization || "Independent"}</p>
-                    <p className="text-slate-400 text-[10px]">{new Date(r.registeredAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider text-[10px] font-semibold">
+                  <tr>
+                    <th className="px-3.5 py-3">Student Name</th>
+                    <th className="px-3.5 py-3">Parent Name</th>
+                    <th className="px-3.5 py-3">Contact</th>
+                    <th className="px-3.5 py-3">Class / Course</th>
+                    <th className="px-3.5 py-3">Institute</th>
+                    <th className="px-3.5 py-3">Registered At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {filtered.map((r) => (
+                    <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-3.5 py-3">
+                        <p className="font-bold text-slate-900">{r.name}</p>
+                      </td>
+                      <td className="px-3.5 py-3 text-slate-700">
+                        {r.parentName || "—"}
+                      </td>
+                      <td className="px-3.5 py-3">
+                        <p className="text-slate-800 font-medium font-mono text-[11px]">{r.phone || "—"}</p>
+                        <p className="text-slate-400 text-[10px]">{r.email}</p>
+                      </td>
+                      <td className="px-3.5 py-3">
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-semibold text-[10px]">
+                          {r.courseOrClass || "—"}
+                        </span>
+                      </td>
+                      <td className="px-3.5 py-3 text-slate-600 max-w-[160px] truncate" title={r.organization || "—"}>
+                        {r.organization || "—"}
+                      </td>
+                      <td className="px-3.5 py-3 text-slate-400 text-[10px]">
+                        {new Date(r.registeredAt).toLocaleString("en-IN", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                          hour12: true,
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

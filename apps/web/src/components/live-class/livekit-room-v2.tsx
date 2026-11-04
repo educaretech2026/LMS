@@ -1,21 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, memo, useMemo, Component, ReactNode } from "react";
+import { useEffect, useState, useCallback, useRef, memo, useMemo } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
   StartAudio,
   useRoomContext,
   useTracks,
+  useParticipants,
   ParticipantTile,
-  ParticipantContext,
-  FocusLayout,
   ConnectionQualityIndicator,
   useTrackToggle,
   useDisconnectButton,
   useLocalParticipant,
-  useIsSpeaking,
   TrackReferenceOrPlaceholder,
+  FocusLayout,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import {
@@ -23,7 +22,6 @@ import {
   RoomOptions,
   RoomConnectOptions,
   VideoPresets,
-  RoomEvent,
   DisconnectReason,
   LocalVideoTrack,
 } from "livekit-client";
@@ -34,7 +32,8 @@ import {
   Monitor, AlertCircle, Hand, MessageSquare, Send, CheckCircle2,
   ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
   Trash2, Edit3, SlidersHorizontal, X, Presentation, LayoutGrid,
-  PenTool, MoreHorizontal, Info, Clock
+  PenTool, MoreHorizontal, Info, Clock, Download, FileSpreadsheet,
+  UserCheck, UserX, ChevronDown, Check, Search
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -42,8 +41,8 @@ import { StudioSettings, BreakState, DEFAULT_STUDIO_SETTINGS } from "./studio-ty
 import { StudioVideoProcessor } from "./studio-pipeline";
 import { PresentationDeck } from "./presentation-deck";
 import { MobileSheet } from "./mobile-sheet";
-import { Tldraw } from "tldraw";
-import "tldraw/tldraw.css";
+import { PreJoinLobby } from "./pre-join-lobby";
+import { SynchronizedWhiteboard } from "./synchronized-whiteboard";
 
 interface LiveKitRoomV2Props {
   classId?: string;
@@ -72,7 +71,30 @@ interface SharedFile {
   url: string;
 }
 
+export interface HandRaiseEntry {
+  identity: string;
+  name: string;
+  raisedAt: number;
+}
+
+export interface SessionAttendee {
+  identity: string;
+  name: string;
+  role: string;
+  firstJoinedAt: string;
+  lastSeenAt: string;
+  isOnline: boolean;
+}
+
 export type ClassroomStageMode = "grid" | "slides" | "whiteboard";
+
+function formatRelativeTime(timestamp: number) {
+  const seconds = Math.max(1, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
+}
 
 export function safePublishData(
   room: any,
@@ -168,6 +190,12 @@ export function LiveKitClassRoomV2({
   role,
   onLeave,
 }: LiveKitRoomV2Props) {
+  // Pre-join Welcome Lobby State
+  const [hasJoinedFromLobby, setHasJoinedFromLobby] = useState<boolean>(false);
+  const [initialCameraEnabled, setInitialCameraEnabled] = useState<boolean>(true);
+  const [initialMicEnabled, setInitialMicEnabled] = useState<boolean>(true);
+  const [confirmedDisplayName, setConfirmedDisplayName] = useState<string>(name || "");
+
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -184,21 +212,31 @@ export function LiveKitClassRoomV2({
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
 
-  // Class & Teacher Controls
-  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  // Immersion Mode Activity Alert Toast
+  const [recentActivityAlert, setRecentActivityAlert] = useState<{
+    type: "chat" | "file";
+    text: string;
+    sender?: string;
+    url?: string;
+  } | null>(null);
+
+  // Raised Hands Tracker with Names & Timestamps
+  const [raisedHandsList, setRaisedHandsList] = useState<HandRaiseEntry[]>([]);
+  const [showRaisedHandsPopover, setShowRaisedHandsPopover] = useState<boolean>(false);
   const [isHandRaised, setIsHandRaised] = useState<boolean>(false);
+
+  // Attendance & Attendee Roster
+  const [showAttendanceModal, setShowAttendanceModal] = useState<boolean>(false);
+  const [sessionAttendees, setSessionAttendees] = useState<Map<string, SessionAttendee>>(new Map());
+
+  // Class & Teacher Controls
   const [isStudioOpen, setIsStudioOpen] = useState<boolean>(false);
   const [studioSettings, setStudioSettings] = useState<StudioSettings>(DEFAULT_STUDIO_SETTINGS);
   const [breakState, setBreakState] = useState<BreakState | null>(null);
   const [networkAlert, setNetworkAlert] = useState<string | null>(null);
   const [isUnexpectedDisconnect, setIsUnexpectedDisconnect] = useState<boolean>(false);
-  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
-
-  // Mobile More Popover
-  const [showMobileMore, setShowMobileMore] = useState<boolean>(false);
 
   // Refs
-  const tldrawEditorRef = useRef<any>(null);
   const studioProcessorRef = useRef<StudioVideoProcessor | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   chatMessagesRef.current = chatMessages;
@@ -209,6 +247,16 @@ export function LiveKitClassRoomV2({
 
   const normalizedRole = (role || "").toUpperCase();
   const isTeacher = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN"].includes(normalizedRole);
+  const isImmersed = !isTeacher && stageMode !== "grid";
+
+  // Auto-dismiss activity alert after 6 seconds
+  useEffect(() => {
+    if (!recentActivityAlert) return;
+    const timer = setTimeout(() => {
+      setRecentActivityAlert(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [recentActivityAlert]);
 
   const effectiveIdentity = useMemo(() => {
     if (identity && identity.trim().length > 0) return identity;
@@ -233,13 +281,13 @@ export function LiveKitClassRoomV2({
         res = await fetchApi<TokenResponse>(
           `/live-class/public/${classId}/token?registrationToken=${encodeURIComponent(
             regToken
-          )}&name=${encodeURIComponent(name || "")}`
+          )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
         );
       } else {
         const query = new URLSearchParams({
           roomId: roomId || "",
           identity: effectiveIdentity,
-          name: name || "",
+          name: confirmedDisplayName || name || "",
           role: normalizedRole || "STUDENT",
         });
         if (classId) {
@@ -256,7 +304,7 @@ export function LiveKitClassRoomV2({
     } finally {
       setLoading(false);
     }
-  }, [classId, roomId, effectiveIdentity, name, normalizedRole]);
+  }, [classId, roomId, effectiveIdentity, confirmedDisplayName, name, normalizedRole]);
 
   useEffect(() => {
     fetchToken();
@@ -369,14 +417,34 @@ export function LiveKitClassRoomV2({
     );
   }
 
+  // Google Meet–Style Pre-Join Welcome Screen
+  if (!hasJoinedFromLobby) {
+    return (
+      <PreJoinLobby
+        classTitle="Edu-Meet Interactive Virtual Classroom"
+        subject="Live Cohort Session"
+        teacherName="Educare Instructor"
+        initialName={confirmedDisplayName || name || (isTeacher ? "Instructor" : "Student")}
+        isTeacher={isTeacher}
+        onJoin={(settings) => {
+          setConfirmedDisplayName(settings.name);
+          setInitialCameraEnabled(settings.cameraEnabled);
+          setInitialMicEnabled(settings.micEnabled);
+          setHasJoinedFromLobby(true);
+        }}
+        onCancel={onLeave}
+      />
+    );
+  }
+
   return (
     <LiveKitRoom
       key={tokenData.token}
       token={tokenData.token}
       serverUrl={tokenData.wsUrl}
       connect={true}
-      video={true}
-      audio={true}
+      video={initialCameraEnabled}
+      audio={initialMicEnabled}
       options={roomOptions}
       connectOptions={connectOptions}
       onDisconnected={(reason) => {
@@ -405,11 +473,30 @@ export function LiveKitClassRoomV2({
         setAllowStudentWhiteboardDraw={setAllowStudentWhiteboardDraw}
         allowStudentSlideDraw={allowStudentSlideDraw}
         setAllowStudentSlideDraw={setAllowStudentSlideDraw}
-        setRaisedHands={setRaisedHands}
+        setRaisedHandsList={setRaisedHandsList}
         setIsHandRaised={setIsHandRaised}
         setNetworkAlert={setNetworkAlert}
         breakStateRef={breakStateRef}
         setBreakState={setBreakState}
+        onNewChatMessage={(msg: ChatMessage) => {
+          if (isImmersed) {
+            setRecentActivityAlert({
+              type: "chat",
+              text: msg.text,
+              sender: msg.sender,
+            });
+          }
+        }}
+        onNewFileShared={(f: SharedFile) => {
+          if (isImmersed) {
+            setRecentActivityAlert({
+              type: "file",
+              text: f.name,
+              url: f.url,
+            });
+          }
+        }}
+        onUpdateAttendees={setSessionAttendees}
       />
 
       <StudioPipelineManager
@@ -444,7 +531,7 @@ export function LiveKitClassRoomV2({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[130px] sm:max-w-xs">
+              <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[120px] sm:max-w-xs">
                 Edu-Meet Class
               </h2>
               <span
@@ -461,83 +548,196 @@ export function LiveKitClassRoomV2({
           </div>
         </div>
 
-        {/* Center: Stage Mode Switcher (Camera Grid / Presentation Slides / Whiteboard) */}
-        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-          <button
-            onClick={() => {
-              setStageMode("grid");
-              if (isTeacher) {
+        {/* Center: Stage Switcher (Teacher Interactive) OR Mode Status Pill (Student Read-Only) */}
+        {isTeacher ? (
+          <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+            <button
+              onClick={() => {
+                setStageMode("grid");
                 const room = (window as any).__lk_room;
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "grid" });
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-              stageMode === "grid"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-white/60 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <LayoutGrid size={14} />
-            <span className="hidden sm:inline">Camera</span>
-          </button>
+              }}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                stageMode === "grid"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <LayoutGrid size={14} />
+              <span className="hidden sm:inline">Camera</span>
+            </button>
 
-          <button
-            onClick={() => {
-              setStageMode("slides");
-              if (isTeacher) {
+            <button
+              onClick={() => {
+                setStageMode("slides");
                 const room = (window as any).__lk_room;
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all relative ${
-              stageMode === "slides"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-white/60 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Presentation size={14} />
-            <span className="hidden sm:inline">Slides</span>
-            {sharedFiles.some((f) => f.url.toLowerCase().endsWith(".pdf")) && (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 absolute top-1 right-1" />
-            )}
-          </button>
+              }}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all relative ${
+                stageMode === "slides"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <Presentation size={14} />
+              <span className="hidden sm:inline">Slides</span>
+              {sharedFiles.some((f) => f.url.toLowerCase().endsWith(".pdf")) && (
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 absolute top-1 right-1" />
+              )}
+            </button>
 
-          <button
-            onClick={() => {
-              setStageMode("whiteboard");
-              if (isTeacher) {
+            <button
+              onClick={() => {
+                setStageMode("whiteboard");
                 const room = (window as any).__lk_room;
                 safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "whiteboard" });
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-              stageMode === "whiteboard"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-white/60 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <PenTool size={14} />
-            <span className="hidden sm:inline">Board</span>
-          </button>
-        </div>
+              }}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                stageMode === "whiteboard"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <PenTool size={14} />
+              <span className="hidden sm:inline">Board</span>
+            </button>
+          </div>
+        ) : (
+          /* Student Status Indicator */
+          <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-medium text-white/80 shadow-inner">
+            {stageMode === "grid" && (
+              <>
+                <LayoutGrid size={13} className="text-emerald-400" />
+                <span>Gallery View</span>
+              </>
+            )}
+            {stageMode === "slides" && (
+              <>
+                <Presentation size={13} className="text-blue-400 animate-pulse" />
+                <span>Presentation Deck</span>
+              </>
+            )}
+            {stageMode === "whiteboard" && (
+              <>
+                <PenTool size={13} className="text-purple-400 animate-pulse" />
+                <span>Whiteboard View</span>
+              </>
+            )}
+          </div>
+        )}
 
-        {/* Right: Teacher Studio & Moderation Controls */}
+        {/* Right: Teacher Controls & Moderation */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {isTeacher && raisedHands.size > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold animate-pulse">
-              <Hand size={13} />
-              <span>{raisedHands.size}</span>
+          {/* Whiteboard Permission Toggle for Instructor */}
+          {isTeacher && stageMode === "whiteboard" && (
+            <button
+              onClick={() => {
+                const nextVal = !allowStudentWhiteboardDraw;
+                setAllowStudentWhiteboardDraw(nextVal);
+                const room = (window as any).__lk_room;
+                safePublishData(room, {
+                  type: "WHITEBOARD_PERMISSION",
+                  allowStudentDraw: nextVal,
+                });
+              }}
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                allowStudentWhiteboardDraw
+                  ? "bg-purple-600/25 border-purple-500/50 text-purple-300"
+                  : "bg-white/5 border-white/10 text-white/70 hover:text-white"
+              }`}
+              title="Toggle whether students can draw on whiteboard"
+            >
+              <PenTool size={13} />
+              <span>Drawing: {allowStudentWhiteboardDraw ? "Everyone" : "Teacher Only"}</span>
+            </button>
+          )}
+
+          {/* Raised Hands Identification & Controls */}
+          {isTeacher && (
+            <div className="relative">
               <button
-                onClick={() => {
-                  const room = (window as any).__lk_room;
-                  safePublishData(room, { type: "LOWER_ALL_HANDS" });
-                  setRaisedHands(new Set());
-                }}
-                className="ml-1 text-[10px] underline hover:text-white"
+                onClick={() => setShowRaisedHandsPopover(!showRaisedHandsPopover)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                  raisedHandsList.length > 0
+                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse"
+                    : "bg-white/5 border-white/10 text-white/50 hover:text-white"
+                }`}
+                title="Raised Hands Roster"
               >
-                Lower
+                <Hand size={14} />
+                <span>{raisedHandsList.length}</span>
+                <ChevronDown size={11} />
               </button>
+
+              {/* Raised Hands Dropdown Popover */}
+              {showRaisedHandsPopover && (
+                <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-[#14161f] border border-white/10 shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Hand size={13} className="text-amber-400" /> Raised Hands ({raisedHandsList.length})
+                    </span>
+                    {raisedHandsList.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const room = (window as any).__lk_room;
+                          safePublishData(room, { type: "LOWER_ALL_HANDS" });
+                          setRaisedHandsList([]);
+                          setShowRaisedHandsPopover(false);
+                        }}
+                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 underline"
+                      >
+                        Lower All
+                      </button>
+                    )}
+                  </div>
+
+                  {raisedHandsList.length === 0 ? (
+                    <div className="py-4 text-center text-xs text-white/40">
+                      No raised hands right now.
+                    </div>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                      {raisedHandsList.map((item) => (
+                        <div
+                          key={item.identity}
+                          className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/10 text-xs"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <p className="font-bold text-white truncate">{item.name}</p>
+                            <p className="text-[10px] text-white/40">{formatRelativeTime(item.raisedAt)}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const room = (window as any).__lk_room;
+                              safePublishData(room, {
+                                type: "LOWER_STUDENT_HAND",
+                                identity: item.identity,
+                              });
+                              setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
+                            }}
+                            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 text-[10px] font-bold shrink-0 transition-colors"
+                          >
+                            Lower
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Teacher Attendance & Attendee Roster Drawer Trigger */}
+          {isTeacher && (
+            <button
+              onClick={() => setShowAttendanceModal(true)}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+              title="Class Attendance & Attendee Roster"
+            >
+              <Users size={14} />
+              <span className="hidden lg:inline">Attendance ({sessionAttendees.size})</span>
+            </button>
           )}
 
           {isTeacher && (
@@ -618,18 +818,18 @@ export function LiveKitClassRoomV2({
             <V2ClassVideoGrid
               isTeacher={isTeacher}
               classId={classId}
-              raisedHands={raisedHands}
+              raisedHands={new Set(raisedHandsList.map((h) => h.identity))}
             />
           </div>
 
-          {/* Mode 2: Interactive Slides Deck (NEW) */}
+          {/* Mode 2: Interactive Slides Deck */}
           <div className={`h-full w-full relative ${stageMode === "slides" ? "block" : "hidden"}`}>
             <PresentationDeck
               isTeacher={isTeacher}
               classId={classId}
               room={(window as any).__lk_room}
               myIdentity={effectiveIdentity}
-              myName={name || "Participant"}
+              myName={confirmedDisplayName || name || "Participant"}
               initialFiles={sharedFiles}
               allowStudentDraw={allowStudentSlideDraw}
               onToggleStudentDraw={setAllowStudentSlideDraw}
@@ -640,13 +840,61 @@ export function LiveKitClassRoomV2({
 
           {/* Mode 3: Synchronized Whiteboard */}
           <div className={`h-full w-full relative bg-white ${stageMode === "whiteboard" ? "block" : "hidden"}`}>
-            <Tldraw
-              onMount={(editor) => {
-                tldrawEditorRef.current = editor;
-              }}
+            <SynchronizedWhiteboard
+              isTeacher={isTeacher}
+              allowStudentDraw={allowStudentWhiteboardDraw}
+              room={(window as any).__lk_room}
+              classId={classId}
             />
             <FloatingCamPiP isTeacher={isTeacher} />
           </div>
+
+          {/* Student Immersion Mode Floating Activity Toast */}
+          {isImmersed && recentActivityAlert && (
+            <div className="absolute bottom-24 right-4 z-50 max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300 pointer-events-auto">
+              <div className="p-3 rounded-2xl bg-[#141622]/95 border border-blue-500/40 shadow-2xl backdrop-blur-md flex items-start gap-3 text-white">
+                <div className="h-8 w-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                  {recentActivityAlert.type === "chat" ? <MessageSquare size={16} /> : <FileText size={16} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-blue-300 truncate">
+                      {recentActivityAlert.type === "chat" ? recentActivityAlert.sender : "New Attachment"}
+                    </span>
+                    <button
+                      onClick={() => setRecentActivityAlert(null)}
+                      className="text-white/40 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-white/90 truncate mt-0.5">{recentActivityAlert.text}</p>
+                  {recentActivityAlert.type === "chat" ? (
+                    <button
+                      onClick={() => {
+                        setIsMobileSheetOpen(true);
+                        setActiveSidebarTab("chat");
+                        setRecentActivityAlert(null);
+                      }}
+                      className="mt-1.5 text-[11px] font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                    >
+                      Open Chat <ChevronRight size={12} />
+                    </button>
+                  ) : (
+                    <a
+                      href={recentActivityAlert.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      download
+                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300"
+                    >
+                      <FileDown size={12} /> Download
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Break / Intermission Overlay */}
           {breakState?.isActive && (
@@ -705,75 +953,77 @@ export function LiveKitClassRoomV2({
           )}
         </div>
 
-        {/* ── DESKTOP COLLAPSIBLE SIDEBAR (CHAT & FILES) ── */}
-        <aside className="w-80 shrink-0 hidden md:flex flex-col bg-[#111318] border-l border-white/10 z-20">
-          <div className="flex items-center border-b border-white/10 shrink-0 px-2 pt-2">
-            <button
-              onClick={() => {
-                setActiveSidebarTab("chat");
-                setUnreadChatCount(0);
-              }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${
-                activeSidebarTab === "chat"
-                  ? "border-blue-500 text-white bg-white/5"
-                  : "border-transparent text-white/50 hover:text-white"
-              }`}
-            >
-              <MessageSquare size={14} />
-              <span>Live Chat</span>
-              {unreadChatCount > 0 && activeSidebarTab !== "chat" && (
-                <span className="h-4 min-w-[16px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
-                  {unreadChatCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveSidebarTab("files")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${
-                activeSidebarTab === "files"
-                  ? "border-blue-500 text-white bg-white/5"
-                  : "border-transparent text-white/50 hover:text-white"
-              }`}
-            >
-              <FileText size={14} />
-              <span>Attachments</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">
-                {sharedFiles.length}
-              </span>
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {activeSidebarTab === "chat" ? (
-              <ChatContentPanel
-                messages={chatMessages}
-                onSendMessage={(text) => {
-                  const room = (window as any).__lk_room;
-                  const newMsg: ChatMessage = {
-                    id: Math.random().toString(36).slice(2, 9),
-                    sender: name || "Anonymous",
-                    role: isTeacher ? "Teacher" : "Student",
-                    text,
-                    timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                  };
-                  safePublishData(room, { type: "CHAT_MESSAGE", ...newMsg });
-                  setChatMessages((prev) => [...prev, newMsg]);
-
-                  if (classId) {
-                    fetchApi(`/live-class/${classId}/messages`, {
-                      method: "POST",
-                      body: JSON.stringify({ message: text }),
-                      silent: true,
-                    }).catch(() => {});
-                  }
+        {/* ── DESKTOP COLLAPSIBLE SIDEBAR (HIDDEN FOR IMMERSED STUDENTS) ── */}
+        {!isImmersed && (
+          <aside className="w-80 shrink-0 hidden md:flex flex-col bg-[#111318] border-l border-white/10 z-20">
+            <div className="flex items-center border-b border-white/10 shrink-0 px-2 pt-2">
+              <button
+                onClick={() => {
+                  setActiveSidebarTab("chat");
+                  setUnreadChatCount(0);
                 }}
-              />
-            ) : (
-              <FilesContentPanel sharedFiles={sharedFiles} />
-            )}
-          </div>
-        </aside>
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${
+                  activeSidebarTab === "chat"
+                    ? "border-blue-500 text-white bg-white/5"
+                    : "border-transparent text-white/50 hover:text-white"
+                }`}
+              >
+                <MessageSquare size={14} />
+                <span>Live Chat</span>
+                {unreadChatCount > 0 && activeSidebarTab !== "chat" && (
+                  <span className="h-4 min-w-[16px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadChatCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveSidebarTab("files")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${
+                  activeSidebarTab === "files"
+                    ? "border-blue-500 text-white bg-white/5"
+                    : "border-transparent text-white/50 hover:text-white"
+                }`}
+              >
+                <FileText size={14} />
+                <span>Attachments</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">
+                  {sharedFiles.length}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {activeSidebarTab === "chat" ? (
+                <ChatContentPanel
+                  messages={chatMessages}
+                  onSendMessage={(text) => {
+                    const room = (window as any).__lk_room;
+                    const newMsg: ChatMessage = {
+                      id: Math.random().toString(36).slice(2, 9),
+                      sender: confirmedDisplayName || name || "Anonymous",
+                      role: isTeacher ? "Teacher" : "Student",
+                      text,
+                      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                    };
+                    safePublishData(room, { type: "CHAT_MESSAGE", ...newMsg });
+                    setChatMessages((prev) => [...prev, newMsg]);
+
+                    if (classId) {
+                      fetchApi(`/live-class/${classId}/messages`, {
+                        method: "POST",
+                        body: JSON.stringify({ message: text }),
+                        silent: true,
+                      }).catch(() => {});
+                    }
+                  }}
+                />
+              ) : (
+                <FilesContentPanel sharedFiles={sharedFiles} />
+              )}
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* ── MOBILE BOTTOM SHEET FOR CHAT & FILES ── */}
@@ -810,7 +1060,7 @@ export function LiveKitClassRoomV2({
                 const room = (window as any).__lk_room;
                 const newMsg: ChatMessage = {
                   id: Math.random().toString(36).slice(2, 9),
-                  sender: name || "Anonymous",
+                  sender: confirmedDisplayName || name || "Anonymous",
                   role: isTeacher ? "Teacher" : "Student",
                   text,
                   timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -833,9 +1083,20 @@ export function LiveKitClassRoomV2({
         </div>
       </MobileSheet>
 
+      {/* ── ATTENDANCE & ATTENDEE ROSTER MODAL ── */}
+      {showAttendanceModal && (
+        <AttendanceRosterModal
+          isOpen={showAttendanceModal}
+          onClose={() => setShowAttendanceModal(false)}
+          classId={classId}
+          sessionAttendees={sessionAttendees}
+        />
+      )}
+
       {/* ── BOTTOM TOUCH-ENGINEERED CONTROL DOCK ── */}
       <V2BottomControlDock
         isTeacher={isTeacher}
+        isImmersed={isImmersed}
         isHandRaised={isHandRaised}
         unreadChatCount={unreadChatCount}
         onToggleHand={() => {
@@ -845,14 +1106,18 @@ export function LiveKitClassRoomV2({
           safePublishData(room, {
             type: "HAND_RAISE",
             identity: effectiveIdentity,
-            name,
+            name: confirmedDisplayName || name || "Student",
             raised: next,
+            raisedAt: Date.now(),
           });
-          setRaisedHands((prev) => {
-            const copy = new Set(prev);
-            if (next) copy.add(effectiveIdentity);
-            else copy.delete(effectiveIdentity);
-            return copy;
+          setRaisedHandsList((prev) => {
+            if (next) {
+              const existing = prev.find((h) => h.identity === effectiveIdentity);
+              if (existing) return prev;
+              return [...prev, { identity: effectiveIdentity, name: confirmedDisplayName || name || "Student", raisedAt: Date.now() }];
+            } else {
+              return prev.filter((h) => h.identity !== effectiveIdentity);
+            }
           });
         }}
         onToggleChat={() => {
@@ -862,6 +1127,261 @@ export function LiveKitClassRoomV2({
         onLeave={onLeave}
       />
     </LiveKitRoom>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATTENDANCE & ATTENDEE ROSTER MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function AttendanceRosterModal({
+  isOpen,
+  onClose,
+  classId,
+  sessionAttendees,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  classId?: string;
+  sessionAttendees: Map<string, SessionAttendee>;
+}) {
+  const [tab, setTab] = useState<"live" | "webinar">("live");
+  const [search, setSearch] = useState("");
+  const [webinarRegistrations, setWebinarRegistrations] = useState<any[]>([]);
+  const [loadingWebinar, setLoadingWebinar] = useState(false);
+
+  useEffect(() => {
+    if (tab === "webinar" && classId) {
+      setLoadingWebinar(true);
+      fetchApi<any[]>(`/live-class/${classId}/registrations`)
+        .then((data) => setWebinarRegistrations(Array.isArray(data) ? data : []))
+        .catch(() => setWebinarRegistrations([]))
+        .finally(() => setLoadingWebinar(false));
+    }
+  }, [tab, classId]);
+
+  const attendeesArray = useMemo(() => Array.from(sessionAttendees.values()), [sessionAttendees]);
+
+  const filteredLive = useMemo(() => {
+    if (!search.trim()) return attendeesArray;
+    const q = search.toLowerCase();
+    return attendeesArray.filter(
+      (a) => a.name.toLowerCase().includes(q) || a.role.toLowerCase().includes(q)
+    );
+  }, [attendeesArray, search]);
+
+  const filteredWebinar = useMemo(() => {
+    if (!search.trim()) return webinarRegistrations;
+    const q = search.toLowerCase();
+    return webinarRegistrations.filter(
+      (r) =>
+        (r.name || "").toLowerCase().includes(q) ||
+        (r.parentName || "").toLowerCase().includes(q) ||
+        (r.email || "").toLowerCase().includes(q) ||
+        (r.phone || "").toLowerCase().includes(q) ||
+        (r.courseOrClass || "").toLowerCase().includes(q) ||
+        (r.organization || "").toLowerCase().includes(q)
+    );
+  }, [webinarRegistrations, search]);
+
+  const exportLiveCSV = () => {
+    const headers = ["Participant Name", "Role", "First Joined At", "Current Status"];
+    const rows = attendeesArray.map((a) => [
+      `"${a.name}"`,
+      `"${a.role}"`,
+      `"${a.firstJoinedAt}"`,
+      `"${a.isOnline ? "Active" : "Left"}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `live_attendance_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportWebinarCSV = () => {
+    const headers = ["Student Name", "Parent Name", "Contact", "Email", "Class/Course", "Institute", "Registered At"];
+    const rows = webinarRegistrations.map((r) => [
+      `"${r.name || ""}"`,
+      `"${r.parentName || ""}"`,
+      `"${r.phone || ""}"`,
+      `"${r.email || ""}"`,
+      `"${r.courseOrClass || ""}"`,
+      `"${r.organization || ""}"`,
+      `"${new Date(r.registeredAt || Date.now()).toLocaleString()}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `webinar_registrations_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-3xl rounded-3xl bg-[#141620] border border-white/10 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center">
+              <Users size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Class Attendance & Registrations</h3>
+              <p className="text-xs text-white/50">Real-time attendee telemetry and webinar roster</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tab Switcher & Search Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-b border-white/10 bg-black/20">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => setTab("live")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                tab === "live"
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-white/5 text-white/60 hover:text-white"
+              }`}
+            >
+              Live Session Attendees ({attendeesArray.length})
+            </button>
+            {classId && (
+              <button
+                onClick={() => setTab("webinar")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  tab === "webinar"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-white/5 text-white/60 hover:text-white"
+                }`}
+              >
+                Webinar Registrations ({webinarRegistrations.length})
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-56">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+              <input
+                type="text"
+                placeholder="Search attendee..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <button
+              onClick={tab === "live" ? exportLiveCSV : exportWebinarCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-colors shrink-0"
+            >
+              <FileSpreadsheet size={14} />
+              <span className="hidden sm:inline">Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Table Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {tab === "live" ? (
+            filteredLive.length === 0 ? (
+              <div className="py-12 text-center text-xs text-white/40">No attendees match your query.</div>
+            ) : (
+              <table className="w-full text-left text-xs text-white/80">
+                <thead className="text-[10px] uppercase text-white/40 border-b border-white/10 bg-white/[0.02]">
+                  <tr>
+                    <th className="py-2.5 px-3">Participant Name</th>
+                    <th className="py-2.5 px-3">Role</th>
+                    <th className="py-2.5 px-3">First Joined</th>
+                    <th className="py-2.5 px-3 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredLive.map((a) => (
+                    <tr key={a.identity} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-3 px-3 font-semibold text-white">{a.name}</td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            a.role === "TEACHER" || a.role === "SUPER_ADMIN"
+                              ? "bg-blue-500/20 border-blue-500/30 text-blue-300"
+                              : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                          }`}
+                        >
+                          {a.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-white/50">{a.firstJoinedAt}</td>
+                      <td className="py-3 px-3 text-right">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            a.isOnline
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : "bg-white/10 text-white/40"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              a.isOnline ? "bg-emerald-400 animate-pulse" : "bg-white/30"
+                            }`}
+                          />
+                          {a.isOnline ? "Online" : "Left"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          ) : loadingWebinar ? (
+            <div className="py-12 flex justify-center items-center text-xs text-white/50 gap-2">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+              Loading registration roster...
+            </div>
+          ) : filteredWebinar.length === 0 ? (
+            <div className="py-12 text-center text-xs text-white/40">No registered webinar attendees found.</div>
+          ) : (
+            <table className="w-full text-left text-xs text-white/80">
+              <thead className="text-[10px] uppercase text-white/40 border-b border-white/10 bg-white/[0.02]">
+                <tr>
+                  <th className="py-2.5 px-3">Student Name</th>
+                  <th className="py-2.5 px-3">Parent Name</th>
+                  <th className="py-2.5 px-3">Contact</th>
+                  <th className="py-2.5 px-3">Email</th>
+                  <th className="py-2.5 px-3">Course/Class</th>
+                  <th className="py-2.5 px-3">Institute</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredWebinar.map((r, i) => (
+                  <tr key={i} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-3 font-semibold text-white">{r.name}</td>
+                    <td className="py-3 px-3 text-white/70">{r.parentName || "—"}</td>
+                    <td className="py-3 px-3 text-white/70">{r.phone || "—"}</td>
+                    <td className="py-3 px-3 text-white/70">{r.email || "—"}</td>
+                    <td className="py-3 px-3 text-white/70">{r.courseOrClass || "—"}</td>
+                    <td className="py-3 px-3 text-white/70">{r.organization || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -944,17 +1464,22 @@ function V2ClassVideoGrid({
               : "grid-cols-2 lg:grid-cols-3"
           }`}
         >
-          {uniqueCameras.map((t, i) => (
-            <div
-              key={t.participant?.identity || i}
-              className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#14161e] shadow-lg group"
-            >
-              <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
-              <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-[11px] text-white font-medium">
-                {t.participant?.name || "Participant"}
+          {uniqueCameras.map((t, i) => {
+            const id = t.participant?.identity || "";
+            const isHandUp = raisedHands.has(id);
+            return (
+              <div
+                key={id || i}
+                className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#14161e] shadow-lg group"
+              >
+                <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
+                <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-[11px] text-white font-medium flex items-center gap-1.5">
+                  <span>{t.participant?.name || "Participant"}</span>
+                  {isHandUp && <Hand size={12} className="text-amber-400 animate-bounce" />}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1010,6 +1535,7 @@ function FloatingCamPiP({ isTeacher }: { isTeacher: boolean }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function V2BottomControlDock({
   isTeacher,
+  isImmersed,
   isHandRaised,
   unreadChatCount,
   onToggleHand,
@@ -1017,6 +1543,7 @@ function V2BottomControlDock({
   onLeave,
 }: {
   isTeacher: boolean;
+  isImmersed: boolean;
   isHandRaised: boolean;
   unreadChatCount: number;
   onToggleHand: () => void;
@@ -1058,18 +1585,20 @@ function V2BottomControlDock({
         <span>{camOn ? "Camera" : "Cam Off"}</span>
       </button>
 
-      {/* Screen Share (Desktop/Staff priority) */}
-      <button
-        {...screenProps}
-        className={`hidden sm:flex flex-col items-center justify-center gap-1 min-w-[72px] h-14 rounded-2xl font-bold text-xs transition-transform active:scale-95 ${
-          screenOn
-            ? "bg-blue-600 text-white"
-            : "bg-white/10 text-white hover:bg-white/15"
-        }`}
-      >
-        {screenOn ? <MonitorOff size={18} /> : <Monitor size={18} />}
-        <span>{screenOn ? "Stop Share" : "Share"}</span>
-      </button>
+      {/* Screen Share (Teacher / Desktop priority) */}
+      {isTeacher && (
+        <button
+          {...screenProps}
+          className={`hidden sm:flex flex-col items-center justify-center gap-1 min-w-[72px] h-14 rounded-2xl font-bold text-xs transition-transform active:scale-95 ${
+            screenOn
+              ? "bg-blue-600 text-white"
+              : "bg-white/10 text-white hover:bg-white/15"
+          }`}
+        >
+          {screenOn ? <MonitorOff size={18} /> : <Monitor size={18} />}
+          <span>{screenOn ? "Stop Share" : "Share"}</span>
+        </button>
+      )}
 
       {/* Student Hand Raise Toggle */}
       {!isTeacher && (
@@ -1086,19 +1615,21 @@ function V2BottomControlDock({
         </button>
       )}
 
-      {/* Chat Button (Mobile triggers bottom sheet, Desktop toggles) */}
-      <button
-        onClick={onToggleChat}
-        className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/10 text-white hover:bg-white/15 font-bold text-[10px] sm:text-xs relative transition-transform active:scale-95"
-      >
-        <MessageSquare size={18} />
-        <span>Chat</span>
-        {unreadChatCount > 0 && (
-          <span className="absolute top-1 right-2 h-4 w-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
-            {unreadChatCount}
-          </span>
-        )}
-      </button>
+      {/* Chat Button (Hidden during immersion mode to eliminate clutter) */}
+      {!isImmersed && (
+        <button
+          onClick={onToggleChat}
+          className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/10 text-white hover:bg-white/15 font-bold text-[10px] sm:text-xs relative transition-transform active:scale-95"
+        >
+          <MessageSquare size={18} />
+          <span>Chat</span>
+          {unreadChatCount > 0 && (
+            <span className="absolute top-1 right-2 h-4 w-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+              {unreadChatCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Leave Button */}
       <button
@@ -1237,13 +1768,68 @@ function ClassroomV2Sync({
   setAllowStudentWhiteboardDraw,
   allowStudentSlideDraw,
   setAllowStudentSlideDraw,
-  setRaisedHands,
+  setRaisedHandsList,
   setIsHandRaised,
   setNetworkAlert,
   breakStateRef,
   setBreakState,
+  onNewChatMessage,
+  onNewFileShared,
+  onUpdateAttendees,
 }: any) {
   const room = useRoomContext();
+  const participants = useParticipants();
+
+  // Track and accumulate all participants seen in this live session for attendance
+  useEffect(() => {
+    if (!room) return;
+    const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    onUpdateAttendees((prev: Map<string, SessionAttendee>) => {
+      const nextMap = new Map(prev);
+
+      // Mark current participants as online
+      const currentIds = new Set<string>();
+      participants.forEach((p) => {
+        const id = p.identity || "";
+        if (!id) return;
+        currentIds.add(id);
+
+        let role = "STUDENT";
+        try {
+          const meta = JSON.parse(p.metadata || "{}");
+          if (meta.role) role = meta.role;
+        } catch {}
+
+        const existing = nextMap.get(id);
+        if (existing) {
+          nextMap.set(id, {
+            ...existing,
+            isOnline: true,
+            lastSeenAt: nowStr,
+          });
+        } else {
+          nextMap.set(id, {
+            identity: id,
+            name: p.name || id,
+            role,
+            firstJoinedAt: nowStr,
+            lastSeenAt: nowStr,
+            isOnline: true,
+          });
+        }
+      });
+
+      // Mark missing participants as offline
+      nextMap.forEach((att, key) => {
+        if (!currentIds.has(key) && att.isOnline) {
+          nextMap.set(key, { ...att, isOnline: false, lastSeenAt: nowStr });
+        }
+      });
+
+      return nextMap;
+    });
+  }, [participants, room, onUpdateAttendees]);
 
   useEffect(() => {
     if (!room) return;
@@ -1256,27 +1842,47 @@ function ClassroomV2Sync({
 
         if (data.type === "STAGE_MODE_CHANGE" && data.mode) {
           setStageMode(data.mode);
+        } else if (data.type === "WHITEBOARD_PERMISSION") {
+          setAllowStudentWhiteboardDraw(!!data.allowStudentDraw);
         } else if (data.type === "CHAT_MESSAGE") {
           setChatMessages((prev: any) => [...prev, data]);
           if (activeTabRef.current !== "chat") {
             setUnreadChatCount((prev: number) => prev + 1);
           }
+          onNewChatMessage?.(data);
         } else if (data.type === "FILE_SHARED") {
-          setSharedFiles((prev: any) => [...prev, { name: data.name, url: data.url }]);
+          const newFile = { name: data.name, url: data.url };
+          setSharedFiles((prev: any) => [...prev, newFile]);
+          onNewFileShared?.(newFile);
         } else if (data.type === "MUTE_ALL" && !isTeacher) {
           const micPub = room.localParticipant?.getTrackPublication(Track.Source.Microphone);
           if (micPub && !micPub.isMuted) {
             micPub.track?.mute();
           }
         } else if (data.type === "HAND_RAISE") {
-          setRaisedHands((prev: Set<string>) => {
-            const next = new Set(prev);
-            if (data.raised) next.add(data.identity);
-            else next.delete(data.identity);
-            return next;
+          setRaisedHandsList((prev: HandRaiseEntry[]) => {
+            if (data.raised) {
+              const existing = prev.find((h) => h.identity === data.identity);
+              if (existing) return prev;
+              return [
+                ...prev,
+                {
+                  identity: data.identity,
+                  name: data.name || "Student",
+                  raisedAt: data.raisedAt || Date.now(),
+                },
+              ];
+            } else {
+              return prev.filter((h) => h.identity !== data.identity);
+            }
           });
+        } else if (data.type === "LOWER_STUDENT_HAND") {
+          if (data.identity === myIdentity) {
+            setIsHandRaised(false);
+          }
+          setRaisedHandsList((prev: HandRaiseEntry[]) => prev.filter((h) => h.identity !== data.identity));
         } else if (data.type === "LOWER_ALL_HANDS") {
-          setRaisedHands(new Set());
+          setRaisedHandsList([]);
           setIsHandRaised(false);
         } else if (data.type === "BREAK_STATE") {
           setBreakState(data.active !== undefined ? (data.active ? data : null) : (data.isActive ? data : null));
@@ -1290,13 +1896,19 @@ function ClassroomV2Sync({
     };
   }, [
     room,
+    isTeacher,
+    myIdentity,
     setStageMode,
+    setAllowStudentWhiteboardDraw,
     setChatMessages,
+    setSharedFiles,
     activeTabRef,
     setUnreadChatCount,
-    setRaisedHands,
+    setRaisedHandsList,
     setIsHandRaised,
     setBreakState,
+    onNewChatMessage,
+    onNewFileShared,
   ]);
 
   return null;
