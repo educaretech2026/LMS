@@ -39,6 +39,7 @@ interface Registration {
   phone?: string | null;
   courseOrClass?: string | null;
   organization?: string | null;
+  status?: string | null;
   registeredAt: string;
 }
 
@@ -584,15 +585,13 @@ function ClassSessionCard({
                 <FileText className="h-3.5 w-3.5" />
               </button>
 
-              {cls.isPublic && (
-                <button
-                  onClick={onViewRegistrations}
-                  className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
-                  title="View Registered Attendees"
-                >
-                  <Users className="h-3.5 w-3.5" />
-                </button>
-              )}
+              <button
+                onClick={onViewRegistrations}
+                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                title={cls.isPublic ? "View Registered Attendees & Webinar Roster" : "View Class Attendance & Enrolled Roster"}
+              >
+                <Users className="h-3.5 w-3.5" />
+              </button>
 
               {/* Status Toggle for Teacher */}
               {!isEnded && (
@@ -1282,6 +1281,7 @@ function RegistrationsModalV2({
     if (!registrations.length) return;
     const headers = [
       "Student Name",
+      "Attendance Status",
       "Parent Name",
       "Phone / WhatsApp",
       "Email Address",
@@ -1291,6 +1291,7 @@ function RegistrationsModalV2({
     ];
     const rows = registrations.map((r) => [
       `"${r.name.replace(/"/g, '""')}"`,
+      `"${r.status || "REGISTERED"}"`,
       `"${(r.parentName || "—").replace(/"/g, '""')}"`,
       `"${(r.phone || "—").replace(/"/g, '""')}"`,
       `"${r.email.replace(/"/g, '""')}"`,
@@ -1318,9 +1319,11 @@ function RegistrationsModalV2({
       <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Registered Attendees (Full Roster)</h2>
+            <h2 className="text-sm font-bold text-slate-900">
+              {cls.isPublic ? "Registered Attendees (Webinar Roster)" : "Class Attendees & Enrolled Cohort Roster"}
+            </h2>
             <p className="text-[11px] text-slate-500">
-              {cls.title} • {registrations.length} registered candidates
+              {cls.title} • {registrations.length} total participants
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1367,7 +1370,7 @@ function RegistrationsModalV2({
             </div>
           ) : filtered.length === 0 ? (
             <p className="text-xs text-center text-slate-400 py-12">
-              {search ? "No attendees matching your search criteria." : "No attendees registered yet for this webinar."}
+              {search ? "No attendees matching your search criteria." : "No attendees or participants recorded yet for this session."}
             </p>
           ) : (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
@@ -1375,45 +1378,63 @@ function RegistrationsModalV2({
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider text-[10px] font-semibold">
                   <tr>
                     <th className="px-3.5 py-3">Student Name</th>
+                    <th className="px-3.5 py-3">Status</th>
                     <th className="px-3.5 py-3">Parent Name</th>
                     <th className="px-3.5 py-3">Contact</th>
                     <th className="px-3.5 py-3">Class / Course</th>
                     <th className="px-3.5 py-3">Institute</th>
-                    <th className="px-3.5 py-3">Registered At</th>
+                    <th className="px-3.5 py-3">Timestamp</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {filtered.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-3.5 py-3">
-                        <p className="font-bold text-slate-900">{r.name}</p>
-                      </td>
-                      <td className="px-3.5 py-3 text-slate-700">
-                        {r.parentName || "—"}
-                      </td>
-                      <td className="px-3.5 py-3">
-                        <p className="text-slate-800 font-medium font-mono text-[11px]">{r.phone || "—"}</p>
-                        <p className="text-slate-400 text-[10px]">{r.email}</p>
-                      </td>
-                      <td className="px-3.5 py-3">
-                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-semibold text-[10px]">
-                          {r.courseOrClass || "—"}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-3 text-slate-600 max-w-[160px] truncate" title={r.organization || "—"}>
-                        {r.organization || "—"}
-                      </td>
-                      <td className="px-3.5 py-3 text-slate-400 text-[10px]">
-                        {new Date(r.registeredAt).toLocaleString("en-IN", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map((r) => {
+                    const isAttended = r.status === "ATTENDED";
+                    const isEnrolled = r.status === "ENROLLED";
+                    return (
+                      <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-3.5 py-3">
+                          <p className="font-bold text-slate-900">{r.name}</p>
+                        </td>
+                        <td className="px-3.5 py-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              isAttended
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : isEnrolled
+                                ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                : "bg-blue-100 text-blue-800 border border-blue-200"
+                            }`}
+                          >
+                            {r.status || "REGISTERED"}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-3 text-slate-700">
+                          {r.parentName || "—"}
+                        </td>
+                        <td className="px-3.5 py-3">
+                          <p className="text-slate-800 font-medium font-mono text-[11px]">{r.phone || "—"}</p>
+                          <p className="text-slate-400 text-[10px]">{r.email}</p>
+                        </td>
+                        <td className="px-3.5 py-3">
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-semibold text-[10px]">
+                            {r.courseOrClass || "—"}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-3 text-slate-600 max-w-[160px] truncate" title={r.organization || "—"}>
+                          {r.organization || "—"}
+                        </td>
+                        <td className="px-3.5 py-3 text-slate-400 text-[10px]">
+                          {new Date(r.registeredAt).toLocaleString("en-IN", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

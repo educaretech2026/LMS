@@ -165,6 +165,16 @@ export class LiveClassController {
     return this.liveClassService.saveClassFile(id, fileData, req.user);
   }
 
+  @Post(':id/upload')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  uploadClassFile(
+    @Param('id') id: string,
+    @Body() fileData: { fileName: string; fileType?: string; fileSize?: number; dataUrl: string },
+    @Req() req: any,
+  ) {
+    return this.liveClassService.uploadClassFile(id, fileData, req.user);
+  }
+
   @Delete(':id/files/:fileId')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   deleteClassFile(

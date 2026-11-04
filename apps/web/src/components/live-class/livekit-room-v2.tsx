@@ -1185,8 +1185,11 @@ function AttendanceRosterModal({
   useEffect(() => {
     if (tab === "webinar" && classId) {
       setLoadingWebinar(true);
-      fetchApi<any[]>(`/live-class/${classId}/registrations`)
-        .then((data) => setWebinarRegistrations(Array.isArray(data) ? data : []))
+      fetchApi<any>(`/live-class/${classId}/registrations`)
+        .then((data) => {
+          const list = Array.isArray(data) ? data : (data?.registrations || []);
+          setWebinarRegistrations(list);
+        })
         .catch(() => setWebinarRegistrations([]))
         .finally(() => setLoadingWebinar(false));
     }
@@ -1778,53 +1781,106 @@ function FilesContentPanel({
     setUploadingName(file.name);
 
     try {
-      const presigned = await fetchApi<any>(
-        `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "application/octet-stream")}`
-      );
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const inferredMime =
+        file.type && file.type !== "application/octet-stream"
+          ? file.type
+          : ext === "pptx"
+          ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          : ext === "ppt"
+          ? "application/vnd.ms-powerpoint"
+          : ext === "pdf"
+          ? "application/pdf"
+          : ext === "png"
+          ? "image/png"
+          : ext === "jpg" || ext === "jpeg"
+          ? "image/jpeg"
+          : ext === "zip"
+          ? "application/zip"
+          : "application/octet-stream";
 
-      if (!presigned?.uploadUrl || !presigned?.finalUrl) {
-        throw new Error("Could not acquire storage upload credentials.");
+      let finalFileUrl = "";
+
+      // Step 1: Try pre-signed Cloudflare R2 upload
+      try {
+        const presigned = await fetchApi<any>(
+          `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(inferredMime)}`,
+          { silent: true }
+        );
+
+        if (presigned?.uploadUrl && presigned?.finalUrl) {
+          const res = await fetch(presigned.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": inferredMime },
+            body: file,
+          });
+
+          if (res.ok) {
+            finalFileUrl = presigned.finalUrl;
+            if (classId) {
+              await fetchApi(`/live-class/${classId}/files`, {
+                method: "POST",
+                body: JSON.stringify({
+                  fileName: file.name,
+                  fileUrl: finalFileUrl,
+                  fileSize: file.size,
+                  mimeType: inferredMime,
+                }),
+                silent: true,
+              });
+            }
+          }
+        }
+      } catch (presignedErr) {
+        console.warn("Presigned R2 upload bypassed, falling back to direct classroom upload:", presignedErr);
       }
 
-      const res = await fetch(presigned.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
+      // Step 2: Fallback to direct server-side upload if presigned upload is unavailable or unconfigured
+      if (!finalFileUrl && classId) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Failed to read local file"));
+          reader.readAsDataURL(file);
+        });
 
-      if (!res.ok) {
-        throw new Error(`Failed to upload to storage server (${res.status})`);
+        const uploadRes = await fetchApi<any>(`/live-class/${classId}/upload`, {
+          method: "POST",
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: inferredMime,
+            fileSize: file.size,
+            dataUrl,
+          }),
+        });
+
+        if (uploadRes?.file?.url) {
+          finalFileUrl = uploadRes.file.url;
+        } else {
+          throw new Error("Direct file upload could not be completed.");
+        }
+      }
+
+      if (!finalFileUrl) {
+        throw new Error("Could not acquire file upload URL.");
       }
 
       const newFile: SharedFile = {
         name: file.name,
-        url: presigned.finalUrl,
+        url: finalFileUrl,
       };
-
-      if (classId) {
-        await fetchApi(`/live-class/${classId}/files`, {
-          method: "POST",
-          body: JSON.stringify({
-            fileName: file.name,
-            fileUrl: presigned.finalUrl,
-            fileSize: file.size,
-            mimeType: file.type || "application/octet-stream",
-          }),
-          silent: true,
-        });
-      }
 
       if (room) {
         safePublishData(room, {
           type: "FILE_SHARED",
           name: file.name,
-          url: presigned.finalUrl,
+          url: finalFileUrl,
         });
       }
 
       onFileUploaded?.(newFile);
     } catch (err: any) {
-      alert(`Upload failed: ${err?.message || "Please check network or storage configuration"}`);
+      alert(`Upload failed: ${err?.message || "Please check network or file format"}`);
     } finally {
       setUploading(false);
       setUploadingName("");
@@ -2021,14 +2077,31 @@ function ClassroomV2Sync({
     if (!room) return;
     (window as any).__lk_room = room;
 
-    const handleData = (payload: Uint8Array) => {
+    const handleData = (payload: Uint8Array, participant?: any) => {
       try {
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
 
+        // Security: WebRTC Sender Attestation
+        let isSenderHost = false;
+        if (participant) {
+          if (participant.permissions?.roomAdmin === true) {
+            isSenderHost = true;
+          } else if (participant.metadata) {
+            try {
+              const meta = typeof participant.metadata === "string" ? JSON.parse(participant.metadata) : participant.metadata;
+              if (meta.isHost === true || meta.role === "TEACHER" || meta.role === "SUPER_ADMIN" || meta.role === "CENTRE_ADMIN") {
+                isSenderHost = true;
+              }
+            } catch {}
+          }
+        }
+
         if (data.type === "STAGE_MODE_CHANGE" && data.mode) {
+          if (!isSenderHost) return;
           setStageMode(data.mode);
         } else if (data.type === "WHITEBOARD_PERMISSION") {
+          if (!isSenderHost) return;
           setAllowStudentWhiteboardDraw(!!data.allowStudentDraw);
         } else if (data.type === "CHAT_MESSAGE") {
           setChatMessages((prev: any) => [...prev, data]);
@@ -2041,6 +2114,7 @@ function ClassroomV2Sync({
           setSharedFiles((prev: any) => [...prev, newFile]);
           onNewFileShared?.(newFile);
         } else if (data.type === "MUTE_ALL" && !isTeacher) {
+          if (!isSenderHost) return;
           const micPub = room.localParticipant?.getTrackPublication(Track.Source.Microphone);
           if (micPub && !micPub.isMuted) {
             micPub.track?.mute();
@@ -2063,14 +2137,17 @@ function ClassroomV2Sync({
             }
           });
         } else if (data.type === "LOWER_STUDENT_HAND") {
+          if (!isSenderHost && participant?.identity !== data.identity) return;
           if (data.identity === myIdentity) {
             setIsHandRaised(false);
           }
           setRaisedHandsList((prev: HandRaiseEntry[]) => prev.filter((h) => h.identity !== data.identity));
         } else if (data.type === "LOWER_ALL_HANDS") {
+          if (!isSenderHost) return;
           setRaisedHandsList([]);
           setIsHandRaised(false);
         } else if (data.type === "BREAK_STATE") {
+          if (!isSenderHost) return;
           setBreakState(data.active !== undefined ? (data.active ? data : null) : (data.isActive ? data : null));
         }
       } catch {}

@@ -22,6 +22,7 @@ import {
   TrackType,
 } from 'livekit-server-sdk';
 import * as crypto from 'crypto';
+import * as path from 'path';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -1010,23 +1011,34 @@ export class LiveClassService {
       throw new NotFoundException('Live class not found.');
     }
 
-    const isSuper = isSuperAdmin(user);
-    const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const userRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+    const isSuper = isSuperAdmin(user) || userRole === 'SUPER_ADMIN';
     const isPresenterOrStaff =
       isSuper ||
-      ['TEACHER', 'CENTRE_ADMIN', 'SUPER_ADMIN'].includes(userRole) ||
+      ['TEACHER', 'CENTRE_ADMIN', 'ADMIN'].includes(userRole) ||
       (user?.email && cls.teacherName && user.email.toLowerCase().includes(cls.teacherName.toLowerCase()));
 
     if (!isPresenterOrStaff) {
       throw new ForbiddenException('Access denied: Only administrators and the designated presenter can view attendee details.');
     }
 
+    // Security: Tenant isolation check for Centre Admins
+    if (userRole === 'CENTRE_ADMIN' && cls.centreId) {
+      assertCentreAccess(user, cls.centreId);
+    }
+
+    // Security: Audit trail for PII access
+    this.recordAudit(user, 'VIEW_ATTENDEES_ROSTER', `Viewed roster for live class ${cls.id}`, cls.id).catch(() => {});
+
     const registrations = await this.prisma.liveClassRegistration.findMany({
       where: { liveClassId: id },
       orderBy: { registeredAt: 'desc' },
     });
 
-    // Parse the 6 mandatory fields from the stored records
+    const attendedEmails = new Set(registrations.map((r) => r.email.toLowerCase()));
+
+    // Parse the stored registration records
     const parsed = registrations.map((r) => {
       let institute = r.organization || '';
       let course = '';
@@ -1049,9 +1061,59 @@ export class LiveClassService {
         phone: r.phone || '—',
         courseOrClass: course || '—',
         organization: institute || '—',
+        status: r.status || 'REGISTERED',
         registeredAt: r.registeredAt,
       };
     });
+
+    // If it's a cohort live class, also include enrolled cohort students who have not yet attended
+    if (!cls.isPublic && (cls.centreId || cls.standardId || cls.boardId)) {
+      try {
+        const studentProfiles = await this.prisma.studentProfile.findMany({
+          where: {
+            enrollments: {
+              some: {
+                batch: {
+                  ...(cls.centreId ? { centreId: cls.centreId } : {}),
+                  ...(cls.standardId ? { standardId: cls.standardId } : {}),
+                  ...(cls.boardId ? { boardId: cls.boardId } : {}),
+                },
+              },
+            },
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        });
+
+        for (const sp of studentProfiles as any[]) {
+          const u = sp.user;
+          if (u?.email && !attendedEmails.has(u.email.toLowerCase())) {
+            const sName = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Student';
+            parsed.push({
+              id: `enrolled_${sp.id}`,
+              name: sName,
+              parentName: sp.parentName || '—',
+              email: u.email,
+              phone: sp.parentPhone || '—',
+              courseOrClass: cls.standard?.name || cls.board?.name || 'Cohort Class',
+              organization: cls.centre?.name || 'Educare LMS',
+              status: 'ENROLLED',
+              registeredAt: sp.createdAt,
+            });
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not fetch cohort enrolled students: ${err?.message}`);
+      }
+    }
 
     return {
       total: parsed.length,
@@ -1224,6 +1286,40 @@ export class LiveClassService {
     });
 
     const token = await at.toJwt();
+
+    // 6. Record participant attendance in LiveClassRegistration so past roster is permanently preserved
+    if (user?.id) {
+      const studentEmail = user.email || `${user.id}@student.educare`;
+      const studentName = displayName;
+      const studentPhone = user.phone || user.phoneNumber || '';
+      const orgInfo = cls.standard?.name || cls.board?.name || cls.centre?.name || (cls.isPublic ? 'Public Webinar' : 'Cohort');
+
+      this.prisma.liveClassRegistration
+        .upsert({
+          where: {
+            liveClassId_email: {
+              liveClassId: cls.id,
+              email: studentEmail,
+            },
+          },
+          update: {
+            status: 'ATTENDED',
+            name: studentName,
+          },
+          create: {
+            liveClassId: cls.id,
+            email: studentEmail,
+            name: studentName,
+            phone: studentPhone,
+            organization: `${orgInfo} | Role: ${normalizedRole}`,
+            status: 'ATTENDED',
+          },
+        })
+        .catch((err: any) => {
+          this.logger.warn(`Could not upsert attendance registration: ${err?.message}`);
+        });
+    }
+
     return {
       token,
       wsUrl,
@@ -1276,7 +1372,7 @@ export class LiveClassService {
       throw new ForbiddenException('Access denied: Invalid or unrecognized registration credential for this webinar.');
     }
 
-    if (reg.status && reg.status !== 'REGISTERED') {
+    if (reg.status && !['REGISTERED', 'ATTENDED'].includes(reg.status)) {
       throw new ForbiddenException('Access denied: This registration has been revoked or cancelled.');
     }
 
@@ -1325,6 +1421,15 @@ export class LiveClassService {
     });
 
     const token = await at.toJwt();
+
+    // Mark status as ATTENDED so past roster reflects attendance
+    this.prisma.liveClassRegistration
+      .update({
+        where: { id: reg.id },
+        data: { status: 'ATTENDED' },
+      })
+      .catch(() => {});
+
     return {
       token,
       wsUrl,
@@ -1570,6 +1675,96 @@ export class LiveClassService {
         mimeType: fileData.mimeType ? String(fileData.mimeType).trim() : null,
       },
     });
+  }
+
+  async uploadClassFile(
+    classId: string,
+    fileData: { fileName: string; fileType?: string; fileSize?: number; dataUrl: string },
+    user: any,
+  ) {
+    await this.getById(classId, user);
+    const { fileName, fileType, fileSize, dataUrl } = fileData;
+    if (!fileName || !dataUrl) {
+      throw new BadRequestException('fileName and dataUrl are required.');
+    }
+
+    // Security Hardening: Enforce 15 MB payload bound
+    if (dataUrl.length > 22 * 1024 * 1024) {
+      throw new BadRequestException('File payload exceeds maximum allowed upload limit of 15 MB.');
+    }
+
+    // Security Hardening: Extension Whitelist & Anti-Script Validation
+    const ext = path.extname(fileName).toLowerCase();
+    const ALLOWED_UPLOAD_EXTS = new Set([
+      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+      '.png', '.jpg', '.jpeg', '.webp', '.gif',
+      '.zip', '.txt', '.csv',
+    ]);
+    const DISALLOWED_UPLOAD_EXTS = new Set([
+      '.exe', '.bat', '.cmd', '.sh', '.php', '.phtml', '.phtm', '.phps',
+      '.js', '.mjs', '.cjs', '.jsp', '.asp', '.aspx', '.cgi', '.py', '.pl',
+      '.html', '.htm', '.xhtml', '.svg', '.svgz', '.vbs', '.scr', '.msi',
+      '.jar', '.com', '.hta', '.wsf', '.dll',
+    ]);
+
+    if (!ext || !ALLOWED_UPLOAD_EXTS.has(ext) || DISALLOWED_UPLOAD_EXTS.has(ext)) {
+      throw new BadRequestException(`File extension "${ext}" is not permitted for upload.`);
+    }
+
+    // Security Hardening: Anti-XSS MIME Validation for Data URLs
+    if (dataUrl.startsWith('data:')) {
+      const mime = dataUrl.split(';')[0].replace(/^data:/, '').toLowerCase();
+      if (
+        mime.includes('svg') ||
+        mime.includes('html') ||
+        mime.includes('javascript') ||
+        mime.includes('xml')
+      ) {
+        throw new BadRequestException(`MIME type "${mime}" is not permitted.`);
+      }
+    }
+
+    let finalUrl = dataUrl;
+    if (this.storageService) {
+      const config = this.storageService.getConfig();
+      if (config.isConfigured) {
+        try {
+          const uploadRes = await this.storageService.uploadBase64(
+            dataUrl,
+            'materials',
+            fileName.replace(/[^a-zA-Z0-9.-]/g, '_'),
+          );
+          if (uploadRes?.finalUrl) {
+            finalUrl = uploadRes.finalUrl;
+          }
+        } catch (err: any) {
+          this.logger.warn(`Storage R2 upload failed, falling back to direct persistence: ${err?.message}`);
+        }
+      }
+    }
+
+    const created = await this.prisma.liveClassFile.create({
+      data: {
+        liveClassId: classId,
+        uploaderId: user?.id || 'unknown',
+        fileName: String(fileName).trim().slice(0, 255),
+        fileUrl: finalUrl,
+        fileSize: fileSize ? Number(fileSize) : null,
+        mimeType: fileType ? String(fileType).trim() : null,
+      },
+    });
+
+    return {
+      success: true,
+      file: {
+        id: created.id,
+        name: created.fileName,
+        url: created.fileUrl,
+        size: created.fileSize,
+        mimeType: created.mimeType,
+        createdAt: created.createdAt,
+      },
+    };
   }
 
   async deleteClassFile(classId: string, fileId: string, user: any) {

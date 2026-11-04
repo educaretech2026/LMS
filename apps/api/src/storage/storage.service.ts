@@ -31,6 +31,10 @@ const ALLOWED_MIMES = new Set([
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'text/plain',
   'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/octet-stream',
+  'binary/octet-stream',
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([
@@ -61,15 +65,15 @@ const EXTENSION_FAMILY_MIME_MAP: Record<string, string[]> = {
   '.mp3': ['audio/mpeg', 'audio/mp3'],
   '.wav': ['audio/wav', 'audio/x-wav'],
   '.m4a': ['audio/mp4', 'audio/x-m4a'],
-  '.pdf': ['application/pdf'],
-  '.doc': ['application/msword'],
-  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-  '.xls': ['application/vnd.ms-excel'],
-  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-  '.ppt': ['application/vnd.ms-powerpoint'],
-  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
-  '.txt': ['text/plain'],
-  '.csv': ['text/csv'],
+  '.pdf': ['application/pdf', 'application/octet-stream'],
+  '.doc': ['application/msword', 'application/octet-stream'],
+  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/octet-stream'],
+  '.xls': ['application/vnd.ms-excel', 'application/octet-stream'],
+  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'],
+  '.ppt': ['application/vnd.ms-powerpoint', 'application/octet-stream'],
+  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
+  '.txt': ['text/plain', 'application/octet-stream'],
+  '.csv': ['text/csv', 'text/plain', 'application/octet-stream'],
   '.zip': ['application/zip', 'application/x-zip-compressed', 'multipart/x-zip', 'application/octet-stream'],
 };
 
@@ -262,13 +266,22 @@ export class StorageService {
     }
 
     // Normalize Content-Type, stripping parameters like charset
-    const baseMime = contentType.split(';')[0].trim().toLowerCase();
+    let baseMime = (contentType || '').split(';')[0].trim().toLowerCase();
+    if (!baseMime || baseMime === 'application/octet-stream' || baseMime === 'binary/octet-stream') {
+      const family = EXTENSION_FAMILY_MIME_MAP[ext];
+      if (family && family.length > 0 && family[0] !== 'application/octet-stream') {
+        baseMime = family[0];
+      } else {
+        baseMime = 'application/octet-stream';
+      }
+    }
+
     if (!baseMime || !ALLOWED_MIMES.has(baseMime)) {
       throw new BadRequestException(`Content-Type "${contentType}" is not permitted.`);
     }
 
     const expectedMimes = EXTENSION_FAMILY_MIME_MAP[ext];
-    if (expectedMimes) {
+    if (expectedMimes && baseMime !== 'application/octet-stream') {
       if (!expectedMimes.includes(baseMime)) {
         throw new BadRequestException(`Content-Type "${contentType}" is incompatible with file extension "${ext}".`);
       }
@@ -352,7 +365,7 @@ export class StorageService {
     const command = new PutObjectCommand({
       Bucket: config.bucketName,
       Key: objectKey,
-      ContentType: contentType,
+      ContentType: baseMime,
     });
 
     try {

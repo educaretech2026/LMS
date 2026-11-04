@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import JSZip from "jszip";
+import { fetchApi } from "@/lib/api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -81,6 +83,32 @@ const PRESET_COLORS = [
 ];
 
 const STROKE_SIZES = [2, 4, 8, 14];
+
+// Security Helper: Anti-SSRF URL verification (rejects loopback, link-local metadata, LAN IPs)
+const isSafeUrl = (url: string): boolean => {
+  if (!url || typeof url !== "string") return false;
+  if (url.startsWith("data:")) return true;
+  if (url.startsWith("/")) return true; // same-origin relative
+  try {
+    const parsed = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "169.254.169.254" ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export function PresentationDeck({
   isTeacher,
@@ -214,8 +242,268 @@ export function PresentationDeck({
     });
   }, []);
 
+  // Presentation Source Tracking for Lightweight WebRTC Sync (< 300 bytes per message)
+  const activePresentationRef = useRef<{
+    fileUrl: string;
+    fileName: string;
+    fileType: "pdf" | "pptx" | "image";
+  } | null>(null);
+
+  const broadcastPresentationSource = useCallback(
+    (fileUrl: string, fileName: string, fileType: "pdf" | "pptx" | "image", slideIdx: number = 0) => {
+      activePresentationRef.current = { fileUrl, fileName, fileType };
+      if (room?.localParticipant) {
+        const payload = JSON.stringify({
+          type: "PRESENTATION_SOURCE",
+          fileUrl,
+          fileName,
+          fileType,
+          currentSlideIndex: slideIdx,
+        });
+        const bytes = new TextEncoder().encode(payload);
+        room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
+      }
+    },
+    [room]
+  );
+
   // ─────────────────────────────────────────────────────────────────────────────
-  // 2. Render PDF Pages into High-DPI Slide Images
+  // 2. Render PowerPoint (.pptx) Presentations with JSZip
+  // ─────────────────────────────────────────────────────────────────────────────
+  const processPptxFile = useCallback(
+    async (fileOrUrl: File | string, fileName?: string) => {
+      setIsLoadingPdf(true);
+      setPdfProgress("Unpacking PowerPoint presentation (.pptx)...");
+      try {
+        let zipBuffer: ArrayBuffer;
+        if (typeof fileOrUrl === "string") {
+          if (!isSafeUrl(fileOrUrl)) {
+            throw new Error("Target presentation URL failed security policy verification.");
+          }
+          const res = await fetch(fileOrUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          zipBuffer = await res.arrayBuffer();
+        } else {
+          zipBuffer = await fileOrUrl.arrayBuffer();
+        }
+
+        const zip = await JSZip.loadAsync(zipBuffer);
+
+        // Security check: Zip Bomb / Decompression Bomb protection (60MB uncompressed limit)
+        let totalUncompressedSize = 0;
+        const MAX_UNCOMPRESSED_LIMIT = 60 * 1024 * 1024;
+        zip.forEach((_, entry) => {
+          const uncompressed = (entry as any)._data?.uncompressedSize || 0;
+          totalUncompressedSize += uncompressed;
+        });
+
+        if (totalUncompressedSize > MAX_UNCOMPRESSED_LIMIT) {
+          throw new Error("PowerPoint document exceeds uncompressed security limit (60MB).");
+        }
+
+        // Find all slide XML files
+        const slideFiles: { name: string; num: number }[] = [];
+        zip.forEach((relativePath) => {
+          const match = relativePath.match(/^ppt\/slides\/slide([0-9]+)\.xml$/i);
+          if (match && match[1]) {
+            slideFiles.push({ name: relativePath, num: parseInt(match[1], 10) });
+          }
+        });
+
+        slideFiles.sort((a, b) => a.num - b.num);
+
+        if (slideFiles.length === 0) {
+          throw new Error("No slide XML files found in this PowerPoint document.");
+        }
+
+        if (slideFiles.length > 100) {
+          throw new Error("Presentation contains more than 100 slides, exceeding memory safety limits.");
+        }
+
+        const generatedSlides: SlideItem[] = [];
+        const parser = new DOMParser();
+
+        for (let i = 0; i < slideFiles.length; i++) {
+          const slideEntry = slideFiles[i];
+          setPdfProgress(`Rendering slide ${i + 1} of ${slideFiles.length}...`);
+
+          const xmlText = await zip.file(slideEntry.name)?.async("text");
+          if (!xmlText) continue;
+
+          const doc = parser.parseFromString(xmlText, "application/xml");
+
+          // Extract paragraphs and text
+          const paragraphs = Array.from(doc.getElementsByTagName("a:p"));
+          let titleText = "";
+          const bulletLines: string[] = [];
+
+          for (const p of paragraphs) {
+            const textNodes = Array.from(p.getElementsByTagName("a:t"));
+            const line = textNodes.map((t) => t.textContent || "").join("").trim();
+            if (!line) continue;
+
+            if (!titleText) {
+              titleText = line;
+            } else {
+              bulletLines.push(line);
+            }
+          }
+
+          // Check for embedded media in slide rels
+          const relsPath = `ppt/slides/_rels/slide${slideEntry.num}.xml.rels`;
+          let slideImageUrl = "";
+          const relsFile = zip.file(relsPath);
+          if (relsFile) {
+            try {
+              const relsXml = await relsFile.async("text");
+              const relsDoc = parser.parseFromString(relsXml, "application/xml");
+              const rels = Array.from(relsDoc.getElementsByTagName("Relationship"));
+              for (const rel of rels) {
+                const target = rel.getAttribute("Target") || "";
+                if (target.includes("media/")) {
+                  const mediaFileName = target.split("/").pop();
+                  if (mediaFileName) {
+                    const mediaEntry = zip.file(`ppt/media/${mediaFileName}`);
+                    if (mediaEntry) {
+                      const base64Img = await mediaEntry.async("base64");
+                      const ext = mediaFileName.split(".").pop()?.toLowerCase() || "png";
+                      slideImageUrl = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${base64Img}`;
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          // Render slide onto high-res 16:9 canvas (1920x1080)
+          const offCanvas = document.createElement("canvas");
+          offCanvas.width = 1920;
+          offCanvas.height = 1080;
+          const ctx = offCanvas.getContext("2d");
+          if (!ctx) continue;
+
+          // Background gradient
+          const gradient = ctx.createLinearGradient(0, 0, 1920, 1080);
+          gradient.addColorStop(0, "#0b0f19");
+          gradient.addColorStop(0.5, "#111827");
+          gradient.addColorStop(1, "#0f172a");
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, 1920, 1080);
+
+          // Top accent line
+          const topAccent = ctx.createLinearGradient(0, 0, 1920, 0);
+          topAccent.addColorStop(0, "#3b82f6");
+          topAccent.addColorStop(0.5, "#6366f1");
+          topAccent.addColorStop(1, "#ec4899");
+          ctx.fillStyle = topAccent;
+          ctx.fillRect(0, 0, 1920, 6);
+
+          // Slide Title
+          const displayTitle = titleText || `${fileName || "Slide"} ${i + 1}`;
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 56px Inter, system-ui, sans-serif";
+          ctx.fillText(displayTitle.slice(0, 75), 100, 140);
+
+          // Divider below title
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(100, 180);
+          ctx.lineTo(1820, 180);
+          ctx.stroke();
+
+          // If image exists, draw it
+          if (slideImageUrl) {
+            try {
+              const img = new Image();
+              await new Promise<void>((res) => {
+                img.onload = () => res();
+                img.onerror = () => res();
+                img.src = slideImageUrl;
+              });
+
+              if (img.width > 0) {
+                if (bulletLines.length > 0) {
+                  const maxW = 800;
+                  const maxH = 750;
+                  const ratio = Math.min(maxW / img.width, maxH / img.height);
+                  const iw = img.width * ratio;
+                  const ih = img.height * ratio;
+                  const ix = 1050 + (maxW - iw) / 2;
+                  const iy = 230 + (maxH - ih) / 2;
+
+                  ctx.drawImage(img, ix, iy, iw, ih);
+
+                  // Draw bullets on left
+                  ctx.fillStyle = "#e2e8f0";
+                  ctx.font = "32px Inter, system-ui, sans-serif";
+                  let y = 260;
+                  for (const b of bulletLines.slice(0, 10)) {
+                    ctx.fillStyle = "#38bdf8";
+                    ctx.fillText("•", 100, y);
+                    ctx.fillStyle = "#e2e8f0";
+                    ctx.fillText(b.slice(0, 65), 140, y);
+                    y += 65;
+                  }
+                } else {
+                  const maxW = 1600;
+                  const maxH = 780;
+                  const ratio = Math.min(maxW / img.width, maxH / img.height);
+                  const iw = img.width * ratio;
+                  const ih = img.height * ratio;
+                  const ix = (1920 - iw) / 2;
+                  const iy = 210 + (maxH - ih) / 2;
+                  ctx.drawImage(img, ix, iy, iw, ih);
+                }
+              }
+            } catch {}
+          } else {
+            // Full width bullet points
+            ctx.fillStyle = "#e2e8f0";
+            ctx.font = "36px Inter, system-ui, sans-serif";
+            let y = 280;
+            for (const b of bulletLines.slice(0, 11)) {
+              ctx.fillStyle = "#38bdf8";
+              ctx.fillText("•", 100, y);
+              ctx.fillStyle = "#f1f5f9";
+              ctx.fillText(b.slice(0, 95), 150, y);
+              y += 72;
+            }
+          }
+
+          // Footer branding & Slide number
+          ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.font = "24px Inter, system-ui, sans-serif";
+          ctx.fillText("Educare LMS Presentation", 100, 1030);
+          ctx.fillText(`Slide ${i + 1} of ${slideFiles.length}`, 1680, 1030);
+
+          const dataUrl = offCanvas.toDataURL("image/jpeg", 0.88);
+          generatedSlides.push({
+            id: `pptx-${slideEntry.num}-${Date.now()}`,
+            url: dataUrl,
+            pageNumber: i + 1,
+            title: displayTitle,
+            width: 1920,
+            height: 1080,
+          });
+        }
+
+        setSlides(generatedSlides);
+        setCurrentSlideIndex(0);
+      } catch (err: any) {
+        console.error("PPTX presentation processing error:", err);
+        alert(`Failed to load PowerPoint (.pptx): ${err?.message || "Invalid or inaccessible file"}`);
+      } finally {
+        setIsLoadingPdf(false);
+        setPdfProgress("");
+      }
+    },
+    []
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 3. Render PDF Pages into High-DPI Slide Images
   // ─────────────────────────────────────────────────────────────────────────────
   const processPdfFile = useCallback(
     async (fileOrUrl: File | string, fileName?: string) => {
@@ -226,6 +514,9 @@ export function PresentationDeck({
         let pdfData: any;
 
         if (typeof fileOrUrl === "string") {
+          if (!isSafeUrl(fileOrUrl)) {
+            throw new Error("Target presentation URL failed security policy verification.");
+          }
           try {
             const res = await fetch(fileOrUrl);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -246,6 +537,10 @@ export function PresentationDeck({
 
         if (totalPages === 0) {
           throw new Error("This PDF document contains 0 pages.");
+        }
+
+        if (totalPages > 120) {
+          throw new Error("PDF document exceeds maximum slide safety limit of 120 pages.");
         }
 
         const generatedSlides: SlideItem[] = [];
@@ -281,21 +576,6 @@ export function PresentationDeck({
 
         setSlides(generatedSlides);
         setCurrentSlideIndex(0);
-
-        // Broadcast to students via LiveKit
-        if (isTeacher && room?.localParticipant) {
-          const payload = JSON.stringify({
-            type: "SLIDE_DECK_LOADED",
-            slides: generatedSlides.map((s) => ({
-              id: s.id,
-              url: s.url,
-              pageNumber: s.pageNumber,
-              title: s.title,
-            })),
-          });
-          const bytes = new TextEncoder().encode(payload);
-          room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
-        }
       } catch (err: any) {
         console.error("PDF presentation processing error:", err);
         alert(`Failed to load presentation PDF: ${err?.message || "Invalid or inaccessible file"}`);
@@ -304,36 +584,80 @@ export function PresentationDeck({
         setPdfProgress("");
       }
     },
-    [loadPdfJs, isTeacher, room]
+    [loadPdfJs]
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 3. Auto-load pre-attached slides if provided
+  // 4. Auto-load pre-attached slides if provided
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (slides.length > 0) return;
-    const pdfAttachment = initialFiles.find((f) => f.url.toLowerCase().endsWith(".pdf") || f.name.toLowerCase().endsWith(".pdf"));
+    const pptxAttachment = initialFiles.find((f) =>
+      /\.(pptx|ppt)$/i.test(f.url) || /\.(pptx|ppt)$/i.test(f.name)
+    );
+    if (pptxAttachment) {
+      processPptxFile(pptxAttachment.url, pptxAttachment.name);
+      if (isTeacher) {
+        broadcastPresentationSource(pptxAttachment.url, pptxAttachment.name, "pptx", 0);
+      }
+      return;
+    }
+
+    const pdfAttachment = initialFiles.find((f) =>
+      /\.pdf$/i.test(f.url) || /\.pdf$/i.test(f.name)
+    );
     if (pdfAttachment) {
       processPdfFile(pdfAttachment.url, pdfAttachment.name);
-    } else {
-      const imageAttachments = initialFiles.filter((f) =>
-        /\.(png|jpe?g|webp|svg)$/i.test(f.url) || /\.(png|jpe?g|webp|svg)$/i.test(f.name)
+      if (isTeacher) {
+        broadcastPresentationSource(pdfAttachment.url, pdfAttachment.name, "pdf", 0);
+      }
+      return;
+    }
+
+    const imageAttachments = initialFiles.filter((f) =>
+      /\.(png|jpe?g|webp|svg)$/i.test(f.url) || /\.(png|jpe?g|webp|svg)$/i.test(f.name)
+    );
+    if (imageAttachments.length > 0) {
+      setSlides(
+        imageAttachments.map((f, i) => ({
+          id: `init-img-${i}`,
+          url: f.url,
+          pageNumber: i + 1,
+          title: f.name,
+        }))
       );
-      if (imageAttachments.length > 0) {
-        setSlides(
-          imageAttachments.map((f, i) => ({
-            id: `init-img-${i}`,
-            url: f.url,
-            pageNumber: i + 1,
-            title: f.name,
-          }))
-        );
+      if (isTeacher) {
+        broadcastPresentationSource(imageAttachments[0].url, imageAttachments[0].name, "image", 0);
       }
     }
-  }, [initialFiles, slides.length, processPdfFile]);
+  }, [initialFiles, slides.length, processPdfFile, processPptxFile, broadcastPresentationSource, isTeacher]);
+
+  // Request active presentation from teacher when student joins or opens slides
+  useEffect(() => {
+    if (!isTeacher && slides.length === 0 && room?.localParticipant) {
+      const payload = JSON.stringify({ type: "REQUEST_PRESENTATION_STATE" });
+      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+    }
+  }, [isTeacher, slides.length, room]);
+
+  // Teacher periodic heartbeat sync for late-joining students
+  useEffect(() => {
+    if (!isTeacher || !room?.localParticipant) return;
+    const interval = setInterval(() => {
+      if (activePresentationRef.current) {
+        broadcastPresentationSource(
+          activePresentationRef.current.fileUrl,
+          activePresentationRef.current.fileName,
+          activePresentationRef.current.fileType,
+          currentSlideIndex
+        );
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [isTeacher, room, currentSlideIndex, broadcastPresentationSource]);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 4. LiveKit Synchronization Receiver (Slide navigation & Real-time strokes)
+  // 5. LiveKit Synchronization Receiver (Slide navigation & Real-time strokes)
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!room) return;
@@ -343,12 +667,66 @@ export function PresentationDeck({
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
 
-        if (data.type === "SLIDE_DECK_LOADED" && Array.isArray(data.slides)) {
+        // Security: WebRTC Sender Role Attestation
+        let isSenderHost = false;
+        if (participant) {
+          if (participant.permissions?.roomAdmin === true) {
+            isSenderHost = true;
+          } else if (participant.metadata) {
+            try {
+              const meta = typeof participant.metadata === "string" ? JSON.parse(participant.metadata) : participant.metadata;
+              if (meta.isHost === true || meta.role === "TEACHER" || meta.role === "SUPER_ADMIN" || meta.role === "CENTRE_ADMIN") {
+                isSenderHost = true;
+              }
+            } catch {}
+          }
+        }
+
+        if (data.type === "PRESENTATION_SOURCE" && data.fileUrl) {
+          // Reject presentation switch from non-host participants
+          if (!isSenderHost) {
+            console.warn("[Security] Unauthorized PRESENTATION_SOURCE rejected from", participant?.identity);
+            return;
+          }
+          const { fileUrl, fileName, fileType, currentSlideIndex: targetIdx } = data;
+          activePresentationRef.current = { fileUrl, fileName, fileType };
+          if (fileType === "pptx") {
+            processPptxFile(fileUrl, fileName).then(() => {
+              if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+            });
+          } else if (fileType === "pdf") {
+            processPdfFile(fileUrl, fileName).then(() => {
+              if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+            });
+          } else if (fileType === "image") {
+            setSlides([
+              {
+                id: `img-slide-${Date.now()}`,
+                url: fileUrl,
+                pageNumber: 1,
+                title: fileName || "Slide",
+              },
+            ]);
+            if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+          }
+        } else if (data.type === "REQUEST_PRESENTATION_STATE") {
+          if (isTeacher && activePresentationRef.current) {
+            broadcastPresentationSource(
+              activePresentationRef.current.fileUrl,
+              activePresentationRef.current.fileName,
+              activePresentationRef.current.fileType,
+              currentSlideIndex
+            );
+          }
+        } else if (data.type === "SLIDE_DECK_LOADED" && Array.isArray(data.slides)) {
+          if (!isSenderHost) return;
           setSlides(data.slides);
           setCurrentSlideIndex(0);
         } else if (data.type === "SLIDE_INDEX_CHANGE") {
+          if (!isSenderHost) return;
           setCurrentSlideIndex(data.index);
         } else if (data.type === "SLIDE_STROKE_ADDED" && data.stroke) {
+          if (!isSenderHost && !allowStudentDraw) return;
           const s = data.stroke as DrawingStroke;
           setStrokesBySlide((prev) => {
             const list = prev[s.slideIndex] || [];
@@ -358,15 +736,18 @@ export function PresentationDeck({
             };
           });
         } else if (data.type === "SLIDE_STROKES_CLEARED") {
+          if (!isSenderHost) return;
           setStrokesBySlide((prev) => ({
             ...prev,
             [data.slideIndex]: [],
           }));
         } else if (data.type === "SLIDE_LASER_POINTER") {
+          if (!isSenderHost) return;
           setLaserPosition({ x: data.x, y: data.y, name: data.name || "Speaker" });
           if (laserTimerRef.current) clearTimeout(laserTimerRef.current);
           laserTimerRef.current = setTimeout(() => setLaserPosition(null), 1400);
         } else if (data.type === "SLIDE_PERMISSIONS_UPDATE") {
+          if (!isSenderHost) return;
           if (onToggleStudentDraw) {
             onToggleStudentDraw(Boolean(data.allowStudentDraw));
           }
@@ -379,7 +760,7 @@ export function PresentationDeck({
       room.off("dataReceived", handleIncomingData);
       if (laserTimerRef.current) clearTimeout(laserTimerRef.current);
     };
-  }, [room, onToggleStudentDraw]);
+  }, [room, onToggleStudentDraw, isTeacher, currentSlideIndex, broadcastPresentationSource, processPdfFile, processPptxFile]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 5. Canvas Drawing Rendering Loop
@@ -662,78 +1043,139 @@ export function PresentationDeck({
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 8. File Upload Handler (Real-Time in Class)
+  // 8. File Upload Handler (Real-Time in Class with PPTX & PDF Support)
   // ─────────────────────────────────────────────────────────────────────────────
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Optional background persistence to class attachments
-    if (classId && (file.type === "application/pdf" || file.name.endsWith(".pdf") || file.type.startsWith("image/"))) {
-      import("@/lib/api").then(({ fetchApi }) => {
-        fetchApi<any>(
-          `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "application/octet-stream")}`,
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    const isPptx = ext === "pptx" || ext === "ppt";
+    const isPdf = ext === "pdf" || file.type === "application/pdf";
+    const isImg = file.type.startsWith("image/");
+
+    if (!isPptx && !isPdf && !isImg) {
+      alert("Please upload a PowerPoint presentation (.pptx), PDF (.pdf), or slide image.");
+      return;
+    }
+
+    setIsLoadingPdf(true);
+    setPdfProgress("Uploading and preparing presentation...");
+
+    try {
+      const inferredMime = isPptx
+        ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        : isPdf
+        ? "application/pdf"
+        : file.type || "image/png";
+
+      let uploadedUrl = "";
+
+      // 1. Try pre-signed Cloudflare R2 upload
+      try {
+        const presigned = await fetchApi<any>(
+          `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(inferredMime)}`,
           { silent: true }
-        )
-          .then(async (presigned) => {
-            if (presigned?.uploadUrl && presigned?.finalUrl) {
-              await fetch(presigned.uploadUrl, {
-                method: "PUT",
-                headers: { "Content-Type": file.type || "application/octet-stream" },
-                body: file,
-              });
+        );
+
+        if (presigned?.uploadUrl && presigned?.finalUrl) {
+          const res = await fetch(presigned.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": inferredMime },
+            body: file,
+          });
+
+          if (res.ok) {
+            uploadedUrl = presigned.finalUrl;
+            if (classId) {
               await fetchApi(`/live-class/${classId}/files`, {
                 method: "POST",
                 body: JSON.stringify({
                   fileName: file.name,
-                  fileUrl: presigned.finalUrl,
+                  fileUrl: uploadedUrl,
                   fileSize: file.size,
-                  mimeType: file.type || "application/octet-stream",
+                  mimeType: inferredMime,
                 }),
                 silent: true,
               });
-              if (room?.localParticipant) {
-                const payload = JSON.stringify({
-                  type: "FILE_SHARED",
-                  name: file.name,
-                  url: presigned.finalUrl,
-                });
-                room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
-              }
             }
-          })
-          .catch(() => {});
-      });
-    }
-
-    if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      processPdfFile(file, file.name);
-    } else if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          const newSlide: SlideItem = {
-            id: `slide-img-${Date.now()}`,
-            url: reader.result,
-            pageNumber: 1,
-            title: file.name,
-          };
-          setSlides([newSlide]);
-          setCurrentSlideIndex(0);
-
-          if (isTeacher && room?.localParticipant) {
-            const payload = JSON.stringify({
-              type: "SLIDE_DECK_LOADED",
-              slides: [newSlide],
-            });
-            const bytes = new TextEncoder().encode(payload);
-            room.localParticipant.publishData(bytes, { reliable: true }).catch(() => {});
           }
         }
-      };
-      reader.readAsDataURL(file);
-    } else {
-      alert("Please upload a PDF presentation or slide image file (.pdf, .png, .jpg).");
+      } catch (presignedErr) {
+        console.warn("Storage presigned upload bypassed, falling back to direct upload:", presignedErr);
+      }
+
+      // 2. Direct server fallback upload if presigned upload is unavailable or unconfigured
+      if (!uploadedUrl && classId) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Failed to read local presentation file"));
+          reader.readAsDataURL(file);
+        });
+
+        const uploadRes = await fetchApi<any>(`/live-class/${classId}/upload`, {
+          method: "POST",
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: inferredMime,
+            fileSize: file.size,
+            dataUrl,
+          }),
+        });
+
+        if (uploadRes?.file?.url) {
+          uploadedUrl = uploadRes.file.url;
+        }
+      }
+
+      // 3. Render slides locally
+      if (isPptx) {
+        await processPptxFile(file, file.name);
+      } else if (isPdf) {
+        await processPdfFile(file, file.name);
+      } else if (isImg) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string") {
+            const newSlide: SlideItem = {
+              id: `slide-img-${Date.now()}`,
+              url: reader.result,
+              pageNumber: 1,
+              title: file.name,
+            };
+            setSlides([newSlide]);
+            setCurrentSlideIndex(0);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+
+      // 4. Lightweight WebRTC Broadcast to students (< 300 bytes)
+      if (uploadedUrl && isTeacher) {
+        broadcastPresentationSource(
+          uploadedUrl,
+          file.name,
+          isPptx ? "pptx" : isPdf ? "pdf" : "image",
+          0
+        );
+
+        if (room?.localParticipant) {
+          const fileSharedPayload = JSON.stringify({
+            type: "FILE_SHARED",
+            name: file.name,
+            url: uploadedUrl,
+          });
+          room.localParticipant.publishData(new TextEncoder().encode(fileSharedPayload), { reliable: true }).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      console.error("Presentation file upload error:", err);
+      alert(`Presentation loading error: ${err?.message || "Invalid or inaccessible file"}`);
+    } finally {
+      setIsLoadingPdf(false);
+      setPdfProgress("");
+      if (e.target) e.target.value = "";
     }
   };
 
@@ -827,7 +1269,7 @@ export function PresentationDeck({
               <span className="hidden sm:inline">Open Slides</span>
               <input
                 type="file"
-                accept=".pdf,image/png,image/jpeg,image/webp"
+                accept=".pdf,.pptx,.ppt,image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={handleFileUpload}
               />
@@ -910,10 +1352,10 @@ export function PresentationDeck({
               {isTeacher && (
                 <label className="mt-2 cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors shadow-lg">
                   <Upload size={14} />
-                  <span>Choose Presentation (PDF)</span>
+                  <span>Choose Presentation (PDF / PowerPoint)</span>
                   <input
                     type="file"
-                    accept=".pdf,image/png,image/jpeg,image/webp"
+                    accept=".pdf,.pptx,.ppt,image/png,image/jpeg,image/webp"
                     className="hidden"
                     onChange={handleFileUpload}
                   />
