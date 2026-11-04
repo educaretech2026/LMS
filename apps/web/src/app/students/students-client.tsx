@@ -723,8 +723,9 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">
-                  Account Password <span className="text-brand-red">*</span>
+                <label className="block text-xs font-bold text-text-secondary mb-1.5 flex items-center justify-between">
+                  <span>Account Password</span>
+                  <span className="text-[11px] text-text-muted font-normal">Default: <span className="font-mono text-brand-blue font-semibold">password123</span></span>
                 </label>
                 <div className="relative">
                   <input 
@@ -736,10 +737,13 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     data-1p-ignore="true"
                     value={password} 
                     onChange={(e) => setPassword(e.target.value)} 
-                    placeholder="Enter password for student" 
+                    placeholder="Enter custom password or leave blank for password123" 
                     className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
                   />
                 </div>
+                <p className="text-[11px] text-text-muted mt-1">
+                  Leave blank to automatically assign standard default password (<span className="font-mono text-text-secondary">password123</span>).
+                </p>
               </div>
 
               <div>

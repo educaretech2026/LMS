@@ -224,6 +224,16 @@ export function LiveKitClassRoomV2({
   const [raisedHandsList, setRaisedHandsList] = useState<HandRaiseEntry[]>([]);
   const [showRaisedHandsPopover, setShowRaisedHandsPopover] = useState<boolean>(false);
   const [isHandRaised, setIsHandRaised] = useState<boolean>(false);
+  const [recentHandRaiseAlert, setRecentHandRaiseAlert] = useState<{ name: string; identity: string } | null>(null);
+
+  // Auto-dismiss hand raise alert after 6 seconds
+  useEffect(() => {
+    if (!recentHandRaiseAlert) return;
+    const timer = setTimeout(() => {
+      setRecentHandRaiseAlert(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [recentHandRaiseAlert]);
 
   // Attendance & Attendee Roster
   const [showAttendanceModal, setShowAttendanceModal] = useState<boolean>(false);
@@ -479,7 +489,8 @@ export function LiveKitClassRoomV2({
         breakStateRef={breakStateRef}
         setBreakState={setBreakState}
         onNewChatMessage={(msg: ChatMessage) => {
-          if (isImmersed) {
+          const isChatActive = activeSidebarTab === "chat" && !isImmersed && (typeof window !== "undefined" && window.innerWidth >= 768);
+          if (!isChatActive) {
             setRecentActivityAlert({
               type: "chat",
               text: msg.text,
@@ -488,12 +499,15 @@ export function LiveKitClassRoomV2({
           }
         }}
         onNewFileShared={(f: SharedFile) => {
-          if (isImmersed) {
-            setRecentActivityAlert({
-              type: "file",
-              text: f.name,
-              url: f.url,
-            });
+          setRecentActivityAlert({
+            type: "file",
+            text: f.name,
+            url: f.url,
+          });
+        }}
+        onNewHandRaise={(name: string, identity: string) => {
+          if (isTeacher) {
+            setRecentHandRaiseAlert({ name, identity });
           }
         }}
         onUpdateAttendees={setSessionAttendees}
@@ -849,8 +863,62 @@ export function LiveKitClassRoomV2({
             <FloatingCamPiP isTeacher={isTeacher} />
           </div>
 
-          {/* Student Immersion Mode Floating Activity Toast */}
-          {isImmersed && recentActivityAlert && (
+          {/* Stage Hand Raise Floating Badge for Teacher (Slides & Whiteboard) */}
+          {isTeacher && stageMode !== "grid" && raisedHandsList.length > 0 && (
+            <button
+              onClick={() => setShowRaisedHandsPopover(true)}
+              className="absolute top-16 left-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-bold shadow-lg backdrop-blur-md animate-pulse hover:bg-amber-500/30 transition-all pointer-events-auto"
+            >
+              <Hand size={14} />
+              <span>{raisedHandsList.length} Hand{raisedHandsList.length > 1 ? "s" : ""} Raised</span>
+            </button>
+          )}
+
+          {/* Teacher Raised Hand Instant Notification Toast */}
+          {isTeacher && recentHandRaiseAlert && (
+            <div className="absolute top-16 right-4 sm:right-6 z-50 max-w-sm animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-auto">
+              <div className="p-3 rounded-2xl bg-[#1d150b]/95 border border-amber-500/60 shadow-2xl backdrop-blur-md flex items-center gap-3 text-white">
+                <div className="h-9 w-9 rounded-xl bg-amber-500/25 text-amber-300 flex items-center justify-center shrink-0">
+                  <Hand size={18} className="animate-bounce text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-amber-400">Hand Raised</p>
+                  <p className="text-xs font-semibold text-white truncate">{recentHandRaiseAlert.name}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => {
+                      setShowRaisedHandsPopover(true);
+                      setRecentHandRaiseAlert(null);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/30 hover:bg-amber-500/40 text-amber-200 text-[10px] font-bold border border-amber-500/40 cursor-pointer"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => {
+                      const room = (window as any).__lk_room;
+                      safePublishData(room, {
+                        type: "LOWER_STUDENT_HAND",
+                        identity: recentHandRaiseAlert.identity,
+                      });
+                      setRaisedHandsList((prev) => prev.filter((h) => h.identity !== recentHandRaiseAlert.identity));
+                      setRecentHandRaiseAlert(null);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 text-[10px] font-bold cursor-pointer"
+                  >
+                    Lower
+                  </button>
+                  <button onClick={() => setRecentHandRaiseAlert(null)} className="text-white/40 hover:text-white p-1">
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Floating Activity Toast (Chat & Files) */}
+          {recentActivityAlert && (
             <div className="absolute bottom-24 right-4 z-50 max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300 pointer-events-auto">
               <div className="p-3 rounded-2xl bg-[#141622]/95 border border-blue-500/40 shadow-2xl backdrop-blur-md flex items-start gap-3 text-white">
                 <div className="h-8 w-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -876,7 +944,7 @@ export function LiveKitClassRoomV2({
                         setActiveSidebarTab("chat");
                         setRecentActivityAlert(null);
                       }}
-                      className="mt-1.5 text-[11px] font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      className="mt-1.5 text-[11px] font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
                     >
                       Open Chat <ChevronRight size={12} />
                     </button>
@@ -1547,7 +1615,7 @@ function FloatingCamPiP({ isTeacher }: { isTeacher: boolean }) {
   if (!target) return null;
 
   return (
-    <div className="absolute top-4 right-4 z-40 flex flex-col items-end gap-1 pointer-events-auto">
+    <div className="absolute top-16 sm:top-20 right-4 z-40 flex flex-col items-end gap-1 pointer-events-auto">
       <div
         className="rounded-2xl overflow-hidden border border-white/20 bg-[#111318]/90 shadow-2xl backdrop-blur-md transition-all duration-200"
         style={{ width: minimized ? "140px" : "210px" }}
@@ -1588,9 +1656,38 @@ function V2BottomControlDock({
   onToggleChat: () => void;
   onLeave: () => void;
 }) {
+  const room = useRoomContext();
   const { buttonProps: micProps, enabled: micOn } = useTrackToggle({ source: Track.Source.Microphone });
   const { buttonProps: camProps, enabled: camOn } = useTrackToggle({ source: Track.Source.Camera });
   const { buttonProps: screenProps, enabled: screenOn } = useTrackToggle({ source: Track.Source.ScreenShare });
+
+  const handleToggleMic = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (room?.localParticipant) {
+        await room.localParticipant.setMicrophoneEnabled(!micOn);
+      } else if (micProps.onClick) {
+        micProps.onClick(e as any);
+      }
+    } catch (err) {
+      console.warn("Direct microphone toggle failed, running fallback:", err);
+      micProps.onClick?.(e as any);
+    }
+  };
+
+  const handleToggleCam = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (room?.localParticipant) {
+        await room.localParticipant.setCameraEnabled(!camOn);
+      } else if (camProps.onClick) {
+        camProps.onClick(e as any);
+      }
+    } catch (err) {
+      console.warn("Direct camera toggle failed, running fallback:", err);
+      camProps.onClick?.(e as any);
+    }
+  };
 
   return (
     <footer
@@ -1600,7 +1697,8 @@ function V2BottomControlDock({
       {/* Microphone Toggle */}
       <button
         {...micProps}
-        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${
+        onClick={handleToggleMic}
+        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${
           micOn
             ? "bg-white/10 text-white hover:bg-white/15"
             : "bg-red-500/20 text-red-400 border border-red-500/30"
@@ -1613,7 +1711,8 @@ function V2BottomControlDock({
       {/* Camera Toggle */}
       <button
         {...camProps}
-        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${
+        onClick={handleToggleCam}
+        className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${
           camOn
             ? "bg-white/10 text-white hover:bg-white/15"
             : "bg-red-500/20 text-red-400 border border-red-500/30"
@@ -2019,6 +2118,7 @@ function ClassroomV2Sync({
   setBreakState,
   onNewChatMessage,
   onNewFileShared,
+  onNewHandRaise,
   onUpdateAttendees,
 }: any) {
   const room = useRoomContext();
@@ -2142,6 +2242,9 @@ function ClassroomV2Sync({
               return prev.filter((h) => h.identity !== targetId);
             }
           });
+          if (data.raised) {
+            onNewHandRaise?.(targetName, targetId);
+          }
         } else if (data.type === "LOWER_STUDENT_HAND") {
           const myLocalId = room?.localParticipant?.identity;
           if (data.identity === myLocalId || data.identity === myIdentity) {
@@ -2178,6 +2281,7 @@ function ClassroomV2Sync({
     setBreakState,
     onNewChatMessage,
     onNewFileShared,
+    onNewHandRaise,
   ]);
 
   return null;

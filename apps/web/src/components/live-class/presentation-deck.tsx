@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import JSZip from "jszip";
 import { fetchApi } from "@/lib/api";
 import {
@@ -697,25 +697,33 @@ export function PresentationDeck({
             return;
           }
           const { fileUrl, fileName, fileType, currentSlideIndex: targetIdx } = data;
+          const isSameFile = activePresentationRef.current?.fileUrl === fileUrl && slides.length > 0;
           activePresentationRef.current = { fileUrl, fileName, fileType };
-          if (fileType === "pptx") {
-            processPptxFile(fileUrl, fileName).then(() => {
+          if (!isSameFile) {
+            if (fileType === "pptx") {
+              processPptxFile(fileUrl, fileName).then(() => {
+                if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+              });
+            } else if (fileType === "pdf") {
+              processPdfFile(fileUrl, fileName).then(() => {
+                if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+              });
+            } else if (fileType === "image") {
+              setSlides([
+                {
+                  id: `img-slide-${Date.now()}`,
+                  url: fileUrl,
+                  pageNumber: 1,
+                  title: fileName || "Slide",
+                },
+              ]);
               if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
-            });
-          } else if (fileType === "pdf") {
-            processPdfFile(fileUrl, fileName).then(() => {
-              if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
-            });
-          } else if (fileType === "image") {
-            setSlides([
-              {
-                id: `img-slide-${Date.now()}`,
-                url: fileUrl,
-                pageNumber: 1,
-                title: fileName || "Slide",
-              },
-            ]);
-            if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+            }
+          } else {
+            // Already loaded: just sync slide index without re-unpacking/re-rendering pages
+            if (typeof targetIdx === "number" && targetIdx !== currentSlideIndex) {
+              setCurrentSlideIndex(targetIdx);
+            }
           }
         } else if (data.type === "REQUEST_PRESENTATION_STATE") {
           if (isTeacher && activePresentationRef.current) {
@@ -1394,13 +1402,8 @@ export function PresentationDeck({
                 transition: "transform 0.15s ease-out",
               }}
             >
-              {/* Underlying Slide Image */}
-              <img
-                src={activeSlide.url}
-                alt="Presentation Slide"
-                className="max-h-[82dvh] max-w-full object-contain pointer-events-none rounded-xl"
-                draggable={false}
-              />
+              {/* Underlying Slide Image (Memoized to prevent flashing on drawing strokes) */}
+              <SlideBackground url={activeSlide.url} />
 
               {/* Overlaid Vector Drawing Canvas */}
               <canvas
@@ -1558,4 +1561,15 @@ export function PresentationDeck({
     </div>
   );
 }
+
+const SlideBackground = memo(function SlideBackground({ url }: { url: string }) {
+  return (
+    <img
+      src={url}
+      alt="Presentation Slide"
+      className="max-h-[82dvh] max-w-full object-contain pointer-events-none rounded-xl"
+      draggable={false}
+    />
+  );
+});
 

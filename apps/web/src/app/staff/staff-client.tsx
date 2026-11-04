@@ -758,8 +758,11 @@ function AddStaffModal({ staff, onClose, onSave, config }: { staff: Staff | null
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">Account Password <span className="text-brand-red">*</span></label>
-                  <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} placeholder="Enter password for staff" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <label className="block text-xs font-bold text-text-secondary mb-1.5 flex items-center justify-between">
+                    <span>Account Password</span>
+                    <span className="text-[11px] text-text-muted font-normal">Default: <span className="font-mono text-brand-blue font-semibold">password123</span></span>
+                  </label>
+                  <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} placeholder="Enter custom password or leave blank for password123" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
                 </div>
               </div>
             </div>

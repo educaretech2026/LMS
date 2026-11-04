@@ -43,9 +43,11 @@ export class StaffService {
         assertCentreAccess(currentUser, centre.id);
       }
 
-      // 3. Generate credentials (SEC-07: Cryptographically secure temporary password)
+      // 3. Generate credentials (Default to standard known password 'password123' if not provided)
       const email = data.email || `staff.${Date.now()}@educare.com`;
-      const tempPassword = data.password || crypto.randomBytes(8).toString('hex');
+      const tempPassword = (typeof data.password === 'string' && data.password.trim().length > 0)
+        ? data.password.trim()
+        : (process.env.DEFAULT_STAFF_PASSWORD || 'password123');
       const password = await argon2.hash(tempPassword);
 
       // 4. Create User, TeacherProfile, and UserCentre in a transaction

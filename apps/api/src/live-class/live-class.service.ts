@@ -1288,7 +1288,7 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: isMuted ? false : canPublish,
+      canPublish: true, // Authorize publishing so participants can enable mic and camera
       canSubscribe,
       canPublishData,
       roomAdmin: isHost,
@@ -1298,37 +1298,35 @@ export class LiveClassService {
     const token = await at.toJwt();
 
     // 6. Record participant attendance in LiveClassRegistration so past roster is permanently preserved
-    if (user?.id) {
-      const studentEmail = user.email || `${user.id}@student.educare`;
-      const studentName = displayName;
-      const studentPhone = user.phone || user.phoneNumber || '';
-      const orgInfo = cls.standard?.name || cls.board?.name || cls.centre?.name || (cls.isPublic ? 'Public Webinar' : 'Cohort');
+    const studentName = displayName || clientName || (user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user?.name) || 'Learner';
+    const studentEmail = user?.email || (identity ? `${identity.replace(/[^a-zA-Z0-9_]/g, '')}@attendee.educare` : `guest_${Date.now()}@attendee.educare`);
+    const studentPhone = user?.phone || user?.phoneNumber || '';
+    const orgInfo = cls.standard?.name || cls.board?.name || cls.centre?.name || (cls.isPublic ? 'Public Webinar' : 'Cohort');
 
-      this.prisma.liveClassRegistration
-        .upsert({
-          where: {
-            liveClassId_email: {
-              liveClassId: cls.id,
-              email: studentEmail,
-            },
-          },
-          update: {
-            status: 'ATTENDED',
-            name: studentName,
-          },
-          create: {
+    this.prisma.liveClassRegistration
+      .upsert({
+        where: {
+          liveClassId_email: {
             liveClassId: cls.id,
             email: studentEmail,
-            name: studentName,
-            phone: studentPhone,
-            organization: `${orgInfo} | Role: ${normalizedRole}`,
-            status: 'ATTENDED',
           },
-        })
-        .catch((err: any) => {
-          this.logger.warn(`Could not upsert attendance registration: ${err?.message}`);
-        });
-    }
+        },
+        update: {
+          status: 'ATTENDED',
+          name: studentName,
+        },
+        create: {
+          liveClassId: cls.id,
+          email: studentEmail,
+          name: studentName,
+          phone: studentPhone,
+          organization: `${orgInfo} | Role: ${normalizedRole}`,
+          status: 'ATTENDED',
+        },
+      })
+      .catch((err: any) => {
+        this.logger.warn(`Could not upsert attendance registration: ${err?.message}`);
+      });
 
     return {
       token,
@@ -1423,7 +1421,7 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: !isMuted,
+      canPublish: true, // Allow publishing so public learners can enable video & microphone
       canSubscribe: true,
       canPublishData: true,
       roomAdmin: false,

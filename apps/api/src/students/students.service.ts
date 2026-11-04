@@ -257,9 +257,11 @@ export class StudentsService implements OnModuleInit {
         });
       }
 
-      // 3. Generate credentials (SEC-07: Cryptographically secure temporary password if not provided)
+      // 3. Generate credentials (Default to standard known password 'password123' if not provided)
       const email = data.email || `student.${Date.now()}@educare.com`;
-      const tempPassword = data.password || crypto.randomBytes(8).toString('hex');
+      const tempPassword = (typeof data.password === 'string' && data.password.trim().length > 0)
+        ? data.password.trim()
+        : (process.env.DEFAULT_STUDENT_PASSWORD || 'password123');
       const password = await argon2.hash(tempPassword);
 
       // 4. Create User, StudentProfile, and Enrollment in a transaction
