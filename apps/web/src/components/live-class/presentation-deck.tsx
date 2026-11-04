@@ -127,26 +127,54 @@ export function PresentationDeck({
   const canDraw = isTeacher || allowStudentDraw;
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 1. PDF.js Dynamic Loader (Loads client-side from CDN without changing package.json)
+  // 1. PDF.js Dynamic Loader (Loads client-side with Blob Worker to bypass CORS)
   // ─────────────────────────────────────────────────────────────────────────────
   const loadPdfJs = useCallback(async (): Promise<any> => {
     if (typeof window === "undefined") return null;
     if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
 
     return new Promise((resolve, reject) => {
+      const existing = document.getElementById("pdfjs-cdn-script");
+      if (existing) {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          if ((window as any).pdfjsLib) {
+            clearInterval(interval);
+            resolve((window as any).pdfjsLib);
+          } else if (attempts > 50) {
+            clearInterval(interval);
+            reject(new Error("Timeout loading PDF.js"));
+          }
+        }, 100);
+        return;
+      }
+
       const script = document.createElement("script");
+      script.id = "pdfjs-cdn-script";
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
       script.onload = () => {
         const lib = (window as any).pdfjsLib;
         if (lib) {
-          lib.GlobalWorkerOptions.workerSrc =
-            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          try {
+            // Browsers block cross-origin Web Workers (SecurityError) when loaded directly from CDN.
+            // Using a Blob URL with importScripts creates a same-origin worker safely.
+            const workerUrl =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            const blob = new Blob([`importScripts("${workerUrl}");`], {
+              type: "application/javascript",
+            });
+            lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+          } catch {
+            lib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          }
           resolve(lib);
         } else {
           reject(new Error("pdfjsLib not available after script load"));
         }
       };
-      script.onerror = () => reject(new Error("Failed to load PDF.js engine"));
+      script.onerror = () => reject(new Error("Failed to load PDF.js engine from CDN"));
       document.head.appendChild(script);
     });
   }, []);
@@ -163,16 +191,27 @@ export function PresentationDeck({
         let pdfData: any;
 
         if (typeof fileOrUrl === "string") {
-          pdfData = { url: fileOrUrl };
+          try {
+            const res = await fetch(fileOrUrl);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const buf = await res.arrayBuffer();
+            pdfData = { data: new Uint8Array(buf) };
+          } catch {
+            pdfData = { url: fileOrUrl };
+          }
         } else {
           const buffer = await fileOrUrl.arrayBuffer();
-          pdfData = { data: buffer };
+          pdfData = { data: new Uint8Array(buffer) };
         }
 
         setPdfProgress("Loading presentation pages...");
         const loadingTask = pdfjs.getDocument(pdfData);
         const pdf = await loadingTask.promise;
         const totalPages = pdf.numPages;
+
+        if (totalPages === 0) {
+          throw new Error("This PDF document contains 0 pages.");
+        }
 
         const generatedSlides: SlideItem[] = [];
 
@@ -224,7 +263,7 @@ export function PresentationDeck({
         }
       } catch (err: any) {
         console.error("PDF presentation processing error:", err);
-        alert("Failed to load presentation PDF. Please make sure the file is valid.");
+        alert(`Failed to load presentation PDF: ${err?.message || "Invalid or inaccessible file"}`);
       } finally {
         setIsLoadingPdf(false);
         setPdfProgress("");
