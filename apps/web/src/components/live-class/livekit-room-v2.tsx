@@ -219,13 +219,35 @@ export function LiveKitClassRoomV2({
     try {
       setLoading(true);
       setError(null);
-      const res = await fetchApi<TokenResponse>(
-        `/live-class/${classId || roomId}/token?identity=${encodeURIComponent(
-          effectiveIdentity
-        )}&name=${encodeURIComponent(name || "Student")}&role=${encodeURIComponent(
-          normalizedRole || "STUDENT"
-        )}`
-      );
+
+      const regToken =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("regToken")
+          : null;
+
+      let res: TokenResponse;
+      if (regToken && classId) {
+        // Public webinar attendee using cryptographic registration token
+        res = await fetchApi<TokenResponse>(
+          `/live-class/public/${classId}/token?registrationToken=${encodeURIComponent(
+            regToken
+          )}&name=${encodeURIComponent(name || "")}`
+        );
+      } else {
+        const query = new URLSearchParams({
+          roomId: roomId || "",
+          identity: effectiveIdentity,
+          name: name || "",
+          role: normalizedRole || "STUDENT",
+        });
+        if (classId) {
+          query.set("classId", classId);
+        }
+        res = await fetchApi<TokenResponse>(
+          `/live-class/token?${query.toString()}`
+        );
+      }
+
       setTokenData(res);
     } catch (err: any) {
       setError(err?.message || "Failed to load classroom security token");
