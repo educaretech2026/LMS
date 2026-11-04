@@ -34,7 +34,7 @@ import {
   Monitor, AlertCircle, Hand, MessageSquare, Send, CheckCircle2,
   ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
   Trash2, Edit3, SlidersHorizontal, X, Presentation, LayoutGrid,
-  PenTool, MoreHorizontal, Info
+  PenTool, MoreHorizontal, Info, Clock
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -238,7 +238,7 @@ export function LiveKitClassRoomV2({
     fetchToken();
   }, [fetchToken]);
 
-  // Fetch Pre-attached Files for this Live Class
+  // Fetch Pre-attached Files & Initial Chat History for this Live Class
   useEffect(() => {
     if (!classId) return;
     fetchApi<any[]>(`/live-class/${classId}/files`, { silent: true })
@@ -248,6 +248,22 @@ export function LiveKitClassRoomV2({
             files.map((f) => ({
               name: f.name || f.fileName || "Class Attachment",
               url: f.url || f.fileUrl,
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+
+    fetchApi<any[]>(`/live-class/${classId}/messages`, { silent: true })
+      .then((msgs) => {
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          setChatMessages(
+            msgs.map((m) => ({
+              id: m.id || Math.random().toString(36).slice(2, 9),
+              sender: m.senderName || m.sender?.name || m.sender || "User",
+              role: m.senderRole || m.role || "Student",
+              text: m.message || m.content || m.text,
+              timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             }))
           );
         }
@@ -481,8 +497,8 @@ export function LiveKitClassRoomV2({
           </button>
         </div>
 
-        {/* Right: Teacher Studio & Moderation */}
-        <div className="flex items-center gap-2">
+        {/* Right: Teacher Studio & Moderation Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {isTeacher && raisedHands.size > 0 && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold animate-pulse">
               <Hand size={13} />
@@ -501,14 +517,71 @@ export function LiveKitClassRoomV2({
           )}
 
           {isTeacher && (
-            <button
-              onClick={() => setIsStudioOpen(!isStudioOpen)}
-              className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
-              title="Studio Settings"
-            >
-              <SlidersHorizontal size={14} />
-              <span className="hidden md:inline">Studio</span>
-            </button>
+            <>
+              {/* Mute All */}
+              <button
+                onClick={() => {
+                  const room = (window as any).__lk_room;
+                  safePublishData(room, { type: "MUTE_ALL" });
+                  if (classId) {
+                    fetchApi(`/live-class/${classId}/moderate`, {
+                      method: "POST",
+                      body: JSON.stringify({ action: "MUTE_ALL" }),
+                      silent: true,
+                    }).catch(() => {});
+                  }
+                }}
+                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                title="Mute All Students"
+              >
+                <MicOff size={14} />
+                <span className="hidden lg:inline">Mute All</span>
+              </button>
+
+              {/* Intermission Break Trigger */}
+              <button
+                onClick={() => {
+                  const room = (window as any).__lk_room;
+                  if (breakState?.isActive) {
+                    safePublishData(room, { type: "BREAK_STATE", isActive: false });
+                    setBreakState(null);
+                  } else {
+                    const now = Date.now();
+                    const b: BreakState = {
+                      isActive: true,
+                      durationMinutes: 5,
+                      startedAt: now,
+                      endsAt: now + 5 * 60 * 1000,
+                      mediaType: "BANNER",
+                      mediaUrl: "",
+                      title: "Short Class Break",
+                      message: "Class will resume in 5 minutes",
+                    };
+                    safePublishData(room, { type: "BREAK_STATE", ...b });
+                    setBreakState(b);
+                  }
+                }}
+                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  breakState?.isActive
+                    ? "border-amber-500/50 bg-amber-500/20 text-amber-300"
+                    : "border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white"
+                }`}
+                title={breakState?.isActive ? "Resume Class" : "Start 5-min Break"}
+              >
+                <Clock size={14} />
+                <span className="hidden lg:inline">{breakState?.isActive ? "Resume" : "Break"}</span>
+              </button>
+
+              {/* Studio Tools */}
+              <button
+                onClick={() => setIsStudioOpen(!isStudioOpen)}
+                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+                title="Studio Broadcasting Tools (Crop, Chroma Key, Audio, Filter)"
+              >
+                <SlidersHorizontal size={14} />
+                <span className="hidden md:inline">Studio</span>
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -1164,6 +1237,13 @@ function ClassroomV2Sync({
           if (activeTabRef.current !== "chat") {
             setUnreadChatCount((prev: number) => prev + 1);
           }
+        } else if (data.type === "FILE_SHARED") {
+          setSharedFiles((prev: any) => [...prev, { name: data.name, url: data.url }]);
+        } else if (data.type === "MUTE_ALL" && !isTeacher) {
+          const micPub = room.localParticipant?.getTrackPublication(Track.Source.Microphone);
+          if (micPub && !micPub.isMuted) {
+            micPub.track?.mute();
+          }
         } else if (data.type === "HAND_RAISE") {
           setRaisedHands((prev: Set<string>) => {
             const next = new Set(prev);
@@ -1175,7 +1255,7 @@ function ClassroomV2Sync({
           setRaisedHands(new Set());
           setIsHandRaised(false);
         } else if (data.type === "BREAK_STATE") {
-          setBreakState(data.isActive ? data : null);
+          setBreakState(data.active !== undefined ? (data.active ? data : null) : (data.isActive ? data : null));
         }
       } catch {}
     };
