@@ -38,7 +38,7 @@ const ALLOWED_EXTENSIONS = new Set([
   '.mp4', '.webm', '.mov',
   '.mp3', '.wav', '.m4a',
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.txt', '.csv',
+  '.txt', '.csv', '.zip',
 ]);
 
 const DISALLOWED_EXTENSIONS = new Set([
@@ -70,6 +70,7 @@ const EXTENSION_FAMILY_MIME_MAP: Record<string, string[]> = {
   '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
   '.txt': ['text/plain'],
   '.csv': ['text/csv'],
+  '.zip': ['application/zip', 'application/x-zip-compressed', 'multipart/x-zip', 'application/octet-stream'],
 };
 
 @Injectable()

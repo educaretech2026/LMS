@@ -1572,6 +1572,20 @@ export class LiveClassService {
     });
   }
 
+  async deleteClassFile(classId: string, fileId: string, user: any) {
+    await this.getById(classId, user);
+    const existing = await this.prisma.liveClassFile.findUnique({
+      where: { id: fileId },
+    });
+    if (!existing || existing.liveClassId !== classId) {
+      throw new NotFoundException('Class file not found');
+    }
+    await this.prisma.liveClassFile.delete({
+      where: { id: fileId },
+    });
+    return { success: true };
+  }
+
   // ── Persistent Whiteboard Snapshot ──
   async saveWhiteboardSnapshot(classId: string, snapshot: any, user: any) {
     const cls = await this.safeFindUnique({ id: classId });

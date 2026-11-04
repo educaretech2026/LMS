@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { fetchApi } from "@/lib/api";
 import {
@@ -53,6 +53,7 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
   const [showScheduleClass, setShowScheduleClass] = useState(false);
   const [showHostWebinar, setShowHostWebinar] = useState(false);
   const [selectedRegistrationsClass, setSelectedRegistrationsClass] = useState<ApiLiveClass | null>(null);
+  const [selectedAttachmentsClass, setSelectedAttachmentsClass] = useState<ApiLiveClass | null>(null);
   const [activeTab, setActiveTab] = useState<"ALL" | "LIVE" | "UPCOMING" | "WEBINARS" | "ENDED">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [stats, setStats] = useState({ total: 0, live: 0 });
@@ -361,6 +362,7 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
                 onStatusChange={handleStatusChange}
                 onDelete={handleDelete}
                 onViewRegistrations={() => setSelectedRegistrationsClass(cls)}
+                onManageAttachments={() => setSelectedAttachmentsClass(cls)}
               />
             ))}
           </div>
@@ -392,6 +394,14 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
           onClose={() => setSelectedRegistrationsClass(null)}
         />
       )}
+
+      {/* Class Attachments Modal */}
+      {selectedAttachmentsClass && (
+        <AttachmentsModalV2
+          cls={selectedAttachmentsClass}
+          onClose={() => setSelectedAttachmentsClass(null)}
+        />
+      )}
     </div>
   );
 }
@@ -404,6 +414,7 @@ function ClassSessionCard({
   onStatusChange,
   onDelete,
   onViewRegistrations,
+  onManageAttachments,
 }: {
   cls: ApiLiveClass;
   isStaff: boolean;
@@ -411,6 +422,7 @@ function ClassSessionCard({
   onStatusChange: (id: string, status: "SCHEDULED" | "LIVE" | "ENDED") => void;
   onDelete: (id: string) => void;
   onViewRegistrations: () => void;
+  onManageAttachments: () => void;
 }) {
   const isLive = cls.status === "LIVE";
   const isEnded = cls.status === "ENDED";
@@ -564,6 +576,14 @@ function ClassSessionCard({
           {/* Staff controls */}
           {isStaff && (
             <div className="flex items-center gap-1">
+              <button
+                onClick={onManageAttachments}
+                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                title="Class Attachments & Handouts"
+              >
+                <FileText className="h-3.5 w-3.5" />
+              </button>
+
               {cls.isPublic && (
                 <button
                   onClick={onViewRegistrations}
@@ -1397,6 +1417,199 @@ function RegistrationsModalV2({
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Attachments & Handouts Modal for Staff ── */
+function AttachmentsModalV2({
+  cls,
+  onClose,
+}: {
+  cls: ApiLiveClass;
+  onClose: () => void;
+}) {
+  const [files, setFiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchFiles = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetchApi<any[]>(`/live-class/${cls.id}/files`);
+      setFiles(Array.isArray(res) ? res : []);
+    } catch {
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [cls.id]);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const presigned = await fetchApi<any>(
+        `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "application/octet-stream")}`
+      );
+
+      if (!presigned?.uploadUrl || !presigned?.finalUrl) {
+        throw new Error("Could not acquire storage upload credentials.");
+      }
+
+      const res = await fetch(presigned.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Upload to storage server failed (${res.status})`);
+      }
+
+      await fetchApi(`/live-class/${cls.id}/files`, {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: file.name,
+          fileUrl: presigned.finalUrl,
+          fileSize: file.size,
+          mimeType: file.type || "application/octet-stream",
+        }),
+      });
+
+      fetchFiles();
+    } catch (err: any) {
+      alert(`Upload failed: ${err?.message || "Please check storage configuration"}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (fileId: string, fileName: string) => {
+    if (!confirm(`Remove "${fileName}" from this class?`)) return;
+    try {
+      await fetchApi(`/live-class/${cls.id}/files/${fileId}`, { method: "DELETE" });
+      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    } catch (err: any) {
+      alert(`Delete failed: ${err?.message || "Could not delete file"}`);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="w-full max-w-xl rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <FileText className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 truncate max-w-sm">
+                Attachments: {cls.title}
+              </h3>
+              <p className="text-xs text-slate-500">Shared handouts, worksheets, and slide decks</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Upload Button */}
+        <div className="p-4 border-b border-slate-100 bg-white">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleUpload}
+            className="hidden"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,image/*"
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 hover:bg-indigo-50 text-indigo-700 font-bold text-xs transition-all active:scale-[0.99] disabled:opacity-50"
+          >
+            {uploading ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin text-indigo-600" />
+                <span>Uploading file to storage...</span>
+              </>
+            ) : (
+              <>
+                <UploadCloud className="h-4 w-4 text-indigo-600" />
+                <span>Upload New Handout or Slide Deck (PDF, Word, ZIP, Images)</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Files List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {loading ? (
+            <div className="py-12 flex justify-center items-center text-xs text-slate-400 gap-2">
+              <RefreshCw className="h-4 w-4 animate-spin text-indigo-600" />
+              Loading attachments...
+            </div>
+          ) : files.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">
+              <FileText className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+              No attachments found for this class yet. Upload one above!
+            </div>
+          ) : (
+            files.map((f) => (
+              <div
+                key={f.id}
+                className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-slate-200 hover:border-indigo-200 bg-white hover:bg-slate-50/50 transition-all group shadow-2xs"
+              >
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-800 truncate" title={f.name}>
+                    {f.name}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {f.size ? `${(f.size / (1024 * 1024)).toFixed(2)} MB • ` : ""}
+                    {new Date(f.createdAt || Date.now()).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <a
+                    href={f.url}
+                    download
+                    target="_blank"
+                    rel="noreferrer"
+                    className="h-8 px-2.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Download className="h-3 w-3" />
+                    <span>Download</span>
+                  </a>
+                  <button
+                    onClick={() => handleDelete(f.id, f.name)}
+                    className="h-8 w-8 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors"
+                    title="Delete file"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>

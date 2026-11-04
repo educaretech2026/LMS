@@ -1019,7 +1019,23 @@ export function LiveKitClassRoomV2({
                   }}
                 />
               ) : (
-                <FilesContentPanel sharedFiles={sharedFiles} />
+                <FilesContentPanel
+                  sharedFiles={sharedFiles}
+                  isTeacher={isTeacher}
+                  classId={classId}
+                  room={(window as any).__lk_room}
+                  onFileUploaded={(newFile) => {
+                    setSharedFiles((prev) => [...prev, newFile]);
+                  }}
+                  onOpenAsSlides={() => {
+                    setStageMode("slides");
+                    const room = (window as any).__lk_room;
+                    safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
+                  }}
+                  onDeleteFile={(url) => {
+                    setSharedFiles((prev) => prev.filter((f) => f.url !== url));
+                  }}
+                />
               )}
             </div>
           </aside>
@@ -1078,7 +1094,24 @@ export function LiveKitClassRoomV2({
               }}
             />
           ) : (
-            <FilesContentPanel sharedFiles={sharedFiles} />
+            <FilesContentPanel
+              sharedFiles={sharedFiles}
+              isTeacher={isTeacher}
+              classId={classId}
+              room={(window as any).__lk_room}
+              onFileUploaded={(newFile) => {
+                setSharedFiles((prev) => [...prev, newFile]);
+              }}
+              onOpenAsSlides={() => {
+                setStageMode("slides");
+                setIsMobileSheetOpen(false);
+                const room = (window as any).__lk_room;
+                safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
+              }}
+              onDeleteFile={(url) => {
+                setSharedFiles((prev) => prev.filter((f) => f.url !== url));
+              }}
+            />
           )}
         </div>
       </MobileSheet>
@@ -1716,36 +1749,189 @@ function ChatContentPanel({
   );
 }
 
-function FilesContentPanel({ sharedFiles }: { sharedFiles: SharedFile[] }) {
+function FilesContentPanel({
+  sharedFiles,
+  isTeacher,
+  classId,
+  room,
+  onFileUploaded,
+  onOpenAsSlides,
+  onDeleteFile,
+}: {
+  sharedFiles: SharedFile[];
+  isTeacher: boolean;
+  classId?: string;
+  room?: any;
+  onFileUploaded?: (file: SharedFile) => void;
+  onOpenAsSlides?: (file: SharedFile) => void;
+  onDeleteFile?: (fileUrl: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadingName, setUploadingName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadingName(file.name);
+
+    try {
+      const presigned = await fetchApi<any>(
+        `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "application/octet-stream")}`
+      );
+
+      if (!presigned?.uploadUrl || !presigned?.finalUrl) {
+        throw new Error("Could not acquire storage upload credentials.");
+      }
+
+      const res = await fetch(presigned.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to upload to storage server (${res.status})`);
+      }
+
+      const newFile: SharedFile = {
+        name: file.name,
+        url: presigned.finalUrl,
+      };
+
+      if (classId) {
+        await fetchApi(`/live-class/${classId}/files`, {
+          method: "POST",
+          body: JSON.stringify({
+            fileName: file.name,
+            fileUrl: presigned.finalUrl,
+            fileSize: file.size,
+            mimeType: file.type || "application/octet-stream",
+          }),
+          silent: true,
+        });
+      }
+
+      if (room) {
+        safePublishData(room, {
+          type: "FILE_SHARED",
+          name: file.name,
+          url: presigned.finalUrl,
+        });
+      }
+
+      onFileUploaded?.(newFile);
+    } catch (err: any) {
+      alert(`Upload failed: ${err?.message || "Please check network or storage configuration"}`);
+    } finally {
+      setUploading(false);
+      setUploadingName("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = (f: SharedFile) => {
+    if (!confirm(`Remove "${f.name}" from class attachments?`)) return;
+    onDeleteFile?.(f.url);
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-      {sharedFiles.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-full gap-2 text-center text-white/30 p-4">
-          <FileText size={28} />
-          <p className="text-xs">No attachments shared yet.</p>
-        </div>
-      ) : (
-        sharedFiles.map((f, i) => (
-          <a
-            key={i}
-            href={f.url}
-            download
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 hover:border-blue-500/40 transition-colors group"
+    <div className="flex-1 flex flex-col overflow-hidden p-3 gap-3">
+      {/* Teacher / Admin Upload Section */}
+      {isTeacher && (
+        <div className="shrink-0">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleUpload}
+            className="hidden"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,image/*"
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl border border-dashed border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/15 text-blue-300 font-bold text-xs transition-all active:scale-[0.98] disabled:opacity-50"
           >
-            <div className="h-9 w-9 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0">
-              <FileText size={18} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{f.name}</p>
-              <p className="text-[10px] text-blue-400 flex items-center gap-1 mt-0.5">
-                <FileDown size={11} /> Download
-              </p>
-            </div>
-          </a>
-        ))
+            {uploading ? (
+              <>
+                <Loader2 size={16} className="animate-spin text-blue-400" />
+                <span className="truncate">Uploading {uploadingName}...</span>
+              </>
+            ) : (
+              <>
+                <Upload size={16} className="text-blue-400" />
+                <span>Upload New Attachment</span>
+              </>
+            )}
+          </button>
+        </div>
       )}
+
+      {/* Files List */}
+      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+        {sharedFiles.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-center text-white/30 p-6">
+            <FileText size={32} />
+            <p className="text-xs font-semibold">No attachments shared yet.</p>
+            {isTeacher && (
+              <p className="text-[11px] text-white/40">
+                Click upload above to share PDFs, handouts, or notes with students.
+              </p>
+            )}
+          </div>
+        ) : (
+          sharedFiles.map((f, i) => {
+            const isPdf = f.name.toLowerCase().endsWith(".pdf") || f.url.toLowerCase().endsWith(".pdf");
+            return (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/5 border border-white/10 hover:border-blue-500/30 transition-all group"
+              >
+                <div className="h-9 w-9 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0">
+                  <FileText size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-white truncate" title={f.name}>
+                    {f.name}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <a
+                      href={f.url}
+                      download
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold"
+                    >
+                      <FileDown size={11} /> Download
+                    </a>
+                    {isTeacher && isPdf && onOpenAsSlides && (
+                      <button
+                        onClick={() => onOpenAsSlides(f)}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold"
+                        title="Present this PDF on the main stage"
+                      >
+                        <Presentation size={11} /> Present Slides
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {isTeacher && (
+                  <button
+                    onClick={() => handleDelete(f)}
+                    className="h-7 w-7 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-white/40 hover:text-rose-400 flex items-center justify-center transition-all shrink-0"
+                    title="Remove attachment"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

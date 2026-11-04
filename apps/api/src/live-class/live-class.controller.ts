@@ -165,6 +165,16 @@ export class LiveClassController {
     return this.liveClassService.saveClassFile(id, fileData, req.user);
   }
 
+  @Delete(':id/files/:fileId')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  deleteClassFile(
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Req() req: any,
+  ) {
+    return this.liveClassService.deleteClassFile(id, fileId, req.user);
+  }
+
   // Persistent Whiteboard Snapshot
   @Get(':id/whiteboard-snapshot')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')

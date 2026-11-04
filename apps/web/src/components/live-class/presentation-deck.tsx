@@ -134,7 +134,7 @@ export function PresentationDeck({
     if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
 
     return new Promise((resolve, reject) => {
-      const existing = document.getElementById("pdfjs-cdn-script");
+      const existing = document.getElementById("pdfjs-engine-script") || document.getElementById("pdfjs-cdn-script");
       if (existing) {
         let attempts = 0;
         const interval = setInterval(() => {
@@ -150,31 +150,66 @@ export function PresentationDeck({
         return;
       }
 
+      // Step 1: Attempt to load from same-origin vendor bundle (fast, offline-ready, 0 CSP friction)
       const script = document.createElement("script");
-      script.id = "pdfjs-cdn-script";
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-      script.onload = () => {
-        const lib = (window as any).pdfjsLib;
-        if (lib) {
+      script.id = "pdfjs-engine-script";
+      script.src = "/vendor/pdfjs/pdf.min.js";
+
+      const setupWorkerAndResolve = (lib: any) => {
+        try {
+          lib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.js";
+        } catch {
           try {
-            // Browsers block cross-origin Web Workers (SecurityError) when loaded directly from CDN.
-            // Using a Blob URL with importScripts creates a same-origin worker safely.
-            const workerUrl =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            const workerUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
             const blob = new Blob([`importScripts("${workerUrl}");`], {
               type: "application/javascript",
             });
             lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
           } catch {
-            lib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
           }
-          resolve(lib);
+        }
+        resolve(lib);
+      };
+
+      script.onload = () => {
+        const lib = (window as any).pdfjsLib;
+        if (lib) {
+          setupWorkerAndResolve(lib);
         } else {
-          reject(new Error("pdfjsLib not available after script load"));
+          loadFromCdnFallback();
         }
       };
-      script.onerror = () => reject(new Error("Failed to load PDF.js engine from CDN"));
+
+      const loadFromCdnFallback = () => {
+        const cdnScript = document.createElement("script");
+        cdnScript.id = "pdfjs-cdn-script";
+        cdnScript.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+        cdnScript.onload = () => {
+          const lib = (window as any).pdfjsLib;
+          if (lib) {
+            try {
+              const workerUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+              const blob = new Blob([`importScripts("${workerUrl}");`], {
+                type: "application/javascript",
+              });
+              lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+            } catch {
+              lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            }
+            resolve(lib);
+          } else {
+            reject(new Error("PDF.js library unavailable after CDN load"));
+          }
+        };
+        cdnScript.onerror = () => reject(new Error("Failed to load PDF.js engine from both local vendor bundle and CDN"));
+        document.head.appendChild(cdnScript);
+      };
+
+      script.onerror = () => {
+        loadFromCdnFallback();
+      };
+
       document.head.appendChild(script);
     });
   }, []);
@@ -632,6 +667,44 @@ export function PresentationDeck({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Optional background persistence to class attachments
+    if (classId && (file.type === "application/pdf" || file.name.endsWith(".pdf") || file.type.startsWith("image/"))) {
+      import("@/lib/api").then(({ fetchApi }) => {
+        fetchApi<any>(
+          `/storage/presigned-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "application/octet-stream")}`,
+          { silent: true }
+        )
+          .then(async (presigned) => {
+            if (presigned?.uploadUrl && presigned?.finalUrl) {
+              await fetch(presigned.uploadUrl, {
+                method: "PUT",
+                headers: { "Content-Type": file.type || "application/octet-stream" },
+                body: file,
+              });
+              await fetchApi(`/live-class/${classId}/files`, {
+                method: "POST",
+                body: JSON.stringify({
+                  fileName: file.name,
+                  fileUrl: presigned.finalUrl,
+                  fileSize: file.size,
+                  mimeType: file.type || "application/octet-stream",
+                }),
+                silent: true,
+              });
+              if (room?.localParticipant) {
+                const payload = JSON.stringify({
+                  type: "FILE_SHARED",
+                  name: file.name,
+                  url: presigned.finalUrl,
+                });
+                room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+              }
+            }
+          })
+          .catch(() => {});
+      });
+    }
 
     if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
       processPdfFile(file, file.name);
