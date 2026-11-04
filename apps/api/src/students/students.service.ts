@@ -558,15 +558,25 @@ export class StudentsService implements OnModuleInit {
     }
 
     return this.prisma.$transaction(async (prisma) => {
-      if (data.name || data.email) {
+      let passwordHash: string | undefined = undefined;
+      if (typeof data.password === 'string' && data.password.trim().length > 0) {
+        passwordHash = await argon2.hash(data.password.trim());
+      }
+
+      if (data.name || data.email || passwordHash) {
         await prisma.user.update({
           where: { id: profile.userId },
           data: {
             email: data.email || undefined,
             firstName: data.name ? data.name.split(' ')[0] : undefined,
             lastName: data.name ? data.name.split(' ').slice(1).join(' ') : undefined,
+            ...(passwordHash && { password: passwordHash }),
           }
         });
+
+        if (passwordHash && typeof this.redisService?.setMustChangePassword === 'function') {
+          await this.redisService.setMustChangePassword(profile.userId);
+        }
       }
 
       const rawUpdateAdmNo = typeof data.admissionNo === 'string' ? data.admissionNo.trim() : '';
@@ -662,6 +672,50 @@ export class StudentsService implements OnModuleInit {
       await this.redisService.revokeAllSessions(profile.userId);
     }
     return { success: true, status };
+  }
+
+  async resetStudentPassword(id: string, newPassword?: string, user?: any) {
+    const profile = await this.prisma.studentProfile.findUnique({
+      where: { id },
+      include: {
+        user: { select: SAFE_USER_SELECT },
+        enrollments: { include: { batch: true } }
+      }
+    });
+    if (!profile) throw new NotFoundException('Student not found');
+
+    if (user && !isSuperAdmin(user)) {
+      const userCentres = getAuthorizedCentreIds(user);
+      const studentCentres = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean);
+      if (!studentCentres.some(cId => userCentres.includes(cId))) {
+        throw new ForbiddenException('Cannot reset password for student from another centre');
+      }
+    }
+
+    const rawPassword = (typeof newPassword === 'string' && newPassword.trim().length > 0)
+      ? newPassword.trim()
+      : (process.env.DEFAULT_STUDENT_PASSWORD || 'password123');
+
+    const hashedPassword = await argon2.hash(rawPassword);
+
+    await this.prisma.user.update({
+      where: { id: profile.userId },
+      data: { password: hashedPassword }
+    });
+
+    if (typeof this.redisService?.setMustChangePassword === 'function') {
+      await this.redisService.setMustChangePassword(profile.userId);
+    }
+    if (typeof this.redisService?.revokeAllSessions === 'function') {
+      await this.redisService.revokeAllSessions(profile.userId);
+    }
+
+    return {
+      success: true,
+      message: `Password reset successfully. Default password is now set for this student.`,
+      email: profile.user?.email,
+      mustChangePassword: true,
+    };
   }
 
   async getTodayBirthdays(user?: any) {

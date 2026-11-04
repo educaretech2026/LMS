@@ -69,6 +69,13 @@ export class StudentsController {
     return this.studentsService.updateStudent(id, data, req.user);
   }
 
+  @Put(':id/reset-password')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  @Permissions('STUDENTS')
+  resetPassword(@Param('id') id: string, @Body('password') password: string | undefined, @Req() req: any) {
+    return this.studentsService.resetStudentPassword(id, password, req.user);
+  }
+
   @Put(':id/status')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
   @Permissions('STUDENTS')

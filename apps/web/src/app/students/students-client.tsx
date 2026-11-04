@@ -425,6 +425,25 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                             </button>
                             <button 
                               onClick={async () => {
+                                if (confirm(`Reset password for "${s.name}" to default "password123"?`)) {
+                                  try {
+                                    await fetchApi(`/students/${s.id}/reset-password`, {
+                                      method: 'PUT',
+                                      body: JSON.stringify({ password: 'password123' }),
+                                    });
+                                    alert(`Password for "${s.name}" successfully reset to "password123".\nThe student can now sign in and set their personal password.`);
+                                  } catch (err: any) {
+                                    alert(err?.message || "Failed to reset password.");
+                                  }
+                                }
+                              }}
+                              className="text-amber-600 hover:text-amber-700 font-semibold text-xs transition-colors"
+                              title="Reset password to default password123"
+                            >
+                              Reset Pwd
+                            </button>
+                            <button 
+                              onClick={async () => {
                                 if (confirm("Are you sure you want to deactivate this student?")) {
                                   await fetchApi(`/students/${s.id}`, { method: 'DELETE' });
                                   setStudents(students.filter(st => st.id !== s.id));
@@ -724,8 +743,10 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-1.5 flex items-center justify-between">
-                  <span>Account Password</span>
-                  <span className="text-[11px] text-text-muted font-normal">Default: <span className="font-mono text-brand-blue font-semibold">password123</span></span>
+                  <span>{isEditing ? "Change Password (Optional)" : "Account Password"}</span>
+                  {!isEditing && (
+                    <span className="text-[11px] text-text-muted font-normal">Default: <span className="font-mono text-brand-blue font-semibold">password123</span></span>
+                  )}
                 </label>
                 <div className="relative">
                   <input 
@@ -737,12 +758,14 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     data-1p-ignore="true"
                     value={password} 
                     onChange={(e) => setPassword(e.target.value)} 
-                    placeholder="Enter custom password or leave blank for password123" 
+                    placeholder={isEditing ? "Leave blank to keep existing password, or enter new password" : "Enter custom password or leave blank for password123"} 
                     className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
                   />
                 </div>
                 <p className="text-[11px] text-text-muted mt-1">
-                  Leave blank to automatically assign standard default password (<span className="font-mono text-text-secondary">password123</span>).
+                  {isEditing
+                    ? "Leave blank to keep existing password. If entered, this will reset the student's password and prompt them to change it on next login."
+                    : <>Leave blank to automatically assign standard default password (<span className="font-mono text-text-secondary">password123</span>).</>}
                 </p>
               </div>
 

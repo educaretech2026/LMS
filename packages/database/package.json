@@ -21,7 +21,8 @@
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
     "reconcile:enquiries": "ts-node prisma/scripts/backfill-enquiry-centres.ts",
-    "reconcile:materials": "ts-node prisma/scripts/backfill-study-material-centres.ts"
+    "reconcile:materials": "ts-node prisma/scripts/backfill-study-material-centres.ts",
+    "reset:student-passwords": "ts-node prisma/scripts/reset-student-passwords.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
