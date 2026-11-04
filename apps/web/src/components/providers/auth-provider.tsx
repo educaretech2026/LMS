@@ -5,6 +5,7 @@ import { checkModulePermission } from "@/lib/permissions";
 
 interface AuthContextType {
   role: string | null;
+  name: string | null;
   email: string | null;
   centreName: string | null;
   userId: string | null;
@@ -16,6 +17,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   role: null,
+  name: null,
   email: null,
   centreName: null,
   userId: null,
@@ -28,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({
   children,
   initialRole = null,
+  initialName = null,
   initialEmail = null,
   initialCentreName = null,
   initialUserId = null,
@@ -36,6 +39,7 @@ export function AuthProvider({
 }: {
   children: React.ReactNode;
   initialRole?: string | null;
+  initialName?: string | null;
   initialEmail?: string | null;
   initialCentreName?: string | null;
   initialUserId?: string | null;
@@ -43,6 +47,7 @@ export function AuthProvider({
   initialMustChangePassword?: boolean;
 }) {
   const [role, setRole] = useState<string | null>(initialRole);
+  const [name, setName] = useState<string | null>(initialName);
   const [email, setEmail] = useState<string | null>(initialEmail);
   const [centreName, setCentreName] = useState<string | null>(initialCentreName);
   const [userId, setUserId] = useState<string | null>(initialUserId);
@@ -61,6 +66,10 @@ export function AuthProvider({
                 ? data.user.role?.name
                 : data.user.role;
             setRole(userRole || null);
+            const computedName = data.user.firstName
+              ? `${data.user.firstName} ${data.user.lastName || ''}`.trim()
+              : (data.user.name || null);
+            setName(computedName);
             setEmail(data.user.email || null);
             setUserId(data.user.id || null);
             if (data.user.centreName) setCentreName(data.user.centreName);
@@ -127,6 +136,7 @@ export function AuthProvider({
     <AuthContext.Provider
       value={{
         role,
+        name,
         email,
         centreName,
         userId,

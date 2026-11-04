@@ -922,20 +922,12 @@ export class LiveClassService {
       throw new BadRequestException('Student full name is required.');
     }
 
-    if (!data.parentName || !data.parentName.trim()) {
-      throw new BadRequestException('Parent name is required.');
-    }
-
     if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
       throw new BadRequestException('A valid email address is required.');
     }
 
     if (!data.phone || !data.phone.trim()) {
       throw new BadRequestException('Mobile or WhatsApp contact number is required.');
-    }
-
-    if (!data.courseOrClass || !data.courseOrClass.trim()) {
-      throw new BadRequestException('Class or Course is required.');
     }
 
     if (!data.organization || !data.organization.trim()) {
@@ -949,10 +941,10 @@ export class LiveClassService {
     }
 
     const trimmedName = data.name.trim().slice(0, 100);
-    const trimmedParent = data.parentName.trim().slice(0, 100);
+    const trimmedParent = (data.parentName ? data.parentName.trim() : 'Parent').slice(0, 100);
     const trimmedEmail = data.email.trim().toLowerCase().slice(0, 150);
     const trimmedPhone = data.phone.trim().slice(0, 25);
-    const trimmedCourse = data.courseOrClass.trim().slice(0, 100);
+    const trimmedCourse = (data.courseOrClass ? data.courseOrClass.trim() : 'General').slice(0, 100);
     const trimmedOrg = data.organization.trim().slice(0, 150);
 
     // Encode composite metadata into organization field:
@@ -1288,7 +1280,7 @@ export class LiveClassService {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: true, // Authorize publishing so participants can enable mic and camera
+      canPublish: isMuted ? false : canPublish,
       canSubscribe,
       canPublishData,
       roomAdmin: isHost,
@@ -1303,30 +1295,37 @@ export class LiveClassService {
     const studentPhone = user?.phone || user?.phoneNumber || '';
     const orgInfo = cls.standard?.name || cls.board?.name || cls.centre?.name || (cls.isPublic ? 'Public Webinar' : 'Cohort');
 
-    this.prisma.liveClassRegistration
-      .upsert({
-        where: {
-          liveClassId_email: {
+    if (this.prisma.liveClassRegistration?.upsert) {
+      try {
+        const p = this.prisma.liveClassRegistration.upsert({
+          where: {
+            liveClassId_email: {
+              liveClassId: cls.id,
+              email: studentEmail,
+            },
+          },
+          update: {
+            status: 'ATTENDED',
+            name: studentName,
+          },
+          create: {
             liveClassId: cls.id,
             email: studentEmail,
+            name: studentName,
+            phone: studentPhone,
+            organization: `${orgInfo} | Role: ${normalizedRole}`,
+            status: 'ATTENDED',
           },
-        },
-        update: {
-          status: 'ATTENDED',
-          name: studentName,
-        },
-        create: {
-          liveClassId: cls.id,
-          email: studentEmail,
-          name: studentName,
-          phone: studentPhone,
-          organization: `${orgInfo} | Role: ${normalizedRole}`,
-          status: 'ATTENDED',
-        },
-      })
-      .catch((err: any) => {
+        });
+        if (p && typeof p.catch === 'function') {
+          p.catch((err: any) => {
+            this.logger.warn(`Could not upsert attendance registration: ${err?.message}`);
+          });
+        }
+      } catch (err: any) {
         this.logger.warn(`Could not upsert attendance registration: ${err?.message}`);
-      });
+      }
+    }
 
     return {
       token,
@@ -1431,12 +1430,17 @@ export class LiveClassService {
     const token = await at.toJwt();
 
     // Mark status as ATTENDED so past roster reflects attendance
-    this.prisma.liveClassRegistration
-      .update({
-        where: { id: reg.id },
-        data: { status: 'ATTENDED' },
-      })
-      .catch(() => { });
+    if (this.prisma.liveClassRegistration?.update) {
+      try {
+        const p = this.prisma.liveClassRegistration.update({
+          where: { id: reg.id },
+          data: { status: 'ATTENDED' },
+        });
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {});
+        }
+      } catch {}
+    }
 
     return {
       token,
@@ -1506,15 +1510,14 @@ export class LiveClassService {
         }
       }
 
-      // 2. Authoritatively restrict publishing permission at the SFU level
-      // Muted: only CAMERA allowed (forbids MICROPHONE). Unmuted: CAMERA + MICROPHONE allowed.
-      const allowedSources = muted ? [TrackSource.CAMERA] : [TrackSource.CAMERA, TrackSource.MICROPHONE];
+      // 2. Authoritatively mute the audio track without permanently revoking microphone permission,
+      // so students are able to unmute themselves when they need to speak
       await roomService.updateParticipant(roomName, targetIdentity, {
         permission: {
           canPublish: true,
           canSubscribe: true,
           canPublishData: true,
-          canPublishSources: allowedSources,
+          canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE],
           canUpdateMetadata: false,
         },
       }).catch((err) => {
@@ -1569,13 +1572,13 @@ export class LiveClassService {
           }
         }
 
-        // Restrict SFU publishing permission
+        // Maintain publishing permission so students are able to unmute themselves when needed
         await roomService.updateParticipant(roomName, p.identity, {
           permission: {
             canPublish: true,
             canSubscribe: true,
             canPublishData: true,
-            canPublishSources: [TrackSource.CAMERA],
+            canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE],
             canUpdateMetadata: false,
           },
         }).catch(() => null);

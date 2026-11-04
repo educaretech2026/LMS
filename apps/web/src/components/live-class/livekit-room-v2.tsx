@@ -856,19 +856,68 @@ export function LiveKitClassRoomV2({
             <FloatingCamPiP isTeacher={isTeacher} />
           </div>
 
-          {/* Stage Hand Raise Floating Badge for Teacher (Slides & Whiteboard) */}
-          {isTeacher && stageMode !== "grid" && raisedHandsList.length > 0 && (
-            <button
-              onClick={() => setShowRaisedHandsPopover(true)}
-              className="absolute top-16 left-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-bold shadow-lg backdrop-blur-md animate-pulse hover:bg-amber-500/30 transition-all pointer-events-auto"
-            >
-              <Hand size={14} />
-              <span>{raisedHandsList.length} Hand{raisedHandsList.length > 1 ? "s" : ""} Raised</span>
-            </button>
+          {/* Prominent Teacher Raised Hands Panel (Visible in ALL Stage Modes: Grid, Slides, Whiteboard) */}
+          {isTeacher && raisedHandsList.length > 0 && (
+            <div className="absolute top-16 left-4 z-40 max-w-xs sm:max-w-sm rounded-2xl bg-[#141620]/95 border border-amber-500/50 shadow-2xl backdrop-blur-xl p-3 text-white pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded-lg bg-amber-500/25 text-amber-400 flex items-center justify-center">
+                    <Hand size={14} className="animate-bounce" />
+                  </div>
+                  <span className="text-xs font-bold text-amber-300">
+                    Raised Hands ({raisedHandsList.length})
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    const room = (window as any).__lk_room;
+                    safePublishData(room, { type: "LOWER_ALL_HANDS" });
+                    setRaisedHandsList([]);
+                    setRecentHandRaiseAlert(null);
+                  }}
+                  className="text-[10px] text-white/60 hover:text-white px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/15 font-semibold transition-colors cursor-pointer"
+                >
+                  Lower All
+                </button>
+              </div>
+
+              {/* List of Students with Raised Hands */}
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {raisedHandsList.map((item) => (
+                  <div
+                    key={item.identity}
+                    className="flex items-center justify-between p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                      <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                      <span className="font-semibold text-white truncate max-w-[150px] sm:max-w-[190px]" title={item.name}>
+                        {item.name}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const room = (window as any).__lk_room;
+                        safePublishData(room, {
+                          type: "LOWER_STUDENT_HAND",
+                          identity: item.identity,
+                        });
+                        setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
+                        if (recentHandRaiseAlert?.identity === item.identity) {
+                          setRecentHandRaiseAlert(null);
+                        }
+                      }}
+                      className="text-[10px] text-amber-300 hover:text-white font-bold px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/30 shrink-0 transition-colors cursor-pointer"
+                    >
+                      Lower Hand
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Teacher Raised Hand Instant Notification Toast */}
-          {isTeacher && recentHandRaiseAlert && (
+          {isTeacher && recentHandRaiseAlert && raisedHandsList.length <= 1 && (
             <div className="absolute top-16 right-4 sm:right-6 z-50 max-w-sm animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-auto">
               <div className="p-3 rounded-2xl bg-[#1d150b]/95 border border-amber-500/60 shadow-2xl backdrop-blur-md flex items-center gap-3 text-white">
                 <div className="h-9 w-9 rounded-xl bg-amber-500/25 text-amber-300 flex items-center justify-center shrink-0">
@@ -879,15 +928,6 @@ export function LiveKitClassRoomV2({
                   <p className="text-xs font-semibold text-white truncate">{recentHandRaiseAlert.name}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => {
-                      setShowRaisedHandsPopover(true);
-                      setRecentHandRaiseAlert(null);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-amber-500/30 hover:bg-amber-500/40 text-amber-200 text-[10px] font-bold border border-amber-500/40 cursor-pointer"
-                  >
-                    View
-                  </button>
                   <button
                     onClick={() => {
                       const room = (window as any).__lk_room;
@@ -1521,14 +1561,29 @@ function V2ClassVideoGrid({
 
         {/* Horizontal Filmstrip on Bottom */}
         <div className="h-24 sm:h-28 shrink-0 flex gap-2 overflow-x-auto pb-1 items-center px-1">
-          {uniqueCameras.map((t, idx) => (
-            <div
-              key={t.participant?.identity || idx}
-              className="w-36 sm:w-44 h-full shrink-0 relative rounded-xl overflow-hidden border border-white/10 bg-black/40 shadow-md"
-            >
-              <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
-            </div>
-          ))}
+          {uniqueCameras.map((t, idx) => {
+            const id = t.participant?.identity || "";
+            const isHandUp = id ? raisedHands.has(id) : false;
+            return (
+              <div
+                key={id || idx}
+                className={`w-36 sm:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/40 shadow-md transition-all ${
+                  isHandUp ? "border-2 border-amber-400 ring-2 ring-amber-400/40" : "border border-white/10"
+                }`}
+              >
+                <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
+                {isHandUp && (
+                  <div className="absolute top-1 left-1 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow flex items-center gap-1 z-10 animate-bounce">
+                    <Hand size={10} />
+                    <span>Hand</span>
+                  </div>
+                )}
+                <div className="absolute bottom-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-white truncate max-w-[90%]">
+                  {t.participant?.name || "Participant"}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -1555,15 +1610,27 @@ function V2ClassVideoGrid({
         >
           {uniqueCameras.map((t, i) => {
             const id = t.participant?.identity || "";
-            const isHandUp = raisedHands.has(id);
+            const isHandUp = id ? raisedHands.has(id) : false;
             return (
               <div
                 key={id || i}
-                className="h-full w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#14161e] shadow-lg group"
+                className={`h-full w-full relative rounded-2xl overflow-hidden shadow-lg group transition-all ${
+                  isHandUp
+                    ? "border-2 border-amber-400 ring-2 ring-amber-400/40 bg-[#1e1b14]"
+                    : "border border-white/10 bg-[#14161e]"
+                }`}
               >
                 <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
+                {isHandUp && (
+                  <div className="absolute top-2 left-2 bg-amber-500 text-black text-xs font-bold px-2.5 py-1 rounded-lg shadow-lg flex items-center gap-1.5 z-10 animate-pulse">
+                    <Hand size={13} className="animate-bounce" />
+                    <span>Hand Raised</span>
+                  </div>
+                )}
                 <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-[11px] text-white font-medium flex items-center gap-1.5">
-                  <span>{t.participant?.name || "Participant"}</span>
+                  <span className={isHandUp ? "text-amber-300 font-bold" : ""}>
+                    {t.participant?.name || "Participant"}
+                  </span>
                   {isHandUp && <Hand size={12} className="text-amber-400 animate-bounce" />}
                 </div>
               </div>
@@ -2193,21 +2260,34 @@ function ClassroomV2Sync({
           const newFile = { name: data.name, url: data.url };
           setSharedFiles((prev: any) => [...prev, newFile]);
           onNewFileShared?.(newFile);
+        } else if (data.type === "MUTE_STUDENT" && !isTeacher) {
+          if (!isSenderHost) return;
+          const myLocalId = room?.localParticipant?.identity;
+          if (data.identity === myLocalId || data.identity === myIdentity) {
+            room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
+          }
         } else if (data.type === "MUTE_ALL" && !isTeacher) {
           if (!isSenderHost) return;
-          const micPub = room.localParticipant?.getTrackPublication(Track.Source.Microphone);
-          if (micPub && !micPub.isMuted) {
-            micPub.track?.mute();
-          }
+          room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
         } else if (data.type === "HAND_RAISE") {
           const targetId = data.identity || participant?.identity;
-          const targetName = data.name || participant?.name || "Student";
           if (!targetId) return;
+
+          let targetName = data.name || participant?.name;
+          if (!targetName || targetName === "Student" || targetName === "Participant") {
+            const found = participants.find((p: any) => p.identity === targetId);
+            if (found?.name && found.name !== "Student") {
+              targetName = found.name;
+            }
+          }
+          if (!targetName) targetName = "Student";
 
           setRaisedHandsList((prev: HandRaiseEntry[]) => {
             if (data.raised) {
               const existing = prev.find((h) => h.identity === targetId);
-              if (existing) return prev;
+              if (existing) {
+                return prev.map((h) => (h.identity === targetId ? { ...h, name: targetName } : h));
+              }
               return [
                 ...prev,
                 {

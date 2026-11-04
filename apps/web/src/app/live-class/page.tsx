@@ -22,7 +22,7 @@ const LiveKitClassRoomV2 = dynamic(
 
 export default function LiveClassPage() {
   const [activeLiveRoom, setActiveLiveRoom] = useState<ApiLiveClass | null>(null);
-  const { role, email, userId } = useAuth();
+  const { role, email, userId, name: authUserName } = useAuth();
 
   const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
 
@@ -81,8 +81,8 @@ export default function LiveClassPage() {
             identity={stableIdentity}
             name={
               normalizedRole === "TEACHER"
-                ? (activeLiveRoom.teacherName || "Teacher")
-                : (email ? email.split("@")[0] : "Student")
+                ? (activeLiveRoom.teacherName || authUserName || "Teacher")
+                : (authUserName || (email ? email.split("@")[0] : "Student"))
             }
             role={normalizedRole || "STUDENT"}
             onLeave={() => setActiveLiveRoom(null)}
