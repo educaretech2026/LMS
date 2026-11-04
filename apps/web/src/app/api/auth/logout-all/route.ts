@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import {
   getInternalApiUrl,
   extractTokenFromRequest,
+  isRequestSecure,
   validateCsrf,
 } from '@/lib/bff-config';
 
@@ -33,11 +34,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const isHttps =
-    request.nextUrl.protocol === 'https:' ||
-    request.headers.get('x-forwarded-proto') === 'https';
-  const isProduction = process.env.NODE_ENV === 'production';
-  const secure = isProduction || isHttps;
+  const isHttps = isRequestSecure(request);
 
   const response = NextResponse.json({
     success: true,
@@ -46,23 +43,21 @@ export async function POST(request: NextRequest) {
 
   response.cookies.set('__Host-AccessToken', '', {
     httpOnly: true,
-    secure,
+    secure: isHttps,
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
     expires: new Date(0),
   });
 
-  if (!isProduction) {
-    response.cookies.set('AccessToken', '', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 0,
-      expires: new Date(0),
-    });
-  }
+  response.cookies.set('AccessToken', '', {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+  });
 
   return response;
 }

@@ -4,6 +4,7 @@ import {
   getInternalApiUrl,
   getAuthCookieName,
   getAuthCookieOptions,
+  isRequestSecure,
   validateCsrf,
 } from '@/lib/bff-config';
 
@@ -76,10 +77,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isHttps =
-      request.nextUrl.protocol === 'https:' ||
-      request.headers.get('x-forwarded-proto') === 'https';
-
+    const isHttps = isRequestSecure(request);
     const cookieName = getAuthCookieName(isHttps);
     const cookieOptions = getAuthCookieOptions(isHttps);
 
@@ -89,8 +87,20 @@ export async function POST(request: NextRequest) {
       user: upstreamData.user,
     });
 
-    // Set host-only HttpOnly Secure SameSite=Lax cookie
+    // Set HttpOnly SameSite=Lax cookie (host-only __Host-AccessToken if HTTPS)
     clientResponse.cookies.set(cookieName, rawToken, cookieOptions);
+
+    // When on HTTPS, clear legacy plain cookie to avoid cookie shadowing
+    if (isHttps) {
+      clientResponse.cookies.set('AccessToken', '', {
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 0,
+        expires: new Date(0),
+      });
+    }
 
     return clientResponse;
   } catch (error: any) {
