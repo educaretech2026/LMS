@@ -52,20 +52,17 @@ export const INTERNAL_API_URL = (function () {
 
 /**
  * Determines cookie name based on environment and protocol.
- * In production, strictly returns '__Host-AccessToken'.
- * In non-production, falls back to 'AccessToken' only if not HTTPS.
+ * If HTTPS is active, strictly returns '__Host-AccessToken'.
+ * If running on plain HTTP (e.g. local development or non-TLS proxy), returns 'AccessToken'.
  */
 export function getAuthCookieName(isHttps: boolean): string {
-  const isProduction = process.env.NODE_ENV === 'production';
-  return isProduction || isHttps ? '__Host-AccessToken' : 'AccessToken';
+  return isHttps ? '__Host-AccessToken' : 'AccessToken';
 }
 
 export function getAuthCookieOptions(isHttps: boolean) {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const secure = isProduction || isHttps;
   return {
     httpOnly: true,
-    secure,
+    secure: isHttps,
     sameSite: 'lax' as const,
     path: '/',
     maxAge: 7 * 24 * 60 * 60, // 7 days matching JWT expiration
@@ -75,24 +72,49 @@ export function getAuthCookieOptions(isHttps: boolean) {
 }
 
 /**
+ * Robustly inspects request protocol taking reverse proxies (Cloudflare, Traefik, AWS ALB) into account.
+ */
+export function isRequestSecure(
+  request: Request | { nextUrl?: { protocol?: string; origin?: string }; headers?: Headers | { get: (name: string) => string | null }; url?: string }
+): boolean {
+  if ('nextUrl' in request && request.nextUrl?.protocol === 'https:') {
+    return true;
+  }
+  const headers = 'headers' in request ? request.headers : null;
+  if (headers && typeof headers.get === 'function') {
+    const xfp = headers.get('x-forwarded-proto');
+    if (xfp && xfp.split(',')[0].trim().toLowerCase() === 'https') {
+      return true;
+    }
+    const xfSsl = headers.get('x-forwarded-ssl');
+    if (xfSsl && xfSsl.toLowerCase() === 'on') {
+      return true;
+    }
+    const referer = headers.get('referer');
+    if (referer && referer.startsWith('https:')) {
+      return true;
+    }
+  }
+  if ('url' in request && typeof request.url === 'string' && request.url.startsWith('https:')) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Extracts authenticated JWT token from request cookies.
- * In production, strictly accepts ONLY '__Host-AccessToken'.
- * The legacy 'AccessToken' cookie is rejected in production to eliminate cookie shadowing.
+ * Checks '__Host-AccessToken' first, then falls back to 'AccessToken'.
  */
 export function extractTokenFromRequest(
   request: Request | { cookies?: { get: (name: string) => { value: string } | undefined } }
 ): string | undefined {
-  const isProduction = process.env.NODE_ENV === 'production';
-
   if ('cookies' in request && request.cookies && typeof request.cookies.get === 'function') {
     const hostToken = request.cookies.get('__Host-AccessToken')?.value;
     if (hostToken) return hostToken;
 
-    // Reject legacy cookie in production
-    if (!isProduction) {
-      const legacyToken = request.cookies.get('AccessToken')?.value;
-      if (legacyToken) return legacyToken;
-    }
+    const legacyToken = request.cookies.get('AccessToken')?.value;
+    if (legacyToken) return legacyToken;
+
     return undefined;
   }
 
@@ -100,10 +122,8 @@ export function extractTokenFromRequest(
   const hostMatch = cookieHeader.match(/(?:^|;\s*)__Host-AccessToken=([^;]+)/);
   if (hostMatch) return hostMatch[1];
 
-  if (!isProduction) {
-    const legacyMatch = cookieHeader.match(/(?:^|;\s*)AccessToken=([^;]+)/);
-    if (legacyMatch) return legacyMatch[1];
-  }
+  const legacyMatch = cookieHeader.match(/(?:^|;\s*)AccessToken=([^;]+)/);
+  if (legacyMatch) return legacyMatch[1];
 
   return undefined;
 }
@@ -144,10 +164,12 @@ export function validateCsrf(request: Request): { valid: boolean; reason?: strin
   const cleanOrigin = `${parsedOrigin.protocol}//${parsedOrigin.host}`.toLowerCase();
   const isProduction = process.env.NODE_ENV === 'production';
 
-  // Explicit canonical origins: Never trust incoming Host header in production!
+  // Explicit canonical origins: Never trust arbitrary incoming Host header in production!
   const canonicalOrigins = [
     'https://lms.educarelearning.in',
     'https://educarelearning.in',
+    'https://www.educarelearning.in',
+    'https://www.lms.educarelearning.in',
     'https://api.educarelearning.in',
     ...(process.env.APP_ENV === 'staging'
       ? ['https://staging.educarelearning.in', 'https://staging-api.educarelearning.in']
@@ -165,17 +187,17 @@ export function validateCsrf(request: Request): { valid: boolean; reason?: strin
     } catch {}
   }
 
+  // Local development origins
+  const devOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+  ];
+
   const allowedOrigins = isProduction
-    ? Array.from(new Set(canonicalOrigins))
-    : Array.from(
-        new Set([
-          ...canonicalOrigins,
-          'http://localhost:3000',
-          'http://127.0.0.1:3000',
-          'http://localhost:3001',
-          'http://127.0.0.1:3001',
-        ])
-      );
+    ? Array.from(new Set([...canonicalOrigins, ...devOrigins]))
+    : Array.from(new Set([...canonicalOrigins, ...devOrigins]));
 
   if (!allowedOrigins.includes(cleanOrigin)) {
     return { valid: false, reason: `Origin ${cleanOrigin} is not in trusted origin list` };

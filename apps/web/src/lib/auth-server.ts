@@ -2,13 +2,9 @@ import { cookies } from "next/headers";
 
 export async function getAuthTokenFromCookies() {
   const cookieStore = await cookies();
-  const isProduction = process.env.NODE_ENV === 'production';
   const hostToken = cookieStore.get("__Host-AccessToken")?.value;
   if (hostToken) return hostToken;
-  if (!isProduction) {
-    return cookieStore.get("AccessToken")?.value || null;
-  }
-  return null;
+  return cookieStore.get("AccessToken")?.value || null;
 }
 
 export async function getUserFromToken() {
