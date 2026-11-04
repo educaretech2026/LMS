@@ -45,6 +45,19 @@ export class LiveClassController {
     return this.liveClassService.generateLiveKitToken(classIdentifier, req.user, role, identity, name);
   }
 
+  // LiveKit Token Endpoint alias supporting /live-class/:id/token
+  @Get(':id/token')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
+  getTokenById(
+    @Param('id') id: string,
+    @Query('identity') identity: string,
+    @Query('name') name: string,
+    @Query('role') role: string,
+    @Req() req: any,
+  ) {
+    return this.liveClassService.generateLiveKitToken(id, req.user, role, identity, name);
+  }
+
   // Public Endpoint: Retrieve public webinar/class info (no auth required)
   @Public()
   @Get('public/:id')
