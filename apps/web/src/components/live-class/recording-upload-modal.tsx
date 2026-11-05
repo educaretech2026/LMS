@@ -15,6 +15,7 @@ import {
   Play,
   ArrowRight,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { compressVideo } from "@/lib/video-compressor";
@@ -29,7 +30,7 @@ interface RecordingUploadModalProps {
   classId?: string;
   classTitle?: string;
   durationSeconds?: number;
-  onUploaded?: (url: string) => void;
+  onUploaded?: (url: string, isReleased?: boolean) => void;
 }
 
 function formatBytes(bytes: number, decimals: number = 1): string {
@@ -69,6 +70,7 @@ export function RecordingUploadModal({
   const [uploadedUrl, setUploadedUrl] = useState<string>("");
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
+  const [releaseImmediately, setReleaseImmediately] = useState<boolean>(false);
 
   if (!isOpen || !videoBlob) return null;
 
@@ -111,7 +113,7 @@ export function RecordingUploadModal({
           maxHeight: 720,
           targetFps: 24,
           videoBitrate: 1_200_000, // 1.2 Mbps
-          playbackRate: 2.0,
+          playbackRate: 1.0, // Strict 1:1 normal playback speed (no fast-forward distortion)
           onProgress: ({ percent, stage }) => {
             setProgressPercent(percent);
             setStatusMessage(stage);
@@ -184,13 +186,14 @@ export function RecordingUploadModal({
             recordingUrl: presignedRes.finalUrl,
             fileSize: finalSizeBytes,
             duration: durationSeconds,
+            isReleased: releaseImmediately,
           }),
         });
       }
 
       setUploadedUrl(presignedRes.finalUrl);
       setPhase("done");
-      onUploaded?.(presignedRes.finalUrl);
+      onUploaded?.(presignedRes.finalUrl, releaseImmediately);
     } catch (err: any) {
       console.error("Recording compression and upload failed:", err);
       setPhase("error");
@@ -248,8 +251,34 @@ export function RecordingUploadModal({
               <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200 flex items-start gap-2.5">
                 <Sparkles size={16} className="text-purple-400 shrink-0 mt-0.5" />
                 <p className="leading-relaxed">
-                  Upon request, your recording can be compressed directly to reduce size by up to <strong>75%</strong>, then uploaded to your cloud storage bucket for student access.
+                  Your recording is compressed at true 1:1 speed with crisp 720p/1.2 Mbps encoding, saving up to <strong>75%</strong> storage, then uploaded to your cloud bucket.
                 </p>
+              </div>
+
+              {/* Release to students toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 text-xs">
+                <div className="flex flex-col pr-3">
+                  <span className="font-semibold text-white">Release to students upon upload</span>
+                  <span className="text-[11px] text-white/50">
+                    {releaseImmediately
+                      ? "Students and attendees will be able to stream this recording immediately."
+                      : "Saved as a private draft. You can preview it first and release upon request."}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReleaseImmediately(!releaseImmediately)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
+                    releaseImmediately ? "bg-purple-600" : "bg-white/20"
+                  }`}
+                  aria-pressed={releaseImmediately}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      releaseImmediately ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Action Buttons */}
@@ -320,6 +349,22 @@ export function RecordingUploadModal({
                 <p className="text-xs text-white/60 mt-1 leading-relaxed">
                   The recording has been compressed and stored in your cloud storage bucket.
                 </p>
+              </div>
+
+              {/* Release status notification */}
+              <div
+                className={`w-full p-2.5 rounded-xl border text-xs flex items-center gap-2.5 text-left ${
+                  releaseImmediately
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                    : "bg-amber-500/10 border-amber-500/30 text-amber-200"
+                }`}
+              >
+                <ShieldCheck size={16} className="shrink-0" />
+                <span className="leading-snug">
+                  {releaseImmediately
+                    ? "Released to students! Enrolled learners and attendees can now stream this recording."
+                    : "Saved as Private Draft. You can review it now and release it to students whenever ready from the Live Class Hub."}
+                </span>
               </div>
 
               {/* Compression stats comparison */}

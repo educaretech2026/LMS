@@ -223,10 +223,20 @@ export class LiveClassController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN')
   saveRecording(
     @Param('id') id: string,
-    @Body() body: { recordingUrl: string; duration?: number; fileSize?: number },
+    @Body() body: { recordingUrl: string; duration?: number; fileSize?: number; isReleased?: boolean },
     @Req() req: any,
   ): Promise<any> {
     return this.liveClassService.saveRecording(id, body, req.user);
+  }
+
+  @Patch(':id/recording/release')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN')
+  releaseRecording(
+    @Param('id') id: string,
+    @Body('isReleased') isReleased: boolean,
+    @Req() req: any,
+  ): Promise<any> {
+    return this.liveClassService.releaseRecording(id, isReleased ?? true, req.user);
   }
 
   // LiveKit Server-Side Egress Recording

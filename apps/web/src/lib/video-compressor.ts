@@ -96,7 +96,7 @@ export async function compressVideo(
   const targetFps = options.targetFps || 24;
   const videoBitrate = options.videoBitrate || 1_200_000; // 1.2 Mbps
   const audioBitrate = options.audioBitrate || 96_000;    // 96 kbps
-  const playbackSpeed = options.playbackRate || 2.0;       // 2x fast transcode where supported
+  const playbackSpeed = options.playbackRate ?? 1.0;       // Strict 1:1 real-time speed (normal motion & audio pitch)
   const onProgress = options.onProgress;
 
   if (typeof window === 'undefined') {
@@ -261,7 +261,7 @@ export async function compressVideo(
     // Start recorder and playback
     try {
       recorder.start(1000);
-      video.playbackRate = Math.min(3.0, Math.max(1.0, playbackSpeed));
+      video.playbackRate = 1.0; // Strictly normal speed to match MediaRecorder wall-clock timestamps
       video
         .play()
         .then(() => {
@@ -277,3 +277,4 @@ export async function compressVideo(
     }
   });
 }
+

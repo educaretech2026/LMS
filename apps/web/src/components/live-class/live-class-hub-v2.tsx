@@ -8,7 +8,8 @@ import {
   RefreshCw, Trash2, Radio, CheckCircle2, AlertCircle, Globe,
   Copy, Check, ExternalLink, Image as ImageIcon, UploadCloud,
   Download, Search, Sparkles, FileText, ArrowRight, Monitor,
-  SlidersHorizontal, CheckSquare, Layers, Lock, ShieldCheck, Film
+  SlidersHorizontal, CheckSquare, Layers, Lock, ShieldCheck, Film,
+  Eye, EyeOff
 } from "lucide-react";
 import { RecordingUploadModal, VideoPlayerModal } from "./recording-upload-modal";
 
@@ -30,6 +31,7 @@ export interface ApiLiveClass {
   filesCount?: number;
   recordingUrl?: string | null;
   recordingStatus?: string | null;
+  isRecordingReleased?: boolean;
 }
 
 interface SetupOption { id: string; name: string }
@@ -136,6 +138,19 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
     if (!file || !pendingUploadTargetClassRef.current) return;
     setUploadModalFile(file);
     setUploadModalClass(pendingUploadTargetClassRef.current);
+  };
+
+  const handleToggleReleaseRecording = async (cls: ApiLiveClass) => {
+    const nextReleased = !cls.isRecordingReleased;
+    try {
+      await fetchApi(`/live-class/${cls.id}/recording/release`, {
+        method: "PATCH",
+        body: JSON.stringify({ isReleased: nextReleased }),
+      });
+      setClasses(prev => prev.map(c => c.id === cls.id ? { ...c, isRecordingReleased: nextReleased } : c));
+    } catch (e: any) {
+      alert(`Failed to update recording release status: ${e?.message || e}`);
+    }
   };
 
   // Filter sessions
@@ -428,6 +443,7 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
                 onManageAttachments={() => setSelectedAttachmentsClass(cls)}
                 onWatchRecording={cls.recordingUrl ? () => setPlayingRecording({ url: cls.recordingUrl!, title: cls.title }) : undefined}
                 onUploadRecording={isStaff ? () => handleTriggerUpload(cls) : undefined}
+                onToggleReleaseRecording={isStaff ? () => handleToggleReleaseRecording(cls) : undefined}
               />
             ))}
           </div>
@@ -488,8 +504,13 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
           videoBlob={uploadModalFile}
           classId={uploadModalClass.id}
           classTitle={uploadModalClass.title}
-          onUploaded={(url: string) => {
-            setClasses(prev => prev.map(c => c.id === uploadModalClass.id ? { ...c, recordingUrl: url, recordingStatus: 'COMPLETED' } : c));
+          onUploaded={(url: string, isReleased?: boolean) => {
+            setClasses(prev => prev.map(c => c.id === uploadModalClass.id ? {
+              ...c,
+              recordingUrl: url,
+              recordingStatus: 'COMPLETED',
+              isRecordingReleased: Boolean(isReleased),
+            } : c));
             setUploadModalClass(null);
             setUploadModalFile(null);
           }}
@@ -521,6 +542,7 @@ function ClassSessionCard({
   onManageAttachments,
   onWatchRecording,
   onUploadRecording,
+  onToggleReleaseRecording,
 }: {
   cls: ApiLiveClass;
   isStaff: boolean;
@@ -531,6 +553,7 @@ function ClassSessionCard({
   onManageAttachments: () => void;
   onWatchRecording?: () => void;
   onUploadRecording?: () => void;
+  onToggleReleaseRecording?: () => void;
 }) {
   const isLive = cls.status === "LIVE";
   const isEnded = cls.status === "ENDED";
@@ -720,34 +743,129 @@ function ClassSessionCard({
             </div>
           )}
 
-          {/* Cloud Recording Banner (Stream Replay Upon Request) */}
+          {/* Cloud Recording Banner: Smart release upon request workflow */}
           {cls.recordingUrl && (
-            <div className="mt-3 p-3 rounded-2xl bg-indigo-50/90 border border-indigo-200/90 flex items-center justify-between gap-2 shadow-2xs">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="h-7 w-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Film className="h-3.5 w-3.5" />
+            <div
+              className={`mt-3 p-3 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs transition-all ${
+                cls.isRecordingReleased
+                  ? "bg-emerald-50/80 border-emerald-200/90"
+                  : isStaff
+                  ? "bg-amber-50/80 border-amber-200/90"
+                  : "bg-slate-50 border-slate-200"
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                    cls.isRecordingReleased
+                      ? "bg-emerald-600 text-white"
+                      : isStaff
+                      ? "bg-amber-600 text-white"
+                      : "bg-slate-400 text-white"
+                  }`}
+                >
+                  <Film className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider block">
-                    Cloud Recording Ready
-                  </span>
-                  <span className="text-xs text-indigo-700 truncate block">
-                    Stream compressed class recording
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                        cls.isRecordingReleased
+                          ? "bg-emerald-100 text-emerald-800"
+                          : isStaff
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-slate-200 text-slate-700"
+                      }`}
+                    >
+                      {cls.isRecordingReleased
+                        ? "Released to Students"
+                        : isStaff
+                        ? "Uploaded · Private Draft"
+                        : "Recording Under Review"}
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-600 truncate block mt-0.5">
+                    {cls.isRecordingReleased
+                      ? "Full session recording ready to stream"
+                      : isStaff
+                      ? "Preview video and release to students upon request"
+                      : "Instructor will release the replay soon"}
                   </span>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onWatchRecording?.();
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0 active:scale-95"
-                title="Watch compressed cloud recording"
-              >
-                <Play size={12} className="fill-white" />
-                <span>Watch</span>
-              </button>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                {/* Watch / Preview Button */}
+                {onWatchRecording && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onWatchRecording();
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
+                      cls.isRecordingReleased
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-indigo-600 hover:bg-indigo-700"
+                    }`}
+                    title={isStaff ? "Preview recording playback" : "Watch recording stream"}
+                  >
+                    <Play size={12} className="fill-white" />
+                    <span>{isStaff && !cls.isRecordingReleased ? "Preview" : "Watch"}</span>
+                  </button>
+                )}
+
+                {/* Staff Release / Retract Button */}
+                {isStaff && onToggleReleaseRecording && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleReleaseRecording();
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95 ${
+                      cls.isRecordingReleased
+                        ? "border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800"
+                        : "border-emerald-300 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                    }`}
+                    title={
+                      cls.isRecordingReleased
+                        ? "Retract recording back to private draft"
+                        : "Release recording to all enrolled students & attendees"
+                    }
+                  >
+                    {cls.isRecordingReleased ? (
+                      <>
+                        <EyeOff size={13} />
+                        <span>Retract</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={13} />
+                        <span>Release to Students</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Student Banner when recording exists on server but is not yet released */}
+          {!isStaff && !cls.recordingUrl && cls.recordingStatus === 'UNRELEASED' && (
+            <div className="mt-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-2.5 shadow-2xs">
+              <div className="h-7 w-7 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
+                <Film className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase font-bold text-slate-700 tracking-wider block">
+                  Recording Under Instructor Review
+                </span>
+                <span className="text-xs text-slate-500 truncate block">
+                  Class recording will be released to students shortly.
+                </span>
+              </div>
             </div>
           )}
         </div>

@@ -41,6 +41,9 @@ export const SAFE_LIVE_CLASS_SELECT = {
   scheduledAt: true,
   duration: true,
   roomId: true,
+  recordingUrl: true,
+  recordingStatus: true,
+  isRecordingReleased: true,
   boardId: true,
   standardId: true,
   centreId: true,
@@ -339,6 +342,27 @@ export class LiveClassService implements OnModuleInit {
     return { classTime, durationMs, classEndTime };
   }
 
+  public sanitizeForLearner(cls: any, user?: any): any {
+    if (!cls) return cls;
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+    const isStaff = Boolean(normalizedRole && ['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN'].includes(normalizedRole));
+
+    if (isStaff) {
+      return cls;
+    }
+
+    // For students and public learners, hide unreleased recording details
+    if (!cls.isRecordingReleased) {
+      return {
+        ...cls,
+        recordingUrl: null,
+        recordingStatus: cls.recordingUrl ? 'UNRELEASED' : cls.recordingStatus,
+      };
+    }
+    return cls;
+  }
+
   async getAll(user?: any): Promise<any> {
     try {
       const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
@@ -357,10 +381,8 @@ export class LiveClassService implements OnModuleInit {
           const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
           const canAccessLink = isLiveNow || isStartingSoon;
 
-          if (!canAccessLink) {
-            return { ...c, roomId: null };
-          }
-          return c;
+          const base = canAccessLink ? c : { ...c, roomId: null };
+          return this.sanitizeForLearner(base, user);
         });
       }
 
@@ -377,10 +399,11 @@ export class LiveClassService implements OnModuleInit {
         }).catch(() => null);
 
         if (!profile || !profile.enrollments || profile.enrollments.length === 0) {
-          return await this.safeFindMany({
+          const publicClasses = await this.safeFindMany({
             where: { isPublic: true },
             orderBy: { scheduledAt: 'asc' },
           });
+          return publicClasses.map(c => this.sanitizeForLearner(c, user));
         }
 
         const centreIds = profile.enrollments.map(e => e.batch?.centreId).filter(Boolean) as string[];
@@ -402,7 +425,7 @@ export class LiveClassService implements OnModuleInit {
           orderBy: { scheduledAt: 'asc' },
         });
 
-        // SEC: Protect meeting links for students - only reveal if class is currently LIVE or starting within 15 minutes
+        // SEC: Protect meeting links & unreleased recordings for students
         const now = Date.now();
         return classes.map(c => {
           const classTime = new Date(c.scheduledAt).getTime();
@@ -410,10 +433,8 @@ export class LiveClassService implements OnModuleInit {
           const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -c.duration * 60 * 1000;
           const canAccessLink = isLiveNow || isStartingSoon;
 
-          if (!canAccessLink) {
-            return { ...c, roomId: null };
-          }
-          return c;
+          const base = canAccessLink ? c : { ...c, roomId: null };
+          return this.sanitizeForLearner(base, user);
         });
       }
 
@@ -465,10 +486,8 @@ export class LiveClassService implements OnModuleInit {
       const classTime = new Date(cls.scheduledAt).getTime();
       const isLiveNow = cls.status === 'LIVE';
       const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -cls.duration * 60 * 1000;
-      if (!isLiveNow && !isStartingSoon) {
-        return { ...cls, roomId: null };
-      }
-      return cls;
+      const base = (!isLiveNow && !isStartingSoon) ? { ...cls, roomId: null } : cls;
+      return this.sanitizeForLearner(base, user);
     }
 
     const isStudent = normalizedRole === 'STUDENT';
@@ -478,10 +497,8 @@ export class LiveClassService implements OnModuleInit {
         const classTime = new Date(cls.scheduledAt).getTime();
         const isLiveNow = cls.status === 'LIVE';
         const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -cls.duration * 60 * 1000;
-        if (!isLiveNow && !isStartingSoon) {
-          return { ...cls, roomId: null };
-        }
-        return cls;
+        const base = (!isLiveNow && !isStartingSoon) ? { ...cls, roomId: null } : cls;
+        return this.sanitizeForLearner(base, user);
       }
 
       const profile = await this.prisma.studentProfile.findUnique({
@@ -506,10 +523,8 @@ export class LiveClassService implements OnModuleInit {
       const isLiveNow = cls.status === 'LIVE';
       const isStartingSoon = (classTime - now) <= 15 * 60 * 1000 && (classTime - now) >= -cls.duration * 60 * 1000;
 
-      if (!isLiveNow && !isStartingSoon) {
-        return { ...cls, roomId: null };
-      }
-      return cls;
+      const base = (!isLiveNow && !isStartingSoon) ? { ...cls, roomId: null } : cls;
+      return this.sanitizeForLearner(base, user);
     }
 
     if (user && !isSuperAdmin(user) && cls.centreId) {
@@ -2324,7 +2339,7 @@ export class LiveClassService implements OnModuleInit {
 
   async saveRecording(
     classId: string,
-    data: { recordingUrl: string; duration?: number; fileSize?: number },
+    data: { recordingUrl: string; duration?: number; fileSize?: number; isReleased?: boolean },
     user?: any,
   ): Promise<any> {
     const cls = await this.safeFindUnique({ id: classId });
@@ -2343,15 +2358,17 @@ export class LiveClassService implements OnModuleInit {
     }
 
     const trimmedUrl = data.recordingUrl.trim();
+    const isReleased = Boolean(data.isReleased);
 
-    // 1. Update LiveClass table with canonical recording URL and status
+    // 1. Update LiveClass table with canonical recording URL, status, and release flag
     const updated = await this.prisma.liveClass.update({
       where: { id: classId },
       data: {
         recordingStatus: 'COMPLETED',
         recordingUrl: trimmedUrl,
+        isRecordingReleased: isReleased,
       },
-      select: { id: true, recordingStatus: true, recordingUrl: true },
+      select: { id: true, recordingStatus: true, recordingUrl: true, isRecordingReleased: true },
     });
 
     // 2. Persist in LiveClassRecording table if available
@@ -2364,6 +2381,7 @@ export class LiveClassService implements OnModuleInit {
           fileSize: data.fileSize ? BigInt(data.fileSize) : null,
           duration: data.duration ? Math.round(Number(data.duration)) : null,
           endedAt: new Date(),
+          isReleased: isReleased,
         },
       });
     } catch (recErr: any) {
@@ -2371,13 +2389,71 @@ export class LiveClassService implements OnModuleInit {
     }
 
     // 3. Record audit log
-    this.recordAudit(user, 'SAVE_RECORDING', `Saved compressed recording to cloud: ${trimmedUrl}`, classId).catch(() => {});
+    const auditAction = isReleased ? 'SAVE_AND_RELEASE_RECORDING' : 'SAVE_RECORDING_DRAFT';
+    this.recordAudit(user, auditAction, `Saved compressed recording to cloud (${isReleased ? 'RELEASED' : 'PRIVATE DRAFT'}): ${trimmedUrl}`, classId).catch(() => {});
 
     return {
       success: true,
-      message: 'Class recording saved to cloud storage successfully.',
+      message: isReleased
+        ? 'Class recording saved to cloud storage and released to students successfully.'
+        : 'Class recording saved to cloud storage as private draft (unreleased).',
       recordingUrl: trimmedUrl,
       recordingStatus: 'COMPLETED',
+      isRecordingReleased: isReleased,
+      classId: cls.id,
+    };
+  }
+
+  async releaseRecording(
+    classId: string,
+    isReleased: boolean = true,
+    user?: any,
+  ): Promise<any> {
+    const cls = await this.safeFindUnique({ id: classId });
+    if (!cls) throw new NotFoundException('Live class not found');
+
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const isStaff = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN'].includes(
+      String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_')
+    );
+    if (!isStaff && cls.isPublic !== true) {
+      throw new ForbiddenException('Only authorized instructors or administrators can release class recordings.');
+    }
+
+    if (!cls.recordingUrl) {
+      throw new BadRequestException('Cannot release recording: No cloud recording has been uploaded for this class.');
+    }
+
+    const updated = await this.prisma.liveClass.update({
+      where: { id: classId },
+      data: {
+        isRecordingReleased: Boolean(isReleased),
+      },
+      select: { id: true, recordingStatus: true, recordingUrl: true, isRecordingReleased: true },
+    });
+
+    try {
+      await this.prisma.liveClassRecording.updateMany({
+        where: { liveClassId: classId },
+        data: { isReleased: Boolean(isReleased) },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Could not update liveClassRecording isReleased: ${e?.message}`);
+    }
+
+    const action = isReleased ? 'RELEASE_RECORDING' : 'REVOKE_RECORDING';
+    const note = isReleased
+      ? 'Released class recording to students / attendees'
+      : 'Revoked class recording back to private draft';
+    this.recordAudit(user, action, note, classId).catch(() => {});
+
+    return {
+      success: true,
+      message: isReleased
+        ? 'Class recording has been released to students.'
+        : 'Class recording has been retracted to private draft.',
+      isRecordingReleased: Boolean(isReleased),
+      recordingUrl: updated.recordingUrl,
       classId: cls.id,
     };
   }
@@ -2387,14 +2463,31 @@ export class LiveClassService implements OnModuleInit {
     try {
       const cls = await this.prisma.liveClass.findUnique({
         where: { id: classId },
-        select: { id: true, title: true, recordingUrl: true, recordingStatus: true, duration: true, scheduledAt: true },
+        select: {
+          id: true,
+          title: true,
+          recordingUrl: true,
+          recordingStatus: true,
+          isRecordingReleased: true,
+          duration: true,
+          scheduledAt: true
+        },
       });
       if (!cls?.recordingUrl && cls?.recordingStatus !== 'RECORDING') {
         throw new NotFoundException('No recording is available for this class.');
       }
+
+      const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+      const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
+      const isStaff = Boolean(normalizedRole && ['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN'].includes(normalizedRole));
+
+      if (!isStaff && !cls.isRecordingReleased) {
+        throw new ForbiddenException('The recording for this class has not been released yet.');
+      }
+
       return cls;
     } catch (e: any) {
-      if (e instanceof NotFoundException) throw e;
+      if (e instanceof NotFoundException || e instanceof ForbiddenException) throw e;
       return null;
     }
   }

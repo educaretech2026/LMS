@@ -418,7 +418,20 @@ export function LiveKitClassRoomV2({
         }
       }
 
-      const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
+      const recorderOptions: MediaRecorderOptions = {
+        videoBitsPerSecond: 1_200_000,
+        audioBitsPerSecond: 96_000,
+      };
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType;
+      }
+
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(combinedStream, recorderOptions);
+      } catch {
+        recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
+      }
       recordedChunksRef.current = [];
 
       recorder.ondataavailable = (e) => {

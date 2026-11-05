@@ -90,6 +90,8 @@ export class PrismaService
       `ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT;`,
       `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "apiKeyHash" TEXT;`,
       `ALTER TABLE "api_integrations" ADD COLUMN IF NOT EXISTS "keySuffix" TEXT;`,
+      `ALTER TABLE "live_classes" ADD COLUMN IF NOT EXISTS "isRecordingReleased" BOOLEAN NOT NULL DEFAULT false;`,
+      `ALTER TABLE "live_class_recordings" ADD COLUMN IF NOT EXISTS "isReleased" BOOLEAN NOT NULL DEFAULT false;`,
     ];
 
     for (const ddl of ddlStatements) {

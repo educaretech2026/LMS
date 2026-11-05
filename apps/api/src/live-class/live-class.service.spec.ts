@@ -588,6 +588,88 @@ describe('LiveClassService - Final Security Remediation & Production Verificatio
         }, studentSession)
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('POS: allows teacher to release recording to students', async () => {
+      const recordedClass = {
+        ...mockLiveClass,
+        recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+        recordingStatus: 'COMPLETED',
+        isRecordingReleased: false,
+      };
+      prisma.liveClass.findUnique.mockResolvedValue(recordedClass);
+      prisma.liveClass.update.mockResolvedValue({
+        ...recordedClass,
+        isRecordingReleased: true,
+      });
+
+      const teacherSession = {
+        id: 'teacher-456',
+        role: { name: 'TEACHER' },
+        userCentres: [{ centreId: 'centre-1' }],
+      };
+
+      const res = await service.releaseRecording('class-123', true, teacherSession);
+      expect(res.success).toBe(true);
+      expect(res.isRecordingReleased).toBe(true);
+      expect(prisma.liveClass.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'class-123' },
+          data: { isRecordingReleased: true },
+        })
+      );
+    });
+
+    it('NEGATIVE: rejects student attempting to release recording', async () => {
+      prisma.liveClass.findUnique.mockResolvedValue({
+        ...mockLiveClass,
+        recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+      });
+
+      const studentSession = {
+        id: 'stud-1',
+        role: { name: 'STUDENT' },
+      };
+
+      await expect(
+        service.releaseRecording('class-123', true, studentSession)
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('SEC: masks recordingUrl for student when recording is not yet released', async () => {
+      const unreleasedClass = {
+        ...mockLiveClass,
+        recordingUrl: 'https://r2.example.com/recordings/secret.mp4',
+        recordingStatus: 'COMPLETED',
+        isRecordingReleased: false,
+      };
+
+      const studentSession = {
+        id: 'stud-1',
+        role: { name: 'STUDENT' },
+      };
+
+      const sanitized = service.sanitizeForLearner(unreleasedClass, studentSession);
+      expect(sanitized.recordingUrl).toBeNull();
+      expect(sanitized.recordingStatus).toBe('UNRELEASED');
+    });
+
+    it('SEC: reveals recordingUrl for student when recording has been released', async () => {
+      const releasedClass = {
+        ...mockLiveClass,
+        recordingUrl: 'https://r2.example.com/recordings/released.mp4',
+        recordingStatus: 'COMPLETED',
+        isRecordingReleased: true,
+      };
+
+      const studentSession = {
+        id: 'stud-1',
+        role: { name: 'STUDENT' },
+      };
+
+      const sanitized = service.sanitizeForLearner(releasedClass, studentSession);
+      expect(sanitized.recordingUrl).toBe('https://r2.example.com/recordings/released.mp4');
+      expect(sanitized.recordingStatus).toBe('COMPLETED');
+    });
   });
 
   /* ─────────────────────────────────────────────────────────────
