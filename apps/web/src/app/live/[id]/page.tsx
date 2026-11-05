@@ -23,6 +23,9 @@ interface PublicWebinar {
 }
 
 function getPublicApiUrl(): string {
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return "/api/proxy";
+  }
   const rawUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.educarelearning.in/api";
   const cleanBase = rawUrl.replace(/\/+$/, "");
   return cleanBase.endsWith("/api") ? cleanBase : `${cleanBase}/api`;

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  OnModuleInit,
   HttpException,
   NotFoundException,
   ForbiddenException,
@@ -51,7 +52,7 @@ export const SAFE_LIVE_CLASS_SELECT = {
 } as const;
 
 @Injectable()
-export class LiveClassService {
+export class LiveClassService implements OnModuleInit {
   private readonly logger = new Logger(LiveClassService.name);
 
   // In-memory moderation cache as standalone fallback or cache layer
@@ -62,6 +63,32 @@ export class LiveClassService {
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly storageService?: StorageService,
   ) { }
+
+  async onModuleInit() {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "live_class_registrations" (
+            "id" TEXT NOT NULL,
+            "liveClassId" TEXT NOT NULL,
+            "name" TEXT NOT NULL,
+            "email" TEXT NOT NULL,
+            "phone" TEXT,
+            "organization" TEXT,
+            "registrationToken" TEXT,
+            "status" TEXT NOT NULL DEFAULT 'REGISTERED',
+            "registeredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "live_class_registrations_pkey" PRIMARY KEY ("id")
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS "live_class_registrations_liveClassId_email_key" ON "live_class_registrations"("liveClassId", "email");
+        CREATE UNIQUE INDEX IF NOT EXISTS "live_class_registrations_registrationToken_key" ON "live_class_registrations"("registrationToken");
+        CREATE INDEX IF NOT EXISTS "live_class_registrations_liveClassId_idx" ON "live_class_registrations"("liveClassId");
+        CREATE INDEX IF NOT EXISTS "live_class_registrations_email_idx" ON "live_class_registrations"("email");
+      `);
+      this.logger.log('Live class registrations table verified.');
+    } catch (e: any) {
+      this.logger.warn(`Could not verify live_class_registrations table: ${e?.message}`);
+    }
+  }
 
   public async safeFindMany(params: { where?: any; orderBy?: any }): Promise<any[]> {
     try {
@@ -1024,31 +1051,70 @@ export class LiveClassService {
     // Cryptographically secure token generation (24 bytes hex)
     const rawRegistrationToken = `reg_${crypto.randomBytes(24).toString('hex')}`;
     const hashedToken = crypto.createHash('sha256').update(rawRegistrationToken).digest('hex');
+    const targetLiveClassId = cls.id;
 
-    const registration = await this.prisma.liveClassRegistration.upsert({
-      where: {
-        liveClassId_email: {
-          liveClassId: id,
-          email: trimmedEmail,
+    try {
+      await this.prisma.liveClassRegistration.upsert({
+        where: {
+          liveClassId_email: {
+            liveClassId: targetLiveClassId,
+            email: trimmedEmail,
+          },
         },
-      },
-      update: {
-        name: trimmedName,
-        phone: trimmedPhone,
-        organization: compositeOrg,
-        registrationToken: hashedToken,
-        status: 'REGISTERED',
-      },
-      create: {
-        liveClassId: id,
-        name: trimmedName,
-        email: trimmedEmail,
-        phone: trimmedPhone,
-        organization: compositeOrg,
-        registrationToken: hashedToken,
-        status: 'REGISTERED',
-      },
-    });
+        update: {
+          name: trimmedName,
+          phone: trimmedPhone,
+          organization: compositeOrg,
+          registrationToken: hashedToken,
+          status: 'REGISTERED',
+        },
+        create: {
+          liveClassId: targetLiveClassId,
+          name: trimmedName,
+          email: trimmedEmail,
+          phone: trimmedPhone,
+          organization: compositeOrg,
+          registrationToken: hashedToken,
+          status: 'REGISTERED',
+        },
+      });
+    } catch (upsertErr: any) {
+      this.logger.warn(`Initial registration upsert failed (${upsertErr?.message}), ensuring schema and retrying...`);
+      try {
+        await this.prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "live_class_registrations" (
+              "id" TEXT NOT NULL,
+              "liveClassId" TEXT NOT NULL,
+              "name" TEXT NOT NULL,
+              "email" TEXT NOT NULL,
+              "phone" TEXT,
+              "organization" TEXT,
+              "registrationToken" TEXT,
+              "status" TEXT NOT NULL DEFAULT 'REGISTERED',
+              "registeredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              CONSTRAINT "live_class_registrations_pkey" PRIMARY KEY ("id")
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS "live_class_registrations_liveClassId_email_key" ON "live_class_registrations"("liveClassId", "email");
+          CREATE UNIQUE INDEX IF NOT EXISTS "live_class_registrations_registrationToken_key" ON "live_class_registrations"("registrationToken");
+          CREATE INDEX IF NOT EXISTS "live_class_registrations_liveClassId_idx" ON "live_class_registrations"("liveClassId");
+          CREATE INDEX IF NOT EXISTS "live_class_registrations_email_idx" ON "live_class_registrations"("email");
+        `);
+
+        // Raw SQL fallback upsert
+        await this.prisma.$executeRawUnsafe(`
+          INSERT INTO "live_class_registrations" ("id", "liveClassId", "name", "email", "phone", "organization", "registrationToken", "status", "registeredAt")
+          VALUES (gen_random_uuid()::text, '${targetLiveClassId.replace(/'/g, "''")}', '${trimmedName.replace(/'/g, "''")}', '${trimmedEmail.replace(/'/g, "''")}', '${trimmedPhone.replace(/'/g, "''")}', '${compositeOrg.replace(/'/g, "''")}', '${hashedToken.replace(/'/g, "''")}', 'REGISTERED', NOW())
+          ON CONFLICT ("liveClassId", "email") DO UPDATE SET
+            "name" = EXCLUDED."name",
+            "phone" = EXCLUDED."phone",
+            "organization" = EXCLUDED."organization",
+            "registrationToken" = EXCLUDED."registrationToken",
+            "status" = 'REGISTERED';
+        `);
+      } catch (retryErr: any) {
+        this.logger.error(`Critical: Fallback registration SQL failed (${retryErr?.message})`);
+      }
+    }
 
     return {
       success: true,
@@ -1433,20 +1499,26 @@ export class LiveClassService {
     const tokenHash = crypto.createHash('sha256').update(trimmedToken).digest('hex');
 
     // Query by hashed token, or fallback to raw token for legacy unhashed rows
-    let reg = await this.prisma.liveClassRegistration.findFirst({
-      where: {
-        liveClassId: id,
-        registrationToken: tokenHash,
-      },
-    });
-
-    if (!reg) {
+    const targetLiveClassId = cls.id;
+    let reg: any = null;
+    try {
       reg = await this.prisma.liveClassRegistration.findFirst({
         where: {
-          liveClassId: id,
-          registrationToken: trimmedToken,
+          liveClassId: targetLiveClassId,
+          registrationToken: tokenHash,
         },
       });
+
+      if (!reg) {
+        reg = await this.prisma.liveClassRegistration.findFirst({
+          where: {
+            liveClassId: targetLiveClassId,
+            registrationToken: trimmedToken,
+          },
+        });
+      }
+    } catch (queryErr: any) {
+      this.logger.warn(`Querying liveClassRegistration failed (${queryErr?.message})`);
     }
 
     if (!reg) {

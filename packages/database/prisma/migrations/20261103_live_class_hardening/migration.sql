@@ -12,6 +12,21 @@ ADD COLUMN IF NOT EXISTS "recordingStatus" "RecordingStatus" NOT NULL DEFAULT 'N
 ADD COLUMN IF NOT EXISTS "whiteboardData" JSONB,
 ADD COLUMN IF NOT EXISTS "teacherId" TEXT;
 
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "live_class_registrations" (
+    "id" TEXT NOT NULL,
+    "liveClassId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "phone" TEXT,
+    "organization" TEXT,
+    "registrationToken" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'REGISTERED',
+    "registeredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "live_class_registrations_pkey" PRIMARY KEY ("id")
+);
+
 -- AlterTable
 ALTER TABLE "live_class_registrations" ADD COLUMN IF NOT EXISTS "registrationToken" TEXT;
 
