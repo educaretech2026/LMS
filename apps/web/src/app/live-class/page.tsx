@@ -89,6 +89,7 @@ export default function LiveClassPage() {
             classTitle={activeLiveRoom.title}
             subject={activeLiveRoom.subject}
             teacherName={activeLiveRoom.teacherName}
+            backgroundImageUrl={activeLiveRoom.backgroundImageUrl || undefined}
             onLeave={() => setActiveLiveRoom(null)}
           />
         </div>

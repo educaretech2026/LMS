@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Globe, Radio, Presentation, Sparkles, Play, ArrowRight,
-  ShieldCheck, MessageSquare, Hand, Mic, MicOff, Video,
-  VideoOff, Users, CheckCircle2, ChevronRight, X
+  Globe, Radio, Play, ArrowRight, ShieldCheck, CheckCircle2,
+  Mic, MicOff, Video, VideoOff, X, Sparkles, Share2, Check
 } from "lucide-react";
+import { fetchApi } from "@/lib/api";
 
 interface WebinarWelcomeLobbyProps {
   webinarTitle: string;
@@ -13,6 +13,8 @@ interface WebinarWelcomeLobbyProps {
   presenterName: string;
   initialName: string;
   isTeacher: boolean;
+  classId?: string;
+  backgroundImageUrl?: string | null;
   onJoin: (settings: { name: string; cameraEnabled: boolean; micEnabled: boolean }) => void;
   onCancel: () => void;
 }
@@ -23,24 +25,46 @@ export function WebinarWelcomeLobby({
   presenterName,
   initialName,
   isTeacher,
+  classId,
+  backgroundImageUrl,
   onJoin,
   onCancel,
 }: WebinarWelcomeLobbyProps) {
   const [displayName, setDisplayName] = useState(
     initialName || (isTeacher ? "Keynote Presenter" : "Webinar Attendee")
   );
+  const [posterUrl, setPosterUrl] = useState<string | null>(backgroundImageUrl || null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  // Presenter Studio Preview State (only needed when isTeacher is true)
+  // Presenter preview state (only initialized for host/teacher)
   const [cameraEnabled, setCameraEnabled] = useState(isTeacher);
   const [micEnabled, setMicEnabled] = useState(isTeacher);
-  const [audioLevel, setAudioLevel] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animFrameRef = useRef<number | null>(null);
 
-  // Presenter: Initialize camera & mic preview
+  // Fetch poster if not passed directly via props
+  useEffect(() => {
+    if (backgroundImageUrl) {
+      setPosterUrl(backgroundImageUrl);
+      return;
+    }
+    if (classId) {
+      fetchApi<any>(`/live-class/public/${classId}`, { silent: true })
+        .then((cls) => {
+          if (cls?.backgroundImageUrl) setPosterUrl(cls.backgroundImageUrl);
+        })
+        .catch(() => {
+          fetchApi<any>(`/live-class/${classId}`, { silent: true })
+            .then((cls) => {
+              if (cls?.backgroundImageUrl) setPosterUrl(cls.backgroundImageUrl);
+            })
+            .catch(() => {});
+        });
+    }
+  }, [classId, backgroundImageUrl]);
+
+  // Presenter media preview initialization
   const startPresenterPreview = useCallback(async () => {
     if (!isTeacher) return;
     try {
@@ -48,31 +72,15 @@ export function WebinarWelcomeLobby({
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+        video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: "user" },
         audio: true,
       });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = audioCtx;
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      const checkAudio = () => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        setAudioLevel(Math.min(100, Math.round((sum / dataArray.length) * 1.5)));
-        animFrameRef.current = requestAnimationFrame(checkAudio);
-      };
-      checkAudio();
     } catch {
-      // Ignore if devices not available
+      // Graceful fallback if device access not available
     }
   }, [isTeacher]);
 
@@ -84,24 +92,12 @@ export function WebinarWelcomeLobby({
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close().catch(() => {});
-      }
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
     };
   }, [isTeacher, startPresenterPreview]);
 
-  const handleEnterStage = () => {
+  const handleEnter = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      audioContextRef.current.close().catch(() => {});
-    }
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
     }
 
     onJoin({
@@ -112,231 +108,219 @@ export function WebinarWelcomeLobby({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#070811] text-white overflow-y-auto selection:bg-purple-600 selection:text-white">
-      {/* Ambient Cosmic Stage Background */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gradient-to-b from-purple-600/15 via-indigo-600/10 to-transparent rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -left-40 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-10 -right-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px] opacity-40" />
-      </div>
+    <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#06080f] text-white overflow-hidden select-none">
+      {/* ── BACKGROUND POSTER LAYER ── */}
+      {posterUrl ? (
+        <div
+          className="absolute inset-0 z-0 bg-cover bg-left sm:bg-left-center bg-no-repeat transition-all duration-700"
+          style={{ backgroundImage: `url("${posterUrl}")` }}
+        />
+      ) : (
+        /* Minimalist Deep Ambient Fallback when no poster is uploaded */
+        <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#060812] via-[#090d1c] to-[#060812]">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-1/4 left-1/3 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+        </div>
+      )}
 
-      {/* Top Navigation Bar */}
-      <header className="relative z-20 shrink-0 h-16 border-b border-white/10 px-4 sm:px-8 flex items-center justify-between backdrop-blur-md bg-black/30">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
-            <Globe className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-300">
-                Educare Keynote Broadcast
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
-                STAGE WAITING ROOM
-              </span>
-            </div>
-            <p className="text-[11px] text-white/50 hidden sm:block">Public Webinar & Masterclass Platform</p>
-          </div>
+      {/* ── DIRECTIONAL OVERLAY: Left 45% is 100% transparent for poster, Right side has dark contrast ── */}
+      <div
+        className="absolute inset-0 z-1 pointer-events-none"
+        style={{
+          background: posterUrl
+            ? "linear-gradient(to right, transparent 0%, transparent 35%, rgba(6,8,15,0.45) 55%, rgba(6,8,15,0.85) 75%, rgba(6,8,15,0.98) 100%)"
+            : "linear-gradient(to right, transparent 0%, rgba(6,8,15,0.6) 50%, rgba(6,8,15,0.95) 100%)",
+        }}
+      />
+
+      {/* Mobile-specific bottom scrim to ensure readability on small screens */}
+      <div
+        className="absolute inset-0 z-1 pointer-events-none sm:hidden"
+        style={{
+          background: "linear-gradient(to bottom, transparent 0%, rgba(6,8,15,0.4) 30%, rgba(6,8,15,0.9) 65%, #06080f 100%)",
+        }}
+      />
+
+      {/* ── TOP HEADER (Minimal & Clean) ── */}
+      <header className="relative z-10 shrink-0 h-16 sm:h-20 px-4 sm:px-8 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-[11px] font-bold text-white shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+            LIVE WEBINAR
+          </span>
+          {subject && (
+            <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-[11px] text-slate-300 font-medium">
+              {subject}
+            </span>
+          )}
         </div>
 
-        <button
-          onClick={onCancel}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-medium transition-colors"
-        >
-          <X className="h-3.5 w-3.5" />
-          <span>Exit</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {classId && (
+            <button
+              type="button"
+              onClick={() => {
+                const url = `${window.location.origin}/live/${classId}`;
+                navigator.clipboard.writeText(url);
+                setCopiedLink(true);
+                setTimeout(() => setCopiedLink(false), 2000);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-500/30 bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 text-xs font-semibold backdrop-blur-md transition-colors"
+              title="Copy public webinar registration and join link"
+            >
+              {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Share2 className="h-3.5 w-3.5" />}
+              <span>{copiedLink ? "Link Copied!" : "Share Link"}</span>
+            </button>
+          )}
+
+          <button
+            onClick={onCancel}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/15 bg-black/40 hover:bg-black/60 text-white/80 hover:text-white text-xs font-semibold backdrop-blur-md transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+            <span>Exit</span>
+          </button>
+        </div>
       </header>
 
-      {/* Main Welcome Hero */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto w-full">
-        {/* Main Stage Welcome Card */}
-        <div className="w-full rounded-3xl bg-[#0f111c]/90 border border-purple-500/25 shadow-2xl backdrop-blur-xl overflow-hidden p-6 sm:p-10 flex flex-col gap-8">
-          {/* Header Tag & Title */}
-          <div className="space-y-3 text-center sm:text-left">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-bold">
-                <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-                {subject || "Public Masterclass"}
-              </span>
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/70 text-xs font-medium">
-                <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
-                Live Broadcast Session
-              </span>
-            </div>
-
-            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
-              {webinarTitle || "Special Webinar Masterclass"}
-            </h1>
-
-            {/* Presenter Profile Pill */}
-            <div className="flex items-center justify-center sm:justify-start gap-3 pt-1">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
-                {(presenterName || "P")[0].toUpperCase()}
+      {/* ── MAIN CONTENT AREA: LEFT SIDE KEPT COMPLETELY OPEN FOR POSTER ── */}
+      <main className="relative z-10 flex-1 flex flex-col justify-end lg:justify-center p-4 sm:p-8 lg:p-12 overflow-y-auto">
+        <div className="w-full flex justify-end">
+          {/* ── RIGHT-ALIGNED MINIMAL ENTRY PANEL ── */}
+          <div className="w-full sm:max-w-md lg:w-[420px] xl:w-[440px] rounded-3xl bg-[#0c0e18]/85 border border-white/15 shadow-2xl backdrop-blur-2xl p-6 sm:p-8 space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+            {/* Title & Presenter Info */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-purple-400">
+                  <Globe className="h-3 w-3" />
+                  Keynote Session
+                </span>
               </div>
-              <div className="text-left">
-                <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>{presenterName || "Educare Keynote Presenter"}</span>
-                  <CheckCircle2 className="h-3.5 w-3.5 text-blue-400" />
-                </p>
-                <p className="text-[11px] text-purple-300/80">Keynote Speaker & Host</p>
-              </div>
-            </div>
-          </div>
 
-          {/* 3 Pillars of Webinar Format */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-purple-500/30 transition-colors">
-              <div className="h-9 w-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center mb-3">
-                <Presentation className="h-4 w-4" />
-              </div>
-              <h3 className="text-xs font-bold text-white mb-1">Keynote Stage Presentation</h3>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                The main stage focuses on high-definition speaker video, slide decks, and live demonstrations.
-              </p>
-            </div>
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-snug line-clamp-2">
+                {webinarTitle || "Special Webinar"}
+              </h1>
 
-            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-purple-500/30 transition-colors">
-              <div className="h-9 w-9 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center mb-3">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-              <h3 className="text-xs font-bold text-white mb-1">Audience Listen-Only Mode</h3>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Attendee webcams and microphones are silenced to maintain optimal stream bandwidth and zero distractions.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-purple-500/30 transition-colors">
-              <div className="h-9 w-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center mb-3">
-                <MessageSquare className="h-4 w-4" />
-              </div>
-              <h3 className="text-xs font-bold text-white mb-1">Interactive Q&amp;A &amp; Hand Raise</h3>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Post questions in real-time chat and raise your hand to notify the keynote speaker during discussion periods.
-              </p>
-            </div>
-          </div>
-
-          {/* Bottom Admission & Entrance Section */}
-          <div className="pt-6 border-t border-white/10">
-            {isTeacher ? (
-              /* ── TEACHER / PRESENTER STUDIO PORTAL ── */
-              <div className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Radio className="h-4 w-4 text-purple-400" />
-                      Presenter Studio Equipment Check
-                    </h3>
-                    <p className="text-xs text-slate-400">Preview your broadcast feed before opening the stage.</p>
-                  </div>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    Host Mode
-                  </span>
+              <div className="flex items-center gap-2 pt-1 text-xs text-slate-300">
+                <div className="h-6 w-6 rounded-full bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300 text-[11px] font-bold shrink-0">
+                  {(presenterName || "P")[0].toUpperCase()}
                 </div>
+                <span className="truncate font-medium">{presenterName || "Educare Presenter"}</span>
+                <CheckCircle2 className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+              </div>
+            </div>
 
-                <div className="flex flex-col sm:flex-row gap-5 items-center">
-                  <div className="w-full sm:w-64 aspect-video rounded-2xl overflow-hidden bg-black border border-white/15 relative shrink-0">
-                    {cameraEnabled ? (
-                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
-                    ) : (
-                      <div className="h-full w-full flex flex-col items-center justify-center text-white/40 gap-1 text-xs font-medium">
-                        <VideoOff className="h-5 w-5" />
-                        <span>Camera Off</span>
-                      </div>
-                    )}
-                    <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg">
-                      <button
-                        onClick={() => {
-                          const next = !cameraEnabled;
-                          setCameraEnabled(next);
-                          if (streamRef.current) streamRef.current.getVideoTracks().forEach(t => t.enabled = next);
-                        }}
-                        className="text-white hover:text-purple-300"
-                      >
-                        {cameraEnabled ? <Video size={13} /> : <VideoOff size={13} className="text-rose-400" />}
-                      </button>
-                      <button
-                        onClick={() => {
-                          const next = !micEnabled;
-                          setMicEnabled(next);
-                          if (streamRef.current) streamRef.current.getAudioTracks().forEach(t => t.enabled = next);
-                        }}
-                        className="text-white hover:text-purple-300"
-                      >
-                        {micEnabled ? <Mic size={13} /> : <MicOff size={13} className="text-rose-400" />}
-                      </button>
+            <div className="h-px bg-white/10 w-full" />
+
+            {/* Entry Form */}
+            {isTeacher ? (
+              /* ── HOST / PRESENTER ENTRY DETAILS ── */
+              <div className="space-y-4">
+                {/* Presenter Video Check */}
+                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center">
+                  {cameraEnabled ? (
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
+                  ) : (
+                    <div className="text-white/40 text-xs flex flex-col items-center gap-1">
+                      <VideoOff className="h-4 w-4" />
+                      <span>Camera is off</span>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="flex-1 space-y-3 w-full">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Presenter Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="Presenter Name"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500"
-                      />
-                    </div>
-
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10">
                     <button
-                      onClick={handleEnterStage}
-                      className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-bold shadow-xl shadow-purple-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        const next = !cameraEnabled;
+                        setCameraEnabled(next);
+                        if (streamRef.current) streamRef.current.getVideoTracks().forEach(t => (t.enabled = next));
+                      }}
+                      className="text-white hover:text-purple-300 p-0.5"
                     >
-                      <Radio className="h-4 w-4" />
-                      <span>Start Webinar Broadcast</span>
-                      <ArrowRight className="h-4 w-4" />
+                      {cameraEnabled ? <Video size={13} /> : <VideoOff size={13} className="text-rose-400" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !micEnabled;
+                        setMicEnabled(next);
+                        if (streamRef.current) streamRef.current.getAudioTracks().forEach(t => (t.enabled = next));
+                      }}
+                      className="text-white hover:text-purple-300 p-0.5"
+                    >
+                      {micEnabled ? <Mic size={13} /> : <MicOff size={13} className="text-rose-400" />}
                     </button>
                   </div>
                 </div>
-              </div>
-            ) : (
-              /* ── AUDIENCE / ATTENDEE ADMISSION PORTAL ── */
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-5">
-                <div className="space-y-1 w-full sm:max-w-md">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-xs font-bold text-white">Attendee Admission Verified</span>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                      Your Display Name (shown in Live Q&amp;A Chat)
-                    </label>
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Enter your name"
-                      className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500"
-                    />
-                  </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Presenter Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Presenter Name"
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
+                  />
                 </div>
 
-                <div className="w-full sm:w-auto shrink-0 flex flex-col items-center sm:items-end gap-2">
-                  <button
-                    onClick={handleEnterStage}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-bold shadow-xl shadow-purple-600/30 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  >
-                    <Play className="h-4 w-4 fill-white" />
-                    <span>Enter Webinar Stage</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                  <p className="text-[11px] text-purple-300/70 text-center sm:text-right">
-                    Entering in audience listen-only mode
-                  </p>
+                <button
+                  onClick={handleEnter}
+                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-bold shadow-lg shadow-purple-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                >
+                  <Radio className="h-4 w-4" />
+                  <span>Start Webinar Broadcast</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              /* ── AUDIENCE / ATTENDEE ENTRY DETAILS ── */
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Your Name (for Live Q&amp;A Chat)
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Enter your full name"
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
+                  />
                 </div>
+
+                {/* Minimal Audience Notice */}
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-white/[0.03] border border-white/10 text-xs text-slate-300">
+                  <ShieldCheck className="h-4 w-4 text-purple-400 shrink-0" />
+                  <span>Audience mode: Listen-only with live Q&amp;A chat and hand-raising.</span>
+                </div>
+
+                {/* Enter Button */}
+                <button
+                  onClick={handleEnter}
+                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-bold shadow-lg shadow-purple-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                >
+                  <Play className="h-4 w-4 fill-white" />
+                  <span>Enter Webinar</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+
+                <p className="text-[11px] text-center text-slate-400">
+                  Camera and mic are off to keep stage focused on the presenter.
+                </p>
               </div>
             )}
           </div>
         </div>
       </main>
+
+      {/* ── MINIMAL FOOTER ── */}
+      <footer className="relative z-10 shrink-0 h-10 px-4 sm:px-8 flex items-center justify-between text-[11px] text-slate-500">
+        <span>Educare Live Webinar Platform</span>
+        <span>HD Broadcast &amp; Keynote Presentation</span>
+      </footer>
     </div>
   );
 }
-

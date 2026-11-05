@@ -464,6 +464,7 @@ function ClassSessionCard({
   const isEnded = cls.status === "ENDED";
   const isZoom = cls.roomId?.includes("zoom.us");
   const isMeet = cls.roomId?.includes("meet.google.com");
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const formattedDate = useMemo(() => {
     try {
@@ -600,6 +601,43 @@ function ClassSessionCard({
               <span className="truncate">{cls.isPublic ? `Presenter: ${cls.teacherName}` : cls.teacherName}</span>
             </div>
           </div>
+
+          {/* Dedicated Public Webinar Link Card Banner */}
+          {cls.isPublic && (
+            <div className="mt-3 p-2.5 rounded-xl bg-purple-50/80 border border-purple-200/80 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-purple-950 font-medium truncate">
+                <Globe className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                <span className="truncate">Public Link: <span className="font-mono text-purple-700">/live/{cls.id}</span></span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const url = `${window.location.origin}/live/${cls.id}`;
+                    navigator.clipboard.writeText(url);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-purple-50 border border-purple-200 text-[10px] font-bold text-purple-700 transition-colors cursor-pointer shadow-2xs"
+                  title="Copy public webinar registration link"
+                >
+                  {copiedLink ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                  <span>{copiedLink ? "Copied!" : "Copy"}</span>
+                </button>
+                <a
+                  href={`/live/${cls.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1 rounded-lg bg-white hover:bg-purple-50 border border-purple-200 text-purple-600 transition-colors shadow-2xs"
+                  title="Open Public Webinar Page"
+                >
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -631,6 +669,27 @@ function ClassSessionCard({
           {/* Staff controls */}
           {isStaff && (
             <div className="flex items-center gap-1">
+              {cls.isPublic && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const url = `${window.location.origin}/live/${cls.id}`;
+                    navigator.clipboard.writeText(url);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
+                  }}
+                  className={`h-9 px-2 flex items-center justify-center gap-1 rounded-xl border text-xs font-semibold transition-colors ${
+                    copiedLink
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700"
+                  }`}
+                  title="Copy Public Webinar Link"
+                >
+                  {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span className="text-[10px] hidden sm:inline">{copiedLink ? "Copied" : "Link"}</span>
+                </button>
+              )}
+
               <button
                 onClick={onManageAttachments}
                 className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
@@ -1067,6 +1126,8 @@ function HostWebinarModalV2({
   const [uploadingDeck, setUploadingDeck] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [createdWebinar, setCreatedWebinar] = useState<ApiLiveClass | null>(null);
+  const [copiedCreatedLink, setCopiedCreatedLink] = useState(false);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1158,6 +1219,7 @@ function HostWebinarModalV2({
       }
 
       onScheduled(created);
+      setCreatedWebinar(created);
     } catch (e: any) {
       setError(e.message || "Failed to host webinar");
     } finally {
@@ -1165,6 +1227,67 @@ function HostWebinarModalV2({
       setUploadingDeck(false);
     }
   };
+
+  if (createdWebinar) {
+    const publicUrl = typeof window !== "undefined" ? `${window.location.origin}/live/${createdWebinar.id}` : `/live/${createdWebinar.id}`;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+        <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-8 p-6 sm:p-8 text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-100 text-purple-600 flex items-center justify-center mb-4">
+            <Globe className="h-7 w-7" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Webinar Scheduled!</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mb-6">
+            Your public webinar <strong className="text-slate-800">"{createdWebinar.title}"</strong> has been created. Anyone with this public link can register and join.
+          </p>
+
+          {/* Link Box */}
+          <div className="p-3.5 bg-purple-50/90 rounded-2xl border border-purple-200/90 text-left mb-6">
+            <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3 text-purple-600" />
+              <span>Public Shareable Link</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-purple-800 truncate select-all flex-1 bg-white px-2.5 py-1.5 rounded-xl border border-purple-200/60">
+                {publicUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(publicUrl);
+                  setCopiedCreatedLink(true);
+                  setTimeout(() => setCopiedCreatedLink(false), 2000);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shrink-0 transition-colors shadow-xs"
+              >
+                {copiedCreatedLink ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copiedCreatedLink ? "Copied!" : "Copy"}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-3">
+            <a
+              href={`/live/${createdWebinar.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>Open Public Page</span>
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-sm"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -1315,6 +1438,7 @@ function RegistrationsModalV2({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     fetchApi<{ total: number; registrations: Registration[] }>(`/live-class/${cls.id}/registrations`)
@@ -1400,6 +1524,47 @@ function RegistrationsModalV2({
             </button>
           </div>
         </div>
+
+        {/* Public Webinar Share Link Bar */}
+        {cls.isPublic && (
+          <div className="px-6 py-3 bg-purple-50/80 border-b border-purple-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="h-7 w-7 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+                <Globe className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[11px] font-bold text-purple-950 block">Public Webinar Link</span>
+                <span className="text-[11px] font-mono text-purple-700 truncate block">
+                  {typeof window !== "undefined" ? `${window.location.origin}/live/${cls.id}` : `/live/${cls.id}`}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/live/${cls.id}`;
+                  navigator.clipboard.writeText(url);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2000);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-xs transition-colors"
+              >
+                {copiedLink ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copiedLink ? "Copied!" : "Copy Link"}</span>
+              </button>
+              <a
+                href={`/live/${cls.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-200 bg-white hover:bg-purple-50 text-purple-700 text-xs font-semibold shadow-xs transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>Open Page</span>
+              </a>
+            </div>
+          </div>
+        )}
 
         <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-3">
           <Search className="h-4 w-4 text-slate-400 shrink-0" />

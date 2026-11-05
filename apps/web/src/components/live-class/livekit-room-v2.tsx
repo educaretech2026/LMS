@@ -33,7 +33,8 @@ import {
   ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
   Trash2, Edit3, SlidersHorizontal, X, Presentation, LayoutGrid,
   PenTool, MoreHorizontal, Info, Clock, Download, FileSpreadsheet,
-  UserCheck, UserX, ChevronDown, Check, Search, Globe, Radio
+  UserCheck, UserX, ChevronDown, Check, Search, Globe, Radio,
+  Share2, Copy, ExternalLink
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -55,6 +56,7 @@ interface LiveKitRoomV2Props {
   classTitle?: string;
   subject?: string;
   teacherName?: string;
+  backgroundImageUrl?: string | null;
   onLeave: () => void;
 }
 
@@ -197,6 +199,7 @@ export function LiveKitClassRoomV2({
   classTitle,
   subject,
   teacherName,
+  backgroundImageUrl,
   onLeave,
 }: LiveKitRoomV2Props) {
   // Pre-join Welcome Lobby State
@@ -247,6 +250,7 @@ export function LiveKitClassRoomV2({
   // Attendance & Attendee Roster
   const [showAttendanceModal, setShowAttendanceModal] = useState<boolean>(false);
   const [sessionAttendees, setSessionAttendees] = useState<Map<string, SessionAttendee>>(new Map());
+  const [copiedHeaderWebinarLink, setCopiedHeaderWebinarLink] = useState(false);
 
   // Class & Teacher Controls
   const [isStudioOpen, setIsStudioOpen] = useState<boolean>(false);
@@ -446,6 +450,8 @@ export function LiveKitClassRoomV2({
           presenterName={teacherName || (isTeacher ? "Keynote Presenter" : "Educare Instructor")}
           initialName={confirmedDisplayName || name || (isTeacher ? "Keynote Presenter" : "Webinar Attendee")}
           isTeacher={isTeacher}
+          classId={classId}
+          backgroundImageUrl={backgroundImageUrl}
           onJoin={(settings) => {
             setConfirmedDisplayName(settings.name);
             setInitialCameraEnabled(settings.cameraEnabled);
@@ -795,6 +801,27 @@ export function LiveKitClassRoomV2({
               <span className="hidden lg:inline">
                 {isWebinar ? "Webinar Roster" : "Attendance"} ({sessionAttendees.size})
               </span>
+            </button>
+          )}
+
+          {/* Public Webinar Share Link */}
+          {isWebinar && classId && (
+            <button
+              onClick={() => {
+                const publicUrl = `${window.location.origin}/live/${classId}`;
+                navigator.clipboard.writeText(publicUrl);
+                setCopiedHeaderWebinarLink(true);
+                setTimeout(() => setCopiedHeaderWebinarLink(false), 2000);
+              }}
+              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                copiedHeaderWebinarLink
+                  ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                  : "border-purple-500/40 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300"
+              }`}
+              title="Copy Public Webinar Share Link"
+            >
+              {copiedHeaderWebinarLink ? <Check size={14} className="text-emerald-400" /> : <Share2 size={14} />}
+              <span className="hidden sm:inline">{copiedHeaderWebinarLink ? "Copied Link!" : "Webinar Link"}</span>
             </button>
           )}
 
@@ -1335,6 +1362,7 @@ function AttendanceRosterModal({
   const [search, setSearch] = useState("");
   const [webinarRegistrations, setWebinarRegistrations] = useState<any[]>([]);
   const [loadingWebinar, setLoadingWebinar] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     if (tab === "webinar" && classId) {
@@ -1481,6 +1509,47 @@ function AttendanceRosterModal({
             </button>
           </div>
         </div>
+
+        {/* Public Webinar Share Link Bar */}
+        {classId && (
+          <div className="px-5 py-3 bg-purple-950/40 border-b border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="h-7 w-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                <Globe size={14} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[11px] font-bold text-white block">Public Webinar Registration Link</span>
+                <span className="text-[11px] font-mono text-purple-300 truncate block">
+                  {typeof window !== "undefined" ? `${window.location.origin}/live/${classId}` : `/live/${classId}`}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/live/${classId}`;
+                  navigator.clipboard.writeText(url);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2000);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-xs transition-colors"
+              >
+                {copiedLink ? <Check size={13} /> : <Copy size={13} />}
+                <span>{copiedLink ? "Copied!" : "Copy Link"}</span>
+              </button>
+              <a
+                href={`/live/${classId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors"
+              >
+                <ExternalLink size={13} />
+                <span>Open Page</span>
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* Table Content */}
         <div className="flex-1 overflow-y-auto p-4">
