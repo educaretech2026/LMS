@@ -118,7 +118,7 @@ export default function LiveClassPage() {
     return authUserName || (email ? email.split("@")[0] : "Attendee");
   }, [targetWebinarId, authUserName, email]);
 
-  const isStaffHost = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN"].includes(normalizedRole);
+  const isStaffHost = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN"].includes(normalizedRole);
 
   const isDirectWebinarEntry =
     mounted &&
@@ -199,20 +199,22 @@ export default function LiveClassPage() {
             }
             identity={stableIdentity}
             name={
-              isDirectWebinarEntry
-                ? attendeeName
-                : normalizedRole === "TEACHER"
-                ? (activeLiveRoom.teacherName || authUserName || "Teacher")
-                : (authUserName || (email ? email.split("@")[0] : "Student"))
+              isStaffHost
+                ? (activeLiveRoom.teacherName || authUserName || "Presenter")
+                : (isDirectWebinarEntry ? attendeeName : (authUserName || (email ? email.split("@")[0] : "Student")))
             }
-            role={isDirectWebinarEntry ? "PUBLIC_LEARNER" : (normalizedRole || "STUDENT")}
+            role={
+              isStaffHost
+                ? (normalizedRole || "TEACHER")
+                : (isDirectWebinarEntry ? "PUBLIC_LEARNER" : (normalizedRole || "STUDENT"))
+            }
             isWebinar={Boolean(activeLiveRoom.isPublic)}
             classTitle={activeLiveRoom.title}
             subject={activeLiveRoom.subject}
             teacherName={activeLiveRoom.teacherName}
             backgroundImageUrl={activeLiveRoom.backgroundImageUrl || undefined}
             onLeave={() => {
-              if (isDirectWebinarEntry) {
+              if (isDirectWebinarEntry && !isStaffHost) {
                 window.location.href = `/live/${activeLiveRoom.id}`;
               } else {
                 setActiveLiveRoom(null);

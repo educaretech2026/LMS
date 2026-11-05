@@ -34,7 +34,7 @@ import {
   Trash2, Edit3, SlidersHorizontal, X, Presentation, LayoutGrid,
   PenTool, MoreHorizontal, Info, Clock, Download, FileSpreadsheet,
   UserCheck, UserX, ChevronDown, Check, Search, Globe, Radio,
-  Share2, Copy, ExternalLink
+  Share2, Copy, ExternalLink, Play, Pause, Circle, Square
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -101,6 +101,16 @@ function formatRelativeTime(timestamp: number) {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   return `${Math.floor(minutes / 60)}h ago`;
+}
+
+function formatRecordingDuration(totalSec: number) {
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  if (hrs > 0) {
+    return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
 export function safePublishData(
@@ -269,8 +279,275 @@ export function LiveKitClassRoomV2({
   breakStateRef.current = breakState;
 
   const normalizedRole = (role || "").toUpperCase();
-  const isTeacher = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN"].includes(normalizedRole);
+  const isTeacher = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
   const isImmersed = !isTeacher && stageMode !== "grid";
+
+  // High-Fidelity In-Browser Multi-Source Recording State
+  const [recordingStatus, setRecordingStatus] = useState<"idle" | "recording" | "paused" | "saving">("idle");
+  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const [remoteRecordingActive, setRemoteRecordingActive] = useState<boolean>(false);
+  const [remoteRecordingPaused, setRemoteRecordingPaused] = useState<boolean>(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingMicStreamRef = useRef<MediaStream | null>(null);
+  const recordingAudioCtxRef = useRef<AudioContext | null>(null);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Recording Timer: ticks during "recording", freezes during "paused", stops when "idle"
+  useEffect(() => {
+    if (recordingStatus === "recording") {
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, [recordingStatus]);
+
+  // Clean up recording tracks/timers on component unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {}
+      }
+      recordingStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recordingMicStreamRef.current?.getTracks().forEach((t) => t.stop());
+      if (recordingAudioCtxRef.current?.state !== "closed") {
+        recordingAudioCtxRef.current?.close().catch(() => {});
+      }
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
+      alert("Screen and audio recording is not supported in this browser.");
+      return;
+    }
+
+    try {
+      setRecordingStatus("saving");
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "browser" },
+        audio: true,
+        preferCurrentTab: true,
+      } as any);
+
+      recordingStreamRef.current = stream;
+
+      let finalAudioTrack: MediaStreamTrack | null = null;
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          recordingAudioCtxRef.current = audioCtx;
+          const dest = audioCtx.createMediaStreamDestination();
+          let hasAudioSource = false;
+
+          // Capture system/tab audio
+          if (stream.getAudioTracks().length > 0) {
+            const displaySrc = audioCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+            displaySrc.connect(dest);
+            hasAudioSource = true;
+          }
+
+          // Capture instructor/presenter microphone audio
+          try {
+            const micStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+            });
+            recordingMicStreamRef.current = micStream;
+            if (micStream.getAudioTracks().length > 0) {
+              const micSrc = audioCtx.createMediaStreamSource(micStream);
+              micSrc.connect(dest);
+              hasAudioSource = true;
+            }
+          } catch (micErr) {
+            console.warn("Could not attach presenter mic to recording:", micErr);
+          }
+
+          if (hasAudioSource && dest.stream.getAudioTracks().length > 0) {
+            finalAudioTrack = dest.stream.getAudioTracks()[0];
+          }
+        }
+      } catch (err) {
+        console.warn("AudioContext mixing fallback for recording:", err);
+      }
+
+      const tracksToRecord = [
+        ...stream.getVideoTracks(),
+        ...(finalAudioTrack ? [finalAudioTrack] : stream.getAudioTracks()),
+      ];
+      const combinedStream = new MediaStream(tracksToRecord);
+
+      let mimeType = "";
+      if (typeof MediaRecorder !== "undefined") {
+        if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")) {
+          mimeType = "video/webm;codecs=vp9,opus";
+        } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
+          mimeType = "video/webm;codecs=vp8,opus";
+        } else if (MediaRecorder.isTypeSupported("video/webm")) {
+          mimeType = "video/webm";
+        } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+          mimeType = "video/mp4";
+        }
+      }
+
+      const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
+      recordedChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          recordedChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        // The recording is only assembled and saved to disk after the recording is explicitly ended
+        try {
+          if (recordedChunksRef.current.length > 0) {
+            const blob = new Blob(recordedChunksRef.current, { type: mimeType || "video/webm" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const safeTitle = (classTitle || (isWebinar ? "webinar" : "live-class")).replace(/[^a-zA-Z0-9_-]/g, "_");
+            const dateStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+            const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+            a.download = `${safeTitle}_${dateStr}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 15000);
+          }
+        } catch (saveErr) {
+          console.error("Failed to assemble or save recording blob:", saveErr);
+        } finally {
+          recordedChunksRef.current = [];
+          setRecordingStatus("idle");
+          setRecordingDuration(0);
+
+          stream.getTracks().forEach((t) => t.stop());
+          recordingMicStreamRef.current?.getTracks().forEach((t) => t.stop());
+          recordingMicStreamRef.current = null;
+          recordingStreamRef.current = null;
+          if (recordingAudioCtxRef.current?.state !== "closed") {
+            recordingAudioCtxRef.current?.close().catch(() => {});
+          }
+          recordingAudioCtxRef.current = null;
+
+          const room = (window as any).__lk_room;
+          safePublishData(room, {
+            type: "RECORDING_STATE",
+            isRecording: false,
+            isPaused: false,
+          });
+
+          if (classId) {
+            fetchApi(`/live-class/${classId}/recording/stop`, {
+              method: "POST",
+              body: JSON.stringify({}),
+              silent: true,
+            }).catch(() => {});
+          }
+        }
+      };
+
+      if (stream.getVideoTracks()[0]) {
+        stream.getVideoTracks()[0].onended = () => {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            mediaRecorderRef.current.stop();
+          }
+        };
+      }
+
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setRecordingStatus("recording");
+      setRecordingDuration(0);
+
+      const room = (window as any).__lk_room;
+      safePublishData(room, {
+        type: "RECORDING_STATE",
+        isRecording: true,
+        isPaused: false,
+      });
+
+      if (classId) {
+        fetchApi(`/live-class/${classId}/recording/start`, {
+          method: "POST",
+          silent: true,
+        }).catch(() => {});
+      }
+    } catch (e: any) {
+      console.warn("Screen recording start cancelled or failed:", e?.message);
+      setRecordingStatus("idle");
+    }
+  }, [classTitle, isWebinar, classId]);
+
+  const pauseRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.pause();
+        setRecordingStatus("paused");
+        const room = (window as any).__lk_room;
+        safePublishData(room, {
+          type: "RECORDING_STATE",
+          isRecording: true,
+          isPaused: true,
+        });
+      } catch (err) {
+        console.error("Failed to pause recording:", err);
+      }
+    }
+  }, []);
+
+  const resumeRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
+      try {
+        mediaRecorderRef.current.resume();
+        setRecordingStatus("recording");
+        const room = (window as any).__lk_room;
+        safePublishData(room, {
+          type: "RECORDING_STATE",
+          isRecording: true,
+          isPaused: false,
+        });
+      } catch (err) {
+        console.error("Failed to resume recording:", err);
+      }
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        setRecordingStatus("saving");
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.error("Failed to stop recording:", err);
+        setRecordingStatus("idle");
+      }
+    }
+  }, []);
 
   // Auto-dismiss activity alert after 6 seconds
   useEffect(() => {
@@ -624,6 +901,8 @@ export function LiveKitClassRoomV2({
           }
         }}
         onUpdateAttendees={setSessionAttendees}
+        setRemoteRecordingActive={setRemoteRecordingActive}
+        setRemoteRecordingPaused={setRemoteRecordingPaused}
       />
 
       <StudioPipelineManager
@@ -771,6 +1050,95 @@ export function LiveKitClassRoomV2({
 
         {/* Right: Teacher Controls & Moderation */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Recording Status & Controls */}
+          {isTeacher ? (
+            <>
+              {recordingStatus === "idle" && (
+                <button
+                  onClick={startRecording}
+                  className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-white text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                  title="Start recording this session (screen + audio)"
+                >
+                  <Circle size={10} className="fill-rose-500 text-rose-500 animate-pulse" />
+                  <span className="hidden sm:inline">Record</span>
+                </button>
+              )}
+
+              {recordingStatus === "recording" && (
+                <div className="flex items-center gap-1 bg-rose-950/70 border border-rose-500/50 rounded-xl p-0.5 sm:p-1 shadow-lg shadow-rose-950/40">
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold text-rose-200">
+                    <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+                    <span>REC {formatRecordingDuration(recordingDuration)}</span>
+                  </div>
+                  <button
+                    onClick={pauseRecording}
+                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                    title="Pause recording"
+                  >
+                    <Pause size={12} />
+                    <span className="hidden md:inline">Pause</span>
+                  </button>
+                  <button
+                    onClick={stopRecording}
+                    className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow cursor-pointer"
+                    title="End and save recording file"
+                  >
+                    <Square size={11} className="fill-white" />
+                    <span className="hidden sm:inline">End & Save</span>
+                  </button>
+                </div>
+              )}
+
+              {recordingStatus === "paused" && (
+                <div className="flex items-center gap-1 bg-amber-950/70 border border-amber-500/50 rounded-xl p-0.5 sm:p-1 shadow-lg shadow-amber-950/40">
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold text-amber-300">
+                    <Pause size={12} className="text-amber-400" />
+                    <span>PAUSED {formatRecordingDuration(recordingDuration)}</span>
+                  </div>
+                  <button
+                    onClick={resumeRecording}
+                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow cursor-pointer"
+                    title="Resume recording"
+                  >
+                    <Play size={11} className="fill-white" />
+                    <span className="hidden md:inline">Resume</span>
+                  </button>
+                  <button
+                    onClick={stopRecording}
+                    className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow cursor-pointer"
+                    title="End and save recording file"
+                  >
+                    <Square size={11} className="fill-white" />
+                    <span className="hidden sm:inline">End & Save</span>
+                  </button>
+                </div>
+              )}
+
+              {recordingStatus === "saving" && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-200 text-xs font-semibold">
+                  <Loader2 size={13} className="animate-spin text-blue-400" />
+                  <span>Saving...</span>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Student / Audience Recording Indicator */
+            <>
+              {(recordingStatus === "recording" || remoteRecordingActive) && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold">
+                  <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                  <span>REC</span>
+                </div>
+              )}
+              {(recordingStatus === "paused" || remoteRecordingPaused) && !(recordingStatus === "recording" || remoteRecordingActive) && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold">
+                  <Pause size={11} className="text-amber-400" />
+                  <span>REC PAUSED</span>
+                </div>
+              )}
+            </>
+          )}
+
           {/* Whiteboard Permission Toggle for Instructor */}
           {isTeacher && stageMode === "whiteboard" && (
             <button
@@ -1388,6 +1756,12 @@ export function LiveKitClassRoomV2({
         isImmersed={isImmersed}
         isHandRaised={isHandRaised}
         unreadChatCount={unreadChatCount}
+        recordingStatus={recordingStatus}
+        recordingDuration={recordingDuration}
+        onStartRecording={startRecording}
+        onPauseRecording={pauseRecording}
+        onResumeRecording={resumeRecording}
+        onStopRecording={stopRecording}
         onToggleHand={() => {
           const room = (window as any).__lk_room;
           const currentId = room?.localParticipant?.identity || effectiveIdentity;
@@ -1978,6 +2352,12 @@ function V2BottomControlDock({
   isImmersed,
   isHandRaised,
   unreadChatCount,
+  recordingStatus = "idle",
+  recordingDuration = 0,
+  onStartRecording,
+  onPauseRecording,
+  onResumeRecording,
+  onStopRecording,
   onToggleHand,
   onToggleChat,
   onLeave,
@@ -1987,6 +2367,12 @@ function V2BottomControlDock({
   isImmersed: boolean;
   isHandRaised: boolean;
   unreadChatCount: number;
+  recordingStatus?: "idle" | "recording" | "paused" | "saving";
+  recordingDuration?: number;
+  onStartRecording?: () => void;
+  onPauseRecording?: () => void;
+  onResumeRecording?: () => void;
+  onStopRecording?: () => void;
   onToggleHand: () => void;
   onToggleChat: () => void;
   onLeave: () => void;
@@ -2087,6 +2473,71 @@ function V2BottomControlDock({
           {screenOn ? <MonitorOff size={18} /> : <Monitor size={18} />}
           <span>{screenOn ? "Stop Share" : "Share"}</span>
         </button>
+      )}
+
+      {/* Recording Controls (Presenter/Teacher/Admin) */}
+      {isTeacher && (
+        <>
+          {recordingStatus === "idle" && (
+            <button
+              onClick={onStartRecording}
+              className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/10 hover:bg-rose-500/20 hover:border hover:border-rose-500/30 text-white hover:text-rose-300 font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer"
+              title="Record session (screen + audio)"
+            >
+              <Circle size={18} className="fill-rose-500 text-rose-500" />
+              <span>Record</span>
+            </button>
+          )}
+
+          {recordingStatus === "recording" && (
+            <div className="flex items-center gap-1 p-1 rounded-2xl bg-rose-950/70 border border-rose-500/50">
+              <button
+                onClick={onPauseRecording}
+                className="flex flex-col items-center justify-center gap-1 min-w-[50px] sm:min-w-[60px] h-11 sm:h-12 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer"
+                title="Pause recording"
+              >
+                <Pause size={16} />
+                <span>Pause</span>
+              </button>
+              <button
+                onClick={onStopRecording}
+                className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[68px] h-11 sm:h-12 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow cursor-pointer"
+                title="End recording and save file"
+              >
+                <Square size={14} className="fill-white" />
+                <span>End & Save</span>
+              </button>
+            </div>
+          )}
+
+          {recordingStatus === "paused" && (
+            <div className="flex items-center gap-1 p-1 rounded-2xl bg-amber-950/70 border border-amber-500/50">
+              <button
+                onClick={onResumeRecording}
+                className="flex flex-col items-center justify-center gap-1 min-w-[50px] sm:min-w-[60px] h-11 sm:h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow cursor-pointer"
+                title="Resume recording"
+              >
+                <Play size={16} className="fill-white" />
+                <span>Resume</span>
+              </button>
+              <button
+                onClick={onStopRecording}
+                className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[68px] h-11 sm:h-12 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow cursor-pointer"
+                title="End recording and save file"
+              >
+                <Square size={14} className="fill-white" />
+                <span>End & Save</span>
+              </button>
+            </div>
+          )}
+
+          {recordingStatus === "saving" && (
+            <div className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold text-[10px] sm:text-xs">
+              <Loader2 size={18} className="animate-spin text-blue-400" />
+              <span>Saving...</span>
+            </div>
+          )}
+        </>
       )}
 
       {/* Student Hand Raise Toggle */}
@@ -2474,6 +2925,8 @@ function ClassroomV2Sync({
   onNewFileShared,
   onNewHandRaise,
   onUpdateAttendees,
+  setRemoteRecordingActive,
+  setRemoteRecordingPaused,
 }: any) {
   const room = useRoomContext();
   const participants = useParticipants();
@@ -2625,6 +3078,9 @@ function ClassroomV2Sync({
         } else if (data.type === "BREAK_STATE") {
           if (!isSenderHost) return;
           setBreakState(data.active !== undefined ? (data.active ? data : null) : (data.isActive ? data : null));
+        } else if (data.type === "RECORDING_STATE") {
+          setRemoteRecordingActive?.(Boolean(data.isRecording));
+          setRemoteRecordingPaused?.(Boolean(data.isPaused));
         }
       } catch { }
     };
