@@ -353,6 +353,10 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
                 <p className="text-xs text-slate-300 leading-relaxed">
                   Webinar sessions feature stage keynote presentations, slide decks, and audience-mode broadcasting. Attendees join in listen-only mode with live Q&amp;A chat and hand-raising.
                 </p>
+                <div className="pt-1.5 flex items-center gap-2 text-[11px] text-purple-200">
+                  <span className="font-bold text-white bg-purple-500/30 px-2 py-0.5 rounded-md border border-purple-400/30">Public Share Links</span>
+                  <span>Available anytime before or during the event. Copy the public link from any card below to share on WhatsApp, email, or posters.</span>
+                </div>
               </div>
               {isStaff && (
                 <button
@@ -602,14 +606,23 @@ function ClassSessionCard({
             </div>
           </div>
 
-          {/* Dedicated Public Webinar Link Card Banner */}
+          {/* Dedicated Public Webinar Link Card Banner (Accessible Before & During Webinar) */}
           {cls.isPublic && (
-            <div className="mt-3 p-2.5 rounded-xl bg-purple-50/80 border border-purple-200/80 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-purple-950 font-medium truncate">
-                <Globe className="h-3.5 w-3.5 text-purple-600 shrink-0" />
-                <span className="truncate">Public Link: <span className="font-mono text-purple-700">/live/{cls.id}</span></span>
+            <div className="mt-3 p-3 rounded-2xl bg-purple-50/90 border border-purple-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-6 w-6 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                  <Globe className="h-3.5 w-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-purple-900 tracking-wider block">
+                    Shareable Public Link
+                  </span>
+                  <span className="text-xs font-mono text-purple-700 truncate block select-all">
+                    /live/{cls.id}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -619,21 +632,21 @@ function ClassSessionCard({
                     setCopiedLink(true);
                     setTimeout(() => setCopiedLink(false), 2000);
                   }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-purple-50 border border-purple-200 text-[10px] font-bold text-purple-700 transition-colors cursor-pointer shadow-2xs"
-                  title="Copy public webinar registration link"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  title="Copy shareable link for WhatsApp, email, or posters"
                 >
-                  {copiedLink ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
-                  <span>{copiedLink ? "Copied!" : "Copy"}</span>
+                  {copiedLink ? <Check size={12} className="text-emerald-300" /> : <Copy size={12} />}
+                  <span>{copiedLink ? "Copied!" : "Copy Link"}</span>
                 </button>
                 <a
                   href={`/live/${cls.id}`}
                   target="_blank"
                   rel="noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="p-1 rounded-lg bg-white hover:bg-purple-50 border border-purple-200 text-purple-600 transition-colors shadow-2xs"
-                  title="Open Public Webinar Page"
+                  className="p-1.5 rounded-xl bg-white hover:bg-purple-50 border border-purple-200 text-purple-700 transition-colors shadow-2xs"
+                  title="Preview public registration page"
                 >
-                  <ExternalLink size={12} />
+                  <ExternalLink size={13} />
                 </a>
               </div>
             </div>

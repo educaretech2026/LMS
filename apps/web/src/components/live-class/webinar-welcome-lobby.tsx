@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Globe, Radio, Play, ArrowRight, ShieldCheck, CheckCircle2,
-  Mic, MicOff, Video, VideoOff, X, Sparkles, Share2, Check
+  Mic, MicOff, Video, VideoOff, X, Sparkles, Share2, Check,
+  Copy, ExternalLink
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 
@@ -211,6 +212,46 @@ export function WebinarWelcomeLobby({
             </div>
 
             <div className="h-px bg-white/10 w-full" />
+
+            {/* Shareable Public Webinar Link (Accessible Before Starting Broadcast) */}
+            {classId && (
+              <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-purple-300 flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-purple-400" /> Public Webinar Link
+                  </span>
+                  <span className="text-[10px] text-white/50">Share before starting</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-[11px] font-mono text-purple-200 truncate select-all">
+                    {typeof window !== "undefined" ? `${window.location.origin}/live/${classId}` : `/live/${classId}`}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${window.location.origin}/live/${classId}`;
+                      navigator.clipboard.writeText(url);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shrink-0 cursor-pointer transition-all shadow-xs"
+                    title="Copy public link to share on WhatsApp, email, or posters"
+                  >
+                    {copiedLink ? <Check size={12} className="text-emerald-300" /> : <Copy size={12} />}
+                    <span>{copiedLink ? "Copied!" : "Copy"}</span>
+                  </button>
+                  <a
+                    href={`/live/${classId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-colors shrink-0"
+                    title="Open public registration page"
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* Entry Form */}
             {isTeacher ? (
