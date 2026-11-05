@@ -50,29 +50,50 @@ export default function LiveClassPage() {
     if (typeof window === "undefined" || activeLiveRoom) return;
     try {
       const params = new URLSearchParams(window.location.search);
-      const targetRoom = params.get("room") || params.get("id");
-      if (targetRoom) {
-        fetchApi<ApiLiveClass>(`/live-class/${targetRoom}`, { silent: true })
-          .then((cls) => {
-            if (cls) handleJoin(cls);
-          })
-          .catch(() => {
-            fetchApi<ApiLiveClass>(`/live-class/public/${targetRoom}`, { silent: true })
-              .then((pubCls) => {
-                if (pubCls) handleJoin(pubCls);
-              })
-              .catch(() => {});
-          });
+      const targetId = params.get("id") || params.get("room");
+      const regToken = params.get("regToken");
+
+      if (targetId) {
+        if (regToken) {
+          fetchApi<ApiLiveClass>(`/live-class/public/${targetId}`, { silent: true })
+            .then((pubCls) => {
+              if (pubCls) handleJoin(pubCls);
+            })
+            .catch(() => {});
+        } else {
+          fetchApi<ApiLiveClass>(`/live-class/${targetId}`, { silent: true })
+            .then((cls) => {
+              if (cls) handleJoin(cls);
+            })
+            .catch(() => {
+              fetchApi<ApiLiveClass>(`/live-class/public/${targetId}`, { silent: true })
+                .then((pubCls) => {
+                  if (pubCls) handleJoin(pubCls);
+                })
+                .catch(() => {});
+            });
+        }
       }
     } catch {}
   }, [activeLiveRoom, handleJoin]);
 
+  const isDirectWebinarEntry = typeof window !== "undefined" && Boolean(
+    new URLSearchParams(window.location.search).get("regToken")
+  );
+
   return (
     <>
       {!activeLiveRoom ? (
-        <DashboardLayout title="Live Class">
-          <LiveClassHubV2 onJoinRoom={handleJoin} />
-        </DashboardLayout>
+        isDirectWebinarEntry ? (
+          <div className="flex flex-col items-center justify-center h-screen w-screen bg-[#06080f] text-white gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+            <p className="text-xs text-white/70 font-medium">Entering Webinar Stage...</p>
+          </div>
+        ) : (
+          <DashboardLayout title="Live Class">
+            <LiveClassHubV2 onJoinRoom={handleJoin} />
+          </DashboardLayout>
+        )
       ) : (
         <div className="fixed inset-0 z-50 bg-[#0b0c10] flex flex-col h-[100dvh] overflow-hidden">
           <LiveKitClassRoomV2
@@ -80,17 +101,25 @@ export default function LiveClassPage() {
             roomId={activeLiveRoom.roomId || activeLiveRoom.id}
             identity={stableIdentity}
             name={
-              normalizedRole === "TEACHER"
+              isDirectWebinarEntry
+                ? "Attendee"
+                : normalizedRole === "TEACHER"
                 ? (activeLiveRoom.teacherName || authUserName || "Teacher")
                 : (authUserName || (email ? email.split("@")[0] : "Student"))
             }
-            role={normalizedRole || "STUDENT"}
+            role={isDirectWebinarEntry ? "PUBLIC_LEARNER" : (normalizedRole || "STUDENT")}
             isWebinar={Boolean(activeLiveRoom.isPublic)}
             classTitle={activeLiveRoom.title}
             subject={activeLiveRoom.subject}
             teacherName={activeLiveRoom.teacherName}
             backgroundImageUrl={activeLiveRoom.backgroundImageUrl || undefined}
-            onLeave={() => setActiveLiveRoom(null)}
+            onLeave={() => {
+              if (isDirectWebinarEntry) {
+                window.location.href = `/live/${activeLiveRoom.id}`;
+              } else {
+                setActiveLiveRoom(null);
+              }
+            }}
           />
         </div>
       )}

@@ -16,6 +16,8 @@ interface PublicWebinar {
   status: "SCHEDULED" | "LIVE" | "ENDED";
   isPublic: boolean;
   backgroundImageUrl?: string | null;
+  roomId?: string | null;
+  deliveryProvider?: string | null;
   createdAt: string;
   achievers?: RankHolder[];
 }
@@ -188,7 +190,19 @@ export default function PublicLiveClassPage() {
     }
   };
 
-  const handleCopy = () => { if (!meetUrl) return; navigator.clipboard.writeText(meetUrl); setCopied(true); setTimeout(() => setCopied(false), 2500); };
+  const handleCopy = () => {
+    if (!meetUrl) return;
+    const isZoom = meetUrl.includes("zoom.us");
+    const isGMeet = meetUrl.includes("meet.google.com");
+    const fullUrl = !isZoom && !isGMeet
+      ? (typeof window !== "undefined"
+          ? `${window.location.origin}/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}`
+          : meetUrl)
+      : meetUrl;
+    navigator.clipboard.writeText(fullUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
   const handleReset = () => {
     if (confirm("Register with a different profile?")) {
       localStorage.removeItem(`live_access_${id}`);
@@ -355,7 +369,15 @@ export default function PublicLiveClassPage() {
             {[
               { label: "Speaker", value: webinar.teacherName },
               { label: "Date & Time", value: `${fmtDate} · ${fmtTime} IST` },
-              { label: "Duration", value: `${webinar.duration} minutes · Google Meet` },
+              {
+                label: "Platform",
+                value: webinar.roomId?.includes("zoom.us")
+                  ? "Zoom Meeting"
+                  : webinar.roomId?.includes("meet.google.com")
+                  ? "Google Meet"
+                  : "Edu-Meet LiveKit (Native Broadcast)",
+              },
+              { label: "Duration", value: `${webinar.duration} minutes` },
             ].map(({ label, value }) => (
               <div key={label} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#0162b1", minWidth: "84px" }}>{label}</span>
@@ -404,7 +426,7 @@ export default function PublicLiveClassPage() {
                 <>
                   <h2 style={{ color: "white", fontSize: "17px", fontWeight: 700, marginBottom: "4px" }}>Register to Join</h2>
                   <p style={{ color: "#64748b", fontSize: "12px", marginBottom: "24px", lineHeight: 1.5 }}>
-                    Enter your details to receive the Google Meet access link.
+                    Enter your details to receive access credentials for this live webinar.
                   </p>
 
                   {submitError && (
@@ -549,7 +571,7 @@ export default function PublicLiveClassPage() {
                         const isZoom = meetUrl.includes("zoom.us");
                         const isGMeet = meetUrl.includes("meet.google.com");
                         const isEduMeet = !isZoom && !isGMeet;
-                        const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Enter Webinar Stage";
+                        const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Enter Webinar Stage (LiveKit)";
                         const targetUrl = meetUrl.startsWith("http")
                           ? meetUrl
                           : `/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}`;

@@ -299,10 +299,11 @@ export function LiveKitClassRoomV2({
           : null;
 
       let res: TokenResponse;
-      if (regToken && classId) {
+      const targetPublicId = classId || roomId;
+      if (regToken && targetPublicId) {
         // Public webinar attendee using cryptographic registration token
         res = await fetchApi<TokenResponse>(
-          `/live-class/public/${classId}/token?registrationToken=${encodeURIComponent(
+          `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
             regToken
           )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
         );

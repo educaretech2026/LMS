@@ -1133,6 +1133,8 @@ function HostWebinarModalV2({
   const [dateTime, setDateTime] = useState("");
   const [duration, setDuration] = useState("60");
   const [description, setDescription] = useState("");
+  const [platform, setPlatform] = useState<"EDUMEET" | "GOOGLE_MEET" | "ZOOM">("EDUMEET");
+  const [customLink, setCustomLink] = useState("");
   const [backgroundImageUrl, setBackgroundImageUrl] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [deckFile, setDeckFile] = useState<File | null>(null);
@@ -1179,12 +1181,22 @@ function HostWebinarModalV2({
       return;
     }
 
+    if (platform === "ZOOM" && !customLink.trim()) {
+      setError("Please enter a valid Zoom meeting link.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     try {
       const teacherName = email ? email.split("@")[0] : "Host";
-      const finalZoomLink = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      let finalZoomLink = "";
+      if (platform === "EDUMEET") {
+        finalZoomLink = `edumeet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      } else {
+        finalZoomLink = customLink.trim();
+      }
 
       const created = await fetchApi<ApiLiveClass>("/live-class", {
         method: "POST",
@@ -1194,8 +1206,8 @@ function HostWebinarModalV2({
           teacherName,
           scheduledAt: new Date(dateTime).toISOString(),
           duration: Number(duration) || 60,
-          platform: "EDUMEET",
-          zoomLink: finalZoomLink,
+          platform,
+          zoomLink: finalZoomLink || undefined,
           isPublic: true,
           description: description.trim() || undefined,
           backgroundImageUrl: backgroundImageUrl || undefined,
@@ -1359,6 +1371,58 @@ function HostWebinarModalV2({
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
               />
             </div>
+          </div>
+
+          {/* Delivery Platform Selector */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Webinar Delivery Platform
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: "EDUMEET", label: "Edu-Meet LiveKit", desc: "Native Keynote Broadcast Stage" },
+                { id: "GOOGLE_MEET", label: "Google Meet", desc: "Automated / Custom G-Meet" },
+                { id: "ZOOM", label: "Zoom", desc: "External Meeting Link" },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPlatform(p.id as any)}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    platform === p.id
+                      ? "border-purple-600 bg-purple-50/70 ring-2 ring-purple-500/20 shadow-xs"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <p className="text-xs font-bold text-slate-900">{p.label}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">{p.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {platform === "EDUMEET" && (
+              <div className="mt-2 p-2.5 rounded-xl bg-purple-50/90 border border-purple-200/80 text-[11px] text-purple-950 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-purple-600 shrink-0" />
+                <span>
+                  <strong>Native LiveKit Broadcast</strong>: In-app stage with slide presentations, audience listen-only mode, live Q&amp;A chat, and hand-raising.
+                </span>
+              </div>
+            )}
+
+            {platform !== "EDUMEET" && (
+              <div className="mt-2.5">
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  {platform === "ZOOM" ? "Zoom Meeting Link *" : "Google Meet Link (Optional, automated if left blank)"}
+                </label>
+                <input
+                  type="url"
+                  value={customLink}
+                  onChange={(e) => setCustomLink(e.target.value)}
+                  placeholder={platform === "ZOOM" ? "https://zoom.us/j/..." : "https://meet.google.com/..."}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                />
+              </div>
+            )}
           </div>
 
           <div>

@@ -87,9 +87,13 @@ export class LiveClassService {
   }
 
   public async safeFindUnique(where: { id?: string; roomId?: string }): Promise<any> {
+    const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+    const hasValidUuid = Boolean(where.id && isUuid(where.id));
+    const roomIdToQuery = where.roomId || (!hasValidUuid && where.id ? where.id : undefined);
+
     try {
-      if (where.id) {
-        return await this.prisma.liveClass.findUnique({
+      if (hasValidUuid && where.id) {
+        const cls = await this.prisma.liveClass.findUnique({
           where: { id: where.id },
           include: {
             board: { select: { id: true, name: true } },
@@ -97,30 +101,42 @@ export class LiveClassService {
             centre: { select: { id: true, name: true } },
           },
         });
-      } else if (where.roomId) {
-        return await this.prisma.liveClass.findFirst({
-          where: { roomId: where.roomId },
+        if (cls) return cls;
+      }
+
+      if (roomIdToQuery) {
+        const cls = await this.prisma.liveClass.findFirst({
+          where: { roomId: roomIdToQuery },
           include: {
             board: { select: { id: true, name: true } },
             standard: { select: { id: true, name: true } },
             centre: { select: { id: true, name: true } },
           },
         });
+        if (cls) return cls;
       }
     } catch (err: any) {
       this.logger.warn(
         `findUnique/First with full relations failed (${err?.message}), falling back to SAFE_LIVE_CLASS_SELECT`,
       );
-      if (where.id) {
-        return await this.prisma.liveClass.findUnique({
-          where: { id: where.id },
-          select: SAFE_LIVE_CLASS_SELECT,
-        });
-      } else if (where.roomId) {
-        return await this.prisma.liveClass.findFirst({
-          where: { roomId: where.roomId },
-          select: SAFE_LIVE_CLASS_SELECT,
-        });
+      try {
+        if (hasValidUuid && where.id) {
+          const cls = await this.prisma.liveClass.findUnique({
+            where: { id: where.id },
+            select: SAFE_LIVE_CLASS_SELECT,
+          });
+          if (cls) return cls;
+        }
+
+        if (roomIdToQuery) {
+          return await this.prisma.liveClass.findFirst({
+            where: { roomId: roomIdToQuery },
+            select: SAFE_LIVE_CLASS_SELECT,
+          });
+        }
+      } catch (fallbackErr: any) {
+        this.logger.error(`safeFindUnique fallback failed (${fallbackErr?.message})`);
+        return null;
       }
     }
     return null;
@@ -257,16 +273,25 @@ export class LiveClassService {
     const classEndTime = classTime + durationMs + maxEndGraceMs;
 
     // Check expiration: even if status is LIVE or SCHEDULED, if elapsed past classEndTime, it is strictly expired!
-    if (now > classEndTime) {
+    if (now > classEndTime && cls.status !== 'LIVE') {
       throw new BadRequestException('This live class session has expired.');
     }
 
-    // Early join check: hosts get 30 mins prep, attendees get 15 mins
-    const earlyAllowanceMs = isHost ? 30 * 60 * 1000 : 15 * 60 * 1000;
+    // If already LIVE, allow immediate entry without early restrictions
+    if (cls.status === 'LIVE') {
+      return { classTime, durationMs, classEndTime };
+    }
+
+    // Early join check: hosts get 120 mins prep, public webinar attendees get 60 mins lobby access, regular cohort students get 15 mins
+    const earlyAllowanceMs = isHost
+      ? 120 * 60 * 1000
+      : cls.isPublic
+      ? 60 * 60 * 1000
+      : 15 * 60 * 1000;
     const earliestJoinTime = classTime - earlyAllowanceMs;
 
     if (now < earliestJoinTime) {
-      const minutesAllowed = isHost ? 30 : 15;
+      const minutesAllowed = isHost ? 120 : cls.isPublic ? 60 : 15;
       throw new BadRequestException(`Classroom access opens ${minutesAllowed} minutes before the scheduled start time.`);
     }
 
@@ -829,44 +854,89 @@ export class LiveClassService {
    * Does NOT leak the meeting URL before registration to prevent scraping.
    */
   async getPublicClass(id: string) {
-    let cls: any;
+    const isUuid = Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+    let cls: any = null;
+
     try {
-      cls = await this.prisma.liveClass.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          title: true,
-          subject: true,
-          teacherName: true,
-          description: true,
-          scheduledAt: true,
-          duration: true,
-          status: true,
-          isPublic: true,
-          roomId: true,
-          backgroundImageUrl: true,
-          deliveryProvider: true,
-          createdAt: true,
-        },
-      });
+      if (isUuid) {
+        cls = await this.prisma.liveClass.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            title: true,
+            subject: true,
+            teacherName: true,
+            description: true,
+            scheduledAt: true,
+            duration: true,
+            status: true,
+            isPublic: true,
+            roomId: true,
+            backgroundImageUrl: true,
+            deliveryProvider: true,
+            createdAt: true,
+          },
+        });
+      }
+      if (!cls) {
+        cls = await this.prisma.liveClass.findFirst({
+          where: { roomId: id },
+          select: {
+            id: true,
+            title: true,
+            subject: true,
+            teacherName: true,
+            description: true,
+            scheduledAt: true,
+            duration: true,
+            status: true,
+            isPublic: true,
+            roomId: true,
+            backgroundImageUrl: true,
+            deliveryProvider: true,
+            createdAt: true,
+          },
+        });
+      }
     } catch {
-      cls = await this.prisma.liveClass.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          title: true,
-          subject: true,
-          teacherName: true,
-          description: true,
-          scheduledAt: true,
-          duration: true,
-          status: true,
-          isPublic: true,
-          roomId: true,
-          backgroundImageUrl: true,
-          createdAt: true,
-        },
-      });
+      if (isUuid) {
+        cls = await this.prisma.liveClass.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            title: true,
+            subject: true,
+            teacherName: true,
+            description: true,
+            scheduledAt: true,
+            duration: true,
+            status: true,
+            isPublic: true,
+            roomId: true,
+            backgroundImageUrl: true,
+            createdAt: true,
+          },
+        }).catch(() => null);
+      }
+      if (!cls) {
+        cls = await this.prisma.liveClass.findFirst({
+          where: { roomId: id },
+          select: {
+            id: true,
+            title: true,
+            subject: true,
+            teacherName: true,
+            description: true,
+            scheduledAt: true,
+            duration: true,
+            status: true,
+            isPublic: true,
+            roomId: true,
+            backgroundImageUrl: true,
+            createdAt: true,
+          },
+        }).catch(() => null);
+      }
     }
 
     if (!cls || !cls.isPublic) {
