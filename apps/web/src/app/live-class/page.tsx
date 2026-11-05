@@ -77,9 +77,16 @@ export default function LiveClassPage() {
     } catch {}
   }, [activeLiveRoom, handleJoin]);
 
-  const isDirectWebinarEntry = typeof window !== "undefined" && Boolean(
-    new URLSearchParams(window.location.search).get("regToken")
-  );
+  const isDirectWebinarEntry =
+    typeof window !== "undefined" &&
+    Boolean(
+      new URLSearchParams(window.location.search).get("regToken") ||
+      (() => {
+        const p = new URLSearchParams(window.location.search);
+        const tid = p.get("id") || p.get("room");
+        return tid && localStorage.getItem(`live_access_${tid}`);
+      })()
+    );
 
   return (
     <>

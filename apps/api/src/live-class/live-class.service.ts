@@ -115,20 +115,25 @@ export class LiveClassService implements OnModuleInit {
 
   public async safeFindUnique(where: { id?: string; roomId?: string }): Promise<any> {
     const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
-    const hasValidUuid = Boolean(where.id && isUuid(where.id));
-    const roomIdToQuery = where.roomId || (!hasValidUuid && where.id ? where.id : undefined);
+    const roomIdToQuery = where.roomId || (where.id && !isUuid(where.id) ? where.id : undefined);
 
     try {
-      if (hasValidUuid && where.id) {
-        const cls = await this.prisma.liveClass.findUnique({
-          where: { id: where.id },
-          include: {
-            board: { select: { id: true, name: true } },
-            standard: { select: { id: true, name: true } },
-            centre: { select: { id: true, name: true } },
-          },
-        });
-        if (cls) return cls;
+      if (where.id) {
+        try {
+          const cls = await this.prisma.liveClass.findUnique({
+            where: { id: where.id },
+            include: {
+              board: { select: { id: true, name: true } },
+              standard: { select: { id: true, name: true } },
+              centre: { select: { id: true, name: true } },
+            },
+          });
+          if (cls) return cls;
+        } catch (uuidErr: any) {
+          if (!uuidErr?.message?.includes('invalid input syntax for type uuid') && !uuidErr?.message?.includes('22P02')) {
+            throw uuidErr;
+          }
+        }
       }
 
       if (roomIdToQuery) {
@@ -147,12 +152,18 @@ export class LiveClassService implements OnModuleInit {
         `findUnique/First with full relations failed (${err?.message}), falling back to SAFE_LIVE_CLASS_SELECT`,
       );
       try {
-        if (hasValidUuid && where.id) {
-          const cls = await this.prisma.liveClass.findUnique({
-            where: { id: where.id },
-            select: SAFE_LIVE_CLASS_SELECT,
-          });
-          if (cls) return cls;
+        if (where.id) {
+          try {
+            const cls = await this.prisma.liveClass.findUnique({
+              where: { id: where.id },
+              select: SAFE_LIVE_CLASS_SELECT,
+            });
+            if (cls) return cls;
+          } catch (uuidErr: any) {
+            if (!uuidErr?.message?.includes('invalid input syntax for type uuid') && !uuidErr?.message?.includes('22P02')) {
+              throw uuidErr;
+            }
+          }
         }
 
         if (roomIdToQuery) {
@@ -1499,12 +1510,12 @@ export class LiveClassService implements OnModuleInit {
     const tokenHash = crypto.createHash('sha256').update(trimmedToken).digest('hex');
 
     // Query by hashed token, or fallback to raw token for legacy unhashed rows
-    const targetLiveClassId = cls.id;
+    const possibleClassIds = Array.from(new Set([cls.id, cls.roomId, id].filter(Boolean))) as string[];
     let reg: any = null;
     try {
       reg = await this.prisma.liveClassRegistration.findFirst({
         where: {
-          liveClassId: targetLiveClassId,
+          liveClassId: { in: possibleClassIds },
           registrationToken: tokenHash,
         },
       });
@@ -1512,10 +1523,25 @@ export class LiveClassService implements OnModuleInit {
       if (!reg) {
         reg = await this.prisma.liveClassRegistration.findFirst({
           where: {
-            liveClassId: targetLiveClassId,
+            liveClassId: { in: possibleClassIds },
             registrationToken: trimmedToken,
           },
         });
+      }
+
+      // In case token was registered under an alternate room alias or previous session
+      if (!reg) {
+        const matchingReg = await this.prisma.liveClassRegistration.findFirst({
+          where: {
+            OR: [
+              { registrationToken: tokenHash },
+              { registrationToken: trimmedToken },
+            ],
+          },
+        });
+        if (matchingReg && (possibleClassIds.includes(matchingReg.liveClassId) || matchingReg.liveClassId === cls.roomId || matchingReg.liveClassId === cls.id)) {
+          reg = matchingReg;
+        }
       }
     } catch (queryErr: any) {
       this.logger.warn(`Querying liveClassRegistration failed (${queryErr?.message})`);

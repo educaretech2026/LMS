@@ -293,13 +293,27 @@ export function LiveKitClassRoomV2({
       setLoading(true);
       setError(null);
 
-      const regToken =
+      let regToken =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("regToken")
           : null;
 
-      let res: TokenResponse;
       const targetPublicId = classId || roomId;
+
+      // Fallback: Check localStorage if not in URL query parameters
+      if (!regToken && targetPublicId && typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem(`live_access_${targetPublicId}`);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed?.registrationToken) {
+              regToken = parsed.registrationToken;
+            }
+          }
+        } catch {}
+      }
+
+      let res: TokenResponse;
       if (regToken && targetPublicId) {
         // Public webinar attendee using cryptographic registration token
         res = await fetchApi<TokenResponse>(
@@ -414,25 +428,49 @@ export function LiveKitClassRoomV2({
   }
 
   if (error || !tokenData) {
+    const isRegistrationError =
+      Boolean(error && /registration|credential|access denied/i.test(error));
+    const webinarLandingId = classId || roomId;
+
     return (
       <div className="h-[100dvh] w-full flex flex-col items-center justify-center gap-4 bg-[#0b0c10] text-white p-6 text-center">
         <div className="h-12 w-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
           <AlertCircle size={24} />
         </div>
-        <div className="max-w-sm">
-          <h3 className="text-sm font-bold">Classroom Entry Failed</h3>
-          <p className="text-xs text-white/50 mt-1">{error || "Could not retrieve access credentials."}</p>
+        <div className="max-w-md">
+          <h3 className="text-base font-bold">Classroom Entry Failed</h3>
+          <p className="text-xs text-white/60 mt-1 leading-relaxed">
+            {isRegistrationError
+              ? "Your webinar registration credential could not be verified (session expired or unconfirmed). Please register for free to get instant access."
+              : (error || "Could not retrieve access credentials.")}
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+          {webinarLandingId && isRegistrationError && (
+            <a
+              href={`/live/${encodeURIComponent(webinarLandingId)}`}
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.removeItem(`live_access_${webinarLandingId}`);
+                  } catch {}
+                }
+              }}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-semibold shadow-lg text-white transition-all inline-flex items-center gap-2"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+              Register & Join Free
+            </a>
+          )}
           <button
             onClick={fetchToken}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-semibold shadow-md transition-colors"
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-semibold shadow-md transition-colors"
           >
             Retry Connection
           </button>
           <button
             onClick={onLeave}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white/80 transition-colors"
+            className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white/80 transition-colors"
           >
             Leave
           </button>
