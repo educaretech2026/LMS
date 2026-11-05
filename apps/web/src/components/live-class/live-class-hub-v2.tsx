@@ -560,6 +560,7 @@ function ClassSessionCard({
   const isZoom = cls.roomId?.includes("zoom.us");
   const isMeet = cls.roomId?.includes("meet.google.com");
   const [copiedLink, setCopiedLink] = useState(false);
+  const canWatchReplay = Boolean(isEnded && cls.recordingUrl && (cls.isRecordingReleased || isStaff));
 
   const formattedDate = useMemo(() => {
     try {
@@ -743,59 +744,64 @@ function ClassSessionCard({
             </div>
           )}
 
-          {/* Cloud Recording Banner: Smart release upon request workflow */}
+          {/* Cloud Recording Section: Modern, viewer-friendly card */}
           {cls.recordingUrl && (
             <div
-              className={`mt-3 p-3 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs transition-all ${
+              className={`mt-3 rounded-2xl border p-3.5 transition-all ${
                 cls.isRecordingReleased
-                  ? "bg-emerald-50/80 border-emerald-200/90"
+                  ? "bg-gradient-to-br from-indigo-50/90 via-purple-50/40 to-white border-indigo-200 shadow-2xs hover:border-indigo-300"
                   : isStaff
-                  ? "bg-amber-50/80 border-amber-200/90"
-                  : "bg-slate-50 border-slate-200"
+                  ? "bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-white border-amber-200 shadow-2xs"
+                  : "bg-slate-50/90 border-slate-200"
               }`}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                    cls.isRecordingReleased
-                      ? "bg-emerald-600 text-white"
-                      : isStaff
-                      ? "bg-amber-600 text-white"
-                      : "bg-slate-400 text-white"
-                  }`}
-                >
-                  <Film className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                      cls.isRecordingReleased
+                        ? "bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-indigo-500/20"
+                        : isStaff
+                        ? "bg-gradient-to-tr from-amber-600 to-orange-600 text-white shadow-amber-500/20"
+                        : "bg-slate-400 text-white"
+                    }`}
+                  >
+                    <Film className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
                     <span
-                      className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                      className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full inline-block ${
                         cls.isRecordingReleased
-                          ? "bg-emerald-100 text-emerald-800"
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                           : isStaff
-                          ? "bg-amber-100 text-amber-800"
+                          ? "bg-amber-100 text-amber-900 border border-amber-200"
                           : "bg-slate-200 text-slate-700"
                       }`}
                     >
                       {cls.isRecordingReleased
-                        ? "Released to Students"
+                        ? "Replay Available"
                         : isStaff
-                        ? "Uploaded · Private Draft"
-                        : "Recording Under Review"}
+                        ? "Private Draft"
+                        : "Processing Replay"}
                     </span>
                   </div>
-                  <span className="text-xs text-slate-600 truncate block mt-0.5">
-                    {cls.isRecordingReleased
-                      ? "Full session recording ready to stream"
-                      : isStaff
-                      ? "Preview video and release to students upon request"
-                      : "Instructor will release the replay soon"}
-                  </span>
                 </div>
+
+                <span className="text-[11px] font-semibold text-slate-500 shrink-0">
+                  {cls.isRecordingReleased ? "HD 720p" : isStaff ? "Unreleased" : "Pending"}
+                </span>
               </div>
 
-              {/* Action buttons */}
-              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+              <p className="text-xs text-slate-600 mb-3 line-clamp-1">
+                {cls.isRecordingReleased
+                  ? "Full session recording ready for streaming."
+                  : isStaff
+                  ? "Recording uploaded to cloud. Review and release when ready."
+                  : "Instructor will release the class replay soon."}
+              </p>
+
+              {/* Action buttons row */}
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-200/70">
                 {/* Watch / Preview Button */}
                 {onWatchRecording && (
                   <button
@@ -804,15 +810,15 @@ function ClassSessionCard({
                       e.stopPropagation();
                       onWatchRecording();
                     }}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
+                    className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-[0.98] cursor-pointer ${
                       cls.isRecordingReleased
-                        ? "bg-emerald-600 hover:bg-emerald-700"
-                        : "bg-indigo-600 hover:bg-indigo-700"
+                        ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20"
+                        : "bg-slate-900 hover:bg-slate-800 text-white"
                     }`}
-                    title={isStaff ? "Preview recording playback" : "Watch recording stream"}
+                    title={isStaff && !cls.isRecordingReleased ? "Preview recording in private" : "Watch recording stream"}
                   >
                     <Play size={12} className="fill-white" />
-                    <span>{isStaff && !cls.isRecordingReleased ? "Preview" : "Watch"}</span>
+                    <span>{isStaff && !cls.isRecordingReleased ? "Preview Replay" : "Watch Replay"}</span>
                   </button>
                 )}
 
@@ -824,25 +830,25 @@ function ClassSessionCard({
                       e.stopPropagation();
                       onToggleReleaseRecording();
                     }}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95 ${
+                    className={`inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-bold transition-all active:scale-[0.98] cursor-pointer shrink-0 ${
                       cls.isRecordingReleased
-                        ? "border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800"
-                        : "border-emerald-300 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                        ? "border-slate-200 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 hover:border-rose-200"
+                        : "border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs shadow-emerald-600/20"
                     }`}
                     title={
                       cls.isRecordingReleased
                         ? "Retract recording back to private draft"
-                        : "Release recording to all enrolled students & attendees"
+                        : "Release recording to students"
                     }
                   >
                     {cls.isRecordingReleased ? (
                       <>
-                        <EyeOff size={13} />
+                        <EyeOff size={12} />
                         <span>Retract</span>
                       </>
                     ) : (
                       <>
-                        <ShieldCheck size={13} />
+                        <ShieldCheck size={12} />
                         <span>Release to Students</span>
                       </>
                     )}
@@ -854,16 +860,16 @@ function ClassSessionCard({
 
           {/* Student Banner when recording exists on server but is not yet released */}
           {!isStaff && !cls.recordingUrl && cls.recordingStatus === 'UNRELEASED' && (
-            <div className="mt-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-2.5 shadow-2xs">
-              <div className="h-7 w-7 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
-                <Film className="h-3.5 w-3.5" />
+            <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-slate-50 to-indigo-50/30 border border-slate-200 flex items-center gap-2.5 shadow-2xs">
+              <div className="h-8 w-8 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
+                <Clock className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] uppercase font-bold text-slate-700 tracking-wider block">
-                  Recording Under Instructor Review
+                  Recording Under Review
                 </span>
                 <span className="text-xs text-slate-500 truncate block">
-                  Class recording will be released to students shortly.
+                  The instructor will release the recording replay shortly.
                 </span>
               </div>
             </div>
@@ -872,13 +878,15 @@ function ClassSessionCard({
 
         {/* Footer Actions */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-          {/* Main Join Button */}
+          {/* Main Join or Watch Replay Button */}
           <button
-            onClick={onJoin}
-            disabled={isEnded}
+            onClick={canWatchReplay ? onWatchRecording : onJoin}
+            disabled={isEnded && !canWatchReplay}
             className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs font-bold transition-all ${
               isLive
                 ? "bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/20 active:scale-[0.98]"
+                : canWatchReplay
+                ? "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-sm shadow-indigo-600/20 active:scale-[0.98] cursor-pointer"
                 : isEnded
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                 : cls.isPublic
@@ -886,10 +894,12 @@ function ClassSessionCard({
                 : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs active:scale-[0.98]"
             }`}
           >
-            <Play className={`h-3.5 w-3.5 ${isLive ? "fill-white animate-pulse" : ""}`} />
+            <Play className={`h-3.5 w-3.5 ${isLive ? "fill-white animate-pulse" : canWatchReplay ? "fill-white" : ""}`} />
             <span>
               {isLive
                 ? (cls.isPublic ? "Join Webinar Broadcast" : "Join Live Class")
+                : canWatchReplay
+                ? (cls.isPublic ? "Watch Webinar Replay" : "Watch Class Replay")
                 : isEnded
                 ? (cls.isPublic ? "Webinar Concluded" : "Class Completed")
                 : (cls.isPublic ? "Enter Webinar" : "Enter Room")}
