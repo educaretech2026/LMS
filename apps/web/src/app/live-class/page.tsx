@@ -21,8 +21,13 @@ const LiveKitClassRoomV2 = dynamic(
 );
 
 export default function LiveClassPage() {
+  const [mounted, setMounted] = useState(false);
   const [activeLiveRoom, setActiveLiveRoom] = useState<ApiLiveClass | null>(null);
   const { role, email, userId, name: authUserName } = useAuth();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, '_') : '';
 
@@ -78,6 +83,7 @@ export default function LiveClassPage() {
   }, [activeLiveRoom, handleJoin]);
 
   const isDirectWebinarEntry =
+    mounted &&
     typeof window !== "undefined" &&
     Boolean(
       new URLSearchParams(window.location.search).get("regToken") ||
@@ -87,6 +93,15 @@ export default function LiveClassPage() {
         return tid && localStorage.getItem(`live_access_${tid}`);
       })()
     );
+
+  if (!mounted) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-[#06080f] text-white gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+        <p className="text-xs text-white/70 font-medium">Entering Classroom...</p>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -313,15 +313,76 @@ export function LiveKitClassRoomV2({
         } catch {}
       }
 
-      let res: TokenResponse;
+      let res: TokenResponse | null = null;
+
+      // 1. Try public token if we have a registration token
       if (regToken && targetPublicId) {
-        // Public webinar attendee using cryptographic registration token
-        res = await fetchApi<TokenResponse>(
-          `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
-            regToken
-          )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
-        );
-      } else {
+        try {
+          res = await fetchApi<TokenResponse>(
+            `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
+              regToken
+            )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
+          );
+        } catch (tokenErr: any) {
+          console.warn("Public token validation failed, falling back to seamless registration:", tokenErr?.message);
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem(`live_access_${targetPublicId}`);
+            }
+          } catch {}
+          regToken = null;
+        }
+      }
+
+      // 2. If it is a webinar (or PUBLIC_LEARNER) and no valid token yet, seamlessly auto-register attendee
+      if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER") && targetPublicId) {
+        try {
+          const attendeeName = (confirmedDisplayName || name || "Learner").trim();
+          const attendeeEmail = `guest_${Math.random().toString(36).slice(2, 8)}_${Date.now()}@webinar.educare`;
+          const regPayload = {
+            name: attendeeName,
+            parentName: "Parent",
+            email: attendeeEmail,
+            phone: "0000000000",
+            courseOrClass: subject || "Webinar",
+            organization: "Public Attendee",
+          };
+
+          const regData: any = await fetchApi(
+            `/live-class/public/${targetPublicId}/register`,
+            {
+              method: "POST",
+              body: JSON.stringify(regPayload),
+            }
+          );
+
+          if (regData?.registrationToken) {
+            try {
+              if (typeof window !== "undefined") {
+                localStorage.setItem(
+                  `live_access_${targetPublicId}`,
+                  JSON.stringify({
+                    registrationToken: regData.registrationToken,
+                    name: attendeeName,
+                    email: attendeeEmail,
+                  })
+                );
+              }
+            } catch {}
+
+            res = await fetchApi<TokenResponse>(
+              `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
+                regData.registrationToken
+              )}&name=${encodeURIComponent(attendeeName)}`
+            );
+          }
+        } catch (autoRegErr: any) {
+          console.warn("Seamless webinar registration fallback failed:", autoRegErr?.message);
+        }
+      }
+
+      // 3. Fallback to authenticated LMS token endpoint for logged-in students/teachers
+      if (!res) {
         const query = new URLSearchParams({
           roomId: roomId || "",
           identity: effectiveIdentity,
@@ -342,7 +403,7 @@ export function LiveKitClassRoomV2({
     } finally {
       setLoading(false);
     }
-  }, [classId, roomId, effectiveIdentity, confirmedDisplayName, name, normalizedRole]);
+  }, [classId, roomId, effectiveIdentity, confirmedDisplayName, name, normalizedRole, isWebinar, subject]);
 
   useEffect(() => {
     fetchToken();
@@ -351,6 +412,10 @@ export function LiveKitClassRoomV2({
   // Fetch Pre-attached Files & Initial Chat History for this Live Class
   useEffect(() => {
     if (!classId) return;
+    // Public webinar attendees do not have authenticated session cookies;
+    // skip authenticated REST calls to prevent 401 errors in console.
+    if (isWebinar || normalizedRole === "PUBLIC_LEARNER") return;
+
     fetchApi<any[]>(`/live-class/${classId}/files`, { silent: true })
       .then((files) => {
         if (Array.isArray(files)) {
@@ -379,7 +444,7 @@ export function LiveKitClassRoomV2({
         }
       })
       .catch(() => { });
-  }, [classId]);
+  }, [classId, isWebinar, normalizedRole]);
 
   // Room Options
   const roomOptions: RoomOptions = useMemo(
