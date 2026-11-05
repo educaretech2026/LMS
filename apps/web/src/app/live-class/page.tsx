@@ -59,39 +59,34 @@ export default function LiveClassPage() {
       const regToken = params.get("regToken");
 
       if (targetId) {
-        if (regToken) {
-          fetchApi<ApiLiveClass>(`/live-class/public/${targetId}`, { silent: true })
-            .then((pubCls) => {
-              if (pubCls) handleJoin(pubCls);
-            })
-            .catch(() => {});
-        } else {
-          fetchApi<ApiLiveClass>(`/live-class/${targetId}`, { silent: true })
-            .then((cls) => {
-              if (cls) handleJoin(cls);
-            })
-            .catch(() => {
-              fetchApi<ApiLiveClass>(`/live-class/public/${targetId}`, { silent: true })
-                .then((pubCls) => {
-                  if (pubCls) handleJoin(pubCls);
-                })
-                .catch(() => {});
-            });
-        }
+        // Always try public endpoint first for direct link / room entry
+        fetchApi<ApiLiveClass>(`/live-class/public/${targetId}`, { silent: true })
+          .then((pubCls) => {
+            if (pubCls) handleJoin(pubCls);
+          })
+          .catch(() => {
+            // Only fall back to authenticated cohort endpoint if public fetch fails
+            fetchApi<ApiLiveClass>(`/live-class/${targetId}`, { silent: true })
+              .then((cls) => {
+                if (cls) handleJoin(cls);
+              })
+              .catch(() => {});
+          });
       }
     } catch {}
   }, [activeLiveRoom, handleJoin]);
 
   const isDirectWebinarEntry =
     mounted &&
-    typeof window !== "undefined" &&
     Boolean(
-      new URLSearchParams(window.location.search).get("regToken") ||
-      (() => {
-        const p = new URLSearchParams(window.location.search);
-        const tid = p.get("id") || p.get("room");
-        return tid && localStorage.getItem(`live_access_${tid}`);
-      })()
+      activeLiveRoom?.isPublic ||
+      (typeof window !== "undefined" &&
+        (new URLSearchParams(window.location.search).get("regToken") ||
+          (() => {
+            const p = new URLSearchParams(window.location.search);
+            const tid = p.get("id") || p.get("room");
+            return tid && localStorage.getItem(`live_access_${tid}`);
+          })()))
     );
 
   if (!mounted) {

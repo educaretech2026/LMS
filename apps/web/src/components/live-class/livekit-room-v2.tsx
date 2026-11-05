@@ -343,7 +343,7 @@ export function LiveKitClassRoomV2({
             name: attendeeName,
             parentName: "Parent",
             email: attendeeEmail,
-            phone: "0000000000",
+            phone: "9999999999",
             courseOrClass: subject || "Webinar",
             organization: "Public Attendee",
           };
@@ -381,8 +381,8 @@ export function LiveKitClassRoomV2({
         }
       }
 
-      // 3. Fallback to authenticated LMS token endpoint for logged-in students/teachers
-      if (!res) {
+      // 3. Authenticated LMS token endpoint strictly for regular logged-in students/teachers (never public webinars)
+      if (!res && !isWebinar && normalizedRole !== "PUBLIC_LEARNER") {
         const query = new URLSearchParams({
           roomId: roomId || "",
           identity: effectiveIdentity,
@@ -395,6 +395,10 @@ export function LiveKitClassRoomV2({
         res = await fetchApi<TokenResponse>(
           `/live-class/token?${query.toString()}`
         );
+      }
+
+      if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER")) {
+        throw new Error("Unable to establish public webinar stream. Please refresh or enter the webinar again.");
       }
 
       setTokenData(res);
@@ -494,7 +498,7 @@ export function LiveKitClassRoomV2({
 
   if (error || !tokenData) {
     const isRegistrationError =
-      Boolean(error && /registration|credential|access denied/i.test(error));
+      Boolean(error && /registration|credential|access denied|authentication/i.test(error));
     const webinarLandingId = classId || roomId;
 
     return (
@@ -505,13 +509,13 @@ export function LiveKitClassRoomV2({
         <div className="max-w-md">
           <h3 className="text-base font-bold">Classroom Entry Failed</h3>
           <p className="text-xs text-white/60 mt-1 leading-relaxed">
-            {isRegistrationError
+            {isRegistrationError || isWebinar
               ? "Your webinar registration credential could not be verified (session expired or unconfirmed). Please register for free to get instant access."
               : (error || "Could not retrieve access credentials.")}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-          {webinarLandingId && isRegistrationError && (
+          {webinarLandingId && (isWebinar || isRegistrationError) && (
             <a
               href={`/live/${encodeURIComponent(webinarLandingId)}`}
               onClick={() => {

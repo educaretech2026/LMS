@@ -186,6 +186,20 @@ export default function PublicLiveClassPage() {
         courseOrClass: cc,
         organization: org,
       }));
+      if (data.meetUrl && data.meetUrl !== id) {
+        try {
+          localStorage.setItem(`live_access_${data.meetUrl}`, JSON.stringify({
+            meetUrl: data.meetUrl,
+            registrationToken: data.registrationToken,
+            name: n,
+            parentName: pn,
+            email: em,
+            phone: ph,
+            courseOrClass: cc,
+            organization: org,
+          }));
+        } catch {}
+      }
     } catch (e: any) {
       setSubmitError(e.message || "Something went wrong. Please try again.");
     } finally {
@@ -199,7 +213,7 @@ export default function PublicLiveClassPage() {
     const isGMeet = meetUrl.includes("meet.google.com");
     const fullUrl = !isZoom && !isGMeet
       ? (typeof window !== "undefined"
-          ? `${window.location.origin}/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}`
+          ? `${window.location.origin}/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}${formData.name ? `&name=${encodeURIComponent(formData.name)}` : ""}`
           : meetUrl)
       : meetUrl;
     navigator.clipboard.writeText(fullUrl);
@@ -577,7 +591,7 @@ export default function PublicLiveClassPage() {
                         const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Enter Webinar Stage (LiveKit)";
                         const targetUrl = meetUrl.startsWith("http")
                           ? meetUrl
-                          : `/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}`;
+                          : `/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}${formData.name ? `&name=${encodeURIComponent(formData.name)}` : ""}`;
                         const btnBg = isEduMeet ? "linear-gradient(135deg, #7e22ce 0%, #4338ca 100%)" : isGMeet ? "#059669" : "#0284c7";
 
                         return (

@@ -320,16 +320,19 @@ export class LiveClassService implements OnModuleInit {
       return { classTime, durationMs, classEndTime };
     }
 
-    // Early join check: hosts get 120 mins prep, public webinar attendees get 60 mins lobby access, regular cohort students get 15 mins
+    // For public webinars, attendees are welcome to enter the lobby and waiting stage at any time before start
+    if (cls.isPublic) {
+      return { classTime, durationMs, classEndTime };
+    }
+
+    // Early join check: hosts get 120 mins prep, regular cohort students get 15 mins
     const earlyAllowanceMs = isHost
       ? 120 * 60 * 1000
-      : cls.isPublic
-      ? 60 * 60 * 1000
       : 15 * 60 * 1000;
     const earliestJoinTime = classTime - earlyAllowanceMs;
 
     if (now < earliestJoinTime) {
-      const minutesAllowed = isHost ? 120 : cls.isPublic ? 60 : 15;
+      const minutesAllowed = isHost ? 120 : 15;
       throw new BadRequestException(`Classroom access opens ${minutesAllowed} minutes before the scheduled start time.`);
     }
 
