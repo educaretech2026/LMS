@@ -2322,6 +2322,66 @@ export class LiveClassService implements OnModuleInit {
     });
   }
 
+  async saveRecording(
+    classId: string,
+    data: { recordingUrl: string; duration?: number; fileSize?: number },
+    user?: any,
+  ): Promise<any> {
+    const cls = await this.safeFindUnique({ id: classId });
+    if (!cls) throw new NotFoundException('Live class not found');
+
+    const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+    const isTeacher = ['SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN'].includes(
+      String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_')
+    );
+    if (!isTeacher && cls.isPublic !== true) {
+      throw new ForbiddenException('Only authorized instructors or administrators can save recordings.');
+    }
+
+    if (!data.recordingUrl || !data.recordingUrl.trim()) {
+      throw new BadRequestException('recordingUrl is required.');
+    }
+
+    const trimmedUrl = data.recordingUrl.trim();
+
+    // 1. Update LiveClass table with canonical recording URL and status
+    const updated = await this.prisma.liveClass.update({
+      where: { id: classId },
+      data: {
+        recordingStatus: 'COMPLETED',
+        recordingUrl: trimmedUrl,
+      },
+      select: { id: true, recordingStatus: true, recordingUrl: true },
+    });
+
+    // 2. Persist in LiveClassRecording table if available
+    try {
+      await this.prisma.liveClassRecording.create({
+        data: {
+          liveClassId: classId,
+          status: 'COMPLETED',
+          fileUrl: trimmedUrl,
+          fileSize: data.fileSize ? BigInt(data.fileSize) : null,
+          duration: data.duration ? Math.round(Number(data.duration)) : null,
+          endedAt: new Date(),
+        },
+      });
+    } catch (recErr: any) {
+      this.logger.warn(`Could not create LiveClassRecording entry (${recErr?.message})`);
+    }
+
+    // 3. Record audit log
+    this.recordAudit(user, 'SAVE_RECORDING', `Saved compressed recording to cloud: ${trimmedUrl}`, classId).catch(() => {});
+
+    return {
+      success: true,
+      message: 'Class recording saved to cloud storage successfully.',
+      recordingUrl: trimmedUrl,
+      recordingStatus: 'COMPLETED',
+      classId: cls.id,
+    };
+  }
+
   async getRecording(classId: string, user?: any): Promise<any> {
     await this.getById(classId, user);
     try {

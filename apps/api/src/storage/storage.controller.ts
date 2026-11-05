@@ -19,8 +19,11 @@ export class StorageController {
     @Query('filename') filename: string,
     @Query('contentType') contentType: string,
     @Req() req: any,
+    @Query('prefix') queryPrefix?: string,
   ) {
-    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix: 'materials' });
+    const validPrefixes = ['materials', 'forms', 'thumbnails', 'recordings'] as const;
+    const prefix = validPrefixes.includes(queryPrefix as any) ? (queryPrefix as any) : 'materials';
+    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix });
   }
 
   @Post('finalize')

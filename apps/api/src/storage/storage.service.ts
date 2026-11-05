@@ -250,7 +250,7 @@ export class StorageService {
     filename: string,
     contentType: string,
     userId?: string,
-    options?: { prefix?: 'materials' | 'forms' | 'thumbnails'; scopeId?: string; maxSizeBytes?: number }
+    options?: { prefix?: 'materials' | 'forms' | 'thumbnails' | 'recordings'; scopeId?: string; maxSizeBytes?: number }
   ) {
     if (!filename || !contentType) {
       throw new BadRequestException('Filename and contentType are required.');
@@ -308,7 +308,7 @@ export class StorageService {
     const uniqueId = crypto.randomBytes(16).toString('hex');
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9.-]/g, '_');
 
-    let prefix: 'materials' | 'forms' | 'thumbnails' = options?.prefix || 'materials';
+    let prefix: 'materials' | 'forms' | 'thumbnails' | 'recordings' = options?.prefix || 'materials';
     let scope = '';
 
     if (options?.prefix) {
@@ -332,6 +332,11 @@ export class StorageService {
         if (typeof userId === 'string' && userId) {
           scope = String(userId).replace(/[^a-zA-Z0-9_-]/g, '');
         }
+      } else if (filename.startsWith('recordings/')) {
+        prefix = 'recordings';
+        if (typeof userId === 'string' && userId) {
+          scope = String(userId).replace(/[^a-zA-Z0-9_-]/g, '');
+        }
       } else {
         prefix = 'materials';
         if (typeof userId === 'string' && userId) {
@@ -348,6 +353,10 @@ export class StorageService {
       objectKey = scope 
         ? `thumbnails/${scope}/${Date.now()}-${uniqueId}-${safeFilename}`
         : `thumbnails/${Date.now()}-${uniqueId}-${safeFilename}`;
+    } else if (prefix === 'recordings') {
+      objectKey = scope 
+        ? `recordings/${scope}/${Date.now()}-${uniqueId}-${safeFilename}`
+        : `recordings/${Date.now()}-${uniqueId}-${safeFilename}`;
     } else {
       objectKey = scope 
         ? `materials/${scope}/${Date.now()}-${uniqueId}-${safeFilename}`
@@ -355,9 +364,11 @@ export class StorageService {
     }
 
     const maxSizeBytes = options?.maxSizeBytes || (
-      prefix === 'materials'
-        ? 100 * 1024 * 1024 // 100 MB for docs
-        : (prefix === 'forms' ? 25 * 1024 * 1024 : 20 * 1024 * 1024) // 20 MB for thumbnails
+      prefix === 'recordings'
+        ? 2 * 1024 * 1024 * 1024 // 2 GB for live class recordings
+        : (prefix === 'materials'
+            ? 100 * 1024 * 1024 // 100 MB for docs
+            : (prefix === 'forms' ? 25 * 1024 * 1024 : 20 * 1024 * 1024)) // 20 MB for thumbnails
     );
 
     const expiresIn = 900; // 15-minute short expiry for presigned upload URLs

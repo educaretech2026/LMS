@@ -8,8 +8,9 @@ import {
   RefreshCw, Trash2, Radio, CheckCircle2, AlertCircle, Globe,
   Copy, Check, ExternalLink, Image as ImageIcon, UploadCloud,
   Download, Search, Sparkles, FileText, ArrowRight, Monitor,
-  SlidersHorizontal, CheckSquare, Layers, Lock, ShieldCheck
+  SlidersHorizontal, CheckSquare, Layers, Lock, ShieldCheck, Film
 } from "lucide-react";
+import { RecordingUploadModal, VideoPlayerModal } from "./recording-upload-modal";
 
 export interface ApiLiveClass {
   id: string;
@@ -27,6 +28,8 @@ export interface ApiLiveClass {
   standard?: { id: string; name: string } | null;
   centre?: { id: string; name: string } | null;
   filesCount?: number;
+  recordingUrl?: string | null;
+  recordingStatus?: string | null;
 }
 
 interface SetupOption { id: string; name: string }
@@ -55,6 +58,11 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
   const [showHostWebinar, setShowHostWebinar] = useState(false);
   const [selectedRegistrationsClass, setSelectedRegistrationsClass] = useState<ApiLiveClass | null>(null);
   const [selectedAttachmentsClass, setSelectedAttachmentsClass] = useState<ApiLiveClass | null>(null);
+  const [playingRecording, setPlayingRecording] = useState<{ url: string; title: string } | null>(null);
+  const [uploadModalClass, setUploadModalClass] = useState<ApiLiveClass | null>(null);
+  const [uploadModalFile, setUploadModalFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingUploadTargetClassRef = useRef<ApiLiveClass | null>(null);
   const [activeTab, setActiveTab] = useState<"ALL" | "LIVE" | "UPCOMING" | "WEBINARS" | "ENDED">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [stats, setStats] = useState({ total: 0, live: 0 });
@@ -113,6 +121,21 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
     setStats(prev => ({ ...prev, total: prev.total + 1 }));
     setShowScheduleClass(false);
     setShowHostWebinar(false);
+  };
+
+  const handleTriggerUpload = (cls: ApiLiveClass) => {
+    pendingUploadTargetClassRef.current = cls;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !pendingUploadTargetClassRef.current) return;
+    setUploadModalFile(file);
+    setUploadModalClass(pendingUploadTargetClassRef.current);
   };
 
   // Filter sessions
@@ -403,11 +426,22 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
                 onDelete={handleDelete}
                 onViewRegistrations={() => setSelectedRegistrationsClass(cls)}
                 onManageAttachments={() => setSelectedAttachmentsClass(cls)}
+                onWatchRecording={cls.recordingUrl ? () => setPlayingRecording({ url: cls.recordingUrl!, title: cls.title }) : undefined}
+                onUploadRecording={isStaff ? () => handleTriggerUpload(cls) : undefined}
               />
             ))}
           </div>
         )}
       </main>
+
+      {/* Hidden file input for on-demand cloud recording uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={handleFileSelected}
+      />
 
       {/* Schedule Cohort Class Modal with Deck Pre-attachment */}
       {showScheduleClass && (
@@ -442,6 +476,36 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
           onClose={() => setSelectedAttachmentsClass(null)}
         />
       )}
+
+      {/* Upon-request Compressed Cloud Recording Upload Modal */}
+      {uploadModalClass && uploadModalFile && (
+        <RecordingUploadModal
+          isOpen={true}
+          onClose={() => {
+            setUploadModalClass(null);
+            setUploadModalFile(null);
+          }}
+          videoBlob={uploadModalFile}
+          classId={uploadModalClass.id}
+          classTitle={uploadModalClass.title}
+          onUploaded={(url: string) => {
+            setClasses(prev => prev.map(c => c.id === uploadModalClass.id ? { ...c, recordingUrl: url, recordingStatus: 'COMPLETED' } : c));
+            setUploadModalClass(null);
+            setUploadModalFile(null);
+          }}
+        />
+      )}
+
+      {/* Cloud Recording Replay Player Modal */}
+      {playingRecording && (
+        <VideoPlayerModal
+          video={{
+            url: playingRecording.url,
+            title: playingRecording.title,
+          }}
+          onClose={() => setPlayingRecording(null)}
+        />
+      )}
     </div>
   );
 }
@@ -455,6 +519,8 @@ function ClassSessionCard({
   onDelete,
   onViewRegistrations,
   onManageAttachments,
+  onWatchRecording,
+  onUploadRecording,
 }: {
   cls: ApiLiveClass;
   isStaff: boolean;
@@ -463,6 +529,8 @@ function ClassSessionCard({
   onDelete: (id: string) => void;
   onViewRegistrations: () => void;
   onManageAttachments: () => void;
+  onWatchRecording?: () => void;
+  onUploadRecording?: () => void;
 }) {
   const isLive = cls.status === "LIVE";
   const isEnded = cls.status === "ENDED";
@@ -651,6 +719,37 @@ function ClassSessionCard({
               </div>
             </div>
           )}
+
+          {/* Cloud Recording Banner (Stream Replay Upon Request) */}
+          {cls.recordingUrl && (
+            <div className="mt-3 p-3 rounded-2xl bg-indigo-50/90 border border-indigo-200/90 flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-7 w-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Film className="h-3.5 w-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider block">
+                    Cloud Recording Ready
+                  </span>
+                  <span className="text-xs text-indigo-700 truncate block">
+                    Stream compressed class recording
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onWatchRecording?.();
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0 active:scale-95"
+                title="Watch compressed cloud recording"
+              >
+                <Play size={12} className="fill-white" />
+                <span>Watch</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -700,6 +799,20 @@ function ClassSessionCard({
                 >
                   {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                   <span className="text-[10px] hidden sm:inline">{copiedLink ? "Copied" : "Link"}</span>
+                </button>
+              )}
+
+              {onUploadRecording && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUploadRecording();
+                  }}
+                  className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                  title={cls.recordingUrl ? "Re-upload / Replace Compressed Cloud Recording" : "Compress & Upload Recording to Cloud"}
+                >
+                  <UploadCloud className="h-3.5 w-3.5" />
                 </button>
               )}
 

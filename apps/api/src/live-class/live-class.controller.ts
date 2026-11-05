@@ -219,6 +219,16 @@ export class LiveClassController {
     return this.liveClassService.stopRecording(id, recordingUrl, req.user);
   }
 
+  @Post(':id/recording/save')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'ADMIN')
+  saveRecording(
+    @Param('id') id: string,
+    @Body() body: { recordingUrl: string; duration?: number; fileSize?: number },
+    @Req() req: any,
+  ): Promise<any> {
+    return this.liveClassService.saveRecording(id, body, req.user);
+  }
+
   // LiveKit Server-Side Egress Recording
   @Post(':id/recording/server/start')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')

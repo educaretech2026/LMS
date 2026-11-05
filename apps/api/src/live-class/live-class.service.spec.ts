@@ -534,6 +534,60 @@ describe('LiveClassService - Final Security Remediation & Production Verificatio
         service.startServerRecording('class-123', studentSession)
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('POS: saves compressed cloud recording and marks class recording as COMPLETED', async () => {
+      prisma.liveClass.findUnique.mockResolvedValue(mockLiveClass);
+      prisma.liveClass.update.mockResolvedValue({
+        ...mockLiveClass,
+        recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+        recordingStatus: 'COMPLETED',
+      });
+      prisma.liveClassRecording.create.mockResolvedValue({
+        id: 'rec-1',
+        liveClassId: 'class-123',
+        recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+        status: 'COMPLETED',
+      });
+
+      const teacherSession = {
+        id: 'teacher-456',
+        role: { name: 'TEACHER' },
+        userCentres: [{ centreId: 'centre-1' }],
+      };
+
+      const res = await service.saveRecording('class-123', {
+        recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+        duration: 120,
+        fileSize: 1048576,
+      }, teacherSession);
+
+      expect(res.recordingUrl).toBe('https://r2.example.com/recordings/test.mp4');
+      expect(res.recordingStatus).toBe('COMPLETED');
+      expect(prisma.liveClass.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'class-123' },
+          data: expect.objectContaining({
+            recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+            recordingStatus: 'COMPLETED',
+          }),
+        })
+      );
+    });
+
+    it('NEGATIVE: rejects saveRecording when caller is a student', async () => {
+      prisma.liveClass.findUnique.mockResolvedValue(mockLiveClass);
+
+      const studentSession = {
+        id: 'stud-1',
+        role: { name: 'STUDENT' },
+      };
+
+      await expect(
+        service.saveRecording('class-123', {
+          recordingUrl: 'https://r2.example.com/recordings/test.mp4',
+        }, studentSession)
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   /* ─────────────────────────────────────────────────────────────

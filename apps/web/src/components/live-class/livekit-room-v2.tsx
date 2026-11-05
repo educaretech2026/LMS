@@ -45,6 +45,7 @@ import { MobileSheet } from "./mobile-sheet";
 import { PreJoinLobby } from "./pre-join-lobby";
 import { WebinarWelcomeLobby } from "./webinar-welcome-lobby";
 import { SynchronizedWhiteboard } from "./synchronized-whiteboard";
+import { RecordingUploadModal } from "./recording-upload-modal";
 
 interface LiveKitRoomV2Props {
   classId?: string;
@@ -287,6 +288,9 @@ export function LiveKitClassRoomV2({
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
   const [remoteRecordingActive, setRemoteRecordingActive] = useState<boolean>(false);
   const [remoteRecordingPaused, setRemoteRecordingPaused] = useState<boolean>(false);
+  const [finishedRecordingBlob, setFinishedRecordingBlob] = useState<Blob | null>(null);
+  const [finishedRecordingDuration, setFinishedRecordingDuration] = useState<number>(0);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -294,6 +298,8 @@ export function LiveKitClassRoomV2({
   const recordingMicStreamRef = useRef<MediaStream | null>(null);
   const recordingAudioCtxRef = useRef<AudioContext | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingDurationRef = useRef<number>(0);
+  recordingDurationRef.current = recordingDuration;
 
   // Recording Timer: ticks during "recording", freezes during "paused", stops when "idle"
   useEffect(() => {
@@ -422,24 +428,16 @@ export function LiveKitClassRoomV2({
       };
 
       recorder.onstop = () => {
-        // The recording is only assembled and saved to disk after the recording is explicitly ended
+        // The recording is assembled upon session end and presented in the upload/download dialog
         try {
           if (recordedChunksRef.current.length > 0) {
             const blob = new Blob(recordedChunksRef.current, { type: mimeType || "video/webm" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            const safeTitle = (classTitle || (isWebinar ? "webinar" : "live-class")).replace(/[^a-zA-Z0-9_-]/g, "_");
-            const dateStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-            const ext = mimeType.includes("mp4") ? "mp4" : "webm";
-            a.download = `${safeTitle}_${dateStr}.${ext}`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 15000);
+            setFinishedRecordingBlob(blob);
+            setFinishedRecordingDuration(recordingDurationRef.current || recordingDuration);
+            setIsUploadModalOpen(true);
           }
         } catch (saveErr) {
-          console.error("Failed to assemble or save recording blob:", saveErr);
+          console.error("Failed to assemble recording blob:", saveErr);
         } finally {
           recordedChunksRef.current = [];
           setRecordingStatus("idle");
@@ -1746,6 +1744,21 @@ export function LiveKitClassRoomV2({
           classId={classId}
           sessionAttendees={sessionAttendees}
           defaultTab={isWebinar ? "webinar" : "live"}
+        />
+      )}
+
+      {/* ── RECORDING COMPRESSION & CLOUD UPLOAD MODAL ── */}
+      {isUploadModalOpen && finishedRecordingBlob && (
+        <RecordingUploadModal
+          isOpen={isUploadModalOpen}
+          onClose={() => {
+            setIsUploadModalOpen(false);
+            setFinishedRecordingBlob(null);
+          }}
+          videoBlob={finishedRecordingBlob}
+          classId={classId}
+          classTitle={classTitle || (isWebinar ? "Webinar Session" : "Live Class")}
+          durationSeconds={finishedRecordingDuration}
         />
       )}
 
