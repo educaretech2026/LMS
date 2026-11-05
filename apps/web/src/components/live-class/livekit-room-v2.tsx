@@ -293,6 +293,10 @@ export function LiveKitClassRoomV2({
       setLoading(true);
       setError(null);
 
+      let passToken =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("pass")
+          : null;
       let regToken =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("regToken")
@@ -301,12 +305,15 @@ export function LiveKitClassRoomV2({
       const targetPublicId = classId || roomId;
 
       // Fallback: Check localStorage if not in URL query parameters
-      if (!regToken && targetPublicId && typeof window !== "undefined") {
+      if (targetPublicId && typeof window !== "undefined") {
         try {
           const stored = localStorage.getItem(`live_access_${targetPublicId}`);
           if (stored) {
             const parsed = JSON.parse(stored);
-            if (parsed?.registrationToken) {
+            if (!passToken && parsed?.passportToken) {
+              passToken = parsed.passportToken;
+            }
+            if (!regToken && parsed?.registrationToken) {
               regToken = parsed.registrationToken;
             }
           }
@@ -314,74 +321,34 @@ export function LiveKitClassRoomV2({
       }
 
       let res: TokenResponse | null = null;
+      const credentialToTry = passToken || regToken;
 
-      // 1. Try public token if we have a registration token
-      if (regToken && targetPublicId) {
+      // 1. Authenticate with signed passport or registration credential
+      if (credentialToTry && targetPublicId) {
         try {
           res = await fetchApi<TokenResponse>(
             `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
-              regToken
+              credentialToTry
             )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
           );
         } catch (tokenErr: any) {
-          console.warn("Public token validation failed, falling back to seamless registration:", tokenErr?.message);
-          try {
-            if (typeof window !== "undefined") {
-              localStorage.removeItem(`live_access_${targetPublicId}`);
-            }
-          } catch {}
-          regToken = null;
-        }
-      }
-
-      // 2. If it is a webinar (or PUBLIC_LEARNER) and no valid token yet, seamlessly auto-register attendee
-      if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER") && targetPublicId) {
-        try {
-          const attendeeName = (confirmedDisplayName || name || "Learner").trim();
-          const attendeeEmail = `guest_${Math.random().toString(36).slice(2, 8)}_${Date.now()}@webinar.educare`;
-          const regPayload = {
-            name: attendeeName,
-            parentName: "Parent",
-            email: attendeeEmail,
-            phone: "9999999999",
-            courseOrClass: subject || "Webinar",
-            organization: "Public Attendee",
-          };
-
-          const regData: any = await fetchApi(
-            `/live-class/public/${targetPublicId}/register`,
-            {
-              method: "POST",
-              body: JSON.stringify(regPayload),
-            }
-          );
-
-          if (regData?.registrationToken) {
+          console.warn("Public token validation with primary credential failed:", tokenErr?.message);
+          // If we tried passToken first and it failed, retry with regToken if different
+          if (passToken && regToken && passToken !== regToken) {
             try {
-              if (typeof window !== "undefined") {
-                localStorage.setItem(
-                  `live_access_${targetPublicId}`,
-                  JSON.stringify({
-                    registrationToken: regData.registrationToken,
-                    name: attendeeName,
-                    email: attendeeEmail,
-                  })
-                );
-              }
-            } catch {}
-
-            res = await fetchApi<TokenResponse>(
-              `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
-                regData.registrationToken
-              )}&name=${encodeURIComponent(attendeeName)}`
-            );
+              res = await fetchApi<TokenResponse>(
+                `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
+                  regToken
+                )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
+              );
+            } catch (fallbackErr: any) {
+              console.warn("Public token validation with fallback regToken failed:", fallbackErr?.message);
+            }
           }
-        } catch (autoRegErr: any) {
-          console.warn("Seamless webinar registration fallback failed:", autoRegErr?.message);
         }
       }
 
-      // 3. Authenticated LMS token endpoint strictly for regular logged-in students/teachers (never public webinars)
+      // 2. Authenticated LMS token endpoint strictly for regular logged-in students/teachers (never public webinars)
       if (!res && !isWebinar && normalizedRole !== "PUBLIC_LEARNER") {
         const query = new URLSearchParams({
           roomId: roomId || "",
@@ -395,6 +362,10 @@ export function LiveKitClassRoomV2({
         res = await fetchApi<TokenResponse>(
           `/live-class/token?${query.toString()}`
         );
+      }
+
+      if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER")) {
+        throw new Error("Your webinar registration credential could not be verified (session expired or unconfirmed). Please register for free to get instant access.");
       }
 
       if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER")) {

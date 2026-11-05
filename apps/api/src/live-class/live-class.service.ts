@@ -1062,10 +1062,23 @@ export class LiveClassService implements OnModuleInit {
     // Format: "Institute Name | Course: 12th CBSE | Parent: John Doe"
     const compositeOrg = `${trimmedOrg} | Course: ${trimmedCourse} | Parent: ${trimmedParent}`;
 
-    // Cryptographically secure token generation (24 bytes hex)
+    // Cryptographically secure token generation (24 bytes hex = 48 hex chars)
     const rawRegistrationToken = `reg_${crypto.randomBytes(24).toString('hex')}`;
     const hashedToken = crypto.createHash('sha256').update(rawRegistrationToken).digest('hex');
     const targetLiveClassId = cls.id;
+
+    // Cryptographically signed attendee passport
+    const secret = process.env.LIVEKIT_API_SECRET || process.env.JWT_SECRET || 'educare-webinar-secret-2026';
+    const passportPayload = JSON.stringify({
+      classId: cls.id,
+      email: trimmedEmail,
+      name: trimmedName,
+      rawToken: rawRegistrationToken,
+      iat: Date.now(),
+    });
+    const payloadB64 = Buffer.from(passportPayload, 'utf8').toString('base64url');
+    const hmacSig = crypto.createHmac('sha256', secret).update(payloadB64).digest('hex');
+    const signedPassport = `pass_${payloadB64}.${hmacSig}`;
 
     try {
       await this.prisma.liveClassRegistration.upsert({
@@ -1133,6 +1146,7 @@ export class LiveClassService implements OnModuleInit {
     return {
       success: true,
       registrationToken: rawRegistrationToken, // Client receives raw unhashed credential
+      passportToken: signedPassport,
       meetUrl: cls.roomId,
       title: cls.title,
       scheduledAt: cls.scheduledAt,
@@ -1515,13 +1529,44 @@ export class LiveClassService implements OnModuleInit {
     // Query by hashed token, or fallback to raw token for legacy unhashed rows
     const possibleClassIds = Array.from(new Set([cls.id, cls.roomId, id].filter(Boolean))) as string[];
     let reg: any = null;
+
+    // 1. Authoritative HMAC-Signed Attendee Passport Verification
+    const secret = process.env.LIVEKIT_API_SECRET || process.env.JWT_SECRET || 'educare-webinar-secret-2026';
+    if (trimmedToken.includes('.') && (trimmedToken.startsWith('pass_') || trimmedToken.startsWith('reg_'))) {
+      const prefixLength = trimmedToken.startsWith('pass_') ? 5 : 4;
+      const dotIndex = trimmedToken.indexOf('.');
+      const payloadB64 = trimmedToken.slice(prefixLength, dotIndex);
+      const signature = trimmedToken.slice(dotIndex + 1);
+      const expectedSig = crypto.createHmac('sha256', secret).update(payloadB64).digest('hex');
+      try {
+        const sigBuf = Buffer.from(signature, 'hex');
+        const expBuf = Buffer.from(expectedSig, 'hex');
+        if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+          const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+          if (payload && possibleClassIds.includes(payload.classId)) {
+            reg = {
+              id: `pass_${payloadB64.slice(0, 16)}`,
+              liveClassId: cls.id,
+              name: payload.name || name || 'Learner',
+              email: payload.email,
+              status: 'REGISTERED',
+            };
+          }
+        }
+      } catch {
+        // Fallback to database query
+      }
+    }
+
     try {
-      reg = await this.prisma.liveClassRegistration.findFirst({
-        where: {
-          liveClassId: { in: possibleClassIds },
-          registrationToken: tokenHash,
-        },
-      });
+      if (!reg) {
+        reg = await this.prisma.liveClassRegistration.findFirst({
+          where: {
+            liveClassId: { in: possibleClassIds },
+            registrationToken: tokenHash,
+          },
+        });
+      }
 
       if (!reg) {
         reg = await this.prisma.liveClassRegistration.findFirst({

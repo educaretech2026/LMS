@@ -23,7 +23,7 @@ interface PublicWebinar {
 }
 
 function getPublicApiUrl(): string {
-  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+  if (typeof window !== "undefined") {
     return "/api/proxy";
   }
   const rawUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.educarelearning.in/api";
@@ -80,6 +80,7 @@ export default function PublicLiveClassPage() {
   const [registered, setRegistered] = useState(false);
   const [meetUrl, setMeetUrl] = useState<string | null>(null);
   const [registrationToken, setRegistrationToken] = useState<string | null>(null);
+  const [passportToken, setPassportToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const [timeLeft, setTimeLeft] = useState<{
@@ -97,6 +98,7 @@ export default function PublicLiveClassPage() {
           setMeetUrl(p.meetUrl);
           setRegistered(true);
           if (p.registrationToken) setRegistrationToken(p.registrationToken);
+          if (p.passportToken) setPassportToken(p.passportToken);
           if (p.name) setFormData(prev => ({ ...prev, name: p.name, email: p.email || "", phone: p.phone || "", organization: p.organization || "" }));
         }
       }
@@ -175,10 +177,12 @@ export default function PublicLiveClassPage() {
       if (!res.ok) throw new Error(data.message || "Registration failed. Please try again.");
       setMeetUrl(data.meetUrl);
       if (data.registrationToken) setRegistrationToken(data.registrationToken);
+      if (data.passportToken) setPassportToken(data.passportToken);
       setRegistered(true);
       localStorage.setItem(`live_access_${id}`, JSON.stringify({
         meetUrl: data.meetUrl,
         registrationToken: data.registrationToken,
+        passportToken: data.passportToken,
         name: n,
         parentName: pn,
         email: em,
@@ -191,6 +195,7 @@ export default function PublicLiveClassPage() {
           localStorage.setItem(`live_access_${data.meetUrl}`, JSON.stringify({
             meetUrl: data.meetUrl,
             registrationToken: data.registrationToken,
+            passportToken: data.passportToken,
             name: n,
             parentName: pn,
             email: em,
@@ -208,15 +213,10 @@ export default function PublicLiveClassPage() {
   };
 
   const handleCopy = () => {
-    if (!meetUrl) return;
-    const isZoom = meetUrl.includes("zoom.us");
-    const isGMeet = meetUrl.includes("meet.google.com");
-    const fullUrl = !isZoom && !isGMeet
-      ? (typeof window !== "undefined"
-          ? `${window.location.origin}/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}${formData.name ? `&name=${encodeURIComponent(formData.name)}` : ""}`
-          : meetUrl)
-      : meetUrl;
-    navigator.clipboard.writeText(fullUrl);
+    const livekitStageUrl = typeof window !== "undefined"
+      ? `${window.location.origin}/live-class?id=${encodeURIComponent(id)}${meetUrl && !meetUrl.startsWith("http") ? `&room=${encodeURIComponent(meetUrl)}` : ""}${passportToken ? `&pass=${encodeURIComponent(passportToken)}` : ""}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}${formData.name ? `&name=${encodeURIComponent(formData.name)}` : ""}`
+      : meetUrl || "";
+    navigator.clipboard.writeText(livekitStageUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -226,6 +226,7 @@ export default function PublicLiveClassPage() {
       setRegistered(false);
       setMeetUrl(null);
       setRegistrationToken(null);
+      setPassportToken(null);
       setFormData({
         name: "",
         parentName: "",
@@ -587,22 +588,64 @@ export default function PublicLiveClassPage() {
                       {(() => {
                         const isZoom = meetUrl.includes("zoom.us");
                         const isGMeet = meetUrl.includes("meet.google.com");
-                        const isEduMeet = !isZoom && !isGMeet;
-                        const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Enter Webinar Stage (LiveKit)";
-                        const targetUrl = meetUrl.startsWith("http")
-                          ? meetUrl
-                          : `/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}${formData.name ? `&name=${encodeURIComponent(formData.name)}` : ""}`;
-                        const btnBg = isEduMeet ? "linear-gradient(135deg, #7e22ce 0%, #4338ca 100%)" : isGMeet ? "#059669" : "#0284c7";
+                        const isExternal = meetUrl.startsWith("http");
+                        const livekitStageUrl = `/live-class?id=${encodeURIComponent(id)}${meetUrl && !isExternal ? `&room=${encodeURIComponent(meetUrl)}` : ""}${passportToken ? `&pass=${encodeURIComponent(passportToken)}` : ""}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}${formData.name ? `&name=${encodeURIComponent(formData.name)}` : ""}`;
 
                         return (
-                          <a
-                            href={targetUrl} target="_blank" rel="noreferrer"
-                            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "46px", borderRadius: "10px", background: btnBg, color: "white", fontSize: "13px", fontWeight: 700, textDecoration: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.25)", transition: "opacity 0.2s" }}
-                          >
-                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                            {label}
-                            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                          </a>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                            {/* Primary Button: Interactive LiveKit Webinar Stage */}
+                            <a
+                              href={livekitStageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "8px",
+                                height: "46px",
+                                borderRadius: "10px",
+                                background: "linear-gradient(135deg, #7e22ce 0%, #4338ca 100%)",
+                                color: "white",
+                                fontSize: "13px",
+                                fontWeight: 700,
+                                textDecoration: "none",
+                                boxShadow: "0 4px 16px rgba(126,34,206,0.3)",
+                                transition: "opacity 0.2s",
+                              }}
+                            >
+                              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                              Enter Webinar Stage (LiveKit)
+                              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            </a>
+
+                            {/* Secondary Button if external meeting link configured */}
+                            {isExternal && (
+                              <a
+                                href={meetUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "8px",
+                                  height: "40px",
+                                  borderRadius: "10px",
+                                  background: isGMeet ? "rgba(5, 150, 105, 0.15)" : "rgba(2, 132, 199, 0.15)",
+                                  border: isGMeet ? "1px solid rgba(5, 150, 105, 0.4)" : "1px solid rgba(2, 132, 199, 0.4)",
+                                  color: isGMeet ? "#34d399" : "#38bdf8",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  textDecoration: "none",
+                                  transition: "all 0.2s",
+                                }}
+                              >
+                                {isGMeet ? "Or Join via Google Meet" : isZoom ? "Or Join via Zoom" : "Or Join via External Link"}
+                                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                              </a>
+                            )}
+                          </div>
                         );
                       })()}
 
