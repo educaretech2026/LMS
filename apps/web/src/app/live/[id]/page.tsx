@@ -549,11 +549,11 @@ export default function PublicLiveClassPage() {
                         const isZoom = meetUrl.includes("zoom.us");
                         const isGMeet = meetUrl.includes("meet.google.com");
                         const isEduMeet = !isZoom && !isGMeet;
-                        const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Join Edu-Meet Live";
+                        const label = isZoom ? "Join Zoom Meeting" : isGMeet ? "Join Google Meet" : "Enter Webinar Stage";
                         const targetUrl = meetUrl.startsWith("http")
                           ? meetUrl
                           : `/live-class?id=${encodeURIComponent(id)}&room=${encodeURIComponent(meetUrl)}${registrationToken ? `&regToken=${encodeURIComponent(registrationToken)}` : ""}`;
-                        const btnBg = isEduMeet ? "#9333ea" : isGMeet ? "#059669" : "#0284c7";
+                        const btnBg = isEduMeet ? "linear-gradient(135deg, #7e22ce 0%, #4338ca 100%)" : isGMeet ? "#059669" : "#0284c7";
 
                         return (
                           <a

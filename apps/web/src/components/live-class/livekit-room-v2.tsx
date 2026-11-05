@@ -42,6 +42,7 @@ import { StudioVideoProcessor } from "./studio-pipeline";
 import { PresentationDeck } from "./presentation-deck";
 import { MobileSheet } from "./mobile-sheet";
 import { PreJoinLobby } from "./pre-join-lobby";
+import { WebinarWelcomeLobby } from "./webinar-welcome-lobby";
 import { SynchronizedWhiteboard } from "./synchronized-whiteboard";
 
 interface LiveKitRoomV2Props {
@@ -435,16 +436,34 @@ export function LiveKitClassRoomV2({
     );
   }
 
-  // Google Meet–Style Pre-Join Welcome Screen
+  // Welcome & Waiting Screen: Distinct Keynote Webinar Stage vs Interactive Classroom Tech Check
   if (!hasJoinedFromLobby) {
+    if (isWebinar) {
+      return (
+        <WebinarWelcomeLobby
+          webinarTitle={classTitle || "Public Webinar Masterclass"}
+          subject={subject || "Keynote Webinar"}
+          presenterName={teacherName || (isTeacher ? "Keynote Presenter" : "Educare Instructor")}
+          initialName={confirmedDisplayName || name || (isTeacher ? "Keynote Presenter" : "Webinar Attendee")}
+          isTeacher={isTeacher}
+          onJoin={(settings) => {
+            setConfirmedDisplayName(settings.name);
+            setInitialCameraEnabled(settings.cameraEnabled);
+            setInitialMicEnabled(settings.micEnabled);
+            setHasJoinedFromLobby(true);
+          }}
+          onCancel={onLeave}
+        />
+      );
+    }
+
     return (
       <PreJoinLobby
-        classTitle={classTitle || (isWebinar ? "Public Webinar Masterclass" : "Edu-Meet Interactive Virtual Classroom")}
-        subject={subject || (isWebinar ? "Keynote Webinar" : "Live Cohort Session")}
-        teacherName={teacherName || (isTeacher ? "Presenter" : "Educare Instructor")}
-        initialName={confirmedDisplayName || name || (isTeacher ? (isWebinar ? "Presenter" : "Instructor") : (isWebinar ? "Attendee" : "Student"))}
+        classTitle={classTitle || "Edu-Meet Interactive Virtual Classroom"}
+        subject={subject || "Live Cohort Session"}
+        teacherName={teacherName || "Educare Instructor"}
+        initialName={confirmedDisplayName || name || (isTeacher ? "Teacher" : "Student")}
         isTeacher={isTeacher}
-        isWebinar={isWebinar}
         onJoin={(settings) => {
           setConfirmedDisplayName(settings.name);
           setInitialCameraEnabled(settings.cameraEnabled);
