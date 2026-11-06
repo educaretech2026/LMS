@@ -64,6 +64,9 @@ interface LiveKitRoomV2Props {
 interface TokenResponse {
   token: string;
   wsUrl: string;
+  roomName?: string;
+  classId?: string;
+  isHost?: boolean;
 }
 
 interface ChatMessage {
@@ -285,7 +288,9 @@ export function LiveKitClassRoomV2({
   breakStateRef.current = breakState;
 
   const normalizedRole = (role || "").toUpperCase();
-  const isTeacher = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
+  const isTeacher =
+    Boolean(tokenData?.isHost) ||
+    ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
   const isImmersed = !isTeacher && stageMode !== "grid";
 
   // Toggle Audience Microphone Permission (Presenter -> Student)
@@ -638,66 +643,84 @@ export function LiveKitClassRoomV2({
           : null;
 
       const targetPublicId = classId || roomId;
-
-      // Fallback: Check localStorage if not in URL query parameters
-      if (targetPublicId && typeof window !== "undefined") {
-        try {
-          const stored = localStorage.getItem(`live_access_${targetPublicId}`);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (!passToken && parsed?.passportToken) {
-              passToken = parsed.passportToken;
-            }
-            if (!regToken && parsed?.registrationToken) {
-              regToken = parsed.registrationToken;
-            }
-          }
-        } catch {}
-      }
-
       let res: TokenResponse | null = null;
-      const credentialToTry = passToken || regToken;
+      const isStaff = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
 
-      // 1. Authenticate with signed passport or registration credential
-      if (credentialToTry && targetPublicId) {
+      // 1. Authenticated LMS token endpoint: ALWAYS attempted first for teachers/admins/staff
+      if (isStaff || (!isWebinar && normalizedRole !== "PUBLIC_LEARNER")) {
         try {
-          res = await fetchApi<TokenResponse>(
-            `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
-              credentialToTry
-            )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
-          );
-        } catch (tokenErr: any) {
-          console.warn("Public token validation with primary credential failed:", tokenErr?.message);
-          // If we tried passToken first and it failed, retry with regToken if different
-          if (passToken && regToken && passToken !== regToken) {
-            try {
-              res = await fetchApi<TokenResponse>(
-                `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
-                  regToken
-                )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
-              );
-            } catch (fallbackErr: any) {
-              console.warn("Public token validation with fallback regToken failed:", fallbackErr?.message);
-            }
+          const query = new URLSearchParams({
+            roomId: roomId || "",
+            identity: effectiveIdentity,
+            name: confirmedDisplayName || name || "",
+            role: normalizedRole || "STUDENT",
+          });
+          if (classId) {
+            query.set("classId", classId);
           }
+          res = await fetchApi<TokenResponse>(
+            `/live-class/token?${query.toString()}`
+          );
+          // When host/staff successfully authenticates, purge any stale attendee tokens from localStorage
+          if (res && targetPublicId && (isStaff || res.isHost) && typeof window !== "undefined") {
+            try {
+              localStorage.removeItem(`live_access_${targetPublicId}`);
+            } catch {}
+          }
+        } catch (authErr: any) {
+          console.warn("Authenticated LMS token fetch failed:", authErr?.message);
         }
       }
 
-      // 2. Authenticated LMS token endpoint for logged-in staff/teachers (including public webinars) and enrolled students
-      const isStaff = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
-      if (!res && (isStaff || (!isWebinar && normalizedRole !== "PUBLIC_LEARNER"))) {
-        const query = new URLSearchParams({
-          roomId: roomId || "",
-          identity: effectiveIdentity,
-          name: confirmedDisplayName || name || "",
-          role: normalizedRole || "STUDENT",
-        });
-        if (classId) {
-          query.set("classId", classId);
+      // 2. Fallback for public webinar attendees with signed registration credential (only if not staff)
+      if (!res && targetPublicId && !isStaff) {
+        let passToken =
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("pass")
+            : null;
+        let regToken =
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("regToken")
+            : null;
+
+        if (typeof window !== "undefined") {
+          try {
+            const stored = localStorage.getItem(`live_access_${targetPublicId}`);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              if (!passToken && parsed?.passportToken) {
+                passToken = parsed.passportToken;
+              }
+              if (!regToken && parsed?.registrationToken) {
+                regToken = parsed.registrationToken;
+              }
+            }
+          } catch {}
         }
-        res = await fetchApi<TokenResponse>(
-          `/live-class/token?${query.toString()}`
-        );
+
+        const credentialToTry = passToken || regToken;
+        if (credentialToTry) {
+          try {
+            res = await fetchApi<TokenResponse>(
+              `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
+                credentialToTry
+              )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
+            );
+          } catch (tokenErr: any) {
+            console.warn("Public token validation with primary credential failed:", tokenErr?.message);
+            if (passToken && regToken && passToken !== regToken) {
+              try {
+                res = await fetchApi<TokenResponse>(
+                  `/live-class/public/${targetPublicId}/token?registrationToken=${encodeURIComponent(
+                    regToken
+                  )}&name=${encodeURIComponent(confirmedDisplayName || name || "")}`
+                );
+              } catch (fallbackErr: any) {
+                console.warn("Public token validation with fallback regToken failed:", fallbackErr?.message);
+              }
+            }
+          }
+        }
       }
 
       if (!res) {
@@ -2578,28 +2601,32 @@ function V2BottomControlDock({
   const handleToggleMic = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (room?.localParticipant) {
-        await room.localParticipant.setMicrophoneEnabled(!micOn);
-      } else if (micProps.onClick) {
+      if (typeof micProps.onClick === "function") {
         micProps.onClick(e as any);
+      } else if (room?.localParticipant) {
+        await room.localParticipant.setMicrophoneEnabled(!micOn);
       }
     } catch (err) {
       console.warn("Direct microphone toggle failed, running fallback:", err);
-      micProps.onClick?.(e as any);
+      if (room?.localParticipant) {
+        await room.localParticipant.setMicrophoneEnabled(!micOn).catch(() => {});
+      }
     }
   };
 
   const handleToggleCam = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (room?.localParticipant) {
-        await room.localParticipant.setCameraEnabled(!camOn);
-      } else if (camProps.onClick) {
+      if (typeof camProps.onClick === "function") {
         camProps.onClick(e as any);
+      } else if (room?.localParticipant) {
+        await room.localParticipant.setCameraEnabled(!camOn);
       }
     } catch (err) {
       console.warn("Direct camera toggle failed, running fallback:", err);
-      camProps.onClick?.(e as any);
+      if (room?.localParticipant) {
+        await room.localParticipant.setCameraEnabled(!camOn).catch(() => {});
+      }
     }
   };
 

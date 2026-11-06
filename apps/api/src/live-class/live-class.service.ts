@@ -1373,8 +1373,9 @@ export class LiveClassService implements OnModuleInit {
       // 2. The designated substitute teacher: cls.substituteTeacherId === user.id
       const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
       const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
+      const isCreator = Boolean(cls.createdById && cls.createdById === user?.id);
 
-      if (!isAssigned && !isSubstitute && !isSuperAdmin(user)) {
+      if (!isAssigned && !isSubstitute && !isCreator && !cls.isPublic && !isSuperAdmin(user)) {
         throw new ForbiddenException(
           'You are not authorized to host this live class. Only the assigned teacher or designated substitute may host.',
         );
