@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, memo, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useRef, memo, useMemo, Component } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -29,12 +29,13 @@ import { fetchApi } from "@/lib/api";
 import {
   Loader2, WifiOff, FileDown, Upload, MicOff, StopCircle,
   Video, VideoOff, Mic, MonitorUp, MonitorOff, LogOut, FileText,
-  Monitor, AlertCircle, Hand, MessageSquare, Send, CheckCircle2,
-  ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw,
+  Monitor, AlertCircle, AlertTriangle, Hand, MessageSquare, Send, CheckCircle2,
+  ChevronRight, Minimize2, Maximize2, Shield, Users, RefreshCw, RotateCw,
   Trash2, Edit3, SlidersHorizontal, X, Presentation, LayoutGrid,
   PenTool, MoreHorizontal, Info, Clock, Download, FileSpreadsheet,
   UserCheck, UserX, ChevronDown, Check, Search, Globe, Radio,
-  Share2, Copy, ExternalLink, Play, Pause, Circle, Square
+  Share2, Copy, ExternalLink, Play, Pause, Circle, Square,
+  GripVertical, Move, Eye, EyeOff
 } from "lucide-react";
 import { StudioDrawer } from "./studio-drawer";
 import { IntermissionStage } from "./intermission-stage";
@@ -230,6 +231,11 @@ export function LiveKitClassRoomV2({
   const [stageMode, setStageMode] = useState<ClassroomStageMode>("grid");
   const [allowStudentSlideDraw, setAllowStudentSlideDraw] = useState<boolean>(false);
   const [allowStudentWhiteboardDraw, setAllowStudentWhiteboardDraw] = useState<boolean>(false);
+  const [presentationKey, setPresentationKey] = useState<number>(0);
+
+  const handleForceReloadPresentation = useCallback(() => {
+    setPresentationKey((prev) => prev + 1);
+  }, []);
 
   // Chat & Files Sidebar / Mobile Drawer State
   const [activeSidebarTab, setActiveSidebarTab] = useState<"chat" | "files">("chat");
@@ -1472,18 +1478,22 @@ export function LiveKitClassRoomV2({
 
           {/* Mode 2: Interactive Slides Deck */}
           <div className={`h-full w-full relative ${stageMode === "slides" ? "block" : "hidden"}`}>
-            <PresentationDeck
-              isTeacher={isTeacher}
-              classId={classId}
-              room={(window as any).__lk_room}
-              myIdentity={effectiveIdentity}
-              myName={confirmedDisplayName || name || "Participant"}
-              initialFiles={sharedFiles}
-              allowStudentDraw={allowStudentSlideDraw}
-              onToggleStudentDraw={setAllowStudentSlideDraw}
-            />
-            {/* Draggable Camera PiP */}
-            <FloatingCamPiP isTeacher={isTeacher} />
+            <PresentationErrorBoundary onReset={handleForceReloadPresentation}>
+              <PresentationDeck
+                key={`pres-deck-instance-${presentationKey}`}
+                isTeacher={isTeacher}
+                classId={classId}
+                room={(window as any).__lk_room}
+                myIdentity={effectiveIdentity}
+                myName={confirmedDisplayName || name || "Participant"}
+                initialFiles={sharedFiles}
+                allowStudentDraw={allowStudentSlideDraw}
+                onToggleStudentDraw={setAllowStudentSlideDraw}
+                onForceReload={handleForceReloadPresentation}
+              />
+            </PresentationErrorBoundary>
+            {/* Draggable & Corner-Dockable Camera PiP */}
+            <FloatingCamPiP isTeacher={isTeacher} stageMode="slides" defaultCorner="top-right" />
           </div>
 
           {/* Mode 3: Synchronized Whiteboard */}
@@ -1494,7 +1504,8 @@ export function LiveKitClassRoomV2({
               room={(window as any).__lk_room}
               classId={classId}
             />
-            <FloatingCamPiP isTeacher={isTeacher} />
+            {/* Draggable Camera PiP - Defaulted to bottom-right so Tldraw brush & color controls (top-right) are completely free! */}
+            <FloatingCamPiP isTeacher={isTeacher} stageMode="whiteboard" defaultCorner="bottom-right" />
           </div>
 
           {/* Prominent Teacher Raised Hands Panel (Visible in ALL Stage Modes: Grid, Slides, Whiteboard) */}
@@ -2514,10 +2525,111 @@ function V2ClassVideoGrid({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FLOATING INSTRUCTOR WEBCAM PIP (SLIDES / WHITEBOARD)
+// PRESENTATION ERROR BOUNDARY (MID-MEETING RECOVERY WITHOUT RESTART)
 // ─────────────────────────────────────────────────────────────────────────────
-function FloatingCamPiP({ isTeacher }: { isTeacher: boolean }) {
-  const [minimized, setMinimized] = useState(false);
+interface PresentationErrorBoundaryProps {
+  children: React.ReactNode;
+  onReset?: () => void;
+}
+
+interface PresentationErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class PresentationErrorBoundary extends React.Component<
+  PresentationErrorBoundaryProps,
+  PresentationErrorBoundaryState
+> {
+  constructor(props: PresentationErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): PresentationErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("[PresentationDeck Error Caught]:", error, errorInfo);
+  }
+
+  handleReload = () => {
+    this.setState({ hasError: false, error: undefined });
+    if (this.props.onReset) {
+      this.props.onReset();
+    }
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-full w-full flex flex-col items-center justify-center bg-[#0d0f14] text-white p-6 text-center select-none">
+          <div className="max-w-md p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl flex flex-col items-center gap-4 shadow-2xl">
+            <div className="h-12 w-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Presentation View Interrupted</h3>
+              <p className="text-xs text-white/60 mt-1 leading-relaxed">
+                An unexpected rendering or slide synchronization error occurred. You can reload the presentation view instantly without interrupting your meeting.
+              </p>
+            </div>
+            <button
+              onClick={this.handleReload}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors flex items-center gap-2 shadow-lg hover:shadow-blue-500/25 cursor-pointer"
+            >
+              <RefreshCw size={14} />
+              <span>Reload Presentation Deck</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FLOATING INSTRUCTOR WEBCAM PIP (SLIDES / WHITEBOARD - DRAGGABLE & DOCKABLE)
+// ─────────────────────────────────────────────────────────────────────────────
+type PiPCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+const CORNER_CLASSES: Record<PiPCorner, string> = {
+  "top-left": "top-16 left-4",
+  "top-right": "top-16 right-4",
+  "bottom-left": "bottom-20 left-4",
+  "bottom-right": "bottom-20 right-4",
+};
+
+const CORNER_ROTATION: Record<PiPCorner, PiPCorner> = {
+  "top-right": "bottom-right",
+  "bottom-right": "bottom-left",
+  "bottom-left": "top-left",
+  "top-left": "top-right",
+};
+
+interface FloatingCamPiPProps {
+  isTeacher: boolean;
+  stageMode?: ClassroomStageMode;
+  defaultCorner?: PiPCorner;
+}
+
+function FloatingCamPiP({
+  isTeacher,
+  stageMode,
+  defaultCorner,
+}: FloatingCamPiPProps) {
+  // Mode-aware corner: In whiteboard mode, default to bottom-right so Tldraw brush controls (top-right) are completely free!
+  const resolvedDefaultCorner: PiPCorner =
+    defaultCorner || (stageMode === "whiteboard" ? "bottom-right" : "top-right");
+
+  const [corner, setCorner] = useState<PiPCorner>(resolvedDefaultCorner);
+  const [sizeMode, setSizeMode] = useState<"normal" | "compact" | "pill">("normal");
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const isDraggingRef = useRef<boolean>(false);
+  const dragStartOffsetRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
+
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]);
   const valid = tracks.filter((t) => t.participant);
   if (valid.length === 0) return null;
@@ -2535,23 +2647,140 @@ function FloatingCamPiP({ isTeacher }: { isTeacher: boolean }) {
 
   if (!target) return null;
 
-  return (
-    <div className="absolute top-16 sm:top-20 right-4 z-40 flex flex-col items-end gap-1 pointer-events-auto">
+  // Quick corner switcher
+  const handleCycleCorner = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDragPosition(null); // Clear custom drag offset
+    setCorner((prev) => CORNER_ROTATION[prev]);
+  };
+
+  // Drag handlers
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Only drag on header / drag icon
+    const targetTag = (e.target as HTMLElement).tagName.toLowerCase();
+    if (targetTag === "button" || targetTag === "svg" || targetTag === "path") return;
+
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    isDraggingRef.current = true;
+
+    const rect = el.getBoundingClientRect();
+    dragStartOffsetRef.current = {
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    const pipW = sizeMode === "pill" ? 140 : sizeMode === "compact" ? 150 : 210;
+    const pipH = sizeMode === "pill" ? 32 : sizeMode === "compact" ? 95 : 140;
+
+    const newX = Math.max(8, Math.min(window.innerWidth - pipW - 8, e.clientX - dragStartOffsetRef.current.offsetX));
+    const newY = Math.max(56, Math.min(window.innerHeight - pipH - 64, e.clientY - dragStartOffsetRef.current.offsetY));
+
+    setDragPosition({ x: newX, y: newY });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  // Render Collapsed Floating Pill Mode
+  if (sizeMode === "pill") {
+    return (
       <div
-        className="rounded-2xl overflow-hidden border border-white/20 bg-[#111318]/90 shadow-2xl backdrop-blur-md transition-all duration-200"
-        style={{ width: minimized ? "140px" : "210px" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        style={dragPosition ? { position: "fixed", left: dragPosition.x, top: dragPosition.y } : undefined}
+        className={`${!dragPosition ? `absolute ${CORNER_CLASSES[corner]}` : ""} z-40 pointer-events-auto touch-none select-none`}
       >
-        <div className="flex items-center justify-between px-2.5 py-1 bg-black/50 text-white/70 text-[10px] font-bold">
-          <span>Speaker Camera</span>
-          <button onClick={() => setMinimized(!minimized)} className="hover:text-white">
-            {minimized ? <Maximize2 size={11} /> : <Minimize2 size={11} />}
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#111318]/95 border border-white/20 text-white shadow-2xl backdrop-blur-md cursor-grab active:cursor-grabbing hover:border-blue-500/50 transition-colors">
+          <GripVertical size={11} className="text-white/40" />
+          <Video size={12} className="text-emerald-400" />
+          <span className="text-[10px] font-bold text-white/90">Speaker</span>
+          <button
+            onClick={handleCycleCorner}
+            className="p-1 rounded-full hover:bg-white/10 text-white/60 hover:text-white ml-0.5"
+            title={`Move corner (Current: ${corner})`}
+          >
+            <Move size={10} />
+          </button>
+          <button
+            onClick={() => setSizeMode("normal")}
+            className="p-1 rounded-full hover:bg-white/10 text-white/70 hover:text-white"
+            title="Expand Camera"
+          >
+            <Maximize2 size={11} />
           </button>
         </div>
-        {!minimized && (
-          <div className="h-28 sm:h-32 bg-black relative">
-            <ParticipantTile trackRef={target} style={{ width: "100%", height: "100%" }} />
+      </div>
+    );
+  }
+
+  // Render Full / Compact Floating Video Tile
+  const isCompact = sizeMode === "compact";
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      style={dragPosition ? { position: "fixed", left: dragPosition.x, top: dragPosition.y } : undefined}
+      className={`${!dragPosition ? `absolute ${CORNER_CLASSES[corner]}` : ""} z-40 flex flex-col items-end gap-1 pointer-events-auto touch-none select-none`}
+    >
+      <div
+        className="rounded-2xl overflow-hidden border border-white/20 bg-[#111318]/95 shadow-2xl backdrop-blur-md transition-all duration-150 ring-1 ring-black/40"
+        style={{ width: isCompact ? "150px" : "210px" }}
+      >
+        {/* PiP Header with Drag Handle & Actions */}
+        <div className="flex items-center justify-between px-2 py-1 bg-black/60 text-white/80 text-[10px] font-bold border-b border-white/10 cursor-grab active:cursor-grabbing">
+          <div className="flex items-center gap-1">
+            <GripVertical size={11} className="text-white/40" />
+            <span className="truncate max-w-[80px]">Speaker</span>
           </div>
-        )}
+          <div className="flex items-center gap-0.5">
+            {/* Quick corner switch button */}
+            <button
+              onClick={handleCycleCorner}
+              className="p-1 rounded hover:bg-white/15 text-white/70 hover:text-white transition-colors"
+              title={`Switch Corner (Current: ${corner})`}
+            >
+              <Move size={10} />
+            </button>
+            {/* Toggle Compact size */}
+            <button
+              onClick={() => setSizeMode(isCompact ? "normal" : "compact")}
+              className="p-1 rounded hover:bg-white/15 text-white/70 hover:text-white transition-colors"
+              title={isCompact ? "Normal Size" : "Compact Size"}
+            >
+              {isCompact ? <Maximize2 size={10} /> : <Minimize2 size={10} />}
+            </button>
+            {/* Collapse to minimal pill */}
+            <button
+              onClick={() => setSizeMode("pill")}
+              className="p-1 rounded hover:bg-white/15 text-white/70 hover:text-white transition-colors"
+              title="Minimize to Floating Badge"
+            >
+              <EyeOff size={10} />
+            </button>
+          </div>
+        </div>
+
+        {/* Video stream container */}
+        <div
+          className="bg-black relative overflow-hidden"
+          style={{ height: isCompact ? "90px" : "125px" }}
+        >
+          <ParticipantTile trackRef={target} style={{ width: "100%", height: "100%" }} />
+        </div>
       </div>
     </div>
   );

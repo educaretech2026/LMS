@@ -18,6 +18,7 @@ import {
   Sparkles,
   Download,
   RotateCcw,
+  RotateCw,
   Trash2,
   Check,
   X,
@@ -70,6 +71,7 @@ interface PresentationDeckProps {
   allowStudentDraw: boolean;
   onToggleStudentDraw?: (allowed: boolean) => void;
   onClose?: () => void;
+  onForceReload?: () => void;
 }
 
 const PRESET_COLORS = [
@@ -120,12 +122,14 @@ export function PresentationDeck({
   allowStudentDraw,
   onToggleStudentDraw,
   onClose,
+  onForceReload,
 }: PresentationDeckProps) {
   // Slides State
   const [slides, setSlides] = useState<SlideItem[]>([]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0);
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(false);
   const [pdfProgress, setPdfProgress] = useState<string>("");
+  const [isResyncing, setIsResyncing] = useState<boolean>(false);
   const [showThumbnails, setShowThumbnails] = useState<boolean>(false);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -555,35 +559,89 @@ export function PresentationDeck({
 
         for (let i = 1; i <= totalPages; i++) {
           setPdfProgress(`Rendering slide ${i} of ${totalPages}...`);
-          const page = await pdf.getPage(i);
+          try {
+            const pagePromise = pdf.getPage(i);
+            const page = await Promise.race([
+              pagePromise,
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`Timeout fetching slide ${i}`)), 12000)
+              ),
+            ]);
 
-          // Render at 2x scale for sharp text on Retina / mobile screens
-          const viewport = page.getViewport({ scale: 2 });
-          const offCanvas = document.createElement("canvas");
-          const ctx = offCanvas.getContext("2d");
-          if (!ctx) continue;
+            // Render at crisp 1.75x scale for sharp text while managing memory
+            const viewport = page.getViewport({ scale: 1.75 });
+            const offCanvas = document.createElement("canvas");
+            offCanvas.width = viewport.width;
+            offCanvas.height = viewport.height;
+            const ctx = offCanvas.getContext("2d");
+            if (!ctx) continue;
 
-          offCanvas.width = viewport.width;
-          offCanvas.height = viewport.height;
+            const renderTask = page.render({
+              canvasContext: ctx,
+              viewport,
+            });
 
-          await page.render({
-            canvasContext: ctx,
-            viewport,
-          }).promise;
+            await Promise.race([
+              renderTask.promise,
+              new Promise((_, reject) =>
+                setTimeout(() => {
+                  try {
+                    renderTask.cancel?.();
+                  } catch {}
+                  reject(new Error(`Timeout rendering slide ${i}`));
+                }, 12000)
+              ),
+            ]);
 
-          const dataUrl = offCanvas.toDataURL("image/jpeg", 0.88);
-          generatedSlides.push({
-            id: `slide-${i}-${Date.now()}`,
-            url: dataUrl,
-            pageNumber: i,
-            title: `${fileName || "Slide"} ${i}`,
-            width: viewport.width,
-            height: viewport.height,
-          });
+            const dataUrl = offCanvas.toDataURL("image/jpeg", 0.85);
+            // Immediately release offscreen canvas buffer to avoid memory leaks
+            offCanvas.width = 1;
+            offCanvas.height = 1;
+
+            generatedSlides.push({
+              id: `slide-${i}-${Date.now()}`,
+              url: dataUrl,
+              pageNumber: i,
+              title: `${fileName || "Slide"} ${i}`,
+              width: viewport.width,
+              height: viewport.height,
+            });
+          } catch (pageErr) {
+            console.warn(`[PDF Rendering] Slide ${i} fallback generated:`, pageErr);
+            const offCanvas = document.createElement("canvas");
+            offCanvas.width = 1600;
+            offCanvas.height = 900;
+            const ctx = offCanvas.getContext("2d");
+            if (ctx) {
+              ctx.fillStyle = "#0f172a";
+              ctx.fillRect(0, 0, 1600, 900);
+              ctx.fillStyle = "#f87171";
+              ctx.font = "bold 34px sans-serif";
+              ctx.fillText(`Slide ${i}`, 100, 180);
+              ctx.fillStyle = "#94a3b8";
+              ctx.font = "22px sans-serif";
+              ctx.fillText("Notice: Slide format or complex graphics could not be fully rendered.", 100, 240);
+              const dataUrl = offCanvas.toDataURL("image/jpeg", 0.8);
+              offCanvas.width = 1;
+              offCanvas.height = 1;
+              generatedSlides.push({
+                id: `slide-${i}-fallback-${Date.now()}`,
+                url: dataUrl,
+                pageNumber: i,
+                title: `${fileName || "Slide"} ${i} (Degraded)`,
+                width: 1600,
+                height: 900,
+              });
+            }
+          }
         }
 
-        setSlides(generatedSlides);
-        setCurrentSlideIndex(0);
+        if (generatedSlides.length > 0) {
+          setSlides(generatedSlides);
+          setCurrentSlideIndex(0);
+        } else {
+          throw new Error("No slides could be parsed from this presentation file.");
+        }
       } catch (err: any) {
         console.error("PDF presentation processing error:", err);
         alert(`Failed to load presentation PDF: ${err?.message || "Invalid or inaccessible file"}`);
@@ -701,13 +759,17 @@ export function PresentationDeck({
           activePresentationRef.current = { fileUrl, fileName, fileType };
           if (!isSameFile) {
             if (fileType === "pptx") {
-              processPptxFile(fileUrl, fileName).then(() => {
-                if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
-              });
+              processPptxFile(fileUrl, fileName)
+                .then(() => {
+                  if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+                })
+                .catch((err) => console.warn("Sync PPTX error:", err));
             } else if (fileType === "pdf") {
-              processPdfFile(fileUrl, fileName).then(() => {
-                if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
-              });
+              processPdfFile(fileUrl, fileName)
+                .then(() => {
+                  if (typeof targetIdx === "number") setCurrentSlideIndex(targetIdx);
+                })
+                .catch((err) => console.warn("Sync PDF error:", err));
             } else if (fileType === "image") {
               setSlides([
                 {
@@ -752,12 +814,21 @@ export function PresentationDeck({
         } else if (data.type === "SLIDE_STROKE_ADDED" && data.stroke) {
           if (!isTeacher && !isSenderHost && !allowStudentDrawRef.current) return;
           const s = data.stroke as DrawingStroke;
+          if (!s || !Array.isArray(s.points) || s.points.length === 0) return;
+          const validPoints = s.points.filter(
+            (pt) => pt && typeof pt.x === "number" && typeof pt.y === "number" && isFinite(pt.x) && isFinite(pt.y)
+          );
+          if (validPoints.length === 0) return;
+          const sanitizedStroke: DrawingStroke = {
+            ...s,
+            points: validPoints,
+          };
           setStrokesBySlide((prev) => {
-            const list = prev[s.slideIndex] || [];
-            if (list.some((existing) => existing.id === s.id)) return prev;
+            const list = prev[sanitizedStroke.slideIndex] || [];
+            if (list.some((existing) => existing.id === sanitizedStroke.id)) return prev;
             return {
               ...prev,
-              [s.slideIndex]: [...list, s],
+              [sanitizedStroke.slideIndex]: [...list, sanitizedStroke],
             };
           });
           requestAnimationFrame(() => redrawCanvas());
@@ -793,86 +864,102 @@ export function PresentationDeck({
   }, [room, onToggleStudentDraw, isTeacher, currentSlideIndex, broadcastPresentationSource, processPdfFile, processPptxFile]);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 5. Canvas Drawing Rendering Loop
+  // 5. Canvas Drawing Rendering Loop (Hardened with NaN Guards)
   // ─────────────────────────────────────────────────────────────────────────────
   const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    try {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    // Match physical pixels with styling
-    const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width || canvas.height !== rect.height) {
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-    }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const slideStrokes = strokesBySlide[currentSlideIndex] || [];
-    const allStrokes = currentDrawingStroke ? [...slideStrokes, currentDrawingStroke] : slideStrokes;
-
-    for (const stroke of allStrokes) {
-      if (stroke.points.length === 0) continue;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      if (stroke.tool === "highlighter") {
-        ctx.globalAlpha = 0.38;
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = stroke.size * 2.5;
-      } else {
-        ctx.globalAlpha = 1.0;
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = stroke.size;
-      }
-
-      if (stroke.tool === "arrow" && stroke.points.length >= 2) {
-        const p1 = stroke.points[0];
-        const p2 = stroke.points[stroke.points.length - 1];
-        const x1 = p1.x * canvas.width;
-        const y1 = p1.y * canvas.height;
-        const x2 = p2.x * canvas.width;
-        const y2 = p2.y * canvas.height;
-
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-
-        // Arrow head
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        const headlen = 16;
-        ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
-        ctx.stroke();
-      } else if (stroke.tool === "rect" && stroke.points.length >= 2) {
-        const p1 = stroke.points[0];
-        const p2 = stroke.points[stroke.points.length - 1];
-        const x = Math.min(p1.x, p2.x) * canvas.width;
-        const y = Math.min(p1.y, p2.y) * canvas.height;
-        const w = Math.abs(p2.x - p1.x) * canvas.width;
-        const h = Math.abs(p2.y - p1.y) * canvas.height;
-        ctx.strokeRect(x, y, w, h);
-      } else {
-        // Freeform pen or highlighter
-        const first = stroke.points[0];
-        ctx.moveTo(first.x * canvas.width, first.y * canvas.height);
-
-        for (let i = 1; i < stroke.points.length; i++) {
-          const pt = stroke.points[i];
-          ctx.lineTo(pt.x * canvas.width, pt.y * canvas.height);
+      // Match physical pixels with styling
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        if (canvas.width !== rect.width || canvas.height !== rect.height) {
+          canvas.width = rect.width;
+          canvas.height = rect.height;
         }
-        ctx.stroke();
       }
 
-      ctx.restore();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const slideStrokes = strokesBySlide[currentSlideIndex] || [];
+      const allStrokes = currentDrawingStroke ? [...slideStrokes, currentDrawingStroke] : slideStrokes;
+
+      for (const stroke of allStrokes) {
+        if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) continue;
+
+        ctx.save();
+        try {
+          ctx.beginPath();
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+
+          if (stroke.tool === "highlighter") {
+            ctx.globalAlpha = 0.38;
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.size * 2.5;
+          } else {
+            ctx.globalAlpha = 1.0;
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.size;
+          }
+
+          if (stroke.tool === "arrow" && stroke.points.length >= 2) {
+            const p1 = stroke.points[0];
+            const p2 = stroke.points[stroke.points.length - 1];
+            if (p1 && p2 && isFinite(p1.x) && isFinite(p1.y) && isFinite(p2.x) && isFinite(p2.y)) {
+              const x1 = p1.x * canvas.width;
+              const y1 = p1.y * canvas.height;
+              const x2 = p2.x * canvas.width;
+              const y2 = p2.y * canvas.height;
+
+              ctx.moveTo(x1, y1);
+              ctx.lineTo(x2, y2);
+              ctx.stroke();
+
+              // Arrow head
+              const angle = Math.atan2(y2 - y1, x2 - x1);
+              const headlen = 16;
+              ctx.beginPath();
+              ctx.moveTo(x2, y2);
+              ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+              ctx.moveTo(x2, y2);
+              ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+              ctx.stroke();
+            }
+          } else if (stroke.tool === "rect" && stroke.points.length >= 2) {
+            const p1 = stroke.points[0];
+            const p2 = stroke.points[stroke.points.length - 1];
+            if (p1 && p2 && isFinite(p1.x) && isFinite(p1.y) && isFinite(p2.x) && isFinite(p2.y)) {
+              const x = Math.min(p1.x, p2.x) * canvas.width;
+              const y = Math.min(p1.y, p2.y) * canvas.height;
+              const w = Math.abs(p2.x - p1.x) * canvas.width;
+              const h = Math.abs(p2.y - p1.y) * canvas.height;
+              ctx.strokeRect(x, y, w, h);
+            }
+          } else {
+            // Freeform pen or highlighter
+            const first = stroke.points[0];
+            if (first && isFinite(first.x) && isFinite(first.y)) {
+              ctx.moveTo(first.x * canvas.width, first.y * canvas.height);
+
+              for (let i = 1; i < stroke.points.length; i++) {
+                const pt = stroke.points[i];
+                if (pt && isFinite(pt.x) && isFinite(pt.y)) {
+                  ctx.lineTo(pt.x * canvas.width, pt.y * canvas.height);
+                }
+              }
+              ctx.stroke();
+            }
+          }
+        } finally {
+          ctx.restore();
+        }
+      }
+    } catch (canvasErr) {
+      console.warn("[PresentationCanvas] Render loop error suppressed:", canvasErr);
     }
   }, [strokesBySlide, currentSlideIndex, currentDrawingStroke]);
 
@@ -1075,7 +1162,39 @@ export function PresentationDeck({
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 8. File Upload Handler (Real-Time in Class with PPTX & PDF Support)
+  // 8. In-Class Instant Resync / Recovery Action
+  // ─────────────────────────────────────────────────────────────────────────────
+  const handleResyncDeck = useCallback(() => {
+    setIsResyncing(true);
+    try {
+      if (isTeacher) {
+        if (activePresentationRef.current) {
+          broadcastPresentationSource(
+            activePresentationRef.current.fileUrl,
+            activePresentationRef.current.fileName,
+            activePresentationRef.current.fileType,
+            currentSlideIndex
+          );
+        }
+      } else {
+        if (room?.localParticipant) {
+          const payload = JSON.stringify({ type: "REQUEST_PRESENTATION_STATE" });
+          room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+        }
+      }
+      requestAnimationFrame(() => redrawCanvas());
+      if (onForceReload) {
+        onForceReload();
+      }
+    } catch (err) {
+      console.warn("Deck resync error:", err);
+    } finally {
+      setTimeout(() => setIsResyncing(false), 500);
+    }
+  }, [isTeacher, currentSlideIndex, broadcastPresentationSource, redrawCanvas, onForceReload, room]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 9. File Upload Handler (Real-Time in Class with PPTX & PDF Support)
   // ─────────────────────────────────────────────────────────────────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1304,6 +1423,17 @@ export function PresentationDeck({
               />
             </label>
           )}
+
+          {/* Resync Deck / Clear Stuck State Button */}
+          <button
+            onClick={handleResyncDeck}
+            disabled={isResyncing}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-[11px] font-semibold transition-colors disabled:opacity-50"
+            title="Resync slides and clear any stuck state"
+          >
+            <RotateCw size={12} className={isResyncing ? "animate-spin text-blue-400" : ""} />
+            <span className="hidden sm:inline">{isResyncing ? "Resyncing..." : "Resync"}</span>
+          </button>
 
           {/* Fullscreen toggle */}
           <button

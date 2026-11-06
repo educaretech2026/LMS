@@ -235,7 +235,7 @@ export const SynchronizedWhiteboard = memo(function SynchronizedWhiteboard({
     <div className="h-full w-full relative">
       <Tldraw onMount={handleMount} />
       {!isTeacher && !allowStudentDraw && (
-        <div className="absolute top-3 right-3 z-30 pointer-events-none bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white/80 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg">
+        <div className="absolute top-3 left-16 z-30 pointer-events-none bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white/80 text-[11px] font-semibold flex items-center gap-1.5 shadow-lg">
           <span className="h-2 w-2 rounded-full bg-amber-400" />
           <span>View Only (Drawing Locked by Teacher)</span>
         </div>
