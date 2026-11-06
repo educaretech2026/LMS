@@ -1023,19 +1023,34 @@ function ScheduleClassModalV2({
   const [deckFile, setDeckFile] = useState<File | null>(null);
   const [uploadingDeck, setUploadingDeck] = useState(false);
 
+  // Load Boards & Centres on modal mount
   useEffect(() => {
     Promise.all([
       fetchApi<SetupOption[]>("/setup/boards"),
-      fetchApi<SetupOption[]>("/setup/standards"),
       fetchApi<SetupOption[]>("/setup/centres"),
     ])
-      .then(([b, s, c]) => {
+      .then(([b, c]) => {
         setBoards(b || []);
-        setStandards(s || []);
         setCentres(c || []);
       })
       .catch(() => {});
   }, []);
+
+  // Dynamically query standards filtered by target board
+  useEffect(() => {
+    const url = boardId
+      ? `/setup/standards?boardId=${encodeURIComponent(boardId)}`
+      : "/setup/standards";
+    fetchApi<SetupOption[]>(url)
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setStandards(list);
+        if (standardId && !list.some((s) => s.id === standardId)) {
+          setStandardId("");
+        }
+      })
+      .catch(() => {});
+  }, [boardId]);
 
   const handleDeckSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

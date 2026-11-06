@@ -249,6 +249,11 @@ export function LiveKitClassRoomV2({
   const [isHandRaised, setIsHandRaised] = useState<boolean>(false);
   const [recentHandRaiseAlert, setRecentHandRaiseAlert] = useState<{ name: string; identity: string } | null>(null);
 
+  // Audience Mic Moderation (Presenter permission grant)
+  const [allowedMics, setAllowedMics] = useState<Set<string>>(new Set());
+  const [micAllowedByHost, setMicAllowedByHost] = useState<boolean>(false);
+  const [hostAllowedMicToast, setHostAllowedMicToast] = useState<boolean>(false);
+
   // Auto-dismiss hand raise alert after 6 seconds
   useEffect(() => {
     if (!recentHandRaiseAlert) return;
@@ -282,6 +287,48 @@ export function LiveKitClassRoomV2({
   const normalizedRole = (role || "").toUpperCase();
   const isTeacher = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
   const isImmersed = !isTeacher && stageMode !== "grid";
+
+  // Toggle Audience Microphone Permission (Presenter -> Student)
+  const toggleParticipantMic = useCallback(
+    async (targetIdentity: string, enable: boolean) => {
+      if (!isTeacher) return;
+      try {
+        setAllowedMics((prev) => {
+          const next = new Set(prev);
+          if (enable) next.add(targetIdentity);
+          else next.delete(targetIdentity);
+          return next;
+        });
+
+        const room = (window as any).__lk_room;
+        if (room) {
+          safePublishData(room, {
+            type: enable ? "ALLOW_MIC" : "MUTE_STUDENT",
+            identity: targetIdentity,
+            allowed: enable,
+          });
+        }
+
+        if (classId) {
+          await fetchApi(`/live-class/${classId}/moderate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: enable ? "UNMUTE_STUDENT" : "MUTE_STUDENT",
+              targetIdentity,
+              muted: !enable,
+            }),
+            silent: true,
+          }).catch((err) => {
+            console.warn("Backend mic moderation update error:", err?.message);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to toggle mic permission:", err);
+      }
+    },
+    [classId, isTeacher]
+  );
 
   // High-Fidelity In-Browser Multi-Source Recording State
   const [recordingStatus, setRecordingStatus] = useState<"idle" | "recording" | "paused" | "saving">("idle");
@@ -636,8 +683,9 @@ export function LiveKitClassRoomV2({
         }
       }
 
-      // 2. Authenticated LMS token endpoint strictly for regular logged-in students/teachers (never public webinars)
-      if (!res && !isWebinar && normalizedRole !== "PUBLIC_LEARNER") {
+      // 2. Authenticated LMS token endpoint for logged-in staff/teachers (including public webinars) and enrolled students
+      const isStaff = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST"].includes(normalizedRole);
+      if (!res && (isStaff || (!isWebinar && normalizedRole !== "PUBLIC_LEARNER"))) {
         const query = new URLSearchParams({
           roomId: roomId || "",
           identity: effectiveIdentity,
@@ -652,12 +700,14 @@ export function LiveKitClassRoomV2({
         );
       }
 
-      if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER")) {
-        throw new Error("Your webinar registration credential could not be verified (session expired or unconfirmed). Please register for free to get instant access.");
-      }
-
-      if (!res && (isWebinar || normalizedRole === "PUBLIC_LEARNER")) {
-        throw new Error("Unable to establish public webinar stream. Please refresh or enter the webinar again.");
+      if (!res) {
+        if (isStaff) {
+          throw new Error("Unable to authenticate your presenter session. Please ensure you are signed in to the LMS with teacher or admin permissions.");
+        }
+        if (isWebinar || normalizedRole === "PUBLIC_LEARNER") {
+          throw new Error("Your webinar registration credential could not be verified (session expired or unconfirmed). Please register for free to get instant access.");
+        }
+        throw new Error("Unable to establish classroom security token. Please try entering the class again.");
       }
 
       setTokenData(res);
@@ -757,7 +807,7 @@ export function LiveKitClassRoomV2({
 
   if (error || !tokenData) {
     const isRegistrationError =
-      Boolean(error && /registration|credential|access denied|authentication/i.test(error));
+      !isTeacher && Boolean(error && /registration|credential|access denied|authentication/i.test(error));
     const webinarLandingId = classId || roomId;
 
     return (
@@ -768,13 +818,11 @@ export function LiveKitClassRoomV2({
         <div className="max-w-md">
           <h3 className="text-base font-bold">Classroom Entry Failed</h3>
           <p className="text-xs text-white/60 mt-1 leading-relaxed">
-            {isRegistrationError || isWebinar
-              ? "Your webinar registration credential could not be verified (session expired or unconfirmed). Please register for free to get instant access."
-              : (error || "Could not retrieve access credentials.")}
+            {error || "Could not retrieve access credentials."}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-          {webinarLandingId && (isWebinar || isRegistrationError) && (
+          {webinarLandingId && isRegistrationError && (
             <a
               href={`/live/${encodeURIComponent(webinarLandingId)}`}
               onClick={() => {
@@ -789,6 +837,14 @@ export function LiveKitClassRoomV2({
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
               Register & Join Free
             </a>
+          )}
+          {isTeacher && (
+            <button
+              onClick={() => fetchToken()}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold shadow-lg text-white transition-all"
+            >
+              Retry Presenter Entry
+            </button>
           )}
           <button
             onClick={fetchToken}
@@ -914,6 +970,9 @@ export function LiveKitClassRoomV2({
         onUpdateAttendees={setSessionAttendees}
         setRemoteRecordingActive={setRemoteRecordingActive}
         setRemoteRecordingPaused={setRemoteRecordingPaused}
+        setMicAllowedByHost={setMicAllowedByHost}
+        setHostAllowedMicToast={setHostAllowedMicToast}
+        setAllowedMics={setAllowedMics}
       />
 
       <StudioPipelineManager
@@ -1226,19 +1285,42 @@ export function LiveKitClassRoomV2({
                             <p className="font-bold text-white truncate">{item.name}</p>
                             <p className="text-[10px] text-white/40">{formatRelativeTime(item.raisedAt)}</p>
                           </div>
-                          <button
-                            onClick={() => {
-                              const room = (window as any).__lk_room;
-                              safePublishData(room, {
-                                type: "LOWER_STUDENT_HAND",
-                                identity: item.identity,
-                              });
-                              setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
-                            }}
-                            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 text-[10px] font-bold shrink-0 transition-colors"
-                          >
-                            Lower
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleParticipantMic(item.identity, !allowedMics.has(item.identity))}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all ${allowedMics.has(item.identity)
+                                ? "bg-rose-500/25 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30"
+                                : "bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                              }`}
+                              title={allowedMics.has(item.identity) ? "Turn Off Mic" : "Turn On Mic"}
+                            >
+                              {allowedMics.has(item.identity) ? (
+                                <>
+                                  <MicOff size={11} />
+                                  <span>Mute</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Mic size={11} />
+                                  <span>Allow Mic</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                const room = (window as any).__lk_room;
+                                safePublishData(room, {
+                                  type: "LOWER_STUDENT_HAND",
+                                  identity: item.identity,
+                                });
+                                setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 text-[10px] font-bold shrink-0 transition-colors"
+                            >
+                              Lower
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1430,22 +1512,45 @@ export function LiveKitClassRoomV2({
                         {item.name}
                       </span>
                     </div>
-                    <button
-                      onClick={() => {
-                        const room = (window as any).__lk_room;
-                        safePublishData(room, {
-                          type: "LOWER_STUDENT_HAND",
-                          identity: item.identity,
-                        });
-                        setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
-                        if (recentHandRaiseAlert?.identity === item.identity) {
-                          setRecentHandRaiseAlert(null);
-                        }
-                      }}
-                      className="text-[10px] text-amber-300 hover:text-white font-bold px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/30 shrink-0 transition-colors cursor-pointer"
-                    >
-                      Lower Hand
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleParticipantMic(item.identity, !allowedMics.has(item.identity))}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center gap-1 transition-all ${allowedMics.has(item.identity)
+                          ? "bg-rose-500/25 text-rose-300 border-rose-500/40 hover:bg-rose-500/35"
+                          : "bg-emerald-500/25 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/35"
+                        }`}
+                        title={allowedMics.has(item.identity) ? "Turn Off Microphone" : "Turn On Microphone"}
+                      >
+                        {allowedMics.has(item.identity) ? (
+                          <>
+                            <MicOff size={11} />
+                            <span>Mute</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic size={11} />
+                            <span>Allow Mic</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const room = (window as any).__lk_room;
+                          safePublishData(room, {
+                            type: "LOWER_STUDENT_HAND",
+                            identity: item.identity,
+                          });
+                          setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
+                          if (recentHandRaiseAlert?.identity === item.identity) {
+                            setRecentHandRaiseAlert(null);
+                          }
+                        }}
+                        className="text-[10px] text-amber-300 hover:text-white font-bold px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/30 shrink-0 transition-colors cursor-pointer"
+                      >
+                        Lower Hand
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1757,6 +1862,9 @@ export function LiveKitClassRoomV2({
           classId={classId}
           sessionAttendees={sessionAttendees}
           defaultTab={isWebinar ? "webinar" : "live"}
+          isTeacher={isTeacher}
+          allowedMics={allowedMics}
+          onToggleMic={toggleParticipantMic}
         />
       )}
 
@@ -1775,10 +1883,27 @@ export function LiveKitClassRoomV2({
         />
       )}
 
+      {/* Presenter Turned On Mic Toast Notification */}
+      {hostAllowedMicToast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-4 pointer-events-auto">
+          <span className="p-1 rounded-full bg-white/20">
+            <Mic size={14} />
+          </span>
+          <span>The presenter has enabled your microphone! You can now unmute and speak to the session.</span>
+          <button
+            onClick={() => setHostAllowedMicToast(false)}
+            className="ml-2 p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
       {/* ── BOTTOM TOUCH-ENGINEERED CONTROL DOCK ── */}
       <V2BottomControlDock
         isTeacher={isTeacher}
         isWebinar={isWebinar}
+        micAllowedByHost={micAllowedByHost}
         isImmersed={isImmersed}
         isHandRaised={isHandRaised}
         unreadChatCount={unreadChatCount}
@@ -1830,12 +1955,18 @@ function AttendanceRosterModal({
   classId,
   sessionAttendees,
   defaultTab = "live",
+  isTeacher = false,
+  allowedMics,
+  onToggleMic,
 }: {
   isOpen: boolean;
   onClose: () => void;
   classId?: string;
   sessionAttendees: Map<string, SessionAttendee>;
   defaultTab?: "live" | "webinar";
+  isTeacher?: boolean;
+  allowedMics?: Set<string>;
+  onToggleMic?: (identity: string, enable: boolean) => void;
 }) {
   const [tab, setTab] = useState<"live" | "webinar">(defaultTab);
   const [search, setSearch] = useState("");
@@ -2042,7 +2173,8 @@ function AttendanceRosterModal({
                     <th className="py-2.5 px-3">Participant Name</th>
                     <th className="py-2.5 px-3">Role</th>
                     <th className="py-2.5 px-3">First Joined</th>
-                    <th className="py-2.5 px-3 text-right">Status</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    {isTeacher && <th className="py-2.5 px-3 text-right">Microphone</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -2060,7 +2192,7 @@ function AttendanceRosterModal({
                         </span>
                       </td>
                       <td className="py-3 px-3 text-white/50">{a.firstJoinedAt}</td>
-                      <td className="py-3 px-3 text-right">
+                      <td className="py-3 px-3 text-center">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${a.isOnline
                               ? "bg-emerald-500/20 text-emerald-400"
@@ -2074,6 +2206,36 @@ function AttendanceRosterModal({
                           {a.isOnline ? "Online" : "Left"}
                         </span>
                       </td>
+                      {isTeacher && (
+                        <td className="py-3 px-3 text-right">
+                          {["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER"].includes(a.role) ? (
+                            <span className="text-[10px] text-white/40 font-medium">Presenter</span>
+                          ) : !a.isOnline ? (
+                            <span className="text-[10px] text-white/30">—</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onToggleMic?.(a.identity, !allowedMics?.has(a.identity))}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${allowedMics?.has(a.identity)
+                                ? "bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30"
+                                : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30"
+                              }`}
+                            >
+                              {allowedMics?.has(a.identity) ? (
+                                <>
+                                  <MicOff size={11} />
+                                  <span>Turn Off Mic</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Mic size={11} />
+                                  <span>Turn On Mic</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -2152,21 +2314,24 @@ function V2ClassVideoGrid({
     return Array.from(map.values());
   }, [cameraTracks]);
 
-  // Keynote Presenter track for Webinar Mode
+  // Keynote Presenter track for Webinar Mode (Strict Host/Teacher Identification)
   const presenterTrack = useMemo(() => {
     if (!isWebinar) return null;
     return (
       uniqueCameras.find((t) => {
+        if (isTeacher && t.participant?.isLocal) return true;
         try {
+          if ((t.participant as any)?.permissions?.roomAdmin) return true;
           const meta = JSON.parse(t.participant?.metadata || "{}");
+          const role = meta.role?.toUpperCase();
           return (
-            ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER"].includes(meta.role?.toUpperCase()) ||
-            Boolean(meta.isHost)
+            meta.isHost === true ||
+            ["SUPER_ADMIN", "CENTRE_ADMIN", "TEACHER", "ADMIN", "PRESENTER", "HOST"].includes(role)
           );
         } catch {
           return false;
         }
-      }) || (isTeacher ? uniqueCameras[0] : uniqueCameras.find((t) => !t.participant?.isLocal) || uniqueCameras[0])
+      }) || null
     );
   }, [isWebinar, uniqueCameras, isTeacher]);
 
@@ -2375,6 +2540,7 @@ function FloatingCamPiP({ isTeacher }: { isTeacher: boolean }) {
 function V2BottomControlDock({
   isTeacher,
   isWebinar = false,
+  micAllowedByHost = false,
   isImmersed,
   isHandRaised,
   unreadChatCount,
@@ -2390,6 +2556,7 @@ function V2BottomControlDock({
 }: {
   isTeacher: boolean;
   isWebinar?: boolean;
+  micAllowedByHost?: boolean;
   isImmersed: boolean;
   isHandRaised: boolean;
   unreadChatCount: number;
@@ -2442,7 +2609,7 @@ function V2BottomControlDock({
       style={{ paddingBottom: "max(6px, env(safe-area-inset-bottom))" }}
     >
       {/* Microphone Toggle */}
-      {isWebinar && !isTeacher ? (
+      {isWebinar && !isTeacher && !micAllowedByHost ? (
         <div
           className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/5 border border-white/10 text-white/40 font-bold text-[10px] sm:text-xs select-none"
           title="Webinar attendees are in listen-only mode. Use Raise Hand to request speaking permission."
@@ -2454,11 +2621,17 @@ function V2BottomControlDock({
         <button
           {...micProps}
           onClick={handleToggleMic}
-          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${micOn
+          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer relative ${micOn
               ? "bg-white/10 text-white hover:bg-white/15"
               : "bg-red-500/20 text-red-400 border border-red-500/30"
             }`}
         >
+          {micAllowedByHost && !isTeacher && (
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+          )}
           {micOn ? <Mic size={18} /> : <MicOff size={18} />}
           <span>{micOn ? "Mute" : "Unmute"}</span>
         </button>
@@ -2953,6 +3126,9 @@ function ClassroomV2Sync({
   onUpdateAttendees,
   setRemoteRecordingActive,
   setRemoteRecordingPaused,
+  setMicAllowedByHost,
+  setHostAllowedMicToast,
+  setAllowedMics,
 }: any) {
   const room = useRoomContext();
   const participants = useParticipants();
@@ -3048,14 +3224,29 @@ function ClassroomV2Sync({
           const newFile = { name: data.name, url: data.url };
           setSharedFiles((prev: any) => [...prev, newFile]);
           onNewFileShared?.(newFile);
+        } else if (data.type === "ALLOW_MIC") {
+          if (!isSenderHost) return;
+          const myLocalId = room?.localParticipant?.identity;
+          if (data.identity === myLocalId || data.identity === myIdentity) {
+            const allowed = Boolean(data.allowed);
+            setMicAllowedByHost?.(allowed);
+            if (allowed) {
+              setHostAllowedMicToast?.(true);
+              room.localParticipant?.setMicrophoneEnabled(true).catch(() => {});
+            } else {
+              room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
+            }
+          }
         } else if (data.type === "MUTE_STUDENT" && !isTeacher) {
           if (!isSenderHost) return;
           const myLocalId = room?.localParticipant?.identity;
           if (data.identity === myLocalId || data.identity === myIdentity) {
+            setMicAllowedByHost?.(false);
             room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
           }
         } else if (data.type === "MUTE_ALL" && !isTeacher) {
           if (!isSenderHost) return;
+          setMicAllowedByHost?.(false);
           room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
         } else if (data.type === "HAND_RAISE") {
           const targetId = data.identity || participant?.identity;

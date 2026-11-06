@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import logoImage from "@/logos/logo1-clean.png";
+import { useAuth } from "@/components/providers/auth-provider";
 
 interface PublicWebinar {
   id: string;
@@ -53,6 +54,9 @@ export interface RankHolder {
 export default function PublicLiveClassPage() {
   const params = useParams();
   const id = params?.id as string;
+  const { role, name: authUserName } = useAuth();
+  const normalizedRole = role ? role.toUpperCase().replace(/\s+/g, "_") : "";
+  const isStaffHost = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN"].includes(normalizedRole);
 
   const [webinar, setWebinar] = useState<PublicWebinar | null>(null);
   const [loading, setLoading] = useState(true);
@@ -360,6 +364,31 @@ export default function PublicLiveClassPage() {
       {/* ── MAIN ── */}
       <main className="relative z-20 flex-1 max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
         <div className="max-w-[680px] w-full">
+
+            {/* Presenter / Host Quick Enter Banner */}
+            {isStaffHost && (
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-950/80 to-purple-950/80 border border-blue-500/40 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-300 flex items-center justify-center font-bold text-sm shrink-0">
+                    {authUserName ? authUserName[0].toUpperCase() : "H"}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>Logged in as {authUserName || "Presenter"}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/30 text-blue-200 border border-blue-500/40">{normalizedRole}</span>
+                    </div>
+                    <p className="text-[11px] text-white/70 mt-0.5">You have full presenter rights for this webinar.</p>
+                  </div>
+                </div>
+                <a
+                  href={`/live-class?id=${encodeURIComponent(id)}`}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5 shrink-0 self-start sm:self-auto text-decoration-none"
+                >
+                  <span>Enter Stage as Host</span>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </a>
+              </div>
+            )}
 
             {/* Subject tag */}
             <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "6px", background: "rgba(1,98,177,0.15)", border: "1px solid rgba(1,98,177,0.3)", color: "#60a5fa", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>

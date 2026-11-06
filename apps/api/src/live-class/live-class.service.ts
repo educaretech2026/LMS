@@ -1704,11 +1704,13 @@ export class LiveClassService implements OnModuleInit {
     const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
 
     const isSuper = isSuperAdmin(user);
+    const isCreator = Boolean(cls.createdById && cls.createdById === user?.id);
     const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
     const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
-    const isCentreAdmin = normalizedRole === 'CENTRE_ADMIN' && (!cls.centreId || getAuthorizedCentreIds(user).includes(cls.centreId));
+    const isCentreAdmin = (normalizedRole === 'CENTRE_ADMIN' || normalizedRole === 'ADMIN') && (!cls.centreId || getAuthorizedCentreIds(user).includes(cls.centreId));
+    const isTeacherRole = normalizedRole === 'TEACHER';
 
-    if (!isSuper && !isCentreAdmin && !isAssigned && !isSubstitute) {
+    if (!isSuper && !isCentreAdmin && !isAssigned && !isSubstitute && !isCreator && !isTeacherRole) {
       throw new ForbiddenException('Only assigned teachers or authorized administrators may moderate participants.');
     }
 
