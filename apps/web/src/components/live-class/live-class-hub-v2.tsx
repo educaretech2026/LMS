@@ -176,13 +176,18 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
 
   // Filter & sort sessions
   const filteredClasses = useMemo(() => {
+    const getTime = (val?: string | null) => {
+      if (!val) return 0;
+      const t = new Date(val).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+
     const list = classes.filter(cls => {
       // Tab filter
-      if (activeTab === "LIVE" && (cls.status !== "LIVE" || cls.isPublic)) return false;
-      if (activeTab === "UPCOMING" && (cls.status !== "SCHEDULED" || cls.isPublic)) return false;
+      if (activeTab === "LIVE" && cls.status !== "LIVE") return false;
+      if (activeTab === "UPCOMING" && cls.status !== "SCHEDULED") return false;
       if (activeTab === "WEBINARS" && !cls.isPublic) return false;
-      if (activeTab === "ENDED" && (cls.status !== "ENDED" || cls.isPublic)) return false;
-      if (activeTab === "ALL" && cls.isPublic) return false;
+      if (activeTab === "ENDED" && cls.status !== "ENDED") return false;
 
       // Search filter
       if (searchQuery.trim()) {
@@ -190,23 +195,31 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
         const matchesTitle = cls.title?.toLowerCase().includes(q);
         const matchesSubject = cls.subject?.toLowerCase().includes(q);
         const matchesTeacher = cls.teacherName?.toLowerCase().includes(q);
-        return Boolean(matchesTitle || matchesSubject || matchesTeacher);
+        const matchesType = cls.isPublic && "webinar".includes(q);
+        return Boolean(matchesTitle || matchesSubject || matchesTeacher || matchesType);
       }
       return true;
     });
 
     return [...list].sort((a, b) => {
+      const timeA = getTime(a.scheduledAt);
+      const timeB = getTime(b.scheduledAt);
+
       switch (sortBy) {
         case "STATUS_LIVE_FIRST": {
           const priority = (s: string) => (s === "LIVE" ? 0 : s === "SCHEDULED" ? 1 : 2);
           const diff = priority(a.status) - priority(b.status);
           if (diff !== 0) return diff;
-          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+          // If both scheduled, soonest upcoming first
+          if (a.status === "SCHEDULED") return timeA - timeB;
+          // If both ended, most recently ended first
+          if (a.status === "ENDED") return timeB - timeA;
+          return timeA - timeB;
         }
         case "DATE_SOONEST":
-          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+          return timeA - timeB;
         case "DATE_LATEST":
-          return new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime();
+          return timeB - timeA;
         case "TITLE_ASC":
           return (a.title || "").localeCompare(b.title || "");
         case "TITLE_DESC":

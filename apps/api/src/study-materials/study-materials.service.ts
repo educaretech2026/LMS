@@ -1,11 +1,11 @@
-import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, NotFoundException, ForbiddenException, BadRequestException, Optional, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
 import { isSuperAdmin, getAuthorizedCentreIds, SAFE_USER_SELECT } from '../common/utils/tenant.util';
 
 @Injectable()
-export class StudyMaterialService {
+export class StudyMaterialService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly storageService?: StorageService,
@@ -13,6 +13,46 @@ export class StudyMaterialService {
   ) {
     if (this.storageService && !(this.storageService as any).prisma && this.prisma) {
       (this.storageService as any).prisma = this.prisma;
+    }
+  }
+
+  async onModuleInit() {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "study_material_boards" (
+            "id" TEXT NOT NULL,
+            "studyMaterialId" TEXT NOT NULL,
+            "boardId" TEXT NOT NULL,
+            CONSTRAINT "study_material_boards_pkey" PRIMARY KEY ("id")
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS "study_material_boards_material_board_idx" ON "study_material_boards"("studyMaterialId", "boardId");
+
+        CREATE TABLE IF NOT EXISTS "study_material_standards" (
+            "id" TEXT NOT NULL,
+            "studyMaterialId" TEXT NOT NULL,
+            "standardId" TEXT NOT NULL,
+            CONSTRAINT "study_material_standards_pkey" PRIMARY KEY ("id")
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS "study_material_standards_material_standard_idx" ON "study_material_standards"("studyMaterialId", "standardId");
+
+        CREATE TABLE IF NOT EXISTS "study_material_centres" (
+            "id" TEXT NOT NULL,
+            "studyMaterialId" TEXT NOT NULL,
+            "centreId" TEXT NOT NULL,
+            CONSTRAINT "study_material_centres_pkey" PRIMARY KEY ("id")
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS "study_material_centres_material_centre_idx" ON "study_material_centres"("studyMaterialId", "centreId");
+
+        CREATE TABLE IF NOT EXISTS "study_material_batches" (
+            "id" TEXT NOT NULL,
+            "studyMaterialId" TEXT NOT NULL,
+            "batchId" TEXT NOT NULL,
+            CONSTRAINT "study_material_batches_pkey" PRIMARY KEY ("id")
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS "study_material_batches_material_batch_idx" ON "study_material_batches"("studyMaterialId", "batchId");
+      `);
+    } catch (e: any) {
+      console.warn('Could not verify study_material multi-target tables:', e?.message);
     }
   }
 
@@ -190,7 +230,12 @@ export class StudyMaterialService {
             subtopic: true,
             uploader: {
               select: SAFE_USER_SELECT
-            }
+            },
+            centre: { select: { id: true, name: true, code: true } },
+            boards: { include: { board: true } },
+            standards: { include: { standard: true } },
+            centres: { include: { centre: true } },
+            batches: { include: { batch: true } },
           },
           orderBy: { createdAt: 'desc' },
         });
@@ -207,7 +252,12 @@ export class StudyMaterialService {
             topic: true,
             uploader: {
               select: SAFE_USER_SELECT
-            }
+            },
+            centre: { select: { id: true, name: true, code: true } },
+            boards: { include: { board: true } },
+            standards: { include: { standard: true } },
+            centres: { include: { centre: true } },
+            batches: { include: { batch: true } },
           },
           orderBy: { createdAt: 'desc' },
         }).catch(() => []);
@@ -228,6 +278,9 @@ export class StudyMaterialService {
         syllabus: {
           include: { board: true, standard: true, subject: true },
         },
+        chapter: true,
+        topic: true,
+        subtopic: true,
         academicYear: true,
         uploader: {
           include: { userCentres: true, role: true },
@@ -235,6 +288,11 @@ export class StudyMaterialService {
         targetTrack: {
           include: { batches: true },
         },
+        centre: { select: { id: true, name: true, code: true } },
+        boards: { include: { board: true } },
+        standards: { include: { standard: true } },
+        centres: { include: { centre: true } },
+        batches: { include: { batch: true } },
       }
     });
 
@@ -743,7 +801,45 @@ export class StudyMaterialService {
         });
       }
 
-      return created;
+      // Persist multi-target assignments
+      const finalBoardIds: string[] = Array.isArray(data.boardIds) && data.boardIds.length > 0
+        ? data.boardIds
+        : (data.boardId ? [data.boardId] : []);
+      if (finalBoardIds.length > 0) {
+        await this.prisma.studyMaterialBoard.createMany({
+          data: finalBoardIds.map((bId: string) => ({ studyMaterialId: created.id, boardId: bId })),
+          skipDuplicates: true,
+        }).catch(e => console.warn('StudyMaterialBoard createMany error:', e?.message));
+      }
+
+      const finalStandardIds: string[] = Array.isArray(data.standardIds) && data.standardIds.length > 0
+        ? data.standardIds
+        : (data.standardId ? [data.standardId] : []);
+      if (finalStandardIds.length > 0) {
+        await this.prisma.studyMaterialStandard.createMany({
+          data: finalStandardIds.map((sId: string) => ({ studyMaterialId: created.id, standardId: sId })),
+          skipDuplicates: true,
+        }).catch(e => console.warn('StudyMaterialStandard createMany error:', e?.message));
+      }
+
+      const finalCentreIds: string[] = Array.isArray(data.centreIds) && data.centreIds.length > 0
+        ? data.centreIds
+        : (resolvedCentreId ? [resolvedCentreId] : []);
+      if (finalCentreIds.length > 0) {
+        await this.prisma.studyMaterialCentre.createMany({
+          data: finalCentreIds.map((cId: string) => ({ studyMaterialId: created.id, centreId: cId })),
+          skipDuplicates: true,
+        }).catch(e => console.warn('StudyMaterialCentre createMany error:', e?.message));
+      }
+
+      if (Array.isArray(data.batchIds) && data.batchIds.length > 0) {
+        await this.prisma.studyMaterialBatch.createMany({
+          data: data.batchIds.map((batchId: string) => ({ studyMaterialId: created.id, batchId })),
+          skipDuplicates: true,
+        }).catch(e => console.warn('StudyMaterialBatch createMany error:', e?.message));
+      }
+
+      return await this.getById(created.id, user);
     } catch (error: any) {
       if (error instanceof ForbiddenException || error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
@@ -1165,7 +1261,48 @@ export class StudyMaterialService {
         });
       }
 
-      return updated;
+      // Synchronize multi-target relations if provided
+      if (Array.isArray(updateData.boardIds)) {
+        await this.prisma.studyMaterialBoard.deleteMany({ where: { studyMaterialId: id } }).catch(() => {});
+        if (updateData.boardIds.length > 0) {
+          await this.prisma.studyMaterialBoard.createMany({
+            data: updateData.boardIds.map((bId: string) => ({ studyMaterialId: id, boardId: bId })),
+            skipDuplicates: true,
+          }).catch(e => console.warn('StudyMaterialBoard sync error:', e?.message));
+        }
+      }
+
+      if (Array.isArray(updateData.standardIds)) {
+        await this.prisma.studyMaterialStandard.deleteMany({ where: { studyMaterialId: id } }).catch(() => {});
+        if (updateData.standardIds.length > 0) {
+          await this.prisma.studyMaterialStandard.createMany({
+            data: updateData.standardIds.map((sId: string) => ({ studyMaterialId: id, standardId: sId })),
+            skipDuplicates: true,
+          }).catch(e => console.warn('StudyMaterialStandard sync error:', e?.message));
+        }
+      }
+
+      if (Array.isArray(updateData.centreIds)) {
+        await this.prisma.studyMaterialCentre.deleteMany({ where: { studyMaterialId: id } }).catch(() => {});
+        if (updateData.centreIds.length > 0) {
+          await this.prisma.studyMaterialCentre.createMany({
+            data: updateData.centreIds.map((cId: string) => ({ studyMaterialId: id, centreId: cId })),
+            skipDuplicates: true,
+          }).catch(e => console.warn('StudyMaterialCentre sync error:', e?.message));
+        }
+      }
+
+      if (Array.isArray(updateData.batchIds)) {
+        await this.prisma.studyMaterialBatch.deleteMany({ where: { studyMaterialId: id } }).catch(() => {});
+        if (updateData.batchIds.length > 0) {
+          await this.prisma.studyMaterialBatch.createMany({
+            data: updateData.batchIds.map((batchId: string) => ({ studyMaterialId: id, batchId })),
+            skipDuplicates: true,
+          }).catch(e => console.warn('StudyMaterialBatch sync error:', e?.message));
+        }
+      }
+
+      return await this.getById(id, user);
     } catch (error: any) {
       if (error instanceof NotFoundException || error instanceof ForbiddenException || error instanceof BadRequestException) {
         throw error;

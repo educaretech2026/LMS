@@ -109,6 +109,7 @@ model Centre {
   auditLogs          AuditLog[]
   enquiries          Enquiry[]
   studyMaterials     StudyMaterial[]
+  studyMaterialCentres StudyMaterialCentre[]
   apiIntegrations    ApiIntegration[]
 
   @@map("centres")
@@ -163,6 +164,7 @@ model Board {
   exams          Exam[]
   standards      Standard[]
   standardBoards StandardBoard[]
+  studyMaterialBoards StudyMaterialBoard[]
   teacherAssignments TeacherAssignment[]
 
   @@map("boards")
@@ -182,6 +184,7 @@ model Standard {
   liveClasses        LiveClass[]
   exams              Exam[]
   boards             StandardBoard[]
+  studyMaterialStandards StudyMaterialStandard[]
   teacherAssignments TeacherAssignment[]
 
   @@unique([name, boardId])
@@ -332,6 +335,7 @@ model Batch {
   topicProgress        BatchTopicProgress[]
   studentTopicProgress StudentTopicProgress[]
   Attendance           Attendance[]
+  studyMaterialBatches StudyMaterialBatch[]
 
   @@map("batches")
 }
@@ -531,8 +535,60 @@ model StudyMaterial {
   uploader     User?        @relation(fields: [uploaderId], references: [id])
   centre       Centre?      @relation(fields: [centreId], references: [id], onDelete: SetNull)
   progress     StudyMaterialProgress[]
+  boards       StudyMaterialBoard[]
+  standards    StudyMaterialStandard[]
+  centres      StudyMaterialCentre[]
+  batches      StudyMaterialBatch[]
 
   @@map("study_materials")
+}
+
+model StudyMaterialBoard {
+  id              String        @id @default(uuid())
+  studyMaterialId String
+  boardId         String
+
+  studyMaterial   StudyMaterial @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+  board           Board         @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([studyMaterialId, boardId])
+  @@map("study_material_boards")
+}
+
+model StudyMaterialStandard {
+  id              String        @id @default(uuid())
+  studyMaterialId String
+  standardId      String
+
+  studyMaterial   StudyMaterial @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+  standard        Standard      @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@unique([studyMaterialId, standardId])
+  @@map("study_material_standards")
+}
+
+model StudyMaterialCentre {
+  id              String        @id @default(uuid())
+  studyMaterialId String
+  centreId        String
+
+  studyMaterial   StudyMaterial @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+  centre          Centre        @relation(fields: [centreId], references: [id], onDelete: Cascade)
+
+  @@unique([studyMaterialId, centreId])
+  @@map("study_material_centres")
+}
+
+model StudyMaterialBatch {
+  id              String        @id @default(uuid())
+  studyMaterialId String
+  batchId         String
+
+  studyMaterial   StudyMaterial @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+  batch           Batch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([studyMaterialId, batchId])
+  @@map("study_material_batches")
 }
 
 model StudyMaterialProgress {

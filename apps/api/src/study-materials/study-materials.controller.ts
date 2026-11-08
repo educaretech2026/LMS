@@ -33,6 +33,12 @@ export class StudyMaterialController {
     return this.studyMaterialService.getUnreconciled(req.user);
   }
 
+  @Get(':id')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
+  getById(@Param('id') id: string, @Req() req: any) {
+    return this.studyMaterialService.getById(id, req.user);
+  }
+
   @Post()
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   create(@Body() data: any, @Req() req: any) {
