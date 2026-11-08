@@ -38,50 +38,75 @@ export function PreJoinLobby({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  // Initialize Camera & Microphone Preview
+  // Initialize Camera & Microphone Preview with Tiered Fallback
   const startPreview = useCallback(async () => {
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: true,
-      });
+      let stream: MediaStream | null = null;
+      try {
+        // Tier 1: Ideal HD User-facing
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: true,
+        });
+      } catch {
+        try {
+          // Tier 2: Basic Video + Audio
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+        } catch {
+          try {
+            // Tier 3a: Video Only (if mic blocked/denied)
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch {
+            // Tier 3b: Audio Only (if camera blocked/denied)
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          }
+        }
+      }
 
       streamRef.current = stream;
       setHasPermission(true);
       setPermissionError(null);
 
-      if (videoRef.current) {
+      if (videoRef.current && stream.getVideoTracks().length > 0) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
       }
 
-      // Audio visualizer setup
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = audioCtx;
-      const analyser = audioCtx.createAnalyser();
-      analyserRef.current = analyser;
-      analyser.fftSize = 64;
+      // Audio visualizer setup if audio track available
+      if (stream.getAudioTracks().length > 0) {
+        try {
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          audioContextRef.current = audioCtx;
+          const analyser = audioCtx.createAnalyser();
+          analyserRef.current = analyser;
+          analyser.fftSize = 64;
 
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-      const checkAudio = () => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
-        const avg = sum / dataArray.length;
-        setAudioLevel(Math.min(100, Math.round(avg * 1.5)));
-        animFrameRef.current = requestAnimationFrame(checkAudio);
-      };
+          const checkAudio = () => {
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const avg = sum / dataArray.length;
+            setAudioLevel(Math.min(100, Math.round(avg * 1.5)));
+            animFrameRef.current = requestAnimationFrame(checkAudio);
+          };
 
-      checkAudio();
+          checkAudio();
+        } catch {}
+      }
     } catch (err: any) {
       console.warn("Media devices permission error:", err);
       setHasPermission(false);
@@ -109,12 +134,28 @@ export function PreJoinLobby({
     };
   }, [startPreview]);
 
+  // Ensure video element stays bound whenever camera is active
+  useEffect(() => {
+    if (cameraEnabled && videoRef.current && streamRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraEnabled]);
+
   // Handle Camera Toggle
   const toggleCamera = () => {
     const next = !cameraEnabled;
     setCameraEnabled(next);
     if (streamRef.current) {
       streamRef.current.getVideoTracks().forEach((t) => (t.enabled = next));
+    }
+    if (next && videoRef.current && streamRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
     }
   };
 
@@ -152,20 +193,22 @@ export function PreJoinLobby({
         {/* Left: Video Preview Feed (Google Meet Style) */}
         <div className="w-full lg:w-[58%] flex flex-col items-center">
           <div className="relative w-full aspect-video rounded-3xl overflow-hidden bg-slate-900 border border-white/10 shadow-2xl flex items-center justify-center">
-            {cameraEnabled && hasPermission !== false ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover scale-x-[-1]"
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-3 text-white/50">
+            {/* Permanently mounted video element prevents black-screen re-attachment bugs */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-200 ${
+                cameraEnabled && hasPermission !== false ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            />
+            {(!cameraEnabled || hasPermission === false) && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/50 bg-slate-900 z-10">
                 <div className="h-20 w-20 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-2xl shadow-inner">
                   {(displayName || "U")[0].toUpperCase()}
                 </div>
-                <p className="text-xs font-semibold">Camera is off</p>
+                <p className="text-xs font-semibold">{hasPermission === false ? "Camera unavailable" : "Camera is off"}</p>
               </div>
             )}
 

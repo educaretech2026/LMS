@@ -118,6 +118,39 @@ function formatRecordingDuration(totalSec: number) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+export function playHandRaiseChime() {
+  try {
+    if (typeof window === "undefined") return;
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    // Dual-tone chime: A5 (880Hz) followed by C6 (1046Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(880, now);
+    gain1.gain.setValueAtTime(0.14, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.22);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(1046, now + 0.11);
+    gain2.gain.setValueAtTime(0.18, now + 0.11);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.11);
+    osc2.stop(now + 0.45);
+  } catch {}
+}
+
 export function safePublishData(
   room: any,
   payload: any,
@@ -399,8 +432,33 @@ export function LiveKitClassRoomV2({
   }, []);
 
   const startRecording = useCallback(async () => {
+    // If browser does not support getDisplayMedia (mobile/tablets/iPads), use server-side cloud egress
     if (typeof window === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
-      alert("Screen and audio recording is not supported in this browser.");
+      if (classId) {
+        try {
+          setRecordingStatus("saving");
+          const serverRes = await fetchApi<any>(`/live-class/${classId}/recording/server/start`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          if (serverRes?.success || serverRes?.egressId) {
+            setRemoteRecordingActive(true);
+            setRecordingStatus("recording");
+            setRecordingDuration(0);
+            const room = (window as any).__lk_room;
+            safePublishData(room, {
+              type: "RECORDING_STATE",
+              isRecording: true,
+              isPaused: false,
+            });
+            return;
+          }
+        } catch (serverErr: any) {
+          console.warn("Server egress recording fallback failed:", serverErr?.message);
+        }
+      }
+      alert("Screen recording is not supported on mobile browser tabs. Please use a desktop browser or enable cloud recording.");
+      setRecordingStatus("idle");
       return;
     }
 
@@ -615,8 +673,27 @@ export function LiveKitClassRoomV2({
         console.error("Failed to stop recording:", err);
         setRecordingStatus("idle");
       }
+    } else if (remoteRecordingActive && classId) {
+      try {
+        setRecordingStatus("saving");
+        fetchApi(`/live-class/${classId}/recording/server/stop`, {
+          method: "POST",
+          body: JSON.stringify({}),
+          silent: true,
+        }).catch(() => {});
+      } finally {
+        setRemoteRecordingActive(false);
+        setRecordingStatus("idle");
+        setRecordingDuration(0);
+        const room = (window as any).__lk_room;
+        safePublishData(room, {
+          type: "RECORDING_STATE",
+          isRecording: false,
+          isPaused: false,
+        });
+      }
     }
-  }, []);
+  }, [remoteRecordingActive, classId]);
 
   // Auto-dismiss activity alert after 6 seconds
   useEffect(() => {
@@ -771,28 +848,60 @@ export function LiveKitClassRoomV2({
       })
       .catch(() => { });
 
-    fetchApi<any[]>(`/live-class/${classId}/messages`, { silent: true })
-      .then((msgs) => {
-        if (Array.isArray(msgs) && msgs.length > 0) {
-          setChatMessages(
-            msgs.map((m) => ({
-              id: m.id || Math.random().toString(36).slice(2, 9),
-              sender: m.senderName || m.sender?.name || m.sender || "User",
-              role: m.senderRole || m.role || "Student",
-              text: m.message || m.content || m.text,
-              timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            }))
-          );
-        }
-      })
-      .catch(() => { });
+    const reconcileChat = () => {
+      fetchApi<any[]>(`/live-class/${classId}/messages`, { silent: true })
+        .then((msgs) => {
+          if (Array.isArray(msgs) && msgs.length > 0) {
+            setChatMessages((prev) => {
+              const existingKeys = new Set(prev.map((m) => `${m.sender}_${m.text}`));
+              const toAdd: ChatMessage[] = [];
+              for (const m of msgs) {
+                const s = m.senderName || m.sender?.name || m.sender || "User";
+                const t = m.message || m.content || m.text;
+                if (!existingKeys.has(`${s}_${t}`)) {
+                  toAdd.push({
+                    id: m.id || Math.random().toString(36).slice(2, 9),
+                    sender: s,
+                    role: m.senderRole || m.role || "Student",
+                    text: t,
+                    timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                  });
+                }
+              }
+              return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    reconcileChat();
+    const chatInterval = setInterval(reconcileChat, 5000);
+    return () => clearInterval(chatInterval);
   }, [classId, isWebinar, normalizedRole]);
 
-  // Room Options
+  // Host Periodic Stage Mode Heartbeat: ensures students who join late or switch tabs immediately sync to active stage
+  useEffect(() => {
+    if (!isTeacher) return;
+    const interval = setInterval(() => {
+      const room = (window as any).__lk_room;
+      if (room && room.state === "connected") {
+        safePublishData(room, {
+          type: "STAGE_MODE_HEARTBEAT",
+          mode: stageMode,
+          allowStudentWhiteboardDraw,
+          allowStudentSlideDraw,
+        });
+      }
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [isTeacher, stageMode, allowStudentWhiteboardDraw, allowStudentSlideDraw]);
+
+  // Room Options - Configured for adaptive bandwidth, dynamic resolution & resilient multi-bitrate streaming
   const roomOptions: RoomOptions = useMemo(
     () => ({
-      adaptiveStream: false,
-      dynacast: false,
+      adaptiveStream: true,
+      dynacast: true,
       audioCaptureDefaults: {
         autoGainControl: true,
         echoCancellation: true,
@@ -802,7 +911,7 @@ export function LiveKitClassRoomV2({
         resolution: VideoPresets.h720.resolution,
       },
       publishDefaults: {
-        simulcast: false,
+        simulcast: true,
         stopMicTrackOnMute: false,
         videoCodec: "vp8",
       },
@@ -993,6 +1102,7 @@ export function LiveKitClassRoomV2({
         }}
         onNewHandRaise={(name: string, identity: string) => {
           if (isTeacher) {
+            playHandRaiseChime();
             setRecentHandRaiseAlert({ name, identity });
           }
         }}
@@ -1592,7 +1702,7 @@ export function LiveKitClassRoomV2({
           )}
 
           {/* Teacher Raised Hand Instant Notification Toast */}
-          {isTeacher && recentHandRaiseAlert && raisedHandsList.length <= 1 && (
+          {isTeacher && recentHandRaiseAlert && (
             <div className="absolute top-16 right-4 sm:right-6 z-50 max-w-sm animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-auto">
               <div className="p-3 rounded-2xl bg-[#1d150b]/95 border border-amber-500/60 shadow-2xl backdrop-blur-md flex items-center gap-3 text-white">
                 <div className="h-9 w-9 rounded-xl bg-amber-500/25 text-amber-300 flex items-center justify-center shrink-0">
@@ -3389,6 +3499,22 @@ function ClassroomV2Sync({
   const room = useRoomContext();
   const participants = useParticipants();
 
+  // Stable mutable refs protect listeners from frequent teardowns
+  const onNewChatMessageRef = useRef(onNewChatMessage);
+  onNewChatMessageRef.current = onNewChatMessage;
+  const onNewFileSharedRef = useRef(onNewFileShared);
+  onNewFileSharedRef.current = onNewFileShared;
+  const onNewHandRaiseRef = useRef(onNewHandRaise);
+  onNewHandRaiseRef.current = onNewHandRaise;
+  const isTeacherRef = useRef(isTeacher);
+  isTeacherRef.current = isTeacher;
+  const stageModeRef = useRef(stageMode);
+  stageModeRef.current = stageMode;
+  const allowStudentWhiteboardDrawRef = useRef(allowStudentWhiteboardDraw);
+  allowStudentWhiteboardDrawRef.current = allowStudentWhiteboardDraw;
+  const allowStudentSlideDrawRef = useRef(allowStudentSlideDraw);
+  allowStudentSlideDrawRef.current = allowStudentSlideDraw;
+
   // Track and accumulate all participants seen in this live session for attendance
   useEffect(() => {
     if (!room) return;
@@ -3457,29 +3583,51 @@ function ClassroomV2Sync({
           } else if (participant.metadata) {
             try {
               const meta = typeof participant.metadata === "string" ? JSON.parse(participant.metadata) : participant.metadata;
-              if (meta.isHost === true || meta.role === "TEACHER" || meta.role === "SUPER_ADMIN" || meta.role === "CENTRE_ADMIN") {
+              if (
+                meta.isHost === true ||
+                meta.role === "TEACHER" ||
+                meta.role === "SUPER_ADMIN" ||
+                meta.role === "CENTRE_ADMIN" ||
+                meta.role === "ADMIN"
+              ) {
                 isSenderHost = true;
               }
             } catch { }
           }
         }
 
-        if (data.type === "STAGE_MODE_CHANGE" && data.mode) {
-          if (!isSenderHost) return;
-          setStageMode(data.mode);
+        // Stage Mode Sync: Supports STAGE_MODE_CHANGE, ROOM_STATE_SYNC & STAGE_MODE_HEARTBEAT
+        if (
+          (data.type === "STAGE_MODE_CHANGE" ||
+            data.type === "ROOM_STATE_SYNC" ||
+            data.type === "STAGE_MODE_HEARTBEAT") &&
+          data.mode
+        ) {
+          if (data.type === "STAGE_MODE_CHANGE" && participant && !isSenderHost) return;
+          setStageMode((prev: string) => (prev !== data.mode ? data.mode : prev));
+          if (typeof data.allowStudentWhiteboardDraw === "boolean") {
+            setAllowStudentWhiteboardDraw(data.allowStudentWhiteboardDraw);
+          }
+          if (typeof data.allowStudentSlideDraw === "boolean") {
+            setAllowStudentSlideDraw(data.allowStudentSlideDraw);
+          }
         } else if (data.type === "WHITEBOARD_PERMISSION") {
           if (!isSenderHost) return;
           setAllowStudentWhiteboardDraw(!!data.allowStudentDraw);
         } else if (data.type === "CHAT_MESSAGE") {
-          setChatMessages((prev: any) => [...prev, data]);
+          setChatMessages((prev: any) => {
+            const key = `${data.sender}_${data.text}`;
+            if (prev.some((m: any) => `${m.sender}_${m.text}` === key)) return prev;
+            return [...prev, data];
+          });
           if (activeTabRef.current !== "chat") {
             setUnreadChatCount((prev: number) => prev + 1);
           }
-          onNewChatMessage?.(data);
+          onNewChatMessageRef.current?.(data);
         } else if (data.type === "FILE_SHARED") {
           const newFile = { name: data.name, url: data.url };
           setSharedFiles((prev: any) => [...prev, newFile]);
-          onNewFileShared?.(newFile);
+          onNewFileSharedRef.current?.(newFile);
         } else if (data.type === "ALLOW_MIC") {
           if (!isSenderHost) return;
           const myLocalId = room?.localParticipant?.identity;
@@ -3493,14 +3641,14 @@ function ClassroomV2Sync({
               room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
             }
           }
-        } else if (data.type === "MUTE_STUDENT" && !isTeacher) {
+        } else if (data.type === "MUTE_STUDENT" && !isTeacherRef.current) {
           if (!isSenderHost) return;
           const myLocalId = room?.localParticipant?.identity;
           if (data.identity === myLocalId || data.identity === myIdentity) {
             setMicAllowedByHost?.(false);
             room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
           }
-        } else if (data.type === "MUTE_ALL" && !isTeacher) {
+        } else if (data.type === "MUTE_ALL" && !isTeacherRef.current) {
           if (!isSenderHost) return;
           setMicAllowedByHost?.(false);
           room.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
@@ -3536,7 +3684,10 @@ function ClassroomV2Sync({
             }
           });
           if (data.raised) {
-            onNewHandRaise?.(targetName, targetId);
+            if (isTeacherRef.current) {
+              playHandRaiseChime();
+            }
+            onNewHandRaiseRef.current?.(targetName, targetId);
           }
         } else if (data.type === "LOWER_STUDENT_HAND") {
           const myLocalId = room?.localParticipant?.identity;
@@ -3558,27 +3709,26 @@ function ClassroomV2Sync({
       } catch { }
     };
 
+    const handleParticipantConnected = () => {
+      // Announce active stage mode to any newly joined participant immediately
+      if (isTeacherRef.current && room?.state === "connected") {
+        safePublishData(room, {
+          type: "ROOM_STATE_SYNC",
+          mode: stageModeRef.current,
+          allowStudentWhiteboardDraw: allowStudentWhiteboardDrawRef.current,
+          allowStudentSlideDraw: allowStudentSlideDrawRef.current,
+        });
+      }
+    };
+
     room.on("dataReceived", handleData);
+    room.on("participantConnected", handleParticipantConnected);
+
     return () => {
       room.off("dataReceived", handleData);
+      room.off("participantConnected", handleParticipantConnected);
     };
-  }, [
-    room,
-    isTeacher,
-    myIdentity,
-    setStageMode,
-    setAllowStudentWhiteboardDraw,
-    setChatMessages,
-    setSharedFiles,
-    activeTabRef,
-    setUnreadChatCount,
-    setRaisedHandsList,
-    setIsHandRaised,
-    setBreakState,
-    onNewChatMessage,
-    onNewFileShared,
-    onNewHandRaise,
-  ]);
+  }, [room, myIdentity, setStageMode, setAllowStudentWhiteboardDraw, setAllowStudentSlideDraw, setChatMessages, setSharedFiles, activeTabRef, setUnreadChatCount, setRaisedHandsList, setIsHandRaised, setBreakState, setMicAllowedByHost, setHostAllowedMicToast, setRemoteRecordingActive, setRemoteRecordingPaused, participants]);
 
   return null;
 }

@@ -701,11 +701,11 @@ export class LiveClassService implements OnModuleInit {
     if (user && !isSuperAdmin(user)) {
       if (cls.centreId) {
         assertCentreAccess(user, cls.centreId);
-      } else {
+      } else if (cls.createdById !== user?.id && !cls.isPublic) {
         throw new ForbiddenException('Cannot modify a global live class');
       }
 
-      if (normalizedRole === 'TEACHER' && cls.teacherId && cls.teacherId !== user.id) {
+      if (normalizedRole === 'TEACHER' && cls.teacherId && cls.teacherId !== user.id && cls.createdById !== user.id) {
         throw new ForbiddenException('You can only modify live classes assigned to you.');
       }
     }
@@ -766,11 +766,11 @@ export class LiveClassService implements OnModuleInit {
     if (user && !isSuperAdmin(user)) {
       if (cls.centreId) {
         assertCentreAccess(user, cls.centreId);
-      } else {
+      } else if (cls.createdById !== user?.id && !cls.isPublic) {
         throw new ForbiddenException('Cannot alter status of a global live class');
       }
 
-      if (normalizedRole === 'TEACHER' && cls.teacherId && cls.teacherId !== user.id) {
+      if (normalizedRole === 'TEACHER' && cls.teacherId && cls.teacherId !== user.id && cls.createdById !== user.id) {
         throw new ForbiddenException('You can only modify status of live classes assigned to you.');
       }
     }
@@ -807,11 +807,11 @@ export class LiveClassService implements OnModuleInit {
     if (user && !isSuperAdmin(user)) {
       if (cls.centreId) {
         assertCentreAccess(user, cls.centreId);
-      } else {
+      } else if (cls.createdById !== user?.id && !cls.isPublic) {
         throw new ForbiddenException('Cannot delete a global live class');
       }
 
-      if (normalizedRole === 'TEACHER' && cls.teacherId && cls.teacherId !== user.id) {
+      if (normalizedRole === 'TEACHER' && cls.teacherId && cls.teacherId !== user.id && cls.createdById !== user.id) {
         throw new ForbiddenException('You can only delete live classes assigned to you.');
       }
     }
@@ -1142,17 +1142,17 @@ export class LiveClassService implements OnModuleInit {
           CREATE INDEX IF NOT EXISTS "live_class_registrations_email_idx" ON "live_class_registrations"("email");
         `);
 
-        // Raw SQL fallback upsert
-        await this.prisma.$executeRawUnsafe(`
+        // Parameterized SQL fallback upsert
+        await this.prisma.$executeRaw`
           INSERT INTO "live_class_registrations" ("id", "liveClassId", "name", "email", "phone", "organization", "registrationToken", "status", "registeredAt")
-          VALUES (gen_random_uuid()::text, '${targetLiveClassId.replace(/'/g, "''")}', '${trimmedName.replace(/'/g, "''")}', '${trimmedEmail.replace(/'/g, "''")}', '${trimmedPhone.replace(/'/g, "''")}', '${compositeOrg.replace(/'/g, "''")}', '${hashedToken.replace(/'/g, "''")}', 'REGISTERED', NOW())
+          VALUES (gen_random_uuid()::text, ${targetLiveClassId}, ${trimmedName}, ${trimmedEmail}, ${trimmedPhone}, ${compositeOrg}, ${hashedToken}, 'REGISTERED', NOW())
           ON CONFLICT ("liveClassId", "email") DO UPDATE SET
             "name" = EXCLUDED."name",
             "phone" = EXCLUDED."phone",
             "organization" = EXCLUDED."organization",
             "registrationToken" = EXCLUDED."registrationToken",
             "status" = 'REGISTERED';
-        `);
+        `;
       } catch (retryErr: any) {
         this.logger.error(`Critical: Fallback registration SQL failed (${retryErr?.message})`);
       }
@@ -1368,19 +1368,43 @@ export class LiveClassService implements OnModuleInit {
         assertCentreAccess(user, cls.centreId);
       }
       // Explicit Teacher Authorization:
-      // Must be either:
-      // 1. The assigned teacher: cls.teacherId === user.id
-      // 2. The designated substitute teacher: cls.substituteTeacherId === user.id
+      // Host permissions if:
+      // 1. Assigned teacher ID: cls.teacherId === user.id
+      // 2. Designated substitute: cls.substituteTeacherId === user.id
+      // 3. Class creator: cls.createdById === user.id
+      // 4. Name match fallback: cls.teacherName matches teacher profile/name
+      // 5. Public webinar or unassigned teacher: allow staff to host
       const isAssigned = Boolean(cls.teacherId && cls.teacherId === user?.id);
       const isSubstitute = Boolean(cls.substituteTeacherId && cls.substituteTeacherId === user?.id);
       const isCreator = Boolean(cls.createdById && cls.createdById === user?.id);
 
-      if (!isAssigned && !isSubstitute && !isCreator && !cls.isPublic && !isSuperAdmin(user)) {
-        throw new ForbiddenException(
-          'You are not authorized to host this live class. Only the assigned teacher or designated substitute may host.',
-        );
+      const userFullName = user?.firstName
+        ? `${user.firstName} ${user.lastName || ''}`.trim().toLowerCase()
+        : (user?.name || '').toLowerCase();
+      const isNameMatch = Boolean(
+        cls.teacherName &&
+        userFullName &&
+        (cls.teacherName.toLowerCase().includes(userFullName) || userFullName.includes(cls.teacherName.toLowerCase()))
+      );
+
+      const canHost = isAssigned || isSubstitute || isCreator || isNameMatch || cls.isPublic || !cls.teacherId || isSuperAdmin(user);
+
+      if (canHost) {
+        isHost = true;
+        // Auto-bind teacherId if it was previously unset
+        if (!cls.teacherId && user?.id) {
+          this.prisma.liveClass.update({
+            where: { id: cls.id },
+            data: { teacherId: user.id },
+          }).catch(() => {});
+        }
+      } else {
+        // Teacher is entering as an authorized observer / spectator to watch the class
+        isHost = false;
+        canPublish = true;
+        canSubscribe = true;
+        canPublishData = true;
       }
-      isHost = true;
     } else if (normalizedRole === 'STUDENT') {
       isHost = false;
       // In public webinars, students join as audience in listen-only mode

@@ -157,10 +157,11 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
   const filteredClasses = useMemo(() => {
     return classes.filter(cls => {
       // Tab filter
-      if (activeTab === "LIVE" && cls.status !== "LIVE") return false;
-      if (activeTab === "UPCOMING" && cls.status !== "SCHEDULED") return false;
+      if (activeTab === "LIVE" && (cls.status !== "LIVE" || cls.isPublic)) return false;
+      if (activeTab === "UPCOMING" && (cls.status !== "SCHEDULED" || cls.isPublic)) return false;
       if (activeTab === "WEBINARS" && !cls.isPublic) return false;
-      if (activeTab === "ENDED" && cls.status !== "ENDED") return false;
+      if (activeTab === "ENDED" && (cls.status !== "ENDED" || cls.isPublic)) return false;
+      if (activeTab === "ALL" && cls.isPublic) return false;
 
       // Search filter
       if (searchQuery.trim()) {
@@ -1036,18 +1037,18 @@ function ScheduleClassModalV2({
       .catch(() => {});
   }, []);
 
-  // Dynamically query standards filtered by target board
+  // Dynamically query standards strictly filtered by target board
   useEffect(() => {
-    const url = boardId
-      ? `/setup/standards?boardId=${encodeURIComponent(boardId)}`
-      : "/setup/standards";
-    fetchApi<SetupOption[]>(url)
+    if (!boardId) {
+      setStandards([]);
+      setStandardId("");
+      return;
+    }
+    fetchApi<SetupOption[]>(`/setup/standards?boardId=${encodeURIComponent(boardId)}`)
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
         setStandards(list);
-        if (standardId && !list.some((s) => s.id === standardId)) {
-          setStandardId("");
-        }
+        setStandardId((prev) => (list.some((s) => s.id === prev) ? prev : ""));
       })
       .catch(() => {});
   }, [boardId]);
@@ -1272,13 +1273,14 @@ function ScheduleClassModalV2({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Target Standard</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Target Standard / Class</label>
               <select
                 value={standardId}
+                disabled={!boardId}
                 onChange={(e) => setStandardId(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none"
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
               >
-                <option value="">All Standards</option>
+                <option value="">{boardId ? "All Standards for Board" : "Select Board First"}</option>
                 {standards.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}

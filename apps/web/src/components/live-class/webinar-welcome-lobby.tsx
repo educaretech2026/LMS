@@ -65,20 +65,38 @@ export function WebinarWelcomeLobby({
     }
   }, [classId, backgroundImageUrl]);
 
-  // Presenter media preview initialization
+  // Presenter media preview initialization with Tiered Device Fallbacks
   const startPresenterPreview = useCallback(async () => {
     if (!isTeacher) return;
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: "user" },
-        audio: true,
-      });
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: true,
+        });
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+        } catch {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          }
+        }
+      }
+
       streamRef.current = stream;
-      if (videoRef.current) {
+      if (videoRef.current && stream.getVideoTracks().length > 0) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
       }
     } catch {
       // Graceful fallback if device access not available
@@ -95,6 +113,16 @@ export function WebinarWelcomeLobby({
       }
     };
   }, [isTeacher, startPresenterPreview]);
+
+  // Ensure video element stays bound whenever camera is active
+  useEffect(() => {
+    if (cameraEnabled && videoRef.current && streamRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraEnabled]);
 
   const handleEnter = () => {
     if (streamRef.current) {
@@ -257,24 +285,37 @@ export function WebinarWelcomeLobby({
             {isTeacher ? (
               /* ── HOST / PRESENTER ENTRY DETAILS ── */
               <div className="space-y-4">
-                {/* Presenter Video Check */}
+                {/* Presenter Video Check - Permanently mounted video avoids blackouts on toggle */}
                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center">
-                  {cameraEnabled ? (
-                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
-                  ) : (
-                    <div className="text-white/40 text-xs flex flex-col items-center gap-1">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-200 ${
+                      cameraEnabled ? "opacity-100" : "opacity-0 pointer-events-none"
+                    }`}
+                  />
+                  {!cameraEnabled && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 text-white/40 text-xs">
                       <VideoOff className="h-4 w-4" />
                       <span>Camera is off</span>
                     </div>
                   )}
 
-                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10">
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 z-10">
                     <button
                       type="button"
                       onClick={() => {
                         const next = !cameraEnabled;
                         setCameraEnabled(next);
                         if (streamRef.current) streamRef.current.getVideoTracks().forEach(t => (t.enabled = next));
+                        if (next && videoRef.current && streamRef.current) {
+                          if (videoRef.current.srcObject !== streamRef.current) {
+                            videoRef.current.srcObject = streamRef.current;
+                          }
+                          videoRef.current.play().catch(() => {});
+                        }
                       }}
                       className="text-white hover:text-purple-300 p-0.5"
                     >
