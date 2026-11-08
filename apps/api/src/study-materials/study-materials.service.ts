@@ -664,7 +664,9 @@ export class StudyMaterialService implements OnModuleInit {
       if (data.url) {
         await this.checkStorageOwnership(data.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
         if (this.storageService?.validateAndEnforceObjectSize) {
-          await this.storageService.validateAndEnforceObjectSize(data.url, 100 * 1024 * 1024);
+          const isVideo = data.type === 'VIDEO';
+          const maxLimit = isVideo ? 2 * 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+          await this.storageService.validateAndEnforceObjectSize(data.url, maxLimit);
         }
       }
       if (data.thumbnailUrl) {
@@ -1215,7 +1217,9 @@ export class StudyMaterialService implements OnModuleInit {
       if (updateData.url && updateData.url !== material.url) {
         await this.checkStorageOwnership(updateData.url, 'url', effectiveUploaderId, user ? isSuperAdmin(user) : false);
         if (this.storageService?.validateAndEnforceObjectSize) {
-          await this.storageService.validateAndEnforceObjectSize(updateData.url, 100 * 1024 * 1024);
+          const isVideo = (updateData.type || material.type) === 'VIDEO';
+          const maxLimit = isVideo ? 2 * 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+          await this.storageService.validateAndEnforceObjectSize(updateData.url, maxLimit);
         }
       }
       if (updateData.thumbnailUrl && updateData.thumbnailUrl !== material.thumbnailUrl) {

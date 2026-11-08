@@ -363,11 +363,12 @@ export class StorageService {
         : `materials/${Date.now()}-${uniqueId}-${safeFilename}`;
     }
 
+    const isVideoFile = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || ext === '.webm' || ext === '.mkv' || (baseMime && baseMime.startsWith('video/'));
     const maxSizeBytes = options?.maxSizeBytes || (
       prefix === 'recordings'
         ? 2 * 1024 * 1024 * 1024 // 2 GB for live class recordings
         : (prefix === 'materials'
-            ? 100 * 1024 * 1024 // 100 MB for docs
+            ? (isVideoFile ? 2 * 1024 * 1024 * 1024 : 100 * 1024 * 1024) // 2 GB for videos, 100 MB for docs
             : (prefix === 'forms' ? 25 * 1024 * 1024 : 20 * 1024 * 1024)) // 20 MB for thumbnails
     );
 
@@ -527,8 +528,12 @@ export class StorageService {
 
     let maxSizeBytes = customMaxSizeBytes;
     if (!maxSizeBytes) {
-      if (validatedKey.startsWith('materials/')) {
-        maxSizeBytes = 100 * 1024 * 1024; // 100 MB for docs
+      const ext = path.extname(validatedKey).toLowerCase();
+      const isVideoFile = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || ext === '.webm' || ext === '.mkv';
+      if (validatedKey.startsWith('recordings/')) {
+        maxSizeBytes = 2 * 1024 * 1024 * 1024; // 2 GB for class recordings
+      } else if (validatedKey.startsWith('materials/')) {
+        maxSizeBytes = isVideoFile ? 2 * 1024 * 1024 * 1024 : 100 * 1024 * 1024; // 2 GB for videos, 100 MB for docs
       } else if (validatedKey.startsWith('forms/')) {
         maxSizeBytes = 25 * 1024 * 1024; // Default 25 MB for forms
       } else {

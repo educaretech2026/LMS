@@ -33,6 +33,22 @@ export class StudyMaterialController {
     return this.studyMaterialService.getUnreconciled(req.user);
   }
 
+  // Pre-signed direct upload URL endpoint MUST be defined BEFORE parameterized route :id
+  @Get('upload-url')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  async getUploadUrl(
+    @Query('type') type: 'VIDEO' | 'FILE' | 'THUMBNAIL',
+    @Query('filename') filename: string,
+    @Query('contentType') contentType: string,
+    @Req() req: any,
+  ) {
+    const prefix = type === 'THUMBNAIL' ? 'thumbnails' : 'materials';
+    const maxSizeBytes = type === 'VIDEO'
+      ? 2 * 1024 * 1024 * 1024 // 2 GB for video uploads
+      : (type === 'THUMBNAIL' ? 20 * 1024 * 1024 : 100 * 1024 * 1024); // 100 MB for documents
+    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix, maxSizeBytes });
+  }
+
   @Get(':id')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getById(@Param('id') id: string, @Req() req: any) {
@@ -88,18 +104,6 @@ export class StudyMaterialController {
     @Req() req: any
   ) {
     return this.studyMaterialService.updateProgress(id, req.user.id, progressData, req.user);
-  }
-
-  @Get('upload-url')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
-  async getUploadUrl(
-    @Query('type') type: 'VIDEO' | 'FILE' | 'THUMBNAIL',
-    @Query('filename') filename: string,
-    @Query('contentType') contentType: string,
-    @Req() req: any,
-  ) {
-    const prefix = type === 'THUMBNAIL' ? 'thumbnails' : 'materials';
-    return this.storageService.getPresignedUploadUrl(filename, contentType, req.user?.id, { prefix });
   }
 
   @Get(':id/play-url')

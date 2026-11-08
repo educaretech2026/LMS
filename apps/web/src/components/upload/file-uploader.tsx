@@ -33,14 +33,34 @@ export function FileUploader({ type, onUploadSuccess, onUploadError, onCancel }:
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
+      const selected = e.dataTransfer.files[0];
+      const maxAllowed = type === "VIDEO" ? 2 * 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+      if (selected.size > maxAllowed) {
+        onUploadError(
+          `Selected ${type === "VIDEO" ? "video" : "file"} (${(selected.size / (1024 * 1024)).toFixed(1)} MB) exceeds the maximum allowed limit of ${
+            type === "VIDEO" ? "2 GB" : "100 MB"
+          }.`
+        );
+        return;
+      }
+      setFile(selected);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selected = e.target.files[0];
+      const maxAllowed = type === "VIDEO" ? 2 * 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+      if (selected.size > maxAllowed) {
+        onUploadError(
+          `Selected ${type === "VIDEO" ? "video" : "file"} (${(selected.size / (1024 * 1024)).toFixed(1)} MB) exceeds the maximum allowed limit of ${
+            type === "VIDEO" ? "2 GB" : "100 MB"
+          }.`
+        );
+        return;
+      }
+      setFile(selected);
     }
   };
 
@@ -117,7 +137,7 @@ export function FileUploader({ type, onUploadSuccess, onUploadError, onCancel }:
             Click or drag to upload {type === "VIDEO" ? "video" : "file"}
           </p>
           <p className="text-xs text-text-muted mt-1">
-            {type === "VIDEO" ? "MP4, MOV up to 1GB" : "PDF, DOC, PPT up to 50MB"}
+            {type === "VIDEO" ? "MP4, MOV up to 2GB" : "PDF, DOC, PPT up to 100MB"}
           </p>
         </div>
       ) : (
