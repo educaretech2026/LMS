@@ -168,10 +168,11 @@ export function PreJoinLobby({
     }
   };
 
-  const handleJoinClick = () => {
-    // Stop local preview tracks so LiveKit can acquire the devices cleanly
+  const handleJoinClick = async () => {
+    // Stop local preview tracks cleanly
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
     if (audioContextRef.current && audioContextRef.current.state !== "closed") {
       audioContextRef.current.close().catch(() => {});
@@ -179,6 +180,9 @@ export function PreJoinLobby({
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
     }
+
+    // Brief 150ms pause to ensure OS/browser releases camera and mic hardware capture locks
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     onJoin({
       name: displayName.trim() || initialName || "Participant",

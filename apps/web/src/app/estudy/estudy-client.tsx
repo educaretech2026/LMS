@@ -431,6 +431,89 @@ export function EStudyClient({ initialMaterials }: { initialMaterials: Material[
   );
 }
 
+/* ── STRUCTURED COHORT SELECTOR COMPONENT ── */
+function CohortSelectorCard({
+  title,
+  icon: Icon,
+  items,
+  selectedIds,
+  onToggle,
+  onToggleAll,
+  allLabel = "All",
+  emptyNotice,
+}: {
+  title: string;
+  icon: any;
+  items: Array<{ id: string; name: string; code?: string }>;
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  onToggleAll: () => void;
+  allLabel?: string;
+  emptyNotice?: string;
+}) {
+  const isAll = items.length > 0 && selectedIds.length === items.length;
+  const isNone = selectedIds.length === 0;
+
+  return (
+    <div className="rounded-xl border border-slate-200/90 bg-white overflow-hidden shadow-xs flex flex-col">
+      <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50/90 border-b border-slate-200/80 shrink-0">
+        <div className="flex items-center gap-2">
+          <Icon className="h-3.5 w-3.5 text-slate-500" />
+          <span className="text-xs font-bold text-slate-800">{title}</span>
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-600">
+            {isAll ? "All" : isNone ? "None" : `${selectedIds.length}`}
+          </span>
+        </div>
+        {items.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggleAll}
+            className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+          >
+            {isAll ? "Clear" : allLabel}
+          </button>
+        )}
+      </div>
+
+      <div className="p-2.5 max-h-32 overflow-y-auto flex-1">
+        {items.length === 0 ? (
+          <p className="text-[11px] text-slate-400 italic py-1 px-1">{emptyNotice || "No items available"}</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((item) => {
+              const active = selectedIds.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onToggle(item.id)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer select-none ${
+                    active
+                      ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                      : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                  }`}
+                >
+                  {active && <Check className="h-3 w-3 shrink-0 stroke-[2.5]" />}
+                  <span className="truncate max-w-[130px]">{item.name}</span>
+                  {item.code && (
+                    <span
+                      className={`text-[9px] px-1 py-0.2 rounded font-mono ${
+                        active ? "bg-white/20 text-white" : "bg-slate-200/80 text-slate-600"
+                      }`}
+                    >
+                      {item.code}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState<"PDF" | "VIDEO" | "DOCUMENT" | "LINK" | "YOUTUBE_VIDEO">("PDF");
@@ -608,262 +691,124 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden my-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0 bg-surface-2/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200/80 flex flex-col max-h-[92vh] overflow-hidden my-auto">
+        {/* Clean Header with Step Indicator */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/80 bg-slate-50/70 shrink-0">
           <div>
-            <h2 className="text-base font-bold text-text-primary">Add Study Material</h2>
-            <p className="text-xs text-text-muted">Target multiple boards, classes, centres and batches</p>
+            <div className="flex items-center gap-2 mb-0.5">
+              <h2 className="text-base font-bold text-slate-900">Upload Study Material</h2>
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Step {step} of 2
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              {step === 1 ? "Define material details and target student cohorts" : "Attach media file or external resource link"}
+            </p>
           </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full bg-white border border-border-soft flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-surface">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white">
           {error && (
-            <p className="text-xs text-brand-red bg-brand-red/8 border border-brand-red/20 rounded-lg px-3 py-2">
+            <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3.5 py-2.5 font-medium">
               {error}
             </p>
           )}
 
           {step === 1 ? (
             <>
-              {/* Material Title */}
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">Material Title *</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Thermodynamics Chapter Notes"
-                  className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                  autoFocus
-                />
-              </div>
-
-              {/* Material Type */}
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-1.5">Material Type *</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { value: "PDF", label: "PDF Document" },
-                    { value: "VIDEO", label: "Upload Video" },
-                    { value: "YOUTUBE_VIDEO", label: "YouTube Class" },
-                    { value: "LINK", label: "Resource Link" }
-                  ].map(t => (
-                    <label key={t.value} className={`flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer text-xs font-bold transition-all ${type === t.value ? 'border-brand-blue bg-brand-blue/10 text-brand-blue shadow-xs' : 'border-border-soft bg-white text-text-secondary hover:bg-surface-2'}`}>
-                      <input type="radio" name="materialType" checked={type === t.value} onChange={() => setType(t.value as any)} className="hidden" />
-                      <span>{t.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Multi-Target Assignment Matrix (Live DB Data) */}
-              <div className="p-4 rounded-2xl border border-border-soft bg-white space-y-4 shadow-xs">
-                <div className="flex items-center justify-between border-b border-border-soft/60 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-brand-blue" />
-                    <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">Multi-Target Assignment (Live DB)</h3>
-                  </div>
-                  <span className="text-[11px] text-text-muted">Select multiple cohorts</span>
-                </div>
-
-                {/* 1. Centres Multi-Select */}
+              {/* Section 1: General Info & Type */}
+              <div className="space-y-4">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                      <Building2 className="h-3.5 w-3.5 text-indigo-500" />
-                      Target Centres
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedCentres.length === centresList.length) setSelectedCentres([]);
-                        else setSelectedCentres(centresList.map(c => c.id));
-                      }}
-                      className="text-[11px] font-semibold text-brand-blue hover:underline"
-                    >
-                      {selectedCentres.length === centresList.length ? "Clear All" : "All Centres"}
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {centresList.map((c: any) => {
-                      const active = selectedCentres.includes(c.id);
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Material Title *</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Thermodynamics Comprehensive Revision Notes"
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Format / Content Type *</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { value: "PDF", label: "PDF Document", icon: FileText },
+                      { value: "VIDEO", label: "Direct Video", icon: Video },
+                      { value: "YOUTUBE_VIDEO", label: "YouTube Class", icon: Play },
+                      { value: "LINK", label: "Resource Link", icon: LinkIcon }
+                    ].map(t => {
+                      const IconComp = t.icon;
+                      const active = type === t.value;
                       return (
                         <button
-                          key={c.id}
+                          key={t.value}
                           type="button"
-                          onClick={() => toggleItem(selectedCentres, setSelectedCentres, c.id)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${active ? "bg-indigo-600 text-white border-indigo-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
+                          onClick={() => setType(t.value as any)}
+                          className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer select-none ${
+                            active
+                              ? "border-blue-600 bg-blue-50/80 text-blue-700 shadow-xs"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          }`}
                         >
-                          {active && <Check className="h-3 w-3" />}
-                          <span>{c.name}</span>
-                          {c.code && <span className={`text-[10px] px-1 py-0.2 rounded ${active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"}`}>{c.code}</span>}
+                          <IconComp className={`h-3.5 w-3.5 ${active ? "text-blue-600" : "text-slate-400"}`} />
+                          <span>{t.label}</span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
-
-                {/* 2. Boards Multi-Select */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                      <Layers className="h-3.5 w-3.5 text-blue-500" />
-                      Target Boards
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedBoards.length === boards.length) setSelectedBoards([]);
-                        else setSelectedBoards(boards.map(b => b.id));
-                      }}
-                      className="text-[11px] font-semibold text-brand-blue hover:underline"
-                    >
-                      {selectedBoards.length === boards.length ? "Clear All" : "All Boards"}
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {boards.map((b: any) => {
-                      const active = selectedBoards.includes(b.id);
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => toggleItem(selectedBoards, setSelectedBoards, b.id)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${active ? "bg-blue-600 text-white border-blue-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                        >
-                          {active && <Check className="h-3 w-3" />}
-                          <span>{b.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 3. Standards / Classes Multi-Select */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                      <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
-                      Target Classes / Standards
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedStandards.length === standards.length) setSelectedStandards([]);
-                        else setSelectedStandards(standards.map(s => s.id));
-                      }}
-                      className="text-[11px] font-semibold text-brand-blue hover:underline"
-                    >
-                      {selectedStandards.length === standards.length ? "Clear All" : "All Classes"}
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {standards.map((s: any) => {
-                      const active = selectedStandards.includes(s.id);
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => toggleItem(selectedStandards, setSelectedStandards, s.id)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${active ? "bg-emerald-600 text-white border-emerald-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                        >
-                          {active && <Check className="h-3 w-3" />}
-                          <span>{s.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 4. Batches Cascading Multi-Select */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 text-purple-500" />
-                      Target Batches (Optional)
-                    </label>
-                    {visibleBatches.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectedBatches.length === visibleBatches.length) setSelectedBatches([]);
-                          else setSelectedBatches(visibleBatches.map(b => b.id));
-                        }}
-                        className="text-[11px] font-semibold text-brand-blue hover:underline"
-                      >
-                        {selectedBatches.length === visibleBatches.length ? "Deselect Batches" : "Select All Batches"}
-                      </button>
-                    )}
-                  </div>
-                  {visibleBatches.length === 0 ? (
-                    <p className="text-xs text-text-muted italic bg-surface-2 p-2.5 rounded-xl">
-                      No specific batches found for current selection. Will automatically apply to all batches in selected classes.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
-                      {visibleBatches.map((b: any) => {
-                        const active = selectedBatches.includes(b.id);
-                        return (
-                          <button
-                            key={b.id}
-                            type="button"
-                            onClick={() => toggleItem(selectedBatches, setSelectedBatches, b.id)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${active ? "bg-purple-600 text-white border-purple-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                          >
-                            {active && <Check className="h-3 w-3" />}
-                            <span>{b.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {selectedBatches.length === 0 && (
-                    <p className="text-[11px] text-text-muted mt-1">
-                      (No batches checked: applies to <strong>All Batches</strong> in the selected classes and centres)
-                    </p>
-                  )}
-                </div>
-
-                {/* Target Track */}
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Target Track</label>
-                  <select
-                    value={targetTrack}
-                    onChange={(e) => setTargetTrack(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-border-soft bg-surface-2 px-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                  >
-                    <option value="">All Tracks (Both Tuition & Entrance)</option>
-                    {tracksList.map((tr: any) => (
-                      <option key={tr.id} value={tr.id}>{tr.name}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
 
-              {/* Subject Matter */}
-              <div className="p-4 rounded-2xl border border-border-soft bg-brand-blue/5 space-y-4">
-                <h4 className="text-xs font-bold text-brand-blue uppercase tracking-wider">Subject & Curriculum</h4>
+              {/* Section 2: Curriculum Structure */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Curriculum Mapping</h3>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-brand-blue/70 mb-1.5">Subject *</label>
-                    <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs focus:outline-none focus:ring-2 focus:ring-brand-blue/25">
-                      {availableSubjects.length === 0 ? <option value="">No subjects found</option> : availableSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Subject *</label>
+                    <select
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    >
+                      {availableSubjects.length === 0 ? (
+                        <option value="">No subjects found</option>
+                      ) : (
+                        availableSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)
+                      )}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-brand-blue/70 mb-1.5">Chapter *</label>
-                    <select value={selectedChapter} onChange={(e) => setSelectedChapter(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Chapter *</label>
+                    <select
+                      value={selectedChapter}
+                      onChange={(e) => setSelectedChapter(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      required
+                    >
                       <option value="" disabled>Select Chapter</option>
                       {chapters.map((ch) => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-brand-blue/70 mb-1.5">Topic *</label>
-                    <select value={selectedTopic} onChange={(e) => setSelectedTopic(e.target.value)} className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs focus:outline-none focus:ring-2 focus:ring-brand-blue/25" required>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Topic *</label>
+                    <select
+                      value={selectedTopic}
+                      onChange={(e) => setSelectedTopic(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      required
+                    >
                       <option value="" disabled>Select Topic</option>
                       {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
@@ -871,85 +816,204 @@ function AddMaterialModal({ onClose, onSuccess }: { onClose: () => void, onSucce
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  if (!title.trim()) {
-                    setError("Title is required");
-                    return;
-                  }
-                  if (!selectedChapter) {
-                    setError("Chapter is required");
-                    return;
-                  }
-                  if (!selectedTopic) {
-                    setError("Topic is required");
-                    return;
-                  }
-                  setError("");
-                  setStep(2);
-                }}
-                className="w-full py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-xl mt-2 transition-colors shadow-sm"
-              >
-                Next: Upload File / Link
-              </button>
+              {/* Section 3: Multi-Target Audience Matrix */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-blue-600" />
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Cohort Distribution (Live DB)</h3>
+                  </div>
+                  <span className="text-[11px] text-slate-500">Unchecked cohorts default to all groups</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <CohortSelectorCard
+                    title="Target Centres"
+                    icon={Building2}
+                    items={centresList}
+                    selectedIds={selectedCentres}
+                    onToggle={(id) => toggleItem(selectedCentres, setSelectedCentres, id)}
+                    onToggleAll={() => {
+                      if (selectedCentres.length === centresList.length) setSelectedCentres([]);
+                      else setSelectedCentres(centresList.map(c => c.id));
+                    }}
+                    allLabel="Select All"
+                    emptyNotice="No centres registered"
+                  />
+
+                  <CohortSelectorCard
+                    title="Target Boards"
+                    icon={Layers}
+                    items={boards}
+                    selectedIds={selectedBoards}
+                    onToggle={(id) => toggleItem(selectedBoards, setSelectedBoards, id)}
+                    onToggleAll={() => {
+                      if (selectedBoards.length === boards.length) setSelectedBoards([]);
+                      else setSelectedBoards(boards.map(b => b.id));
+                    }}
+                    allLabel="Select All"
+                    emptyNotice="No boards configured"
+                  />
+
+                  <CohortSelectorCard
+                    title="Classes / Standards"
+                    icon={GraduationCap}
+                    items={standards}
+                    selectedIds={selectedStandards}
+                    onToggle={(id) => toggleItem(selectedStandards, setSelectedStandards, id)}
+                    onToggleAll={() => {
+                      if (selectedStandards.length === standards.length) setSelectedStandards([]);
+                      else setSelectedStandards(standards.map(s => s.id));
+                    }}
+                    allLabel="Select All"
+                    emptyNotice="No standards configured"
+                  />
+
+                  <CohortSelectorCard
+                    title="Batches"
+                    icon={Users}
+                    items={visibleBatches}
+                    selectedIds={selectedBatches}
+                    onToggle={(id) => toggleItem(selectedBatches, setSelectedBatches, id)}
+                    onToggleAll={() => {
+                      if (selectedBatches.length === visibleBatches.length) setSelectedBatches([]);
+                      else setSelectedBatches(visibleBatches.map(b => b.id));
+                    }}
+                    allLabel="Select All"
+                    emptyNotice="Will apply to all batches in selected classes"
+                  />
+                </div>
+
+                <div className="pt-1">
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">Target Track (Optional)</label>
+                  <select
+                    value={targetTrack}
+                    onChange={(e) => setTargetTrack(e.target.value)}
+                    className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="">All Tracks (Both Regular Tuition & Competitive Entrance)</option>
+                    {tracksList.map((tr: any) => (
+                      <option key={tr.id} value={tr.id}>{tr.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Step 1 Footer Action */}
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    if (!title.trim()) {
+                      setError("Title is required");
+                      return;
+                    }
+                    if (!selectedChapter) {
+                      setError("Chapter is required");
+                      return;
+                    }
+                    if (!selectedTopic) {
+                      setError("Topic is required");
+                      return;
+                    }
+                    setError("");
+                    setStep(2);
+                  }}
+                  className="w-full py-3 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Continue to Content Upload</span>
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-text-secondary">Uploading: <strong className="text-text-primary">{title}</strong></span>
-                <button onClick={() => setStep(1)} className="text-[10px] text-brand-blue font-bold hover:underline">Edit details</button>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="min-w-0">
+                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Ready to attach file for:</span>
+                  <strong className="text-xs font-bold text-slate-900 truncate block">{title}</strong>
+                </div>
+                <button
+                  onClick={() => setStep(1)}
+                  className="text-xs text-blue-600 font-semibold hover:underline px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
+                >
+                  Edit details
+                </button>
               </div>
 
               {(type === 'VIDEO' || type === 'YOUTUBE_VIDEO') && (
-                <div className="space-y-2 mb-4 p-4 border border-border-soft rounded-xl bg-surface-2">
-                  <label className="block text-xs font-bold text-text-secondary">Custom Thumbnail (Optional)</label>
+                <div className="space-y-2 p-4 border border-slate-200 rounded-xl bg-slate-50/50">
+                  <label className="block text-xs font-semibold text-slate-700">Custom Thumbnail (Optional)</label>
                   <input
                     type="file"
                     accept="image/*"
                     onChange={(e) => setThumbnailFile(e.target.files?.[0] || null)}
-                    className="text-xs text-text-primary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-blue/10 file:text-brand-blue hover:file:bg-brand-blue/20"
+                    className="text-xs text-slate-700 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                   />
-                  {thumbnailFile && <p className="text-[10px] text-success mt-1">Selected: {thumbnailFile.name}</p>}
+                  {thumbnailFile && <p className="text-[11px] text-emerald-600 font-medium mt-1">Selected: {thumbnailFile.name}</p>}
                 </div>
               )}
 
               {type === 'LINK' || type === 'YOUTUBE_VIDEO' ? (
-                <div className="space-y-4">
-                  <label className="block text-xs font-bold text-text-secondary mb-1.5">{type === 'YOUTUBE_VIDEO' ? 'YouTube URL *' : 'Resource URL *'}</label>
-                  <input
-                    type="url"
-                    placeholder="https://..."
-                    className="w-full h-10 rounded-lg border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
-                  <button
-                    onClick={() => {
-                      if (type === 'YOUTUBE_VIDEO') {
-                        handleUploadSuccess(url, undefined, "VIDEO");
-                      } else {
-                        handleUploadSuccess(url, undefined, "LINK");
-                      }
-                    }}
-                    className="w-full py-2.5 text-sm font-bold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-xl transition-colors shadow-sm"
-                    disabled={saving || !url}
-                  >
-                    {saving ? "Saving..." : "Submit Link"}
-                  </button>
+                <div className="space-y-4 pt-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      {type === 'YOUTUBE_VIDEO' ? 'YouTube URL *' : 'Resource Web URL *'}
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (type === 'YOUTUBE_VIDEO') {
+                          handleUploadSuccess(url, undefined, "VIDEO");
+                        } else {
+                          handleUploadSuccess(url, undefined, "LINK");
+                        }
+                      }}
+                      className="flex-1 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                      disabled={saving || !url}
+                    >
+                      {saving ? "Saving Material..." : "Submit Resource Link"}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 saving ? (
                   <div className="py-12 flex flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-6 w-6 animate-spin text-brand-blue" />
-                    <p className="text-xs font-bold text-text-secondary">Saving to database...</p>
+                    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                    <p className="text-xs font-bold text-slate-700">Saving to database...</p>
                   </div>
                 ) : (
-                  <FileUploader
-                    type={type === "VIDEO" ? "VIDEO" : "FILE"}
-                    onUploadSuccess={handleUploadSuccess}
-                    onUploadError={setError}
-                    onCancel={onClose}
-                  />
+                  <div className="space-y-3">
+                    <FileUploader
+                      type={type === "VIDEO" ? "VIDEO" : "FILE"}
+                      onUploadSuccess={handleUploadSuccess}
+                      onUploadError={setError}
+                      onCancel={onClose}
+                    />
+                    <div className="flex justify-start">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        Back to details
+                      </button>
+                    </div>
+                  </div>
                 )
               )}
             </div>
@@ -1074,49 +1138,53 @@ function EditMaterialModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden my-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft shrink-0 bg-surface-2/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200/80 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/80 bg-slate-50/70 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-brand-blue/10 flex items-center justify-center text-brand-blue">
+            <div className="h-8 w-8 rounded-lg bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600">
               <Pencil className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-text-primary">Edit Study Material</h2>
-              <p className="text-xs text-text-muted">Modify material details and live target cohort assignments</p>
+              <h2 className="text-base font-bold text-slate-900">Edit Study Material</h2>
+              <p className="text-xs text-slate-500">Update metadata and target student cohort assignments</p>
             </div>
           </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full bg-white border border-border-soft flex items-center justify-center text-text-muted hover:bg-surface-3 transition-colors">
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-surface">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-white">
           {error && (
-            <p className="text-xs text-brand-red bg-brand-red/8 border border-brand-red/20 rounded-lg px-3 py-2">
+            <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3.5 py-2.5 font-medium">
               {error}
             </p>
           )}
 
           {/* Title */}
           <div>
-            <label className="block text-xs font-bold text-text-secondary mb-1.5">Material Title *</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Material Title *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+              className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
           </div>
 
           {/* Type & URL */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-text-secondary mb-1.5">Material Type</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Material Type</label>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                onChange={(e) => setType(e.target.value as any)}
+                className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="PDF">PDF Document</option>
                 <option value="VIDEO">Video Lecture</option>
@@ -1126,189 +1194,94 @@ function EditMaterialModal({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-text-secondary mb-1.5">Resource Link / URL</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Resource Link / URL</label>
               <input
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://..."
-                className="w-full h-10 rounded-xl border border-border-soft bg-white px-3 text-xs focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
           </div>
 
-          {/* Multi-Target Assignment Matrix (Live DB Data) */}
-          <div className="p-4 rounded-2xl border border-border-soft bg-white space-y-4 shadow-xs">
-            <div className="flex items-center justify-between border-b border-border-soft/60 pb-2.5">
+          {/* Multi-Target Cohort Matrix */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-brand-blue" />
-                <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">Cohort Assignments (Live DB)</h3>
+                <Building2 className="h-4 w-4 text-blue-600" />
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Cohort Assignments (Live DB)</h3>
               </div>
-              <span className="text-[11px] text-text-muted">Add or remove target groups</span>
+              <span className="text-[11px] text-slate-500">Unchecked cohorts apply to all groups</span>
             </div>
 
-            {/* 1. Centres Multi-Select */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                  <Building2 className="h-3.5 w-3.5 text-indigo-500" />
-                  Target Centres
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedCentres.length === centresList.length) setSelectedCentres([]);
-                    else setSelectedCentres(centresList.map(c => c.id));
-                  }}
-                  className="text-[11px] font-semibold text-brand-blue hover:underline"
-                >
-                  {selectedCentres.length === centresList.length ? "Clear All" : "All Centres"}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {centresList.map((c: any) => {
-                  const active = selectedCentres.includes(c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => toggleItem(selectedCentres, setSelectedCentres, c.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${active ? "bg-indigo-600 text-white border-indigo-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                    >
-                      {active && <Check className="h-3 w-3" />}
-                      <span>{c.name}</span>
-                      {c.code && <span className={`text-[10px] px-1 py-0.2 rounded ${active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"}`}>{c.code}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <CohortSelectorCard
+                title="Target Centres"
+                icon={Building2}
+                items={centresList}
+                selectedIds={selectedCentres}
+                onToggle={(id) => toggleItem(selectedCentres, setSelectedCentres, id)}
+                onToggleAll={() => {
+                  if (selectedCentres.length === centresList.length) setSelectedCentres([]);
+                  else setSelectedCentres(centresList.map(c => c.id));
+                }}
+                allLabel="Select All"
+                emptyNotice="No centres registered"
+              />
 
-            {/* 2. Boards Multi-Select */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                  <Layers className="h-3.5 w-3.5 text-blue-500" />
-                  Target Boards
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedBoards.length === boards.length) setSelectedBoards([]);
-                    else setSelectedBoards(boards.map(b => b.id));
-                  }}
-                  className="text-[11px] font-semibold text-brand-blue hover:underline"
-                >
-                  {selectedBoards.length === boards.length ? "Clear All" : "All Boards"}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {boards.map((b: any) => {
-                  const active = selectedBoards.includes(b.id);
-                  return (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => toggleItem(selectedBoards, setSelectedBoards, b.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${active ? "bg-blue-600 text-white border-blue-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                    >
-                      {active && <Check className="h-3 w-3" />}
-                      <span>{b.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+              <CohortSelectorCard
+                title="Target Boards"
+                icon={Layers}
+                items={boards}
+                selectedIds={selectedBoards}
+                onToggle={(id) => toggleItem(selectedBoards, setSelectedBoards, id)}
+                onToggleAll={() => {
+                  if (selectedBoards.length === boards.length) setSelectedBoards([]);
+                  else setSelectedBoards(boards.map(b => b.id));
+                }}
+                allLabel="Select All"
+                emptyNotice="No boards configured"
+              />
 
-            {/* 3. Standards / Classes Multi-Select */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                  <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
-                  Target Classes / Standards
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedStandards.length === standards.length) setSelectedStandards([]);
-                    else setSelectedStandards(standards.map(s => s.id));
-                  }}
-                  className="text-[11px] font-semibold text-brand-blue hover:underline"
-                >
-                  {selectedStandards.length === standards.length ? "Clear All" : "All Classes"}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {standards.map((s: any) => {
-                  const active = selectedStandards.includes(s.id);
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => toggleItem(selectedStandards, setSelectedStandards, s.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${active ? "bg-emerald-600 text-white border-emerald-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                    >
-                      {active && <Check className="h-3 w-3" />}
-                      <span>{s.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+              <CohortSelectorCard
+                title="Classes / Standards"
+                icon={GraduationCap}
+                items={standards}
+                selectedIds={selectedStandards}
+                onToggle={(id) => toggleItem(selectedStandards, setSelectedStandards, id)}
+                onToggleAll={() => {
+                  if (selectedStandards.length === standards.length) setSelectedStandards([]);
+                  else setSelectedStandards(standards.map(s => s.id));
+                }}
+                allLabel="Select All"
+                emptyNotice="No standards configured"
+              />
 
-            {/* 4. Batches Cascading Multi-Select */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5 text-purple-500" />
-                  Target Batches
-                </label>
-                {visibleBatches.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedBatches.length === visibleBatches.length) setSelectedBatches([]);
-                      else setSelectedBatches(visibleBatches.map(b => b.id));
-                    }}
-                    className="text-[11px] font-semibold text-brand-blue hover:underline"
-                  >
-                    {selectedBatches.length === visibleBatches.length ? "Deselect Batches" : "Select All Batches"}
-                  </button>
-                )}
-              </div>
-              {visibleBatches.length === 0 ? (
-                <p className="text-xs text-text-muted italic bg-surface-2 p-2.5 rounded-xl">
-                  No specific batches match currently selected classes/centres. Material will apply to all batches in selected classes.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
-                  {visibleBatches.map((b: any) => {
-                    const active = selectedBatches.includes(b.id);
-                    return (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => toggleItem(selectedBatches, setSelectedBatches, b.id)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${active ? "bg-purple-600 text-white border-purple-600 shadow-xs" : "bg-surface-2 border-border-soft text-text-secondary hover:bg-white"}`}
-                      >
-                        {active && <Check className="h-3 w-3" />}
-                        <span>{b.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <CohortSelectorCard
+                title="Batches"
+                icon={Users}
+                items={visibleBatches}
+                selectedIds={selectedBatches}
+                onToggle={(id) => toggleItem(selectedBatches, setSelectedBatches, id)}
+                onToggleAll={() => {
+                  if (selectedBatches.length === visibleBatches.length) setSelectedBatches([]);
+                  else setSelectedBatches(visibleBatches.map(b => b.id));
+                }}
+                allLabel="Select All"
+                emptyNotice="Will apply to all batches in selected classes"
+              />
             </div>
 
             {/* Target Track */}
-            <div>
-              <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Target Track</label>
+            <div className="pt-1">
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Target Track (Optional)</label>
               <select
                 value={targetTrack}
                 onChange={(e) => setTargetTrack(e.target.value)}
-                className="w-full h-9 rounded-xl border border-border-soft bg-surface-2 px-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                <option value="">All Tracks (Both Tuition & Entrance)</option>
+                <option value="">All Tracks (Both Regular Tuition & Competitive Entrance)</option>
                 {tracksList.map((tr: any) => (
                   <option key={tr.id} value={tr.id}>{tr.name}</option>
                 ))}
@@ -1318,11 +1291,11 @@ function EditMaterialModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 px-6 border-t border-border-soft flex items-center justify-end gap-3 bg-white shrink-0">
+        <div className="p-4 px-6 border-t border-slate-200 bg-slate-50/50 flex items-center justify-end gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-border-soft text-xs font-bold text-text-secondary hover:bg-surface-2 transition-colors"
+            className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -1330,9 +1303,9 @@ function EditMaterialModal({
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-dark text-white text-xs font-bold transition-all shadow-sm shadow-brand-blue/20 disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
           >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
             <span>{saving ? "Saving Changes..." : "Save Changes"}</span>
           </button>
         </div>

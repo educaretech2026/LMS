@@ -124,10 +124,14 @@ export function WebinarWelcomeLobby({
     }
   }, [cameraEnabled]);
 
-  const handleEnter = () => {
+  const handleEnter = async () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
+
+    // Brief 150ms pause to ensure OS/browser releases camera and mic hardware capture locks
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     onJoin({
       name: displayName.trim() || initialName || (isTeacher ? "Presenter" : "Attendee"),

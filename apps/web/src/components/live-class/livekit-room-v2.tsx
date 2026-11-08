@@ -237,6 +237,75 @@ function StudioPipelineManager({
   return null;
 }
 
+/* ── RESILIENT MEDIA TRACK INITIALIZER ── */
+function MediaTrackInitializer({
+  initialCameraEnabled,
+  initialMicEnabled,
+  isWebinar,
+  isTeacher,
+}: {
+  initialCameraEnabled: boolean;
+  initialMicEnabled: boolean;
+  isWebinar?: boolean;
+  isTeacher: boolean;
+}) {
+  const room = useRoomContext();
+  const { localParticipant } = useLocalParticipant();
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (!room || !localParticipant || hasInitializedRef.current) return;
+
+    const initializeMedia = async () => {
+      hasInitializedRef.current = true;
+      // Allow browser and OS device drivers 250ms to cleanly cycle after lobby transition
+      await new Promise((r) => setTimeout(r, 250));
+
+      const canPublish = isTeacher || !isWebinar;
+      if (!canPublish) return;
+
+      // 1. Microphone Initialization
+      if (initialMicEnabled && !localParticipant.isMicrophoneEnabled) {
+        try {
+          await localParticipant.setMicrophoneEnabled(true);
+        } catch (err) {
+          console.warn("MediaTrackInitializer mic auto-enable warning:", err);
+        }
+      }
+
+      // 2. Camera Initialization with Tiered Resolution Fallback
+      if (initialCameraEnabled && !localParticipant.isCameraEnabled) {
+        try {
+          await localParticipant.setCameraEnabled(true);
+        } catch (err) {
+          console.warn("MediaTrackInitializer primary camera failed, falling back to 360p/standard:", err);
+          try {
+            await localParticipant.setCameraEnabled(true, {
+              resolution: VideoPresets.h360.resolution,
+            });
+          } catch (fallbackErr) {
+            console.warn("MediaTrackInitializer fallback camera failed:", fallbackErr);
+          }
+        }
+      }
+    };
+
+    if (room.state === "connected") {
+      initializeMedia();
+    } else {
+      const handleConnected = () => {
+        initializeMedia();
+      };
+      room.once("connected", handleConnected);
+      return () => {
+        room.off("connected", handleConnected);
+      };
+    }
+  }, [room, localParticipant, initialCameraEnabled, initialMicEnabled, isWebinar, isTeacher]);
+
+  return null;
+}
+
 export function LiveKitClassRoomV2({
   classId,
   roomId,
@@ -1118,6 +1187,12 @@ export function LiveKitClassRoomV2({
         isTeacher={isTeacher}
         settings={studioSettings}
         processorRef={studioProcessorRef}
+      />
+      <MediaTrackInitializer
+        initialCameraEnabled={initialCameraEnabled}
+        initialMicEnabled={initialMicEnabled}
+        isWebinar={isWebinar}
+        isTeacher={isTeacher}
       />
       <RoomAudioRenderer />
 
@@ -2940,10 +3015,10 @@ function V2BottomControlDock({
   const handleToggleMic = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (typeof micProps.onClick === "function") {
-        micProps.onClick(e as any);
-      } else if (room?.localParticipant) {
+      if (room?.localParticipant) {
         await room.localParticipant.setMicrophoneEnabled(!micOn);
+      } else if (typeof micProps.onClick === "function") {
+        micProps.onClick(e as any);
       }
     } catch (err) {
       console.warn("Direct microphone toggle failed, running fallback:", err);
@@ -2956,10 +3031,18 @@ function V2BottomControlDock({
   const handleToggleCam = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (typeof camProps.onClick === "function") {
+      if (room?.localParticipant) {
+        const next = !camOn;
+        try {
+          await room.localParticipant.setCameraEnabled(next);
+        } catch (initialErr) {
+          console.warn("Camera standard toggle failed, trying tiered resolution:", initialErr);
+          await room.localParticipant.setCameraEnabled(next, {
+            resolution: VideoPresets.h360.resolution,
+          });
+        }
+      } else if (typeof camProps.onClick === "function") {
         camProps.onClick(e as any);
-      } else if (room?.localParticipant) {
-        await room.localParticipant.setCameraEnabled(!camOn);
       }
     } catch (err) {
       console.warn("Direct camera toggle failed, running fallback:", err);
