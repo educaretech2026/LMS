@@ -9,7 +9,7 @@ import {
   Copy, Check, ExternalLink, Image as ImageIcon, UploadCloud,
   Download, Search, Sparkles, FileText, ArrowRight, Monitor,
   SlidersHorizontal, CheckSquare, Layers, Lock, ShieldCheck, Film,
-  Eye, EyeOff
+  Eye, EyeOff, ArrowUpDown
 } from "lucide-react";
 import { RecordingUploadModal, VideoPlayerModal } from "./recording-upload-modal";
 
@@ -67,6 +67,15 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
   const pendingUploadTargetClassRef = useRef<ApiLiveClass | null>(null);
   const [activeTab, setActiveTab] = useState<"ALL" | "LIVE" | "UPCOMING" | "WEBINARS" | "ENDED">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<
+    | "STATUS_LIVE_FIRST"
+    | "DATE_SOONEST"
+    | "DATE_LATEST"
+    | "TITLE_ASC"
+    | "TITLE_DESC"
+    | "DURATION_ASC"
+    | "DURATION_DESC"
+  >("STATUS_LIVE_FIRST");
   const [stats, setStats] = useState({ total: 0, live: 0 });
   const { role, email } = useAuth();
 
@@ -78,12 +87,24 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
     setError(null);
     try {
       const isStaffUser = Boolean(role && !["STUDENT", "PUBLIC_LEARNER"].includes(role.toUpperCase().replace(/\s+/g, '_')));
-      const [data, s] = await Promise.all([
-        fetchApi<ApiLiveClass[]>("/live-class"),
-        isStaffUser
-          ? fetchApi<{ total: number; live: number }>("/live-class/stats", { silent: true }).catch(() => ({ total: 0, live: 0 }))
-          : Promise.resolve({ total: 0, live: 0 }),
-      ]);
+
+      let data: ApiLiveClass[] = [];
+      try {
+        data = await fetchApi<ApiLiveClass[]>("/live-class");
+      } catch (primaryErr: any) {
+        console.warn("Primary /live-class fetch error, attempting public fallback:", primaryErr?.message);
+        try {
+          const pub = await fetchApi<ApiLiveClass[]>("/live-class/public", { silent: true });
+          data = Array.isArray(pub) ? pub : [];
+        } catch {
+          throw primaryErr;
+        }
+      }
+
+      const s = isStaffUser
+        ? await fetchApi<{ total: number; live: number }>("/live-class/stats", { silent: true }).catch(() => ({ total: 0, live: 0 }))
+        : { total: 0, live: 0 };
+
       setClasses(Array.isArray(data) ? data : []);
       setStats(s || { total: 0, live: 0 });
     } catch (e: any) {
@@ -153,9 +174,9 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
     }
   };
 
-  // Filter sessions
+  // Filter & sort sessions
   const filteredClasses = useMemo(() => {
-    return classes.filter(cls => {
+    const list = classes.filter(cls => {
       // Tab filter
       if (activeTab === "LIVE" && (cls.status !== "LIVE" || cls.isPublic)) return false;
       if (activeTab === "UPCOMING" && (cls.status !== "SCHEDULED" || cls.isPublic)) return false;
@@ -169,11 +190,36 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
         const matchesTitle = cls.title?.toLowerCase().includes(q);
         const matchesSubject = cls.subject?.toLowerCase().includes(q);
         const matchesTeacher = cls.teacherName?.toLowerCase().includes(q);
-        return matchesTitle || matchesSubject || matchesTeacher;
+        return Boolean(matchesTitle || matchesSubject || matchesTeacher);
       }
       return true;
     });
-  }, [classes, activeTab, searchQuery]);
+
+    return [...list].sort((a, b) => {
+      switch (sortBy) {
+        case "STATUS_LIVE_FIRST": {
+          const priority = (s: string) => (s === "LIVE" ? 0 : s === "SCHEDULED" ? 1 : 2);
+          const diff = priority(a.status) - priority(b.status);
+          if (diff !== 0) return diff;
+          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+        }
+        case "DATE_SOONEST":
+          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+        case "DATE_LATEST":
+          return new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime();
+        case "TITLE_ASC":
+          return (a.title || "").localeCompare(b.title || "");
+        case "TITLE_DESC":
+          return (b.title || "").localeCompare(a.title || "");
+        case "DURATION_ASC":
+          return (a.duration || 0) - (b.duration || 0);
+        case "DURATION_DESC":
+          return (b.duration || 0) - (a.duration || 0);
+        default:
+          return 0;
+      }
+    });
+  }, [classes, activeTab, searchQuery, sortBy]);
 
   const liveClasses = useMemo(() => classes.filter(c => c.status === "LIVE"), [classes]);
   const primaryLive = liveClasses[0] || null;
@@ -351,24 +397,51 @@ export function LiveClassHubV2({ onJoinRoom }: LiveClassHubV2Props) {
             })}
           </div>
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search subject, title, host..."
-              className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          {/* Controls: Search & Sort */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-60">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search subject, title, host..."
+                className="w-full pl-9 pr-7 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Sort Dropdown */}
+            <div className="relative flex items-center shrink-0">
+              <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <select
+                aria-label="Sort sessions"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full sm:w-auto appearance-none pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
               >
-                <X className="h-3 w-3" />
-              </button>
-            )}
+                <option value="STATUS_LIVE_FIRST">Sort: Live First</option>
+                <option value="DATE_SOONEST">Sort: Soonest / Upcoming</option>
+                <option value="DATE_LATEST">Sort: Latest Scheduled</option>
+                <option value="TITLE_ASC">Sort: Title (A - Z)</option>
+                <option value="TITLE_DESC">Sort: Title (Z - A)</option>
+                <option value="DURATION_ASC">Sort: Shortest Duration</option>
+                <option value="DURATION_DESC">Sort: Longest Duration</option>
+              </select>
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
 

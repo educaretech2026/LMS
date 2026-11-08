@@ -41,7 +41,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     label: 'Live Classes & Webinars',
     category: 'Academic & Learning',
     description: 'Schedule, host, and manage live cohorts, webinars, and public registrations',
-    aliases: ['Live Classes', 'Live Class', 'live_classes.manage'],
+    aliases: ['Live Classes', 'Live Class', 'live_classes.manage', 'live_classes', 'live-class', 'live-classes', 'LIVE_CLASS'],
   },
   {
     key: 'EXAMS',

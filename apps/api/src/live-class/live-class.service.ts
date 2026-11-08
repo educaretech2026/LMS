@@ -27,7 +27,7 @@ import * as path from 'path';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
-import { isSuperAdmin, getAuthorizedCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
+import { isSuperAdmin, getAuthorizedCentreIds, getUserCentreIds, assertCentreAccess } from '../common/utils/tenant.util';
 
 export const SAFE_LIVE_CLASS_SELECT = {
   id: true,
@@ -108,11 +108,26 @@ export class LiveClassService implements OnModuleInit {
       this.logger.warn(
         `findMany with full relations failed (${err?.message}), falling back to SAFE_LIVE_CLASS_SELECT`,
       );
-      return await this.prisma.liveClass.findMany({
-        where: params.where,
-        select: SAFE_LIVE_CLASS_SELECT,
-        orderBy: params.orderBy,
-      });
+      try {
+        return await this.prisma.liveClass.findMany({
+          where: params.where,
+          select: SAFE_LIVE_CLASS_SELECT,
+          orderBy: params.orderBy,
+        });
+      } catch (fallbackErr: any) {
+        this.logger.warn(
+          `safeFindMany fallback failed (${fallbackErr?.message}), falling back to bare findMany`,
+        );
+        try {
+          return await this.prisma.liveClass.findMany({
+            where: params.where,
+            orderBy: params.orderBy,
+          });
+        } catch (bareErr: any) {
+          this.logger.error(`safeFindMany bare query failed: ${bareErr?.message}`);
+          return [];
+        }
+      }
     }
   }
 
@@ -363,8 +378,25 @@ export class LiveClassService implements OnModuleInit {
     return cls;
   }
 
+  async getPublicClasses(): Promise<any[]> {
+    try {
+      const classes = await this.safeFindMany({
+        where: { isPublic: true },
+        orderBy: { scheduledAt: 'asc' },
+      });
+      return classes.map(c => this.sanitizeForLearner(c));
+    } catch (err: any) {
+      this.logger.error(`getPublicClasses failed: ${err?.message}`);
+      return [];
+    }
+  }
+
   async getAll(user?: any): Promise<any> {
     try {
+      if (!user) {
+        return await this.getPublicClasses();
+      }
+
       const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
       const normalizedRole = String(roleName || '').toUpperCase().replace(/[\s_]+/g, '_');
 
@@ -440,20 +472,24 @@ export class LiveClassService implements OnModuleInit {
 
       const where: any = {};
       if (user && !isSuperAdmin(user)) {
-        try {
-          const allowedCentres = getAuthorizedCentreIds(user);
+        if (normalizedRole === 'TEACHER' && user?.id) {
+          const allowedCentres = getUserCentreIds(user);
           const orConditions: any[] = [
-            { centreId: { in: allowedCentres } },
-            { centreId: null }
+            { teacherId: user.id },
+            { centreId: null },
           ];
-          if (normalizedRole === 'TEACHER' && user.id) {
-            orConditions.push({ teacherId: user.id });
+          if (allowedCentres.length > 0) {
+            orConditions.push({ centreId: { in: allowedCentres } });
           }
           where.OR = orConditions;
-        } catch {
-          if (normalizedRole === 'TEACHER' && user?.id) {
-            where.teacherId = user.id;
-          } else {
+        } else {
+          try {
+            const allowedCentres = getAuthorizedCentreIds(user);
+            where.OR = [
+              { centreId: { in: allowedCentres } },
+              { centreId: null },
+            ];
+          } catch {
             where.isPublic = true;
           }
         }
@@ -464,7 +500,6 @@ export class LiveClassService implements OnModuleInit {
         orderBy: { scheduledAt: 'asc' },
       });
     } catch (err: any) {
-      if (err instanceof HttpException) throw err;
       this.logger.error(`LiveClassService.getAll unexpected failure: ${err?.message}`, err?.stack);
       return [];
     }
@@ -886,11 +921,23 @@ export class LiveClassService implements OnModuleInit {
 
       const where: any = {};
       if (user && !isSuperAdmin(user)) {
-        try {
-          const allowedCentres = getAuthorizedCentreIds(user);
-          where.centreId = { in: allowedCentres };
-        } catch {
-          where.id = 'none';
+        if (normalizedRole === 'TEACHER' && user?.id) {
+          const allowedCentres = getUserCentreIds(user);
+          const orConditions: any[] = [
+            { teacherId: user.id },
+            { centreId: null },
+          ];
+          if (allowedCentres.length > 0) {
+            orConditions.push({ centreId: { in: allowedCentres } });
+          }
+          where.OR = orConditions;
+        } else {
+          try {
+            const allowedCentres = getAuthorizedCentreIds(user);
+            where.centreId = { in: allowedCentres };
+          } catch {
+            where.id = 'none';
+          }
         }
       }
 

@@ -44,15 +44,24 @@ export class PermissionsGuard implements CanActivate {
     const userRoleName = typeof user.role === 'string' ? user.role : user.role?.name;
     const normalizedRole = userRoleName ? userRoleName.toUpperCase().replace(/\s+/g, '_') : '';
 
-    // 2. Allow Student / Public Learner access to endpoints specifically permitting their role
-    if (normalizedRole === 'STUDENT' || normalizedRole === 'PUBLIC_LEARNER') {
-      const allowedRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ]);
-      if (allowedRoles && (allowedRoles.includes('STUDENT') || allowedRoles.includes('PUBLIC_LEARNER'))) {
-        return true;
+    // 2. Allow roles explicitly permitted on the endpoint (e.g. STUDENT, TEACHER, etc.)
+    // unless administrator has explicitly restricted that module for this specific user.
+    const allowedRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (allowedRoles && allowedRoles.includes(normalizedRole)) {
+      if (Array.isArray(user.customModules)) {
+        for (const required of requiredPermissions) {
+          const modKey = required.split('.')[0].toUpperCase();
+          if (!user.customModules.map((m: string) => m.toUpperCase()).includes(modKey)) {
+            throw new ForbiddenException(
+              `Access denied: Administrator has restricted your access to the ${modKey} module.`
+            );
+          }
+        }
       }
+      return true;
     }
 
     // 3. Extract granted actions from user overridden permissions or role permissions

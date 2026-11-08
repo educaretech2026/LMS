@@ -58,6 +58,13 @@ export class LiveClassController {
     return this.liveClassService.generateLiveKitToken(id, req.user, role, identity, name);
   }
 
+  // Public Endpoint: Retrieve all active and upcoming public webinars
+  @Public()
+  @Get('public')
+  getPublicClasses() {
+    return this.liveClassService.getPublicClasses();
+  }
+
   // Public Endpoint: Retrieve public webinar/class info (no auth required)
   @Public()
   @Get('public/:id')
