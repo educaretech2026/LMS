@@ -213,7 +213,7 @@ export function PreJoinLobby({
             )}
 
             {/* Bottom Floating Control Bar */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/15 shadow-xl">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/15 shadow-xl z-20">
               <button
                 onClick={toggleMic}
                 className={`h-11 w-11 rounded-full flex items-center justify-center transition-all ${

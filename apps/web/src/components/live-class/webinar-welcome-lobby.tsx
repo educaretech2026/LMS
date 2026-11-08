@@ -303,7 +303,7 @@ export function WebinarWelcomeLobby({
                     </div>
                   )}
 
-                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 z-10">
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 z-20">
                     <button
                       type="button"
                       onClick={() => {
