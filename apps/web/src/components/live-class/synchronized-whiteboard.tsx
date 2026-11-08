@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useCallback, memo } from "react";
 import { Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
+import { fetchApi } from "@/lib/api";
 import { safePublishData } from "./livekit-room-v2";
 
 interface SynchronizedWhiteboardProps {
@@ -205,14 +206,73 @@ export const SynchronizedWhiteboard = memo(function SynchronizedWhiteboard({
         { scope: "document", source: "user" }
       );
 
+      // Load initial snapshot from server if classId is present
+      if (classId) {
+        fetchApi<any>(`/live-class/${classId}/whiteboard-snapshot`, { silent: true })
+          .then((data) => {
+            if (data && editorRef.current) {
+              try {
+                if (Array.isArray(data)) {
+                  editorRef.current.store.put(data);
+                } else if (typeof data === "object") {
+                  const records = Object.values(data).filter(isDocRecord);
+                  if (records.length > 0) {
+                    editorRef.current.store.put(records);
+                  }
+                }
+              } catch (loadErr) {
+                console.warn("Could not load initial whiteboard snapshot:", loadErr);
+              }
+            }
+          })
+          .catch(() => {});
+      }
+
       setTimeout(() => {
         try {
           editor.updateViewportScreenBounds();
         } catch {}
       }, 100);
     },
-    [isTeacher, allowStudentDraw]
+    [isTeacher, allowStudentDraw, classId]
   );
+
+  // Periodic background persistence for host/presenter
+  useEffect(() => {
+    if (!isTeacher || !classId) return;
+    const interval = setInterval(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      try {
+        const records = editor.store.allRecords().filter(isDocRecord);
+        if (records.length > 0) {
+          fetchApi(`/live-class/${classId}/whiteboard-snapshot`, {
+            method: "POST",
+            body: JSON.stringify({ snapshot: records }),
+            silent: true,
+          }).catch(() => {});
+        }
+      } catch {}
+    }, 15000);
+
+    return () => {
+      clearInterval(interval);
+      // Final flush on unmount
+      const editor = editorRef.current;
+      if (editor) {
+        try {
+          const records = editor.store.allRecords().filter(isDocRecord);
+          if (records.length > 0) {
+            fetchApi(`/live-class/${classId}/whiteboard-snapshot`, {
+              method: "POST",
+              body: JSON.stringify({ snapshot: records }),
+              silent: true,
+            }).catch(() => {});
+          }
+        } catch {}
+      }
+    };
+  }, [isTeacher, classId]);
 
   useEffect(() => {
     return () => {

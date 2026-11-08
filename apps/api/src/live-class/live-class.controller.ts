@@ -107,22 +107,26 @@ export class LiveClassController {
     return this.liveClassService.getRegistrations(id, req.user);
   }
 
-  // Server-Side Moderation: Mute Student, Unmute Student, Mute All, Remove Participant
+  // Server-Side Moderation: Mute Student, Unmute Student, Mute All, Remove Participant, Allow Mic
   @Post(':id/moderate')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   moderate(
     @Param('id') id: string,
     @Body() body: {
-      action: 'MUTE_STUDENT' | 'UNMUTE_STUDENT' | 'MUTE_ALL' | 'REMOVE_PARTICIPANT';
+      action: 'MUTE_STUDENT' | 'UNMUTE_STUDENT' | 'MUTE_ALL' | 'REMOVE_PARTICIPANT' | 'ALLOW_MIC';
       targetIdentity?: string;
       trackSid?: string;
       muted?: boolean;
     },
     @Req() req: any,
   ) {
+    const action = body.action === 'ALLOW_MIC'
+      ? (body.muted === false ? 'UNMUTE_STUDENT' : 'MUTE_STUDENT')
+      : body.action;
+
     return this.liveClassService.moderateParticipant(
       id,
-      body.action,
+      action as any,
       body.targetIdentity,
       body.trackSid,
       body.muted ?? true,
@@ -196,9 +200,10 @@ export class LiveClassController {
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   saveWhiteboardSnapshot(
     @Param('id') id: string,
-    @Body('snapshot') snapshot: any,
+    @Body() body: any,
     @Req() req: any,
   ): Promise<any> {
+    const snapshot = body?.snapshot !== undefined ? body.snapshot : body;
     return this.liveClassService.saveWhiteboardSnapshot(id, snapshot, req.user);
   }
 
