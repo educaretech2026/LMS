@@ -1410,7 +1410,7 @@ export class LiveClassService implements OnModuleInit {
         assertCentreAccess(user, cls.centreId);
       }
       isHost = true;
-    } else if (normalizedRole === 'TEACHER') {
+    } else if (['TEACHER', 'SPEAKER', 'PRESENTER', 'HOST', 'INSTRUCTOR', 'STAFF', 'EDUCATOR', 'MODERATOR', 'CO_HOST'].includes(normalizedRole)) {
       if (cls.centreId) {
         assertCentreAccess(user, cls.centreId);
       }
@@ -2564,5 +2564,42 @@ export class LiveClassService implements OnModuleInit {
       if (e instanceof NotFoundException || e instanceof ForbiddenException) throw e;
       return null;
     }
+  }
+
+  // ── RESILIENT RAISED HANDS PERSISTENCE & MULTI-DEVICE SYNC ──
+  private classRaisedHands = new Map<string, Map<string, { identity: string; name: string; raisedAt: number }>>();
+
+  getRaisedHands(classId: string): Array<{ identity: string; name: string; raisedAt: number }> {
+    const hands = this.classRaisedHands.get(classId);
+    if (!hands) return [];
+    return Array.from(hands.values());
+  }
+
+  toggleHandRaise(
+    classId: string,
+    data: { identity: string; name: string; raised: boolean },
+  ): { success: boolean; count: number; raisedHands: Array<{ identity: string; name: string; raisedAt: number }> } {
+    if (!this.classRaisedHands.has(classId)) {
+      this.classRaisedHands.set(classId, new Map());
+    }
+    const hands = this.classRaisedHands.get(classId)!;
+    if (data.raised) {
+      hands.set(data.identity, {
+        identity: data.identity,
+        name: data.name || 'Student',
+        raisedAt: Date.now(),
+      });
+    } else {
+      hands.delete(data.identity);
+    }
+    const list = Array.from(hands.values());
+    return { success: true, count: list.length, raisedHands: list };
+  }
+
+  lowerAllHands(classId: string): { success: boolean; count: number } {
+    if (this.classRaisedHands.has(classId)) {
+      this.classRaisedHands.get(classId)!.clear();
+    }
+    return { success: true, count: 0 };
   }
 }

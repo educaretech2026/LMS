@@ -1562,7 +1562,7 @@ export function PresentationDeck({
 
         {/* ── FLOATING DRAWING TOOLBAR ── */}
         {canDraw && activeSlide && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#161820]/90 border border-white/15 shadow-2xl backdrop-blur-md">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#161820]/90 border border-white/15 shadow-2xl backdrop-blur-md max-w-[calc(100vw-1.5rem)] overflow-x-auto scrollbar-none">
             {/* Tool: Pen */}
             <button
               onClick={() => setCurrentTool("pen")}

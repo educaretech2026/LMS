@@ -107,6 +107,50 @@ export class LiveClassController {
     return this.liveClassService.registerAttendee(id, body);
   }
 
+  // Public Endpoint: Raised Hands Sync for Webinars
+  @Public()
+  @Get('public/:id/raised-hands')
+  getPublicRaisedHands(@Param('id') id: string) {
+    return this.liveClassService.getRaisedHands(id);
+  }
+
+  @Public()
+  @Post('public/:id/hand-raise')
+  togglePublicHandRaise(
+    @Param('id') id: string,
+    @Body() body: { identity: string; name: string; raised: boolean },
+  ) {
+    return this.liveClassService.toggleHandRaise(id, body);
+  }
+
+  @Public()
+  @Post('public/:id/lower-all-hands')
+  lowerAllPublicHands(@Param('id') id: string) {
+    return this.liveClassService.lowerAllHands(id);
+  }
+
+  // Live Class Raised Hands Fallback Sync (Authenticated)
+  @Get(':id/raised-hands')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
+  getRaisedHands(@Param('id') id: string) {
+    return this.liveClassService.getRaisedHands(id);
+  }
+
+  @Post(':id/hand-raise')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
+  toggleHandRaise(
+    @Param('id') id: string,
+    @Body() body: { identity: string; name: string; raised: boolean },
+  ) {
+    return this.liveClassService.toggleHandRaise(id, body);
+  }
+
+  @Post(':id/lower-all-hands')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
+  lowerAllHands(@Param('id') id: string) {
+    return this.liveClassService.lowerAllHands(id);
+  }
+
   // Admin / Teacher: View all registered attendees for a live class
   @Get(':id/registrations')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')

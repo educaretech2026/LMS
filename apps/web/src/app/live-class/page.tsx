@@ -122,7 +122,7 @@ export default function LiveClassPage() {
     return authUserName || (email ? email.split("@")[0] : "Attendee");
   }, [targetWebinarId, authUserName, email]);
 
-  const isStaffHost = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN"].includes(normalizedRole);
+  const isStaffHost = ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "SPEAKER", "PRESENTER", "HOST", "INSTRUCTOR", "STAFF", "EDUCATOR", "MODERATOR", "CO_HOST"].includes(normalizedRole);
 
   const isDirectWebinarEntry =
     mounted &&

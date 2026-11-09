@@ -1130,11 +1130,12 @@ export function LiveKitClassRoomV2({
           setIsUnexpectedDisconnect(true);
         }
       }}
-      className="h-[100dvh] w-full flex p-1.5 sm:p-2.5 md:p-3 gap-2 sm:gap-3 bg-[#08090d] text-slate-100 overflow-hidden select-none"
+      className="h-[100dvh] w-full flex p-1 sm:p-2 md:p-3 gap-1.5 sm:gap-2.5 md:gap-3 bg-[#08090d] text-slate-100 overflow-hidden select-none safe-area-x safe-area-b"
     >
       {/* Synchronization Engine */}
       <ClassroomV2Sync
         classId={classId}
+        isWebinar={isWebinar}
         isTeacher={isTeacher}
         myIdentity={effectiveIdentity}
         stageMode={stageMode}
@@ -1214,7 +1215,7 @@ export function LiveKitClassRoomV2({
       )}
 
       {/* ── 1. LEFT NAVIGATION SIDEBAR ── */}
-      <aside className="w-14 sm:w-16 shrink-0 hidden md:flex flex-col items-center justify-between py-4 px-1.5 bg-[#12141c] border border-white/10 rounded-2xl md:rounded-3xl shadow-xl z-20 select-none">
+      <aside className="w-14 sm:w-16 shrink-0 hidden md:flex flex-col items-center justify-between py-2.5 sm:py-4 px-1.5 bg-[#12141c] border border-white/10 rounded-2xl md:rounded-3xl shadow-xl z-20 select-none overflow-y-auto scrollbar-none">
         {/* App Logo */}
         <div className="flex flex-col items-center gap-1">
           <div
@@ -1497,16 +1498,16 @@ export function LiveKitClassRoomV2({
       {/* ── 2. CENTER LIVE MEETING AREA ── */}
       <main className="flex-1 min-w-0 flex flex-col bg-[#0e1017] border border-white/10 rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl relative">
         {/* Meeting Header */}
-        <header className="h-14 sm:h-16 shrink-0 bg-[#12141c]/90 backdrop-blur-md border-b border-white/10 px-3 sm:px-5 flex items-center justify-between z-30">
+        <header className="h-13 sm:h-16 shrink-0 bg-[#12141c]/90 backdrop-blur-md border-b border-white/10 px-2.5 sm:px-5 flex items-center justify-between z-30 gap-2">
           {/* Left: Meeting Title & Session Information */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[140px] sm:max-w-xs">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[110px] xs:max-w-[150px] sm:max-w-xs">
                   {classTitle || (isWebinar ? "Webinar Session" : "Edu-Meet Class")}
                 </h2>
                 <span
-                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                  className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
                     isTeacher
                       ? isWebinar
                         ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
@@ -1718,7 +1719,7 @@ export function LiveKitClassRoomV2({
                 </button>
 
                 {showRaisedHandsPopover && (
-                  <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-2xl bg-[#141622]/98 border border-amber-500/40 shadow-2xl p-3 z-50 text-white backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="absolute right-0 top-full mt-2 w-[calc(100vw-1.5rem)] xs:w-72 sm:w-80 max-w-sm rounded-2xl bg-[#141622]/98 border border-amber-500/40 shadow-2xl p-3 z-50 text-white backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
                       <div className="flex items-center gap-2">
                         <div className="h-6 w-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
@@ -1900,7 +1901,7 @@ export function LiveKitClassRoomV2({
 
           {/* Teacher Raised Hands Panel */}
           {isTeacher && raisedHandsList.length > 0 && (
-            <div className="absolute top-16 left-4 z-40 max-w-xs sm:max-w-sm rounded-2xl bg-[#141620]/95 border border-amber-500/50 shadow-2xl backdrop-blur-xl p-3 text-white pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="absolute top-16 left-4 z-40 max-w-[calc(100vw-2rem)] sm:max-w-sm rounded-2xl bg-[#141620]/95 border border-amber-500/50 shadow-2xl backdrop-blur-xl p-3 text-white pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
                 <div className="flex items-center gap-2">
                   <div className="h-6 w-6 rounded-lg bg-amber-500/25 text-amber-400 flex items-center justify-center">
@@ -1982,7 +1983,7 @@ export function LiveKitClassRoomV2({
 
           {/* Teacher Raised Hand Instant Notification Toast */}
           {isTeacher && recentHandRaiseAlert && (
-            <div className="absolute top-16 right-4 sm:right-6 z-50 max-w-sm animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-auto">
+            <div className="absolute top-16 right-4 sm:right-6 z-50 max-w-[calc(100vw-2rem)] sm:max-w-sm animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-auto">
               <div className="p-3 rounded-2xl bg-[#1d150b]/95 border border-amber-500/60 shadow-2xl backdrop-blur-md flex items-center gap-3 text-white">
                 <div className="h-9 w-9 rounded-xl bg-amber-500/25 text-amber-300 flex items-center justify-center shrink-0">
                   <Hand size={18} className="animate-bounce text-amber-400" />
@@ -2016,7 +2017,7 @@ export function LiveKitClassRoomV2({
 
           {/* Floating Activity Toast (Chat & Files) */}
           {recentActivityAlert && (
-            <div className="absolute bottom-24 right-4 z-50 max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300 pointer-events-auto">
+            <div className="absolute bottom-24 right-4 z-50 max-w-[calc(100vw-2rem)] sm:max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300 pointer-events-auto">
               <div className="p-3 rounded-2xl bg-[#141622]/95 border border-blue-500/40 shadow-2xl backdrop-blur-md flex items-start gap-3 text-white">
                 <div className="h-8 w-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
                   {recentActivityAlert.type === "chat" ? <MessageSquare size={16} /> : <FileText size={16} />}
@@ -2156,6 +2157,22 @@ export function LiveKitClassRoomV2({
                 return prev.filter((h) => h.identity !== currentId);
               }
             });
+
+            if (classId) {
+              const endpoint = isWebinar || normalizedRole === "PUBLIC_LEARNER"
+                ? `/live-class/public/${classId}/hand-raise`
+                : `/live-class/${classId}/hand-raise`;
+              fetchApi(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  identity: currentId,
+                  name: currentName,
+                  raised: next,
+                }),
+                silent: true,
+              }).catch(() => {});
+            }
           }}
           onToggleChat={() => {
             if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -2610,12 +2627,12 @@ function AttendanceRosterModal({
         )}
 
         {/* Table Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-auto p-4 scrollbar-thin">
           {tab === "live" ? (
             filteredLive.length === 0 ? (
               <div className="py-12 text-center text-xs text-white/40">No attendees match your query.</div>
             ) : (
-              <table className="w-full text-left text-xs text-white/80">
+              <table className="w-full min-w-[500px] text-left text-xs text-white/80">
                 <thead className="text-[10px] uppercase text-white/40 border-b border-white/10 bg-white/[0.02]">
                   <tr>
                     <th className="py-2.5 px-3">Participant Name</th>
@@ -2706,7 +2723,7 @@ function AttendanceRosterModal({
           ) : filteredWebinar.length === 0 ? (
             <div className="py-12 text-center text-xs text-white/40">No registered webinar attendees found.</div>
           ) : (
-            <table className="w-full text-left text-xs text-white/80">
+            <table className="w-full min-w-[620px] text-left text-xs text-white/80">
               <thead className="text-[10px] uppercase text-white/40 border-b border-white/10 bg-white/[0.02]">
                 <tr>
                   <th className="py-2.5 px-3">Student Name</th>
@@ -2795,7 +2812,7 @@ function V2ClassVideoGrid({
     return (
       <div
         key={`audio-hand-${student.identity}`}
-        className="w-32 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-gradient-to-b from-[#1c1428] to-[#0e1017] border-2 border-amber-400 ring-2 ring-amber-400/40 p-2 flex flex-col justify-between shadow-lg"
+        className="w-28 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-gradient-to-b from-[#1c1428] to-[#0e1017] border-2 border-amber-400 ring-2 ring-amber-400/40 p-2 flex flex-col justify-between shadow-lg"
       >
         <div className="flex items-center justify-between">
           <div className="bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow flex items-center gap-1 animate-bounce">
@@ -2908,7 +2925,7 @@ function V2ClassVideoGrid({
 
         {/* Horizontal Participant Video Strip */}
         {(uniqueCameras.length > 0 || audioOnlyRaisedHands.length > 0) && (
-          <div className="h-20 sm:h-24 md:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+          <div className="h-18 sm:h-22 md:h-28 shrink-0 flex gap-2 sm:gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
             {audioOnlyRaisedHands.map(renderAudioHandCard)}
             {uniqueCameras.map((t, idx) => {
               const id = t.participant?.identity || "";
@@ -2916,7 +2933,7 @@ function V2ClassVideoGrid({
               return (
                 <div
                   key={id || idx}
-                  className={`w-32 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all ${
+                  className={`w-28 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all ${
                     isHandUp ? "border-2 border-amber-400 ring-2 ring-amber-400/40" : "border border-white/10"
                   }`}
                 >
@@ -2980,7 +2997,7 @@ function V2ClassVideoGrid({
 
           {/* If there are permitted student/co-host camera tracks or audio raised hands, display horizontal strip below */}
           {(audienceSpeakers.length > 0 || audioOnlyRaisedHands.length > 0) && (
-            <div className="h-20 sm:h-24 md:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+            <div className="h-18 sm:h-22 md:h-28 shrink-0 flex gap-2 sm:gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
               {audioOnlyRaisedHands.map(renderAudioHandCard)}
               {audienceSpeakers.map((t, idx) => {
                 const id = t.participant?.identity || "";
@@ -2988,7 +3005,7 @@ function V2ClassVideoGrid({
                 return (
                   <div
                     key={id || idx}
-                    className={`w-32 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all ${
+                    className={`w-28 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all ${
                       isHandUp ? "border-2 border-amber-400 ring-2 ring-amber-400/40" : "border border-white/10"
                     }`}
                   >
@@ -3029,7 +3046,7 @@ function V2ClassVideoGrid({
               <Hand size={13} className="animate-bounce" />
               <span>Attendees requesting to speak ({audioOnlyRaisedHands.length}):</span>
             </p>
-            <div className="h-20 sm:h-24 md:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+            <div className="h-18 sm:h-22 md:h-28 shrink-0 flex gap-2 sm:gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
               {audioOnlyRaisedHands.map(renderAudioHandCard)}
             </div>
           </div>
@@ -3079,7 +3096,7 @@ function V2ClassVideoGrid({
         </div>
 
         {audioOnlyRaisedHands.length > 0 && (
-          <div className="h-20 sm:h-24 md:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+          <div className="h-18 sm:h-22 md:h-28 shrink-0 flex gap-2 sm:gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
             {audioOnlyRaisedHands.map(renderAudioHandCard)}
           </div>
         )}
@@ -3118,7 +3135,7 @@ function V2ClassVideoGrid({
         </div>
 
         {/* Participant Video Strip Directly Below */}
-        <div className="h-20 sm:h-24 md:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+        <div className="h-18 sm:h-22 md:h-28 shrink-0 flex gap-2 sm:gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
           {audioOnlyRaisedHands.map(renderAudioHandCard)}
           {uniqueCameras.map((t, idx) => {
             const id = t.participant?.identity || "";
@@ -3128,7 +3145,7 @@ function V2ClassVideoGrid({
               <div
                 key={id || idx}
                 onClick={() => setSelectedSpotlightId(id)}
-                className={`w-32 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all cursor-pointer group ${
+                className={`w-28 sm:w-36 md:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all cursor-pointer group ${
                   isSelected
                     ? "border-2 border-blue-500 ring-2 ring-blue-500/40"
                     : isHandUp
@@ -3213,6 +3230,19 @@ function V2ClassVideoGrid({
           );
         })}
       </div>
+
+      {/* If any student without video raised hand, show an audio hand bar below gallery grid */}
+      {audioOnlyRaisedHands.length > 0 && (
+        <div className="shrink-0 flex flex-col gap-1 pt-1">
+          <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5 px-1">
+            <Hand size={12} className="animate-bounce" />
+            <span>Hands Raised ({audioOnlyRaisedHands.length})</span>
+          </span>
+          <div className="h-18 sm:h-22 md:h-26 shrink-0 flex gap-2 sm:gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+            {audioOnlyRaisedHands.map(renderAudioHandCard)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3430,8 +3460,9 @@ function FloatingCamPiP({
       className={`${!dragPosition ? `absolute ${CORNER_CLASSES[corner]}` : ""} z-40 flex flex-col items-end gap-1 pointer-events-auto touch-none select-none`}
     >
       <div
-        className="rounded-2xl overflow-hidden border border-white/20 bg-[#111318]/95 shadow-2xl backdrop-blur-md transition-all duration-150 ring-1 ring-black/40"
-        style={{ width: isCompact ? "150px" : "210px" }}
+        className={`rounded-2xl overflow-hidden border border-white/20 bg-[#111318]/95 shadow-2xl backdrop-blur-md transition-all duration-150 ring-1 ring-black/40 ${
+          isCompact ? "w-32 sm:w-36" : "w-36 sm:w-44 md:w-52"
+        } max-w-[calc(100vw-2rem)]`}
       >
         {/* PiP Header with Drag Handle & Actions */}
         <div className="flex items-center justify-between px-2 py-1 bg-black/60 text-white/80 text-[10px] font-bold border-b border-white/10 cursor-grab active:cursor-grabbing">
@@ -3469,8 +3500,7 @@ function FloatingCamPiP({
 
         {/* Video stream container */}
         <div
-          className="bg-black relative overflow-hidden"
-          style={{ height: isCompact ? "90px" : "125px" }}
+          className={`bg-black relative overflow-hidden ${isCompact ? "h-20 sm:h-24" : "h-22 sm:h-28 md:h-32"}`}
         >
           <ParticipantTile trackRef={target} style={{ width: "100%", height: "100%" }} />
         </div>
@@ -3564,13 +3594,13 @@ function V2BottomControlDock({
 
   return (
     <footer
-      className="h-16 sm:h-18 shrink-0 bg-[#12141c]/95 backdrop-blur-md border-t border-white/10 px-3 sm:px-6 flex items-center justify-center gap-2 sm:gap-3.5 z-30"
+      className="h-14 sm:h-16 md:h-18 shrink-0 bg-[#12141c]/95 backdrop-blur-md border-t border-white/10 px-2 sm:px-6 flex items-center justify-center gap-1.5 sm:gap-3 md:gap-3.5 z-30 overflow-x-auto scrollbar-none"
       style={{ paddingBottom: "max(6px, env(safe-area-inset-bottom))" }}
     >
       {/* Microphone Toggle (Circular) */}
       {isWebinar && !isTeacher && !micAllowedByHost ? (
         <div
-          className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center select-none shadow-md"
+          className="h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center select-none shadow-md shrink-0"
           title="Webinar attendees are in listen-only mode. Use Raise Hand to request speaking permission."
         >
           <MicOff size={18} />
@@ -3579,7 +3609,7 @@ function V2BottomControlDock({
         <button
           {...micProps}
           onClick={handleToggleMic}
-          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer relative shadow-md ${
+          className={`h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer relative shadow-md shrink-0 ${
             micOn
               ? "bg-white/10 hover:bg-white/15 text-white border border-white/10"
               : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40"
@@ -3599,7 +3629,7 @@ function V2BottomControlDock({
       {/* Camera Toggle (Circular) */}
       {isWebinar && !isTeacher ? (
         <div
-          className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center select-none shadow-md"
+          className="h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center select-none shadow-md shrink-0"
           title="Webcam streaming is disabled for webinar attendees to maintain stage focus."
         >
           <VideoOff size={18} />
@@ -3608,7 +3638,7 @@ function V2BottomControlDock({
         <button
           {...camProps}
           onClick={handleToggleCam}
-          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md ${
+          className={`h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md shrink-0 ${
             camOn
               ? "bg-white/10 hover:bg-white/15 text-white border border-white/10"
               : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40"
@@ -3623,7 +3653,7 @@ function V2BottomControlDock({
       {isTeacher && (
         <button
           {...screenProps}
-          className={`hidden sm:flex h-11 w-11 sm:h-12 sm:w-12 rounded-full items-center justify-center transition-all active:scale-95 shadow-md ${
+          className={`hidden sm:flex h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full items-center justify-center transition-all active:scale-95 shadow-md shrink-0 ${
             screenOn
               ? "bg-blue-600 text-white shadow-blue-600/30"
               : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
@@ -3640,7 +3670,7 @@ function V2BottomControlDock({
           {recordingStatus === "idle" && (
             <button
               onClick={onStartRecording}
-              className="h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center bg-white/10 hover:bg-rose-500/20 text-white hover:text-rose-300 border border-white/10 hover:border-rose-500/40 transition-all active:scale-95 cursor-pointer shadow-md"
+              className="h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full flex items-center justify-center bg-white/10 hover:bg-rose-500/20 text-white hover:text-rose-300 border border-white/10 hover:border-rose-500/40 transition-all active:scale-95 cursor-pointer shadow-md shrink-0"
               title="Start Recording"
             >
               <Circle size={18} className="fill-rose-500 text-rose-500" />
@@ -3648,7 +3678,7 @@ function V2BottomControlDock({
           )}
 
           {recordingStatus === "recording" && (
-            <div className="flex items-center gap-1.5 p-1 rounded-full bg-rose-950/70 border border-rose-500/50 shadow-lg">
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-rose-950/70 border border-rose-500/50 shadow-lg shrink-0">
               <button
                 onClick={onPauseRecording}
                 className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95 cursor-pointer"
@@ -3667,7 +3697,7 @@ function V2BottomControlDock({
           )}
 
           {recordingStatus === "paused" && (
-            <div className="flex items-center gap-1.5 p-1 rounded-full bg-amber-950/70 border border-amber-500/50 shadow-lg">
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-amber-950/70 border border-amber-500/50 shadow-lg shrink-0">
               <button
                 onClick={onResumeRecording}
                 className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 cursor-pointer"
@@ -3686,7 +3716,7 @@ function V2BottomControlDock({
           )}
 
           {recordingStatus === "saving" && (
-            <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center bg-blue-500/20 border border-blue-500/40 text-blue-300">
+            <div className="h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full flex items-center justify-center bg-blue-500/20 border border-blue-500/40 text-blue-300 shrink-0">
               <Loader2 size={18} className="animate-spin text-blue-400" />
             </div>
           )}
@@ -3697,7 +3727,7 @@ function V2BottomControlDock({
       {!isTeacher && (
         <button
           onClick={() => onToggleHand(room)}
-          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md ${
+          className={`h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md shrink-0 ${
             isHandRaised
               ? "bg-amber-500 text-black shadow-amber-500/30 ring-2 ring-amber-400"
               : isWebinar
@@ -3714,7 +3744,7 @@ function V2BottomControlDock({
       {!isImmersed && (
         <button
           onClick={onToggleChat}
-          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer relative shadow-md ${
+          className={`h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer relative shadow-md shrink-0 ${
             isRightPanelOpen
               ? "bg-blue-600 text-white shadow-blue-600/30"
               : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
@@ -3733,11 +3763,12 @@ function V2BottomControlDock({
       {/* Prominent Red Pill Leave Button */}
       <button
         onClick={onLeave}
-        className="px-5 sm:px-6 h-11 sm:h-12 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-transform active:scale-95 cursor-pointer ml-1 sm:ml-2"
+        className="px-3.5 sm:px-5 md:px-6 h-10 sm:h-11 md:h-12 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-transform active:scale-95 cursor-pointer ml-1 sm:ml-2 shrink-0"
         title={isWebinar ? "Exit Webinar" : "Leave Live Class"}
       >
         <LogOut size={16} />
-        <span>{isWebinar ? "Exit" : "Leave Meeting"}</span>
+        <span className="hidden xs:inline">{isWebinar ? "Exit" : "Leave Meeting"}</span>
+        <span className="inline xs:hidden">{isWebinar ? "Exit" : "Leave"}</span>
       </button>
     </footer>
   );
@@ -4085,6 +4116,7 @@ function FilesContentPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 function ClassroomV2Sync({
   classId,
+  isWebinar = false,
   isTeacher,
   myIdentity,
   stageMode,
@@ -4189,7 +4221,12 @@ function ClassroomV2Sync({
 
     const handleData = (payload: Uint8Array, participant?: any) => {
       try {
-        const text = new TextDecoder().decode(payload);
+        const text =
+          typeof payload === "string"
+            ? payload
+            : payload instanceof Uint8Array
+            ? new TextDecoder().decode(payload)
+            : new TextDecoder().decode(new Uint8Array(payload as any));
         const data = JSON.parse(text);
 
         // Security: WebRTC Sender Attestation
@@ -4346,6 +4383,53 @@ function ClassroomV2Sync({
       room.off("participantConnected", handleParticipantConnected);
     };
   }, [room, myIdentity, setStageMode, setAllowStudentWhiteboardDraw, setAllowStudentSlideDraw, setChatMessages, setSharedFiles, activeTabRef, setUnreadChatCount, setRaisedHandsList, setIsHandRaised, setBreakState, setMicAllowedByHost, setHostAllowedMicToast, setRemoteRecordingActive, setRemoteRecordingPaused, participants]);
+
+  // Resilient Server-Side Raised Hands Polling Sync (Fallback for dropped packets or late presenter joins)
+  useEffect(() => {
+    if (!classId) return;
+
+    let isMounted = true;
+    const syncRaisedHands = async () => {
+      try {
+        const endpoint = isWebinar
+          ? `/live-class/public/${classId}/raised-hands`
+          : `/live-class/${classId}/raised-hands`;
+        const serverHands = await fetchApi<HandRaiseEntry[]>(endpoint, { silent: true });
+        if (isMounted && Array.isArray(serverHands)) {
+          setRaisedHandsList((prev: HandRaiseEntry[]) => {
+            const prevMap = new Map(prev.map((h) => [h.identity, h]));
+            let hasChanged = false;
+            if (serverHands.length !== prev.length) {
+              hasChanged = true;
+            } else {
+              for (const s of serverHands) {
+                if (!prevMap.has(s.identity)) {
+                  hasChanged = true;
+                  break;
+                }
+              }
+            }
+            if (!hasChanged) return prev;
+            // Play notification chime and show toast if presenter detected new hands
+            serverHands.forEach((s) => {
+              if (!prevMap.has(s.identity) && isTeacherRef.current) {
+                playHandRaiseChime();
+                onNewHandRaiseRef.current?.(s.name, s.identity);
+              }
+            });
+            return serverHands;
+          });
+        }
+      } catch {}
+    };
+
+    syncRaisedHands();
+    const interval = setInterval(syncRaisedHands, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [classId, isWebinar, setRaisedHandsList]);
 
   return null;
 }

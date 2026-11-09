@@ -230,7 +230,7 @@ export function RecordingUploadModal({
         aria-modal="true"
         aria-labelledby="recording-modal-title"
       >
-        <div className="relative w-full max-w-lg rounded-3xl bg-gradient-to-b from-[#161a29] to-[#0d101a] border border-white/12 shadow-2xl p-6 sm:p-7 text-white flex flex-col gap-5 overflow-hidden">
+        <div className="relative w-full max-w-lg rounded-3xl bg-gradient-to-b from-[#161a29] to-[#0d101a] border border-white/12 shadow-2xl p-4 sm:p-7 text-white flex flex-col gap-4 sm:gap-5 max-h-[calc(100dvh-1.5rem)] overflow-y-auto scrollbar-thin">
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 border-b border-white/10">
             <div className="flex items-center gap-3">

@@ -85,7 +85,7 @@ export function MobileSheet({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative z-10 w-full bg-[#111318] border-t border-white/10 rounded-t-3xl shadow-2xl flex flex-col max-h-[82dvh] min-h-[50dvh] pb-[max(12px,env(safe-area-inset-bottom))] transition-transform duration-200 ease-out"
+        className="relative z-10 w-full bg-[#111318] border-t border-white/10 rounded-t-3xl shadow-2xl flex flex-col max-h-[85dvh] landscape:max-h-[95dvh] min-h-[35dvh] sm:min-h-[50dvh] pb-[max(12px,env(safe-area-inset-bottom))] safe-area-x transition-transform duration-200 ease-out"
         style={{
           boxShadow: "0 -8px 30px rgba(0,0,0,0.7)",
         }}
