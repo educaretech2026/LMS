@@ -93,6 +93,11 @@ export function Sidebar({
       const saved = localStorage.getItem("educare_sidebar_collapsed");
       if (saved === "true") {
         setIsCollapsed(true);
+      } else if (saved === "false") {
+        setIsCollapsed(false);
+      } else if (typeof window !== "undefined" && window.innerHeight < 560 && window.innerWidth < 1024) {
+        // In mobile/tablet landscape mode, default to compact sidebar to maximize workspace
+        setIsCollapsed(true);
       }
     } catch {}
   }, []);
@@ -174,26 +179,26 @@ export function Sidebar({
         ${isMobileMenuOpen ? "translate-x-0 flex" : "-translate-x-full hidden md:flex"}
       `}>
         {/* Brand */}
-        <div className={`flex flex-col items-center justify-center px-3 py-5 border-b border-white/10 shrink-0 relative transition-all duration-300 ${isCollapsed ? "h-[76px]" : "h-[88px]"}`}>
+        <div className={`flex flex-col items-center justify-center px-3 py-2 md:py-4 border-b border-white/10 shrink-0 relative transition-all duration-300 ${isCollapsed ? "h-[60px] md:h-[76px]" : "h-[68px] md:h-[88px]"}`}>
           {!isCollapsed ? (
-            <div className="w-full rounded-xl bg-white shadow-[0_4px_24px_rgba(0,0,0,0.18)] overflow-hidden h-12 flex items-center justify-center transition-all duration-300">
+            <div className="w-full rounded-xl bg-white shadow-[0_4px_24px_rgba(0,0,0,0.18)] overflow-hidden h-10 md:h-12 flex items-center justify-center transition-all duration-300">
               <Image
                 src={logoImage}
                 alt="Educare Group of Institutions"
                 width={228}
                 height={48}
-                className="object-contain w-full h-full scale-[6.4] translate-y-[12px]"
+                className="object-contain w-full h-full scale-[5.8] md:scale-[6.4] translate-y-[8px] md:translate-y-[12px]"
                 priority
               />
             </div>
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] overflow-hidden flex items-center justify-center transition-all duration-300" title="Educare LMS">
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] overflow-hidden flex items-center justify-center transition-all duration-300" title="Educare LMS">
               <Image
                 src={logoImage}
                 alt="Educare"
                 width={40}
                 height={40}
-                className="object-contain w-full h-full scale-[3.4] translate-y-[3px]"
+                className="object-contain w-full h-full scale-[3.2] md:scale-[3.4] translate-y-[2px] md:translate-y-[3px]"
                 priority
               />
             </div>
@@ -206,7 +211,7 @@ export function Sidebar({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6">
+        <nav className="flex-1 overflow-y-auto py-3 md:py-6 px-2 md:px-3 space-y-3 md:space-y-6 scrollbar-thin">
           {visibleMainNav.length > 0 && (
             <NavSection
               label="Main"

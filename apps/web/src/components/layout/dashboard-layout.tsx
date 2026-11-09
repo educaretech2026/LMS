@@ -46,7 +46,7 @@ export function DashboardLayout({
   const moduleName = moduleDef?.label || requiredModule || "This Module";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface">
+    <div className="flex h-[100dvh] overflow-hidden bg-surface safe-area-x">
       <Sidebar
         role={activeRole || undefined}
         isMobileMenuOpen={isMobileMenuOpen}
@@ -54,7 +54,7 @@ export function DashboardLayout({
       />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <TopNav title={title} onMenuClick={() => setIsMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto bg-surface">
+        <main className="flex-1 overflow-y-auto bg-surface overscroll-y-contain">
           {!isAuthorized ? (
             <div className="min-h-[75vh] flex items-center justify-center p-6">
               <div className="max-w-md w-full rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-card p-8 text-center shadow-lg">

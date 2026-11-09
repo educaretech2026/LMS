@@ -54,7 +54,7 @@ export function TopNav({ title = "Dashboard", onMenuClick }: { title?: string, o
   };
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft bg-white px-4 md:px-6">
+    <header className="flex h-12 sm:h-14 md:h-16 shrink-0 items-center justify-between gap-3 sm:gap-4 border-b border-border-soft bg-white px-3 sm:px-4 md:px-6">
       {/* Left — Page title & Hamburger */}
       <div className="flex items-center gap-3">
         {onMenuClick && (
