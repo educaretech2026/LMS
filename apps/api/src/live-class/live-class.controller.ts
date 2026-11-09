@@ -129,15 +129,15 @@ export class LiveClassController {
     return this.liveClassService.lowerAllHands(id);
   }
 
-  // Live Class Raised Hands Fallback Sync (Authenticated)
+  // Live Class Raised Hands Fallback Sync (Authenticated & Public Fallback)
+  @Public()
   @Get(':id/raised-hands')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getRaisedHands(@Param('id') id: string) {
     return this.liveClassService.getRaisedHands(id);
   }
 
+  @Public()
   @Post(':id/hand-raise')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   toggleHandRaise(
     @Param('id') id: string,
     @Body() body: { identity: string; name: string; raised: boolean },
@@ -145,8 +145,8 @@ export class LiveClassController {
     return this.liveClassService.toggleHandRaise(id, body);
   }
 
+  @Public()
   @Post(':id/lower-all-hands')
-  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER')
   lowerAllHands(@Param('id') id: string) {
     return this.liveClassService.lowerAllHands(id);
   }

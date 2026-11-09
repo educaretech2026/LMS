@@ -403,6 +403,56 @@ export function LiveKitClassRoomV2({
     ["TEACHER", "SUPER_ADMIN", "CENTRE_ADMIN", "ADMIN", "PRESENTER", "HOST", "SPEAKER", "INSTRUCTOR", "STAFF", "EDUCATOR", "MODERATOR", "CO_HOST"].includes(normalizedRole);
   const isImmersed = !isTeacher && stageMode !== "grid";
 
+  const targetClassId = classId || roomId;
+
+  const handleLowerStudentHand = useCallback(
+    (targetIdentity: string) => {
+      const room = (window as any).__lk_room;
+      safePublishData(room, {
+        type: "LOWER_STUDENT_HAND",
+        identity: targetIdentity,
+      });
+      setRaisedHandsList((prev) => prev.filter((h) => h.identity !== targetIdentity));
+      if (recentHandRaiseAlert?.identity === targetIdentity) {
+        setRecentHandRaiseAlert(null);
+      }
+      if (targetClassId) {
+        const endpoint =
+          isWebinar || normalizedRole === "PUBLIC_LEARNER"
+            ? `/live-class/public/${targetClassId}/hand-raise`
+            : `/live-class/${targetClassId}/hand-raise`;
+        fetchApi(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            identity: targetIdentity,
+            name: "",
+            raised: false,
+          }),
+          silent: true,
+        }).catch(() => {});
+      }
+    },
+    [recentHandRaiseAlert, targetClassId, isWebinar, normalizedRole]
+  );
+
+  const handleLowerAllHands = useCallback(() => {
+    const room = (window as any).__lk_room;
+    safePublishData(room, { type: "LOWER_ALL_HANDS" });
+    setRaisedHandsList([]);
+    setRecentHandRaiseAlert(null);
+    if (targetClassId) {
+      const endpoint =
+        isWebinar || normalizedRole === "PUBLIC_LEARNER"
+          ? `/live-class/public/${targetClassId}/lower-all-hands`
+          : `/live-class/${targetClassId}/lower-all-hands`;
+      fetchApi(endpoint, {
+        method: "POST",
+        silent: true,
+      }).catch(() => {});
+    }
+  }, [targetClassId, isWebinar, normalizedRole]);
+
   // Toggle Audience Microphone Permission (Presenter -> Student)
   const toggleParticipantMic = useCallback(
     async (targetIdentity: string, enable: boolean) => {
@@ -1135,6 +1185,8 @@ export function LiveKitClassRoomV2({
       {/* Synchronization Engine */}
       <ClassroomV2Sync
         classId={classId}
+        roomId={roomId}
+        role={role}
         isWebinar={isWebinar}
         isTeacher={isTeacher}
         myIdentity={effectiveIdentity}
@@ -1299,25 +1351,25 @@ export function LiveKitClassRoomV2({
             )}
           </button>
 
-          <div className="w-8 h-px bg-white/10 my-1" />
-
-          {/* Attendance / Attendee Roster */}
-          <button
-            onClick={() => setShowAttendanceModal(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-all relative"
-            title={isWebinar ? "Webinar Attendee Roster" : "Class Attendance Roster"}
-          >
-            <Users size={18} />
-            {sessionAttendees.size > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
-                {sessionAttendees.size}
-              </span>
-            )}
-          </button>
-
           {/* Teacher Dedicated Tools */}
           {isTeacher && (
             <>
+              <div className="w-8 h-px bg-white/10 my-1" />
+
+              {/* Attendance / Attendee Roster (Teachers & Presenters Only) */}
+              <button
+                onClick={() => setShowAttendanceModal(true)}
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-all relative"
+                title={isWebinar ? "Webinar Attendee Roster" : "Class Attendance Roster"}
+              >
+                <Users size={18} />
+                {sessionAttendees.size > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+                    {sessionAttendees.size}
+                  </span>
+                )}
+              </button>
+
               {/* Raised Hands Trigger */}
               <div className="relative">
                 <button
@@ -1352,12 +1404,7 @@ export function LiveKitClassRoomV2({
                       <div className="flex items-center gap-1">
                         {raisedHandsList.length > 0 && (
                           <button
-                            onClick={() => {
-                              const room = (window as any).__lk_room;
-                              safePublishData(room, { type: "LOWER_ALL_HANDS" });
-                              setRaisedHandsList([]);
-                              setRecentHandRaiseAlert(null);
-                            }}
+                            onClick={handleLowerAllHands}
                             className="text-[10px] text-white/70 hover:text-white px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 font-semibold transition-colors"
                           >
                             Lower All
@@ -1412,17 +1459,7 @@ export function LiveKitClassRoomV2({
                                 )}
                               </button>
                               <button
-                                onClick={() => {
-                                  const room = (window as any).__lk_room;
-                                  safePublishData(room, {
-                                    type: "LOWER_STUDENT_HAND",
-                                    identity: item.identity,
-                                  });
-                                  setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
-                                  if (recentHandRaiseAlert?.identity === item.identity) {
-                                    setRecentHandRaiseAlert(null);
-                                  }
-                                }}
+                                onClick={() => handleLowerStudentHand(item.identity)}
                                 className="text-[10px] text-amber-300 hover:text-white font-bold px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/30 shrink-0 transition-colors cursor-pointer"
                               >
                                 Lower
@@ -1732,12 +1769,7 @@ export function LiveKitClassRoomV2({
                       <div className="flex items-center gap-1">
                         {raisedHandsList.length > 0 && (
                           <button
-                            onClick={() => {
-                              const room = (window as any).__lk_room;
-                              safePublishData(room, { type: "LOWER_ALL_HANDS" });
-                              setRaisedHandsList([]);
-                              setRecentHandRaiseAlert(null);
-                            }}
+                            onClick={handleLowerAllHands}
                             className="text-[10px] text-white/70 hover:text-white px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 font-semibold transition-colors"
                           >
                             Lower All
@@ -1792,17 +1824,7 @@ export function LiveKitClassRoomV2({
                                 )}
                               </button>
                               <button
-                                onClick={() => {
-                                  const room = (window as any).__lk_room;
-                                  safePublishData(room, {
-                                    type: "LOWER_STUDENT_HAND",
-                                    identity: item.identity,
-                                  });
-                                  setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
-                                  if (recentHandRaiseAlert?.identity === item.identity) {
-                                    setRecentHandRaiseAlert(null);
-                                  }
-                                }}
+                                onClick={() => handleLowerStudentHand(item.identity)}
                                 className="text-[10px] text-amber-300 hover:text-white font-bold px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/30 shrink-0 transition-colors cursor-pointer"
                               >
                                 Lower
@@ -1856,14 +1878,7 @@ export function LiveKitClassRoomV2({
               isWebinar={isWebinar}
               raisedHands={new Set(raisedHandsList.map((h) => h.identity))}
               raisedHandsList={raisedHandsList}
-              onLowerHand={(identity) => {
-                const room = (window as any).__lk_room;
-                safePublishData(room, {
-                  type: "LOWER_STUDENT_HAND",
-                  identity,
-                });
-                setRaisedHandsList((prev) => prev.filter((h) => h.identity !== identity));
-              }}
+              onLowerHand={handleLowerStudentHand}
               onToggleMic={toggleParticipantMic}
               allowedMics={allowedMics}
             />
@@ -1912,12 +1927,7 @@ export function LiveKitClassRoomV2({
                   </span>
                 </div>
                 <button
-                  onClick={() => {
-                    const room = (window as any).__lk_room;
-                    safePublishData(room, { type: "LOWER_ALL_HANDS" });
-                    setRaisedHandsList([]);
-                    setRecentHandRaiseAlert(null);
-                  }}
+                  onClick={handleLowerAllHands}
                   className="text-[10px] text-white/60 hover:text-white px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/15 font-semibold transition-colors cursor-pointer"
                 >
                   Lower All
@@ -1959,17 +1969,7 @@ export function LiveKitClassRoomV2({
                         )}
                       </button>
                       <button
-                        onClick={() => {
-                          const room = (window as any).__lk_room;
-                          safePublishData(room, {
-                            type: "LOWER_STUDENT_HAND",
-                            identity: item.identity,
-                          });
-                          setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
-                          if (recentHandRaiseAlert?.identity === item.identity) {
-                            setRecentHandRaiseAlert(null);
-                          }
-                        }}
+                        onClick={() => handleLowerStudentHand(item.identity)}
                         className="text-[10px] text-amber-300 hover:text-white font-bold px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/30 shrink-0 transition-colors cursor-pointer"
                       >
                         Lower Hand
@@ -2158,10 +2158,10 @@ export function LiveKitClassRoomV2({
               }
             });
 
-            if (classId) {
+            if (targetClassId) {
               const endpoint = isWebinar || normalizedRole === "PUBLIC_LEARNER"
-                ? `/live-class/public/${classId}/hand-raise`
-                : `/live-class/${classId}/hand-raise`;
+                ? `/live-class/public/${targetClassId}/hand-raise`
+                : `/live-class/${targetClassId}/hand-raise`;
               fetchApi(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -2361,7 +2361,7 @@ export function LiveKitClassRoomV2({
       </MobileSheet>
 
       {/* ── ATTENDANCE & ATTENDEE ROSTER MODAL ── */}
-      {showAttendanceModal && (
+      {isTeacher && showAttendanceModal && (
         <AttendanceRosterModal
           isOpen={showAttendanceModal}
           onClose={() => setShowAttendanceModal(false)}
@@ -4116,6 +4116,8 @@ function FilesContentPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 function ClassroomV2Sync({
   classId,
+  roomId,
+  role,
   isWebinar = false,
   isTeacher,
   myIdentity,
@@ -4147,6 +4149,7 @@ function ClassroomV2Sync({
 }: any) {
   const room = useRoomContext();
   const participants = useParticipants();
+  const normalizedRole = (role || "").toUpperCase();
 
   // Stable mutable refs protect listeners from frequent teardowns
   const onNewChatMessageRef = useRef(onNewChatMessage);
@@ -4386,14 +4389,15 @@ function ClassroomV2Sync({
 
   // Resilient Server-Side Raised Hands Polling Sync (Fallback for dropped packets or late presenter joins)
   useEffect(() => {
-    if (!classId) return;
+    const targetClassId = classId || roomId;
+    if (!targetClassId) return;
 
     let isMounted = true;
     const syncRaisedHands = async () => {
       try {
-        const endpoint = isWebinar
-          ? `/live-class/public/${classId}/raised-hands`
-          : `/live-class/${classId}/raised-hands`;
+        const endpoint = isWebinar || normalizedRole === "PUBLIC_LEARNER"
+          ? `/live-class/public/${targetClassId}/raised-hands`
+          : `/live-class/${targetClassId}/raised-hands`;
         const serverHands = await fetchApi<HandRaiseEntry[]>(endpoint, { silent: true });
         if (isMounted && Array.isArray(serverHands)) {
           setRaisedHandsList((prev: HandRaiseEntry[]) => {
@@ -4424,12 +4428,12 @@ function ClassroomV2Sync({
     };
 
     syncRaisedHands();
-    const interval = setInterval(syncRaisedHands, 4000);
+    const interval = setInterval(syncRaisedHands, 2500);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [classId, isWebinar, setRaisedHandsList]);
+  }, [classId, roomId, isWebinar, normalizedRole, setRaisedHandsList]);
 
   return null;
 }

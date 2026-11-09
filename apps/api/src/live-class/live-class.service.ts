@@ -1454,16 +1454,17 @@ export class LiveClassService implements OnModuleInit {
       }
     } else if (normalizedRole === 'STUDENT') {
       isHost = false;
-      // In public webinars, students join as audience in listen-only mode
-      if (cls.isPublic) {
-        canPublish = false;
-      }
+      canPublish = true;
+      canSubscribe = true;
+      canPublishData = true;
     } else if (normalizedRole === 'PUBLIC_LEARNER') {
       if (!cls.isPublic) {
         throw new ForbiddenException('Access denied: Private session.');
       }
       isHost = false;
-      canPublish = false; // Public learners join webinar in listen-only mode
+      canPublish = true;
+      canSubscribe = true;
+      canPublishData = true;
     } else {
       throw new ForbiddenException('Invalid or unauthenticated user role.');
     }
@@ -1535,9 +1536,9 @@ export class LiveClassService implements OnModuleInit {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: isMuted ? false : canPublish,
+      canPublish: true, // Allow publisher connection for data channel (HAND_RAISE, chat)
       canSubscribe,
-      canPublishData,
+      canPublishData: true,
       roomAdmin: isHost,
       canUpdateOwnMetadata: false, // Students cannot tamper with own metadata to elevate privileges
     });
@@ -1727,7 +1728,7 @@ export class LiveClassService implements OnModuleInit {
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: false, // In public webinars, attendees join as audience in listen-only mode
+      canPublish: true, // Allow publisher connection for data channel (HAND_RAISE, chat)
       canSubscribe: true,
       canPublishData: true,
       roomAdmin: false,
