@@ -2569,17 +2569,44 @@ export class LiveClassService implements OnModuleInit {
 
   // ── RESILIENT RAISED HANDS PERSISTENCE & MULTI-DEVICE SYNC ──
   private classRaisedHands = new Map<string, Map<string, { identity: string; name: string; raisedAt: number }>>();
+  private canonicalClassIdMap = new Map<string, string>();
 
-  getRaisedHands(classId: string): Array<{ identity: string; name: string; raisedAt: number }> {
+  async resolveCanonicalClassId(identifier: string): Promise<string> {
+    if (!identifier) return identifier;
+    if (this.canonicalClassIdMap.has(identifier)) {
+      return this.canonicalClassIdMap.get(identifier)!;
+    }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+    let resolved = identifier;
+    try {
+      const cls = await this.prisma.liveClass.findFirst({
+        where: isUuid ? { id: identifier } : { OR: [{ id: identifier }, { roomId: identifier }] },
+        select: { id: true, roomId: true },
+      });
+      if (cls) {
+        resolved = cls.id;
+        this.canonicalClassIdMap.set(cls.id, cls.id);
+        if (cls.roomId) {
+          this.canonicalClassIdMap.set(cls.roomId, cls.id);
+        }
+      }
+    } catch {}
+    this.canonicalClassIdMap.set(identifier, resolved);
+    return resolved;
+  }
+
+  async getRaisedHands(identifier: string): Promise<Array<{ identity: string; name: string; raisedAt: number }>> {
+    const classId = await this.resolveCanonicalClassId(identifier);
     const hands = this.classRaisedHands.get(classId);
     if (!hands) return [];
     return Array.from(hands.values());
   }
 
-  toggleHandRaise(
-    classId: string,
+  async toggleHandRaise(
+    identifier: string,
     data: { identity: string; name: string; raised: boolean },
-  ): { success: boolean; count: number; raisedHands: Array<{ identity: string; name: string; raisedAt: number }> } {
+  ): Promise<{ success: boolean; count: number; raisedHands: Array<{ identity: string; name: string; raisedAt: number }> }> {
+    const classId = await this.resolveCanonicalClassId(identifier);
     if (!this.classRaisedHands.has(classId)) {
       this.classRaisedHands.set(classId, new Map());
     }
@@ -2597,7 +2624,8 @@ export class LiveClassService implements OnModuleInit {
     return { success: true, count: list.length, raisedHands: list };
   }
 
-  lowerAllHands(classId: string): { success: boolean; count: number } {
+  async lowerAllHands(identifier: string): Promise<{ success: boolean; count: number }> {
+    const classId = await this.resolveCanonicalClassId(identifier);
     if (this.classRaisedHands.has(classId)) {
       this.classRaisedHands.get(classId)!.clear();
     }

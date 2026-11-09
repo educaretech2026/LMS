@@ -51,6 +51,9 @@ async function handleProxy(request: NextRequest, context: RouteContext) {
     normalizedLower.startsWith('/setup/public') ||
     normalizedLower.startsWith('/courses/public') ||
     normalizedLower.startsWith('/live-class/public') ||
+    normalizedLower.includes('/raised-hands') ||
+    normalizedLower.includes('/hand-raise') ||
+    normalizedLower.includes('/lower-all-hands') ||
     normalizedLower.startsWith('/forms/public') ||
     normalizedLower.endsWith('/public') ||
     normalizedLower.startsWith('/public-auth');
