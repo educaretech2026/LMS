@@ -525,34 +525,94 @@ export class StudentsService implements OnModuleInit {
       }
     }
 
-    const centre = data.centre ? await this.prisma.centre.findFirst({ where: { name: data.centre } }) : null;
+    const centre = data.centre
+      ? await this.prisma.centre.findFirst({
+          where: {
+            OR: [
+              { id: data.centre },
+              { name: { equals: data.centre, mode: 'insensitive' } },
+            ],
+          },
+        })
+      : null;
     if (centre && user && !isSuperAdmin(user)) {
       assertCentreAccess(user, centre.id);
     }
 
-    const year = data.academicYear ? await this.prisma.academicYear.findUnique({ where: { name: data.academicYear } }) : null;
-    const board = data.board ? await this.prisma.board.findUnique({ where: { name: data.board } }) : null;
-    const standard = (data.classLevel && board)
-      ? await this.prisma.standard.findFirst({
+    const year = data.academicYear
+      ? await this.prisma.academicYear.findFirst({
           where: {
-            name: data.classLevel,
             OR: [
-              { boardId: board.id },
-              { boards: { some: { boardId: board.id } } },
+              { id: data.academicYear },
+              { name: { equals: data.academicYear, mode: 'insensitive' } },
             ],
           },
         })
       : null;
 
+    const board = data.board
+      ? await this.prisma.board.findFirst({
+          where: {
+            OR: [
+              { id: data.board },
+              { name: { equals: data.board, mode: 'insensitive' } },
+            ],
+          },
+        })
+      : null;
+
+    const standard = data.classLevel
+      ? await this.prisma.standard.findFirst({
+          where: {
+            name: { equals: data.classLevel, mode: 'insensitive' },
+            ...(board
+              ? {
+                  OR: [
+                    { boardId: board.id },
+                    { boards: { some: { boardId: board.id } } },
+                  ],
+                }
+              : {}),
+          },
+        }) || await this.prisma.standard.findFirst({
+          where: {
+            OR: [
+              { id: data.classLevel },
+              { name: { equals: data.classLevel, mode: 'insensitive' } },
+            ],
+          },
+        })
+      : null;
+
+    const existingEnrollment = profile.enrollments?.[0];
+    const existingBatch = existingEnrollment?.batch;
+
+    const effectiveYearId = year?.id || existingBatch?.academicYearId;
+    const effectiveBoardId = board?.id || existingBatch?.boardId;
+    const effectiveStandardId = standard?.id || existingBatch?.standardId;
+    const effectiveCentreId = centre?.id || existingBatch?.centreId;
+
     let batch = null;
-    if (centre && year && board && standard) {
-      const batchName = data.division || 'Default Batch';
+    if (effectiveCentreId && effectiveYearId && effectiveBoardId && effectiveStandardId) {
+      const batchName = data.division || existingBatch?.name || 'Default Batch';
       batch = await this.prisma.batch.findFirst({
-        where: { name: batchName, academicYearId: year.id, boardId: board.id, standardId: standard.id, centreId: centre.id }
+        where: {
+          name: batchName,
+          academicYearId: effectiveYearId,
+          boardId: effectiveBoardId,
+          standardId: effectiveStandardId,
+          centreId: effectiveCentreId,
+        },
       });
       if (!batch) {
         batch = await this.prisma.batch.create({
-          data: { name: batchName, academicYearId: year.id, boardId: board.id, standardId: standard.id, centreId: centre.id }
+          data: {
+            name: batchName,
+            academicYearId: effectiveYearId,
+            boardId: effectiveBoardId,
+            standardId: effectiveStandardId,
+            centreId: effectiveCentreId,
+          },
         });
       }
     }
@@ -583,13 +643,15 @@ export class StudentsService implements OnModuleInit {
       const isUpdateEmailOrAutofill = rawUpdateAdmNo.includes('@') || /admin/i.test(rawUpdateAdmNo) || /educare/i.test(rawUpdateAdmNo);
       const isValidUpdateAdmNo = rawUpdateAdmNo !== '' && !isUpdateEmailOrAutofill;
 
+      const effectiveParentPhone = data.parentPhone || data.phone || undefined;
+
       const updatedProfile = await prisma.studentProfile.update({
         where: { id },
         data: {
           admissionNo: isValidUpdateAdmNo ? rawUpdateAdmNo : undefined,
           parentName: data.parentName || undefined,
           parentEmail: data.parentEmail || undefined,
-          parentPhone: data.parentPhone || undefined,
+          parentPhone: effectiveParentPhone,
           bloodGroup: data.bloodGroup || undefined,
           dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
           address: data.address || undefined,
@@ -597,12 +659,12 @@ export class StudentsService implements OnModuleInit {
         }
       });
 
-      if (batch || data.trackId) {
+      if (batch || data.trackId !== undefined || data.subjectIds !== undefined) {
         const enrollment = await prisma.enrollment.findFirst({ where: { studentProfileId: id } });
         if (enrollment) {
           const updateData: any = {};
           if (batch) updateData.batchId = batch.id;
-          if (data.trackId) updateData.trackId = data.trackId;
+          if (data.trackId !== undefined) updateData.trackId = data.trackId || null;
           if (data.subjectIds !== undefined) {
             updateData.subjects = {
               set: data.subjectIds.map((id: string) => ({ id }))
@@ -613,6 +675,19 @@ export class StudentsService implements OnModuleInit {
             where: { id: enrollment.id },
             data: updateData
           });
+        } else if (batch) {
+          await prisma.enrollment.create({
+            data: {
+              studentProfileId: id,
+              batchId: batch.id,
+              trackId: data.trackId || null,
+              ...(data.subjectIds && data.subjectIds.length > 0 ? {
+                subjects: {
+                  connect: data.subjectIds.map((id: string) => ({ id }))
+                }
+              } : {}),
+            }
+          });
         }
       }
 
@@ -621,7 +696,21 @@ export class StudentsService implements OnModuleInit {
         await prisma.userCentre.create({ data: { userId: profile.userId, centreId: centre.id } });
       }
 
-      return updatedProfile;
+      return await prisma.studentProfile.findUnique({
+        where: { id },
+        include: {
+          user: { select: SAFE_USER_SELECT },
+          enrollments: {
+            include: {
+              batch: {
+                include: { academicYear: true, board: true, standard: true, centre: true }
+              },
+              track: true,
+              subjects: true,
+            }
+          }
+        }
+      });
     });
   }
 

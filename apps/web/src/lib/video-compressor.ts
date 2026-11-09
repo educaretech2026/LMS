@@ -55,6 +55,115 @@ export function getSupportedCompressionMimeType(): string {
 }
 
 /**
+ * Injects or updates the EBML Duration element in a WebM file.
+ * Browser MediaRecorder creates streaming WebM files without duration metadata,
+ * causing video players to report Infinity duration and freeze or stall during scrubbing.
+ */
+export async function fixWebmDuration(blob: Blob, durationMs: number): Promise<Blob> {
+  try {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    // Look for Info element [0x15, 0x49, 0xA9, 0x66]
+    let infoPos = -1;
+    for (let i = 0; i < Math.min(bytes.length - 4, 15000); i++) {
+      if (bytes[i] === 0x15 && bytes[i + 1] === 0x49 && bytes[i + 2] === 0xA9 && bytes[i + 3] === 0x66) {
+        infoPos = i;
+        break;
+      }
+    }
+
+    if (infoPos === -1) {
+      return blob; // Not a standard WebM or Info not in first 15KB
+    }
+
+    // Read Info length (variable length int)
+    let pos = infoPos + 4;
+    let infoLen = 0;
+    let mask = 0x80;
+    let lenBytes = 1;
+    while (lenBytes <= 8 && !(bytes[pos] & mask)) {
+      mask >>= 1;
+      lenBytes++;
+    }
+    if (lenBytes > 8) return blob;
+
+    infoLen = bytes[pos] & (mask - 1);
+    for (let i = 1; i < lenBytes; i++) {
+      infoLen = (infoLen << 8) | bytes[pos + i];
+    }
+    const infoEnd = pos + lenBytes + infoLen;
+    pos += lenBytes;
+
+    // Search for TimecodeScale (0x2A 0xD7 0xB1) and Duration (0x44 0x89) inside Info
+    let timecodeScale = 1000000; // default 1ms
+    let durationPos = -1;
+    let durationLen = 0;
+
+    let scanPos = pos;
+    while (scanPos < Math.min(infoEnd, bytes.length - 4)) {
+      if (bytes[scanPos] === 0x2A && bytes[scanPos + 1] === 0xD7 && bytes[scanPos + 2] === 0xB1) {
+        const tLen = bytes[scanPos + 3] & 0x7F;
+        let ts = 0;
+        for (let j = 0; j < tLen; j++) {
+          ts = (ts << 8) | bytes[scanPos + 4 + j];
+        }
+        if (ts > 0) timecodeScale = ts;
+        scanPos += 4 + tLen;
+      } else if (bytes[scanPos] === 0x44 && bytes[scanPos + 1] === 0x89) {
+        durationPos = scanPos;
+        const dLenByte = bytes[scanPos + 2];
+        durationLen = dLenByte & 0x7F;
+        break;
+      } else {
+        scanPos++;
+      }
+    }
+
+    const durationInUnits = (durationMs * 1000000) / timecodeScale;
+
+    if (durationPos !== -1 && (durationLen === 4 || durationLen === 8)) {
+      // Overwrite existing Duration element
+      const view = new DataView(buffer);
+      if (durationLen === 4) {
+        view.setFloat32(durationPos + 3, durationInUnits, false);
+      } else {
+        view.setFloat64(durationPos + 3, durationInUnits, false);
+      }
+      return new Blob([buffer], { type: blob.type });
+    }
+
+    // Duration element not present in Info: inject 0x44 0x89 [0x84] [float32] (7 bytes) into Info
+    const durationElem = new Uint8Array(7);
+    durationElem[0] = 0x44;
+    durationElem[1] = 0x89;
+    durationElem[2] = 0x84; // 4-byte float size with marker
+    const dView = new DataView(durationElem.buffer);
+    dView.setFloat32(3, durationInUnits, false);
+
+    // Reconstruct buffer with injected duration into Info
+    const newBytes = new Uint8Array(bytes.length + 7);
+    newBytes.set(bytes.subarray(0, pos), 0);
+    newBytes.set(durationElem, pos);
+    newBytes.set(bytes.subarray(pos), pos + 7);
+
+    // Update Info element size (+7 bytes)
+    const newInfoLen = infoLen + 7;
+    if (lenBytes === 4) {
+      newBytes[infoPos + 4] = 0x10 | ((newInfoLen >> 24) & 0x0F);
+      newBytes[infoPos + 5] = (newInfoLen >> 16) & 0xFF;
+      newBytes[infoPos + 6] = (newInfoLen >> 8) & 0xFF;
+      newBytes[infoPos + 7] = newInfoLen & 0xFF;
+    }
+
+    return new Blob([newBytes], { type: blob.type });
+  } catch (err) {
+    console.warn('Could not patch WebM duration header, returning original blob:', err);
+    return blob;
+  }
+}
+
+/**
  * Calculates scaled dimensions bounded by maxWidth and maxHeight while maintaining aspect ratio.
  * Ensures dimensions are even numbers (required by VP8/VP9/H264 video encoders).
  */
@@ -197,11 +306,13 @@ export async function compressVideo(
 
   return new Promise<CompressionResult>((resolve, reject) => {
     let animFrameId: number | null = null;
+    let renderTimer: any = null;
     let isFinished = false;
 
     const cleanup = () => {
       isFinished = true;
       if (animFrameId) cancelAnimationFrame(animFrameId);
+      if (renderTimer) clearInterval(renderTimer);
       combinedStream.getTracks().forEach((t) => t.stop());
       canvasStream.getTracks().forEach((t) => t.stop());
       if (audioContext && audioContext.state !== 'closed') {
@@ -210,9 +321,18 @@ export async function compressVideo(
       URL.revokeObjectURL(sourceUrl);
     };
 
-    recorder.onstop = () => {
+    recorder.onstop = async () => {
       cleanup();
-      const compressedBlob = new Blob(chunks, { type: mimeType });
+      const rawBlob = new Blob(chunks, { type: mimeType });
+      // Inject WebM Duration metadata to fix video player seeking and runtime status bar
+      let compressedBlob = rawBlob;
+      if (mimeType.includes('webm')) {
+        try {
+          compressedBlob = await fixWebmDuration(rawBlob, Math.round(duration * 1000));
+        } catch {
+          compressedBlob = rawBlob;
+        }
+      }
       const compressedSize = compressedBlob.size;
       const compressionRatio = compressedSize / originalSize;
 
@@ -231,7 +351,7 @@ export async function compressVideo(
       reject(new Error(e?.error?.message || 'MediaRecorder compression failed.'));
     };
 
-    // Draw loop: continuously draws video frames onto scaled canvas
+    // Frame drawing routine: resilient to background tab throttling
     const drawFrame = () => {
       if (isFinished) return;
       if (video.readyState >= 2) {
@@ -243,8 +363,12 @@ export async function compressVideo(
         });
       }
 
-      if (!video.ended && !video.paused) {
-        animFrameId = requestAnimationFrame(drawFrame);
+      if (!video.ended && !video.paused && !isFinished) {
+        if ('requestVideoFrameCallback' in video) {
+          (video as any).requestVideoFrameCallback(drawFrame);
+        } else {
+          animFrameId = requestAnimationFrame(drawFrame);
+        }
       }
     };
 
@@ -262,6 +386,8 @@ export async function compressVideo(
     try {
       recorder.start(1000);
       video.playbackRate = 1.0; // Strictly normal speed to match MediaRecorder wall-clock timestamps
+      // Backup timer to guarantee frames are pushed even if requestAnimationFrame throttles in background
+      renderTimer = setInterval(drawFrame, Math.round(1000 / targetFps));
       video
         .play()
         .then(() => {

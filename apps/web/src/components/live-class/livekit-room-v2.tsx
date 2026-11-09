@@ -341,6 +341,7 @@ export function LiveKitClassRoomV2({
 
   // Chat & Files Sidebar / Mobile Drawer State
   const [activeSidebarTab, setActiveSidebarTab] = useState<"chat" | "files">("chat");
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(true);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState<boolean>(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
@@ -1128,8 +1129,7 @@ export function LiveKitClassRoomV2({
           setIsUnexpectedDisconnect(true);
         }
       }}
-      className="h-[100dvh] w-full flex flex-col relative overflow-hidden select-none"
-      style={{ background: "#0b0c10" }}
+      className="h-[100dvh] w-full flex p-1.5 sm:p-2.5 md:p-3 gap-2 sm:gap-3 bg-[#08090d] text-slate-100 overflow-hidden select-none"
     >
       {/* Synchronization Engine */}
       <ClassroomV2Sync
@@ -1153,7 +1153,7 @@ export function LiveKitClassRoomV2({
         breakStateRef={breakStateRef}
         setBreakState={setBreakState}
         onNewChatMessage={(msg: ChatMessage) => {
-          const isChatActive = activeSidebarTab === "chat" && !isImmersed && (typeof window !== "undefined" && window.innerWidth >= 768);
+          const isChatActive = activeSidebarTab === "chat" && isRightPanelOpen && !isImmersed && (typeof window !== "undefined" && window.innerWidth >= 768);
           if (!isChatActive) {
             setRecentActivityAlert({
               type: "chat",
@@ -1212,393 +1212,137 @@ export function LiveKitClassRoomV2({
         </div>
       )}
 
-      {/* ── TOP HEADER BAR ── */}
-      <header className="h-14 sm:h-16 shrink-0 bg-[#111318] border-b border-white/10 px-3 sm:px-6 flex items-center justify-between z-30">
-        {/* Left: Class identity */}
-        <div className="flex items-center gap-2.5">
-          <div className={`h-8 w-8 rounded-xl flex items-center justify-center text-white shadow-md ${
-            isWebinar ? "bg-gradient-to-tr from-purple-600 to-indigo-600" : "bg-gradient-to-tr from-blue-600 to-indigo-600"
-          }`}>
-            {isWebinar ? <Globe size={16} /> : <Video size={16} />}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[120px] sm:max-w-xs">
-                {classTitle || (isWebinar ? "Webinar Session" : "Edu-Meet Class")}
-              </h2>
-              <span
-                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
-                  isTeacher
-                    ? isWebinar
-                      ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                      : "bg-blue-500/20 border-blue-500/40 text-blue-300"
-                    : isWebinar
-                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
-                    : "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                }`}
-              >
-                {isTeacher
-                  ? (isWebinar ? "Keynote Presenter" : "Teacher")
-                  : (isWebinar ? "Audience (Listen-Only)" : "Student")}
-              </span>
-            </div>
-            <p className="text-[10px] text-white/40 hidden sm:block">
-              {isWebinar ? "Public Webinar Broadcast" : "HD Interactive Lecture"}
-            </p>
+      {/* ── 1. LEFT NAVIGATION SIDEBAR ── */}
+      <aside className="w-14 sm:w-16 shrink-0 hidden md:flex flex-col items-center justify-between py-4 px-1.5 bg-[#12141c] border border-white/10 rounded-2xl md:rounded-3xl shadow-xl z-20 select-none">
+        {/* App Logo */}
+        <div className="flex flex-col items-center gap-1">
+          <div
+            className={`h-10 w-10 rounded-2xl flex items-center justify-center text-white shadow-lg ${
+              isWebinar
+                ? "bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 shadow-purple-500/20"
+                : "bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 shadow-blue-500/20"
+            }`}
+            title="EduCare LMS Workspace"
+          >
+            {isWebinar ? <Globe size={20} /> : <Video size={20} />}
           </div>
         </div>
 
-        {/* Center: Stage Switcher (Teacher Interactive) OR Mode Status Pill (Student Read-Only) */}
-        {isTeacher ? (
-          <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-            <button
-              onClick={() => {
-                setStageMode("grid");
-                const room = (window as any).__lk_room;
-                safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "grid" });
-              }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${stageMode === "grid"
-                  ? (isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm")
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-                }`}
-            >
-              <LayoutGrid size={14} />
-              <span className="hidden sm:inline">{isWebinar ? "Speaker Stage" : "Camera"}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setStageMode("slides");
-                const room = (window as any).__lk_room;
-                safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
-              }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all relative ${stageMode === "slides"
-                  ? (isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm")
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-                }`}
-            >
-              <Presentation size={14} />
-              <span className="hidden sm:inline">Slides</span>
-              {sharedFiles.some((f) => f.url.toLowerCase().endsWith(".pdf")) && (
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 absolute top-1 right-1" />
-              )}
-            </button>
-
-            <button
-              onClick={() => {
-                setStageMode("whiteboard");
-                const room = (window as any).__lk_room;
-                safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "whiteboard" });
-              }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${stageMode === "whiteboard"
-                  ? (isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm")
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-                }`}
-            >
-              <PenTool size={14} />
-              <span className="hidden sm:inline">Board</span>
-            </button>
-          </div>
-        ) : (
-          /* Student Status Indicator */
-          <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-medium text-white/80 shadow-inner">
+        {/* Middle Navigation Actions */}
+        <div className="flex flex-col items-center gap-2 w-full">
+          {/* Stage Modes */}
+          <button
+            onClick={() => {
+              setStageMode("grid");
+              const room = (window as any).__lk_room;
+              safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "grid" });
+            }}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all relative ${
+              stageMode === "grid"
+                ? isWebinar
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30"
+                  : "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                : "text-white/50 hover:text-white hover:bg-white/5"
+            }`}
+            title={isWebinar ? "Keynote Stage" : "Camera Grid View"}
+          >
+            <LayoutGrid size={18} />
             {stageMode === "grid" && (
-              <>
-                {isWebinar ? (
-                  <>
-                    <Globe size={13} className="text-purple-400 animate-pulse" />
-                    <span>Webinar Stage</span>
-                  </>
-                ) : (
-                  <>
-                    <LayoutGrid size={13} className="text-emerald-400" />
-                    <span>Gallery View</span>
-                  </>
-                )}
-              </>
+              <span className="absolute -left-1 top-2.5 bottom-2.5 w-1 bg-white rounded-r-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setStageMode("slides");
+              const room = (window as any).__lk_room;
+              safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
+            }}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all relative ${
+              stageMode === "slides"
+                ? isWebinar
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30"
+                  : "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                : "text-white/50 hover:text-white hover:bg-white/5"
+            }`}
+            title="Interactive Slides Deck"
+          >
+            <Presentation size={18} />
+            {sharedFiles.some((f) => f.url.toLowerCase().endsWith(".pdf")) && (
+              <span className="h-2 w-2 rounded-full bg-emerald-400 absolute top-1.5 right-1.5 ring-2 ring-[#12141c]" />
             )}
             {stageMode === "slides" && (
-              <>
-                <Presentation size={13} className="text-blue-400 animate-pulse" />
-                <span>Presentation Deck</span>
-              </>
+              <span className="absolute -left-1 top-2.5 bottom-2.5 w-1 bg-white rounded-r-full" />
             )}
+          </button>
+
+          <button
+            onClick={() => {
+              setStageMode("whiteboard");
+              const room = (window as any).__lk_room;
+              safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "whiteboard" });
+            }}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all relative ${
+              stageMode === "whiteboard"
+                ? isWebinar
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30"
+                  : "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                : "text-white/50 hover:text-white hover:bg-white/5"
+            }`}
+            title="Synchronized Whiteboard"
+          >
+            <PenTool size={18} />
             {stageMode === "whiteboard" && (
-              <>
-                <PenTool size={13} className="text-purple-400 animate-pulse" />
-                <span>Whiteboard View</span>
-              </>
+              <span className="absolute -left-1 top-2.5 bottom-2.5 w-1 bg-white rounded-r-full" />
             )}
-          </div>
-        )}
+          </button>
 
-        {/* Right: Teacher Controls & Moderation */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Recording Status & Controls */}
-          {isTeacher ? (
-            <>
-              {recordingStatus === "idle" && (
-                <button
-                  onClick={startRecording}
-                  className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-white text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-                  title="Start recording this session (screen + audio)"
-                >
-                  <Circle size={10} className="fill-rose-500 text-rose-500 animate-pulse" />
-                  <span className="hidden sm:inline">Record</span>
-                </button>
-              )}
+          <div className="w-8 h-px bg-white/10 my-1" />
 
-              {recordingStatus === "recording" && (
-                <div className="flex items-center gap-1 bg-rose-950/70 border border-rose-500/50 rounded-xl p-0.5 sm:p-1 shadow-lg shadow-rose-950/40">
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold text-rose-200">
-                    <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-                    <span>REC {formatRecordingDuration(recordingDuration)}</span>
-                  </div>
-                  <button
-                    onClick={pauseRecording}
-                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Pause recording"
-                  >
-                    <Pause size={12} />
-                    <span className="hidden md:inline">Pause</span>
-                  </button>
-                  <button
-                    onClick={stopRecording}
-                    className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow cursor-pointer"
-                    title="End and save recording file"
-                  >
-                    <Square size={11} className="fill-white" />
-                    <span className="hidden sm:inline">End & Save</span>
-                  </button>
-                </div>
-              )}
+          {/* Attendance / Attendee Roster */}
+          <button
+            onClick={() => setShowAttendanceModal(true)}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-all relative"
+            title={isWebinar ? "Webinar Attendee Roster" : "Class Attendance Roster"}
+          >
+            <Users size={18} />
+            {sessionAttendees.size > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {sessionAttendees.size}
+              </span>
+            )}
+          </button>
 
-              {recordingStatus === "paused" && (
-                <div className="flex items-center gap-1 bg-amber-950/70 border border-amber-500/50 rounded-xl p-0.5 sm:p-1 shadow-lg shadow-amber-950/40">
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold text-amber-300">
-                    <Pause size={12} className="text-amber-400" />
-                    <span>PAUSED {formatRecordingDuration(recordingDuration)}</span>
-                  </div>
-                  <button
-                    onClick={resumeRecording}
-                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow cursor-pointer"
-                    title="Resume recording"
-                  >
-                    <Play size={11} className="fill-white" />
-                    <span className="hidden md:inline">Resume</span>
-                  </button>
-                  <button
-                    onClick={stopRecording}
-                    className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow cursor-pointer"
-                    title="End and save recording file"
-                  >
-                    <Square size={11} className="fill-white" />
-                    <span className="hidden sm:inline">End & Save</span>
-                  </button>
-                </div>
-              )}
-
-              {recordingStatus === "saving" && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-200 text-xs font-semibold">
-                  <Loader2 size={13} className="animate-spin text-blue-400" />
-                  <span>Saving...</span>
-                </div>
-              )}
-            </>
-          ) : (
-            /* Student / Audience Recording Indicator */
-            <>
-              {(recordingStatus === "recording" || remoteRecordingActive) && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold">
-                  <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-                  <span>REC</span>
-                </div>
-              )}
-              {(recordingStatus === "paused" || remoteRecordingPaused) && !(recordingStatus === "recording" || remoteRecordingActive) && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold">
-                  <Pause size={11} className="text-amber-400" />
-                  <span>REC PAUSED</span>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Whiteboard Permission Toggle for Instructor */}
-          {isTeacher && stageMode === "whiteboard" && (
-            <button
-              onClick={() => {
-                const nextVal = !allowStudentWhiteboardDraw;
-                setAllowStudentWhiteboardDraw(nextVal);
-                const room = (window as any).__lk_room;
-                safePublishData(room, {
-                  type: "WHITEBOARD_PERMISSION",
-                  allowStudentDraw: nextVal,
-                });
-              }}
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${allowStudentWhiteboardDraw
-                  ? "bg-purple-600/25 border-purple-500/50 text-purple-300"
-                  : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-                }`}
-              title="Toggle whether students can draw on whiteboard"
-            >
-              <PenTool size={13} />
-              <span>Drawing: {allowStudentWhiteboardDraw ? "Everyone" : "Teacher Only"}</span>
-            </button>
-          )}
-
-          {/* Raised Hands Identification & Controls */}
+          {/* Teacher Dedicated Tools */}
           {isTeacher && (
-            <div className="relative">
+            <>
+              {/* Raised Hands Trigger */}
               <button
                 onClick={() => setShowRaisedHandsPopover(!showRaisedHandsPopover)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${raisedHandsList.length > 0
-                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse"
-                    : "bg-white/5 border-white/10 text-white/50 hover:text-white"
-                  }`}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all relative ${
+                  raisedHandsList.length > 0
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse"
+                    : "text-white/60 hover:text-white hover:bg-white/5"
+                }`}
                 title="Raised Hands Roster"
               >
-                <Hand size={14} />
-                <span>{raisedHandsList.length}</span>
-                <ChevronDown size={11} />
+                <Hand size={18} />
+                {raisedHandsList.length > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[9px] font-bold flex items-center justify-center">
+                    {raisedHandsList.length}
+                  </span>
+                )}
               </button>
 
-              {/* Raised Hands Dropdown Popover */}
-              {showRaisedHandsPopover && (
-                <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-[#14161f] border border-white/10 shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Hand size={13} className="text-amber-400" /> Raised Hands ({raisedHandsList.length})
-                    </span>
-                    {raisedHandsList.length > 0 && (
-                      <button
-                        onClick={() => {
-                          const room = (window as any).__lk_room;
-                          safePublishData(room, { type: "LOWER_ALL_HANDS" });
-                          setRaisedHandsList([]);
-                          setShowRaisedHandsPopover(false);
-                        }}
-                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 underline"
-                      >
-                        Lower All
-                      </button>
-                    )}
-                  </div>
-
-                  {raisedHandsList.length === 0 ? (
-                    <div className="py-4 text-center text-xs text-white/40">
-                      No raised hands right now.
-                    </div>
-                  ) : (
-                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                      {raisedHandsList.map((item) => (
-                        <div
-                          key={item.identity}
-                          className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/10 text-xs"
-                        >
-                          <div className="min-w-0 pr-2">
-                            <p className="font-bold text-white truncate">{item.name}</p>
-                            <p className="text-[10px] text-white/40">{formatRelativeTime(item.raisedAt)}</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => toggleParticipantMic(item.identity, !allowedMics.has(item.identity))}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all ${allowedMics.has(item.identity)
-                                ? "bg-rose-500/25 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30"
-                                : "bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
-                              }`}
-                              title={allowedMics.has(item.identity) ? "Turn Off Mic" : "Turn On Mic"}
-                            >
-                              {allowedMics.has(item.identity) ? (
-                                <>
-                                  <MicOff size={11} />
-                                  <span>Mute</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Mic size={11} />
-                                  <span>Allow Mic</span>
-                                </>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                const room = (window as any).__lk_room;
-                                safePublishData(room, {
-                                  type: "LOWER_STUDENT_HAND",
-                                  identity: item.identity,
-                                });
-                                setRaisedHandsList((prev) => prev.filter((h) => h.identity !== item.identity));
-                              }}
-                              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 text-[10px] font-bold shrink-0 transition-colors"
-                            >
-                              Lower
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Teacher Attendance & Attendee Roster Drawer Trigger */}
-          {isTeacher && (
-            <button
-              onClick={() => setShowAttendanceModal(true)}
-              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
-              title={isWebinar ? "View Registered Attendees & Webinar Roster" : "Class Attendance & Attendee Roster"}
-            >
-              <Users size={14} />
-              <span className="hidden lg:inline">
-                {isWebinar ? "Webinar Roster" : "Attendance"} ({sessionAttendees.size})
-              </span>
-            </button>
-          )}
-
-          {/* Public Webinar Share Link */}
-          {isWebinar && classId && (
-            <button
-              onClick={() => {
-                const publicUrl = `${window.location.origin}/live/${classId}`;
-                navigator.clipboard.writeText(publicUrl);
-                setCopiedHeaderWebinarLink(true);
-                setTimeout(() => setCopiedHeaderWebinarLink(false), 2000);
-              }}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
-                copiedHeaderWebinarLink
-                  ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
-                  : "border-purple-500/40 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300"
-              }`}
-              title="Copy Public Webinar Share Link"
-            >
-              {copiedHeaderWebinarLink ? <Check size={14} className="text-emerald-400" /> : <Share2 size={14} />}
-              <span className="hidden sm:inline">{copiedHeaderWebinarLink ? "Copied Link!" : "Webinar Link"}</span>
-            </button>
-          )}
-
-          {isTeacher && (
-            <>
-              {/* Mute All */}
+              {/* Studio Broadcasting Tools */}
               <button
-                onClick={() => {
-                  const room = (window as any).__lk_room;
-                  safePublishData(room, { type: "MUTE_ALL" });
-                  if (classId) {
-                    fetchApi(`/live-class/${classId}/moderate`, {
-                      method: "POST",
-                      body: JSON.stringify({ action: "MUTE_ALL" }),
-                      silent: true,
-                    }).catch(() => { });
-                  }
-                }}
-                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5"
-                title="Mute All Students"
+                onClick={() => setIsStudioOpen(!isStudioOpen)}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                  isStudioOpen ? "bg-white/15 text-white" : "text-white/60 hover:text-white hover:bg-white/5"
+                }`}
+                title="Studio Broadcasting Tools"
               >
-                <MicOff size={14} />
-                <span className="hidden lg:inline">Mute All</span>
+                <SlidersHorizontal size={18} />
               </button>
 
               {/* Intermission Break Trigger */}
@@ -1624,33 +1368,247 @@ export function LiveKitClassRoomV2({
                     setBreakState(b);
                   }
                 }}
-                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${breakState?.isActive
-                    ? "border-amber-500/50 bg-amber-500/20 text-amber-300"
-                    : "border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white"
-                  }`}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                  breakState?.isActive
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    : "text-white/60 hover:text-white hover:bg-white/5"
+                }`}
                 title={breakState?.isActive ? "Resume Class" : "Start 5-min Break"}
               >
-                <Clock size={14} />
-                <span className="hidden lg:inline">{breakState?.isActive ? "Resume" : "Break"}</span>
-              </button>
-
-              {/* Studio Tools */}
-              <button
-                onClick={() => setIsStudioOpen(!isStudioOpen)}
-                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
-                title="Studio Broadcasting Tools (Crop, Chroma Key, Audio, Filter)"
-              >
-                <SlidersHorizontal size={14} />
-                <span className="hidden md:inline">Studio</span>
+                <Clock size={18} />
               </button>
             </>
           )}
         </div>
-      </header>
 
-      {/* ── MAIN STAGE AREA ── */}
-      <div className="flex-1 flex overflow-hidden relative">
-        <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0b0c10]">
+        {/* User Profile Avatar at Bottom */}
+        <div className="flex flex-col items-center">
+          <div
+            className="relative w-10 h-10 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 border border-white/20 flex items-center justify-center text-white font-bold text-xs shadow-md cursor-pointer group"
+            title={`${confirmedDisplayName || name || "User"} (${isTeacher ? "Host/Teacher" : "Student"})`}
+          >
+            {(confirmedDisplayName || name || "U").charAt(0).toUpperCase()}
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#12141c]" />
+          </div>
+        </div>
+      </aside>
+
+      {/* ── 2. CENTER LIVE MEETING AREA ── */}
+      <main className="flex-1 min-w-0 flex flex-col bg-[#0e1017] border border-white/10 rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl relative">
+        {/* Meeting Header */}
+        <header className="h-14 sm:h-16 shrink-0 bg-[#12141c]/90 backdrop-blur-md border-b border-white/10 px-3 sm:px-5 flex items-center justify-between z-30">
+          {/* Left: Meeting Title & Session Information */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-white font-bold text-xs sm:text-sm truncate max-w-[140px] sm:max-w-xs">
+                  {classTitle || (isWebinar ? "Webinar Session" : "Edu-Meet Class")}
+                </h2>
+                <span
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                    isTeacher
+                      ? isWebinar
+                        ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
+                        : "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                      : isWebinar
+                      ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                      : "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                  }`}
+                >
+                  {isTeacher
+                    ? isWebinar
+                      ? "Keynote Presenter"
+                      : "Teacher"
+                    : isWebinar
+                    ? "Audience"
+                    : "Student"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-[10px] text-white/40 hidden sm:block truncate max-w-[160px]">
+                  {subject || (isWebinar ? "Public Webinar Broadcast" : "HD Interactive Lecture")}
+                </p>
+
+                {/* Recording Status & Duration Badge */}
+                {(recordingStatus === "recording" || remoteRecordingActive) && (
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-bold">
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                    <span>REC {formatRecordingDuration(recordingDuration)}</span>
+                  </div>
+                )}
+                {(recordingStatus === "paused" || remoteRecordingPaused) && !(recordingStatus === "recording" || remoteRecordingActive) && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold">
+                    <Pause size={10} className="text-amber-400" />
+                    <span>REC PAUSED</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Meeting Actions & Quick Controls */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Stage Switcher Pills (Teacher) */}
+            {isTeacher ? (
+              <div className="hidden sm:flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                <button
+                  onClick={() => {
+                    setStageMode("grid");
+                    const room = (window as any).__lk_room;
+                    safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "grid" });
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    stageMode === "grid"
+                      ? isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <LayoutGrid size={13} />
+                  <span>{isWebinar ? "Stage" : "Camera"}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setStageMode("slides");
+                    const room = (window as any).__lk_room;
+                    safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all relative ${
+                    stageMode === "slides"
+                      ? isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <Presentation size={13} />
+                  <span>Slides</span>
+                  {sharedFiles.some((f) => f.url.toLowerCase().endsWith(".pdf")) && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 absolute top-1 right-1" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setStageMode("whiteboard");
+                    const room = (window as any).__lk_room;
+                    safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "whiteboard" });
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    stageMode === "whiteboard"
+                      ? isWebinar ? "bg-purple-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <PenTool size={13} />
+                  <span>Board</span>
+                </button>
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-medium text-white/80">
+                {stageMode === "grid" && <LayoutGrid size={13} className="text-emerald-400" />}
+                {stageMode === "slides" && <Presentation size={13} className="text-blue-400 animate-pulse" />}
+                {stageMode === "whiteboard" && <PenTool size={13} className="text-purple-400 animate-pulse" />}
+                <span>{stageMode === "grid" ? "Camera View" : stageMode === "slides" ? "Slides View" : "Whiteboard"}</span>
+              </div>
+            )}
+
+            {/* Public Webinar Share Link */}
+            {isWebinar && classId && (
+              <button
+                onClick={() => {
+                  const publicUrl = `${window.location.origin}/live/${classId}`;
+                  navigator.clipboard.writeText(publicUrl);
+                  setCopiedHeaderWebinarLink(true);
+                  setTimeout(() => setCopiedHeaderWebinarLink(false), 2000);
+                }}
+                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  copiedHeaderWebinarLink
+                    ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                    : "border-purple-500/40 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300"
+                }`}
+                title="Copy Public Webinar Share Link"
+              >
+                {copiedHeaderWebinarLink ? <Check size={14} className="text-emerald-400" /> : <Share2 size={14} />}
+                <span className="hidden sm:inline">{copiedHeaderWebinarLink ? "Copied!" : "Share"}</span>
+              </button>
+            )}
+
+            {/* Whiteboard Permission Toggle */}
+            {isTeacher && stageMode === "whiteboard" && (
+              <button
+                onClick={() => {
+                  const nextVal = !allowStudentWhiteboardDraw;
+                  setAllowStudentWhiteboardDraw(nextVal);
+                  const room = (window as any).__lk_room;
+                  safePublishData(room, {
+                    type: "WHITEBOARD_PERMISSION",
+                    allowStudentDraw: nextVal,
+                  });
+                }}
+                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                  allowStudentWhiteboardDraw
+                    ? "bg-purple-600/25 border-purple-500/50 text-purple-300"
+                    : "bg-white/5 border-white/10 text-white/70 hover:text-white"
+                }`}
+                title="Toggle whether students can draw on whiteboard"
+              >
+                <PenTool size={13} />
+                <span>Draw: {allowStudentWhiteboardDraw ? "Everyone" : "Teacher"}</span>
+              </button>
+            )}
+
+            {/* Mute All Students (Teacher) */}
+            {isTeacher && (
+              <button
+                onClick={() => {
+                  const room = (window as any).__lk_room;
+                  safePublishData(room, { type: "MUTE_ALL" });
+                  if (classId) {
+                    fetchApi(`/live-class/${classId}/moderate`, {
+                      method: "POST",
+                      body: JSON.stringify({ action: "MUTE_ALL" }),
+                      silent: true,
+                    }).catch(() => { });
+                  }
+                }}
+                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                title="Mute All Students"
+              >
+                <MicOff size={14} />
+                <span className="hidden xl:inline">Mute All</span>
+              </button>
+            )}
+
+            {/* Live Chat Panel Toggle */}
+            {!isImmersed && (
+              <button
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.innerWidth < 768) {
+                    setIsMobileSheetOpen(true);
+                  } else {
+                    setIsRightPanelOpen((prev) => !prev);
+                  }
+                }}
+                className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  isRightPanelOpen
+                    ? "border-blue-500/40 bg-blue-500/20 text-blue-300"
+                    : "border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white"
+                }`}
+                title={isRightPanelOpen ? "Collapse Chat Panel" : "Expand Chat Panel"}
+              >
+                <MessageSquare size={14} />
+                <span className="hidden sm:inline">Messages</span>
+                {unreadChatCount > 0 && (
+                  <span className="h-4 min-w-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {unreadChatCount}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* ── MAIN VIDEO / STAGE CONTENT AREA ── */}
+        <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0a0b10]">
           {/* Mode 1: Camera Grid / Speaker Stage */}
           <div className={`h-full w-full ${stageMode === "grid" ? "block" : "hidden"}`}>
             <V2ClassVideoGrid
@@ -1677,7 +1635,6 @@ export function LiveKitClassRoomV2({
                 onForceReload={handleForceReloadPresentation}
               />
             </PresentationErrorBoundary>
-            {/* Draggable & Corner-Dockable Camera PiP */}
             <FloatingCamPiP isTeacher={isTeacher} stageMode="slides" defaultCorner="top-right" />
           </div>
 
@@ -1689,11 +1646,10 @@ export function LiveKitClassRoomV2({
               room={(window as any).__lk_room}
               classId={classId}
             />
-            {/* Draggable Camera PiP - Defaulted to bottom-right so Tldraw brush & color controls (top-right) are completely free! */}
             <FloatingCamPiP isTeacher={isTeacher} stageMode="whiteboard" defaultCorner="bottom-right" />
           </div>
 
-          {/* Prominent Teacher Raised Hands Panel (Visible in ALL Stage Modes: Grid, Slides, Whiteboard) */}
+          {/* Teacher Raised Hands Panel */}
           {isTeacher && raisedHandsList.length > 0 && (
             <div className="absolute top-16 left-4 z-40 max-w-xs sm:max-w-sm rounded-2xl bg-[#141620]/95 border border-amber-500/50 shadow-2xl backdrop-blur-xl p-3 text-white pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
@@ -1718,7 +1674,6 @@ export function LiveKitClassRoomV2({
                 </button>
               </div>
 
-              {/* List of Students with Raised Hands */}
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                 {raisedHandsList.map((item) => (
                   <div
@@ -1833,6 +1788,7 @@ export function LiveKitClassRoomV2({
                   {recentActivityAlert.type === "chat" ? (
                     <button
                       onClick={() => {
+                        setIsRightPanelOpen(true);
                         setIsMobileSheetOpen(true);
                         setActiveSidebarTab("chat");
                         setRecentActivityAlert(null);
@@ -1914,24 +1870,76 @@ export function LiveKitClassRoomV2({
           )}
         </div>
 
-        {/* ── DESKTOP COLLAPSIBLE SIDEBAR (HIDDEN FOR IMMERSED STUDENTS) ── */}
-        {!isImmersed && (
-          <aside className="w-80 shrink-0 hidden md:flex flex-col bg-[#111318] border-l border-white/10 z-20">
-            <div className="flex items-center border-b border-white/10 shrink-0 px-2 pt-2">
+        {/* ── MEETING CONTROL BAR (POSITIONED DIRECTLY BELOW PARTICIPANT STRIP) ── */}
+        <V2BottomControlDock
+          isTeacher={isTeacher}
+          isWebinar={isWebinar}
+          micAllowedByHost={micAllowedByHost}
+          isImmersed={isImmersed}
+          isHandRaised={isHandRaised}
+          unreadChatCount={unreadChatCount}
+          isRightPanelOpen={isRightPanelOpen}
+          recordingStatus={recordingStatus}
+          recordingDuration={recordingDuration}
+          onStartRecording={startRecording}
+          onPauseRecording={pauseRecording}
+          onResumeRecording={resumeRecording}
+          onStopRecording={stopRecording}
+          onToggleHand={() => {
+            const room = (window as any).__lk_room;
+            const currentId = room?.localParticipant?.identity || effectiveIdentity;
+            const currentName = room?.localParticipant?.name || confirmedDisplayName || name || "Student";
+            const next = !isHandRaised;
+            setIsHandRaised(next);
+            safePublishData(room, {
+              type: "HAND_RAISE",
+              identity: currentId,
+              name: currentName,
+              raised: next,
+              raisedAt: Date.now(),
+            });
+            setRaisedHandsList((prev) => {
+              if (next) {
+                const existing = prev.find((h) => h.identity === currentId);
+                if (existing) return prev;
+                return [...prev, { identity: currentId, name: currentName, raisedAt: Date.now() }];
+              } else {
+                return prev.filter((h) => h.identity !== currentId);
+              }
+            });
+          }}
+          onToggleChat={() => {
+            if (typeof window !== "undefined" && window.innerWidth < 768) {
+              setIsMobileSheetOpen(true);
+            } else {
+              setIsRightPanelOpen((prev) => !prev);
+            }
+            setUnreadChatCount(0);
+          }}
+          onLeave={onLeave}
+        />
+      </main>
+
+      {/* ── 3. RIGHT LIVE CHAT & ATTACHMENTS PANEL ── */}
+      {!isImmersed && isRightPanelOpen && (
+        <aside className="w-80 lg:w-88 shrink-0 hidden md:flex flex-col bg-[#12141c] border border-white/10 rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl z-20">
+          <div className="flex items-center justify-between border-b border-white/10 shrink-0 px-3 py-2 bg-black/20">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => {
                   setActiveSidebarTab("chat");
                   setUnreadChatCount(0);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${activeSidebarTab === "chat"
-                    ? "border-blue-500 text-white bg-white/5"
-                    : "border-transparent text-white/50 hover:text-white"
-                  }`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-colors ${
+                  activeSidebarTab === "chat"
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-white/50 hover:text-white"
+                }`}
               >
-                <MessageSquare size={14} />
-                <span>Live Chat</span>
+                <MessageSquare size={13} />
+                <span>Messages</span>
                 {unreadChatCount > 0 && activeSidebarTab !== "chat" && (
-                  <span className="h-4 min-w-[16px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                  <span className="h-4 min-w-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
                     {unreadChatCount}
                   </span>
                 )}
@@ -1939,67 +1947,77 @@ export function LiveKitClassRoomV2({
 
               <button
                 onClick={() => setActiveSidebarTab("files")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-t-xl transition-colors border-b-2 ${activeSidebarTab === "files"
-                    ? "border-blue-500 text-white bg-white/5"
-                    : "border-transparent text-white/50 hover:text-white"
-                  }`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-colors ${
+                  activeSidebarTab === "files"
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-white/50 hover:text-white"
+                }`}
               >
-                <FileText size={14} />
-                <span>Attachments</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">
+                <FileText size={13} />
+                <span>Files</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white/10 text-white/70">
                   {sharedFiles.length}
                 </span>
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col">
-              {activeSidebarTab === "chat" ? (
-                <ChatContentPanel
-                  messages={chatMessages}
-                  onSendMessage={(text) => {
-                    const room = (window as any).__lk_room;
-                    const newMsg: ChatMessage = {
-                      id: Math.random().toString(36).slice(2, 9),
-                      sender: confirmedDisplayName || name || "Anonymous",
-                      role: isTeacher ? "Teacher" : "Student",
-                      text,
-                      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                    };
-                    safePublishData(room, { type: "CHAT_MESSAGE", ...newMsg });
-                    setChatMessages((prev) => [...prev, newMsg]);
+            <button
+              onClick={() => setIsRightPanelOpen(false)}
+              className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              title="Collapse chat panel"
+            >
+              <X size={15} />
+            </button>
+          </div>
 
-                    if (classId) {
-                      fetchApi(`/live-class/${classId}/messages`, {
-                        method: "POST",
-                        body: JSON.stringify({ message: text }),
-                        silent: true,
-                      }).catch(() => { });
-                    }
-                  }}
-                />
-              ) : (
-                <FilesContentPanel
-                  sharedFiles={sharedFiles}
-                  isTeacher={isTeacher}
-                  classId={classId}
-                  room={(window as any).__lk_room}
-                  onFileUploaded={(newFile) => {
-                    setSharedFiles((prev) => [...prev, newFile]);
-                  }}
-                  onOpenAsSlides={() => {
-                    setStageMode("slides");
-                    const room = (window as any).__lk_room;
-                    safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
-                  }}
-                  onDeleteFile={(url) => {
-                    setSharedFiles((prev) => prev.filter((f) => f.url !== url));
-                  }}
-                />
-              )}
-            </div>
-          </aside>
-        )}
-      </div>
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {activeSidebarTab === "chat" ? (
+              <ChatContentPanel
+                messages={chatMessages}
+                currentUserName={confirmedDisplayName || name || "Anonymous"}
+                onSendMessage={(text) => {
+                  const room = (window as any).__lk_room;
+                  const newMsg: ChatMessage = {
+                    id: Math.random().toString(36).slice(2, 9),
+                    sender: confirmedDisplayName || name || "Anonymous",
+                    role: isTeacher ? "Teacher" : "Student",
+                    text,
+                    timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                  };
+                  safePublishData(room, { type: "CHAT_MESSAGE", ...newMsg });
+                  setChatMessages((prev) => [...prev, newMsg]);
+
+                  if (classId) {
+                    fetchApi(`/live-class/${classId}/messages`, {
+                      method: "POST",
+                      body: JSON.stringify({ message: text }),
+                      silent: true,
+                    }).catch(() => { });
+                  }
+                }}
+              />
+            ) : (
+              <FilesContentPanel
+                sharedFiles={sharedFiles}
+                isTeacher={isTeacher}
+                classId={classId}
+                room={(window as any).__lk_room}
+                onFileUploaded={(newFile) => {
+                  setSharedFiles((prev) => [...prev, newFile]);
+                }}
+                onOpenAsSlides={() => {
+                  setStageMode("slides");
+                  const room = (window as any).__lk_room;
+                  safePublishData(room, { type: "STAGE_MODE_CHANGE", mode: "slides" });
+                }}
+                onDeleteFile={(url) => {
+                  setSharedFiles((prev) => prev.filter((f) => f.url !== url));
+                }}
+              />
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* ── MOBILE BOTTOM SHEET FOR CHAT & FILES ── */}
       <MobileSheet
@@ -2011,15 +2029,17 @@ export function LiveKitClassRoomV2({
         <div className="flex items-center border-b border-white/10 px-3 bg-black/20 shrink-0">
           <button
             onClick={() => setActiveSidebarTab("chat")}
-            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${activeSidebarTab === "chat" ? "border-blue-500 text-white" : "border-transparent text-white/50"
-              }`}
+            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${
+              activeSidebarTab === "chat" ? "border-blue-500 text-white" : "border-transparent text-white/50"
+            }`}
           >
             Chat
           </button>
           <button
             onClick={() => setActiveSidebarTab("files")}
-            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${activeSidebarTab === "files" ? "border-blue-500 text-white" : "border-transparent text-white/50"
-              }`}
+            className={`flex-1 py-2 text-xs font-bold border-b-2 text-center ${
+              activeSidebarTab === "files" ? "border-blue-500 text-white" : "border-transparent text-white/50"
+            }`}
           >
             Files ({sharedFiles.length})
           </button>
@@ -2029,6 +2049,7 @@ export function LiveKitClassRoomV2({
           {activeSidebarTab === "chat" ? (
             <ChatContentPanel
               messages={chatMessages}
+              currentUserName={confirmedDisplayName || name || "Anonymous"}
               onSendMessage={(text) => {
                 const room = (window as any).__lk_room;
                 const newMsg: ChatMessage = {
@@ -2117,50 +2138,6 @@ export function LiveKitClassRoomV2({
           </button>
         </div>
       )}
-
-      {/* ── BOTTOM TOUCH-ENGINEERED CONTROL DOCK ── */}
-      <V2BottomControlDock
-        isTeacher={isTeacher}
-        isWebinar={isWebinar}
-        micAllowedByHost={micAllowedByHost}
-        isImmersed={isImmersed}
-        isHandRaised={isHandRaised}
-        unreadChatCount={unreadChatCount}
-        recordingStatus={recordingStatus}
-        recordingDuration={recordingDuration}
-        onStartRecording={startRecording}
-        onPauseRecording={pauseRecording}
-        onResumeRecording={resumeRecording}
-        onStopRecording={stopRecording}
-        onToggleHand={() => {
-          const room = (window as any).__lk_room;
-          const currentId = room?.localParticipant?.identity || effectiveIdentity;
-          const currentName = room?.localParticipant?.name || confirmedDisplayName || name || "Student";
-          const next = !isHandRaised;
-          setIsHandRaised(next);
-          safePublishData(room, {
-            type: "HAND_RAISE",
-            identity: currentId,
-            name: currentName,
-            raised: next,
-            raisedAt: Date.now(),
-          });
-          setRaisedHandsList((prev) => {
-            if (next) {
-              const existing = prev.find((h) => h.identity === currentId);
-              if (existing) return prev;
-              return [...prev, { identity: currentId, name: currentName, raisedAt: Date.now() }];
-            } else {
-              return prev.filter((h) => h.identity !== currentId);
-            }
-          });
-        }}
-        onToggleChat={() => {
-          setIsMobileSheetOpen(true);
-          setUnreadChatCount(0);
-        }}
-        onLeave={onLeave}
-      />
     </LiveKitRoom>
   );
 }
@@ -2502,6 +2479,8 @@ function AttendanceRosterModal({
 // ─────────────────────────────────────────────────────────────────────────────
 // VIDEO GRID COMPONENT WITH RESPONSIVE SPOTLIGHT
 // ─────────────────────────────────────────────────────────────────────────────
+// VIDEO GRID / STAGE PRESENTATION COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 function V2ClassVideoGrid({
   isTeacher,
   classId,
@@ -2533,6 +2512,11 @@ function V2ClassVideoGrid({
     return Array.from(map.values());
   }, [cameraTracks]);
 
+  // Selected spotlight participant identity
+  const [selectedSpotlightId, setSelectedSpotlightId] = useState<string | null>(null);
+  // View mode switcher: "speaker" (Dominant video + horizontal participant strip) vs "gallery"
+  const [layoutMode, setLayoutMode] = useState<"speaker" | "gallery">("speaker");
+
   // Keynote Presenter track for Webinar Mode (Strict Host/Teacher Identification)
   const presenterTrack = useMemo(() => {
     if (!isWebinar) return null;
@@ -2554,46 +2538,67 @@ function V2ClassVideoGrid({
     );
   }, [isWebinar, uniqueCameras, isTeacher]);
 
+  // Spotlight track for Cohort Camera Mode
+  const activeSpotlightTrack = useMemo(() => {
+    if (selectedSpotlightId) {
+      const found = uniqueCameras.find((t) => t.participant?.identity === selectedSpotlightId);
+      if (found) return found;
+    }
+    // Default: find teacher / presenter or first available
+    const teacher = uniqueCameras.find((t) => {
+      try {
+        const meta = JSON.parse(t.participant?.metadata || "{}");
+        return meta.isHost || ["TEACHER", "SUPER_ADMIN", "ADMIN", "PRESENTER"].includes(meta.role?.toUpperCase());
+      } catch {
+        return false;
+      }
+    });
+    return teacher || uniqueCameras[0] || null;
+  }, [uniqueCameras, selectedSpotlightId]);
+
   // Screen Share Spotlight View
   if (screenTrack) {
     return (
-      <div className="h-full w-full flex flex-col p-2 gap-2">
-        <div className="flex-1 relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 shadow-2xl">
+      <div className="h-full w-full flex flex-col p-2.5 sm:p-3 gap-2.5 overflow-hidden">
+        {/* Dominant Screen Share Presentation Video */}
+        <div className="flex-1 min-h-0 relative rounded-2xl sm:rounded-3xl overflow-hidden bg-black/70 border border-white/10 shadow-2xl">
           <FocusLayout trackRef={screenTrack} style={{ height: "100%", width: "100%" }} />
-          <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md flex items-center gap-1.5 backdrop-blur-md">
-            <Monitor size={13} />
+          <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2 backdrop-blur-md border border-blue-400/30">
+            <Monitor size={14} />
             <span>
               {isWebinar ? "Webinar Presentation" : "Screen Presentation"} ({screenTrack.participant?.name || "Presenter"})
             </span>
           </div>
         </div>
 
-        {/* Horizontal Filmstrip on Bottom */}
-        <div className="h-24 sm:h-28 shrink-0 flex gap-2 overflow-x-auto pb-1 items-center px-1">
-          {uniqueCameras.map((t, idx) => {
-            const id = t.participant?.identity || "";
-            const isHandUp = id ? raisedHands.has(id) : false;
-            return (
-              <div
-                key={id || idx}
-                className={`w-36 sm:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/40 shadow-md transition-all ${
-                  isHandUp ? "border-2 border-amber-400 ring-2 ring-amber-400/40" : "border border-white/10"
-                }`}
-              >
-                <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
-                {isHandUp && (
-                  <div className="absolute top-1 left-1 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow flex items-center gap-1 z-10 animate-bounce">
-                    <Hand size={10} />
-                    <span>Hand</span>
+        {/* Horizontal Participant Video Strip */}
+        {uniqueCameras.length > 0 && (
+          <div className="h-24 sm:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+            {uniqueCameras.map((t, idx) => {
+              const id = t.participant?.identity || "";
+              const isHandUp = id ? raisedHands.has(id) : false;
+              return (
+                <div
+                  key={id || idx}
+                  className={`w-36 sm:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all ${
+                    isHandUp ? "border-2 border-amber-400 ring-2 ring-amber-400/40" : "border border-white/10"
+                  }`}
+                >
+                  <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
+                  {isHandUp && (
+                    <div className="absolute top-1.5 left-1.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow flex items-center gap-1 z-10 animate-bounce">
+                      <Hand size={10} />
+                      <span>Hand</span>
+                    </div>
+                  )}
+                  <div className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] text-white truncate max-w-[85%] border border-white/10">
+                    {t.participant?.name || "Participant"}
                   </div>
-                )}
-                <div className="absolute bottom-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-white truncate max-w-[90%]">
-                  {t.participant?.name || "Participant"}
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -2601,36 +2606,64 @@ function V2ClassVideoGrid({
   // Webinar Mode Keynote Spotlight Layout
   if (isWebinar) {
     if (presenterTrack) {
+      const audienceSpeakers = uniqueCameras.filter(
+        (t) => t.participant?.identity !== presenterTrack.participant?.identity
+      );
+
       return (
-        <div className="h-full w-full p-2 sm:p-4 flex flex-col items-center justify-center overflow-hidden">
-          <div className="h-full w-full max-w-6xl relative rounded-2xl sm:rounded-3xl overflow-hidden bg-black/80 border border-purple-500/25 shadow-2xl flex flex-col justify-between">
+        <div className="h-full w-full p-2.5 sm:p-3 flex flex-col gap-2.5 overflow-hidden">
+          {/* Dominant Presenter Video Container */}
+          <div className="flex-1 min-h-0 relative rounded-2xl sm:rounded-3xl overflow-hidden bg-black/80 border border-purple-500/25 shadow-2xl flex flex-col justify-between">
             <ParticipantTile trackRef={presenterTrack} style={{ width: "100%", height: "100%" }} />
 
             {/* Top Stage Indicator Badges */}
             <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600/90 backdrop-blur-md text-white text-[11px] font-bold shadow-md">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-600/90 backdrop-blur-md text-white text-[11px] font-bold shadow-md">
                 <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
                 LIVE WEBINAR
               </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-white/90 text-[11px] font-medium border border-white/10">
-                <Globe size={12} className="text-purple-400" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-black/70 backdrop-blur-md text-white/90 text-[11px] font-medium border border-white/10">
+                <Globe size={13} className="text-purple-400" />
                 Keynote Broadcast
               </span>
             </div>
 
             {/* Bottom Presenter Overlay */}
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
-              <div className="inline-flex items-center gap-2 bg-black/75 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-xl text-white text-xs font-semibold shadow-lg">
+              <div className="inline-flex items-center gap-2 bg-black/75 backdrop-blur-md border border-white/10 px-3.5 py-1.5 rounded-xl text-white text-xs font-semibold shadow-lg">
                 <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span>Presenter: {presenterTrack.participant?.name || "Keynote Speaker"}</span>
               </div>
 
-              <div className="inline-flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-lg text-white/70 text-[11px]">
+              <div className="inline-flex items-center gap-1.5 bg-black/70 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-lg text-white/70 text-[11px]">
                 <Users size={12} className="text-purple-400" />
                 <span>Audience Mode</span>
               </div>
             </div>
           </div>
+
+          {/* If there are permitted student/co-host camera tracks, display horizontal strip below */}
+          {audienceSpeakers.length > 0 && (
+            <div className="h-24 sm:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+              {audienceSpeakers.map((t, idx) => {
+                const id = t.participant?.identity || "";
+                const isHandUp = id ? raisedHands.has(id) : false;
+                return (
+                  <div
+                    key={id || idx}
+                    className={`w-36 sm:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all ${
+                      isHandUp ? "border-2 border-amber-400 ring-2 ring-amber-400/40" : "border border-white/10"
+                    }`}
+                  >
+                    <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
+                    <div className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] text-white truncate max-w-[85%] border border-white/10">
+                      {t.participant?.name || "Speaker"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       );
     }
@@ -2656,55 +2689,158 @@ function V2ClassVideoGrid({
     );
   }
 
-  // Classroom Gallery Responsive Grid (Cohort Mode)
-  return (
-    <div className="h-full w-full p-2 sm:p-4 overflow-hidden">
-      {uniqueCameras.length === 0 ? (
-        <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-white/40">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-          <p className="text-xs">Connecting audio and video...</p>
+  // ── COHORT CLASSROOM VIDEO CONFERENCING MODE ──
+  if (uniqueCameras.length === 0) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-white/40">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        <p className="text-xs">Connecting audio and video...</p>
+      </div>
+    );
+  }
+
+  // If only 1 participant: single dominant presentation tile
+  if (uniqueCameras.length === 1) {
+    const singleTrack = uniqueCameras[0];
+    const isHandUp = singleTrack.participant?.identity ? raisedHands.has(singleTrack.participant.identity) : false;
+    return (
+      <div className="h-full w-full p-2.5 sm:p-3 overflow-hidden flex flex-col items-center justify-center">
+        <div className="h-full w-full relative rounded-2xl sm:rounded-3xl overflow-hidden bg-black/60 border border-white/10 shadow-2xl">
+          <ParticipantTile trackRef={singleTrack} style={{ width: "100%", height: "100%" }} />
+          <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 text-white text-xs font-semibold flex items-center gap-2 shadow-lg">
+            <span>{singleTrack.participant?.name || "Participant"}</span>
+            {isHandUp && <Hand size={13} className="text-amber-400 animate-bounce" />}
+          </div>
         </div>
-      ) : (
-        <div
-          className={`h-full w-full grid gap-2 sm:gap-3 ${uniqueCameras.length === 1
-              ? "grid-cols-1"
-              : uniqueCameras.length === 2
-                ? "grid-cols-1 sm:grid-cols-2"
-                : uniqueCameras.length <= 4
-                  ? "grid-cols-2"
-                  : "grid-cols-2 lg:grid-cols-3"
-            }`}
-        >
-          {uniqueCameras.map((t, i) => {
+      </div>
+    );
+  }
+
+  // If 2 or more participants: Speaker Spotlight + Participant Video Strip Layout
+  if (layoutMode === "speaker" && activeSpotlightTrack) {
+    const isSpotlightHandUp = activeSpotlightTrack.participant?.identity
+      ? raisedHands.has(activeSpotlightTrack.participant.identity)
+      : false;
+
+    return (
+      <div className="h-full w-full p-2.5 sm:p-3 flex flex-col gap-2.5 overflow-hidden">
+        {/* Dominant Main Speaker / Presenter Video */}
+        <div className="flex-1 min-h-0 relative rounded-2xl sm:rounded-3xl overflow-hidden bg-black/70 border border-white/10 shadow-2xl">
+          <ParticipantTile trackRef={activeSpotlightTrack} style={{ width: "100%", height: "100%" }} />
+
+          {/* Speaker Name Overlay (Bottom-Left) */}
+          <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 text-white text-xs font-semibold flex items-center gap-2 shadow-lg">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{activeSpotlightTrack.participant?.name || "Speaker"}</span>
+            {isSpotlightHandUp && <Hand size={13} className="text-amber-400 animate-bounce" />}
+          </div>
+
+          {/* View Mode Switcher Overlay (Top-Right) */}
+          <button
+            onClick={() => setLayoutMode("gallery")}
+            className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white/80 hover:text-white text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+            title="Switch to equal gallery grid view"
+          >
+            <LayoutGrid size={13} />
+            <span>Gallery View</span>
+          </button>
+        </div>
+
+        {/* Participant Video Strip Directly Below */}
+        <div className="h-24 sm:h-28 shrink-0 flex gap-2.5 overflow-x-auto pb-1 items-center px-1 scrollbar-thin">
+          {uniqueCameras.map((t, idx) => {
             const id = t.participant?.identity || "";
+            const isSelected = id === activeSpotlightTrack.participant?.identity;
             const isHandUp = id ? raisedHands.has(id) : false;
             return (
               <div
-                key={id || i}
-                className={`h-full w-full relative rounded-2xl overflow-hidden shadow-lg group transition-all ${
-                  isHandUp
-                    ? "border-2 border-amber-400 ring-2 ring-amber-400/40 bg-[#1e1b14]"
-                    : "border border-white/10 bg-[#14161e]"
+                key={id || idx}
+                onClick={() => setSelectedSpotlightId(id)}
+                className={`w-36 sm:w-44 h-full shrink-0 relative rounded-xl overflow-hidden bg-black/50 shadow-md transition-all cursor-pointer group ${
+                  isSelected
+                    ? "border-2 border-blue-500 ring-2 ring-blue-500/40"
+                    : isHandUp
+                    ? "border-2 border-amber-400 ring-2 ring-amber-400/40"
+                    : "border border-white/10 hover:border-white/30"
                 }`}
+                title={`Click to spotlight ${t.participant?.name || "Participant"}`}
               >
                 <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
                 {isHandUp && (
-                  <div className="absolute top-2 left-2 bg-amber-500 text-black text-xs font-bold px-2.5 py-1 rounded-lg shadow-lg flex items-center gap-1.5 z-10 animate-pulse">
-                    <Hand size={13} className="animate-bounce" />
-                    <span>Hand Raised</span>
+                  <div className="absolute top-1.5 left-1.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow flex items-center gap-1 z-10 animate-bounce">
+                    <Hand size={10} />
+                    <span>Hand</span>
                   </div>
                 )}
-                <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-[11px] text-white font-medium flex items-center gap-1.5">
-                  <span className={isHandUp ? "text-amber-300 font-bold" : ""}>
-                    {t.participant?.name || "Participant"}
-                  </span>
-                  {isHandUp && <Hand size={12} className="text-amber-400 animate-bounce" />}
+                <div className="absolute bottom-1.5 left-1.5 right-1.5 bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] text-white truncate border border-white/10 flex items-center justify-between">
+                  <span className="truncate">{t.participant?.name || "Participant"}</span>
+                  {isSelected && <span className="text-[9px] text-blue-400 font-bold ml-1">Active</span>}
                 </div>
               </div>
             );
           })}
         </div>
-      )}
+      </div>
+    );
+  }
+
+  // Gallery Responsive Grid View
+  return (
+    <div className="h-full w-full p-2.5 sm:p-3 flex flex-col gap-2.5 overflow-hidden">
+      <div className="shrink-0 flex items-center justify-between px-1">
+        <span className="text-xs text-white/50">Gallery Grid ({uniqueCameras.length} Participants)</span>
+        <button
+          onClick={() => setLayoutMode("speaker")}
+          className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-white/80 hover:text-white text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <Presentation size={13} />
+          <span>Speaker & Strip View</span>
+        </button>
+      </div>
+
+      <div
+        className={`flex-1 min-h-0 grid gap-2.5 ${
+          uniqueCameras.length === 2
+            ? "grid-cols-1 sm:grid-cols-2"
+            : uniqueCameras.length <= 4
+            ? "grid-cols-2"
+            : "grid-cols-2 lg:grid-cols-3"
+        }`}
+      >
+        {uniqueCameras.map((t, i) => {
+          const id = t.participant?.identity || "";
+          const isHandUp = id ? raisedHands.has(id) : false;
+          return (
+            <div
+              key={id || i}
+              onClick={() => {
+                setSelectedSpotlightId(id);
+                setLayoutMode("speaker");
+              }}
+              className={`h-full w-full relative rounded-2xl overflow-hidden shadow-lg group transition-all cursor-pointer ${
+                isHandUp
+                  ? "border-2 border-amber-400 ring-2 ring-amber-400/40 bg-[#1e1b14]"
+                  : "border border-white/10 bg-[#14161e] hover:border-white/30"
+              }`}
+              title="Click to switch to speaker spotlight"
+            >
+              <ParticipantTile trackRef={t} style={{ width: "100%", height: "100%" }} />
+              {isHandUp && (
+                <div className="absolute top-2 left-2 bg-amber-500 text-black text-xs font-bold px-2.5 py-1 rounded-lg shadow-lg flex items-center gap-1.5 z-10 animate-pulse">
+                  <Hand size={13} className="animate-bounce" />
+                  <span>Hand Raised</span>
+                </div>
+              )}
+              <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] text-white font-medium flex items-center gap-1.5 border border-white/10">
+                <span className={isHandUp ? "text-amber-300 font-bold" : ""}>
+                  {t.participant?.name || "Participant"}
+                </span>
+                {isHandUp && <Hand size={12} className="text-amber-400 animate-bounce" />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -2981,6 +3117,7 @@ function V2BottomControlDock({
   isImmersed,
   isHandRaised,
   unreadChatCount,
+  isRightPanelOpen = true,
   recordingStatus = "idle",
   recordingDuration = 0,
   onStartRecording,
@@ -2997,6 +3134,7 @@ function V2BottomControlDock({
   isImmersed: boolean;
   isHandRaised: boolean;
   unreadChatCount: number;
+  isRightPanelOpen?: boolean;
   recordingStatus?: "idle" | "recording" | "paused" | "saving";
   recordingDuration?: number;
   onStartRecording?: () => void;
@@ -3054,26 +3192,27 @@ function V2BottomControlDock({
 
   return (
     <footer
-      className="h-16 sm:h-20 shrink-0 bg-[#111318] border-t border-white/10 px-3 flex items-center justify-center gap-2 sm:gap-4 z-30"
+      className="h-16 sm:h-18 shrink-0 bg-[#12141c]/95 backdrop-blur-md border-t border-white/10 px-3 sm:px-6 flex items-center justify-center gap-2 sm:gap-3.5 z-30"
       style={{ paddingBottom: "max(6px, env(safe-area-inset-bottom))" }}
     >
-      {/* Microphone Toggle */}
+      {/* Microphone Toggle (Circular) */}
       {isWebinar && !isTeacher && !micAllowedByHost ? (
         <div
-          className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/5 border border-white/10 text-white/40 font-bold text-[10px] sm:text-xs select-none"
+          className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center select-none shadow-md"
           title="Webinar attendees are in listen-only mode. Use Raise Hand to request speaking permission."
         >
           <MicOff size={18} />
-          <span>Listen Only</span>
         </div>
       ) : (
         <button
           {...micProps}
           onClick={handleToggleMic}
-          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer relative ${micOn
-              ? "bg-white/10 text-white hover:bg-white/15"
-              : "bg-red-500/20 text-red-400 border border-red-500/30"
-            }`}
+          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer relative shadow-md ${
+            micOn
+              ? "bg-white/10 hover:bg-white/15 text-white border border-white/10"
+              : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40"
+          }`}
+          title={micOn ? "Mute Microphone" : "Unmute Microphone"}
         >
           {micAllowedByHost && !isTeacher && (
             <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -3082,44 +3221,44 @@ function V2BottomControlDock({
             </span>
           )}
           {micOn ? <Mic size={18} /> : <MicOff size={18} />}
-          <span>{micOn ? "Mute" : "Unmute"}</span>
         </button>
       )}
 
-      {/* Camera Toggle */}
+      {/* Camera Toggle (Circular) */}
       {isWebinar && !isTeacher ? (
         <div
-          className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/5 border border-white/10 text-white/40 font-bold text-[10px] sm:text-xs select-none"
+          className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center select-none shadow-md"
           title="Webcam streaming is disabled for webinar attendees to maintain stage focus."
         >
           <VideoOff size={18} />
-          <span>Audience</span>
         </div>
       ) : (
         <button
           {...camProps}
           onClick={handleToggleCam}
-          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer ${camOn
-              ? "bg-white/10 text-white hover:bg-white/15"
-              : "bg-red-500/20 text-red-400 border border-red-500/30"
-            }`}
+          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md ${
+            camOn
+              ? "bg-white/10 hover:bg-white/15 text-white border border-white/10"
+              : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40"
+          }`}
+          title={camOn ? "Turn Off Camera" : "Turn On Camera"}
         >
           {camOn ? <Video size={18} /> : <VideoOff size={18} />}
-          <span>{camOn ? "Camera" : "Cam Off"}</span>
         </button>
       )}
 
-      {/* Screen Share (Teacher / Desktop priority) */}
+      {/* Screen Share (Circular - Teacher / Presenter) */}
       {isTeacher && (
         <button
           {...screenProps}
-          className={`hidden sm:flex flex-col items-center justify-center gap-1 min-w-[72px] h-14 rounded-2xl font-bold text-xs transition-transform active:scale-95 ${screenOn
-              ? "bg-blue-600 text-white"
-              : "bg-white/10 text-white hover:bg-white/15"
-            }`}
+          className={`hidden sm:flex h-11 w-11 sm:h-12 sm:w-12 rounded-full items-center justify-center transition-all active:scale-95 shadow-md ${
+            screenOn
+              ? "bg-blue-600 text-white shadow-blue-600/30"
+              : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
+          }`}
+          title={screenOn ? "Stop Sharing Screen" : "Share Screen"}
         >
           {screenOn ? <MonitorOff size={18} /> : <Monitor size={18} />}
-          <span>{screenOn ? "Stop Share" : "Share"}</span>
         </button>
       )}
 
@@ -3129,106 +3268,104 @@ function V2BottomControlDock({
           {recordingStatus === "idle" && (
             <button
               onClick={onStartRecording}
-              className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/10 hover:bg-rose-500/20 hover:border hover:border-rose-500/30 text-white hover:text-rose-300 font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer"
-              title="Record session (screen + audio)"
+              className="h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center bg-white/10 hover:bg-rose-500/20 text-white hover:text-rose-300 border border-white/10 hover:border-rose-500/40 transition-all active:scale-95 cursor-pointer shadow-md"
+              title="Start Recording"
             >
               <Circle size={18} className="fill-rose-500 text-rose-500" />
-              <span>Record</span>
             </button>
           )}
 
           {recordingStatus === "recording" && (
-            <div className="flex items-center gap-1 p-1 rounded-2xl bg-rose-950/70 border border-rose-500/50">
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-rose-950/70 border border-rose-500/50 shadow-lg">
               <button
                 onClick={onPauseRecording}
-                className="flex flex-col items-center justify-center gap-1 min-w-[50px] sm:min-w-[60px] h-11 sm:h-12 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 cursor-pointer"
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95 cursor-pointer"
                 title="Pause recording"
               >
-                <Pause size={16} />
-                <span>Pause</span>
+                <Pause size={15} />
               </button>
               <button
                 onClick={onStopRecording}
-                className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[68px] h-11 sm:h-12 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow cursor-pointer"
-                title="End recording and save file"
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center bg-rose-600 hover:bg-rose-500 text-white transition-all active:scale-95 cursor-pointer shadow"
+                title="End recording and save"
               >
-                <Square size={14} className="fill-white" />
-                <span>End & Save</span>
+                <Square size={13} className="fill-white" />
               </button>
             </div>
           )}
 
           {recordingStatus === "paused" && (
-            <div className="flex items-center gap-1 p-1 rounded-2xl bg-amber-950/70 border border-amber-500/50">
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-amber-950/70 border border-amber-500/50 shadow-lg">
               <button
                 onClick={onResumeRecording}
-                className="flex flex-col items-center justify-center gap-1 min-w-[50px] sm:min-w-[60px] h-11 sm:h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow cursor-pointer"
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 cursor-pointer"
                 title="Resume recording"
               >
-                <Play size={16} className="fill-white" />
-                <span>Resume</span>
+                <Play size={15} className="fill-white" />
               </button>
               <button
                 onClick={onStopRecording}
-                className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[68px] h-11 sm:h-12 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow cursor-pointer"
-                title="End recording and save file"
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center bg-rose-600 hover:bg-rose-500 text-white transition-all active:scale-95 cursor-pointer shadow"
+                title="End recording and save"
               >
-                <Square size={14} className="fill-white" />
-                <span>End & Save</span>
+                <Square size={13} className="fill-white" />
               </button>
             </div>
           )}
 
           {recordingStatus === "saving" && (
-            <div className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold text-[10px] sm:text-xs">
+            <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center bg-blue-500/20 border border-blue-500/40 text-blue-300">
               <Loader2 size={18} className="animate-spin text-blue-400" />
-              <span>Saving...</span>
             </div>
           )}
         </>
       )}
 
-      {/* Student Hand Raise Toggle */}
+      {/* Student Hand Raise Toggle (Circular) */}
       {!isTeacher && (
         <button
           onClick={onToggleHand}
-          className={`flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl font-bold text-[10px] sm:text-xs transition-transform active:scale-95 ${
+          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md ${
             isHandRaised
-              ? "bg-amber-500 text-black shadow-lg"
+              ? "bg-amber-500 text-black shadow-amber-500/30 ring-2 ring-amber-400"
               : isWebinar
               ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 hover:bg-purple-600/40"
-              : "bg-white/10 text-white hover:bg-white/15"
+              : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
           }`}
-          title={isHandRaised ? "Lower hand" : isWebinar ? "Raise hand to ask speaker a question" : "Raise hand"}
+          title={isHandRaised ? "Lower Hand" : isWebinar ? "Raise Hand to speak" : "Raise Hand"}
         >
           <Hand size={18} className={isHandRaised ? "animate-bounce" : ""} />
-          <span>{isHandRaised ? "Lower" : isWebinar ? "Raise Hand" : "Hand"}</span>
         </button>
       )}
 
-      {/* Chat Button (Hidden during immersion mode to eliminate clutter) */}
+      {/* Chat / Messages Toggle (Circular) */}
       {!isImmersed && (
         <button
           onClick={onToggleChat}
-          className="flex flex-col items-center justify-center gap-1 min-w-[58px] sm:min-w-[72px] h-12 sm:h-14 rounded-2xl bg-white/10 text-white hover:bg-white/15 font-bold text-[10px] sm:text-xs relative transition-transform active:scale-95"
+          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer relative shadow-md ${
+            isRightPanelOpen
+              ? "bg-blue-600 text-white shadow-blue-600/30"
+              : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
+          }`}
+          title="Toggle Messages & Attachments"
         >
           <MessageSquare size={18} />
-          <span>{isWebinar ? "Q&A / Chat" : "Chat"}</span>
           {unreadChatCount > 0 && (
-            <span className="absolute top-1 right-2 h-4 w-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#12141c]">
               {unreadChatCount}
             </span>
           )}
         </button>
       )}
 
-      {/* Leave Button */}
+      {/* Prominent Red Pill Leave Button */}
       <button
         onClick={onLeave}
-        className="flex flex-col items-center justify-center gap-1 min-w-[62px] sm:min-w-[78px] h-12 sm:h-14 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] sm:text-xs transition-transform active:scale-95 shadow-lg"
+        className="px-5 sm:px-6 h-11 sm:h-12 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-transform active:scale-95 cursor-pointer ml-1 sm:ml-2"
+        title={isWebinar ? "Exit Webinar" : "Leave Live Class"}
       >
-        <LogOut size={18} />
-        <span>{isWebinar ? "Exit" : "Leave"}</span>
+        <LogOut size={16} />
+        <span>{isWebinar ? "Exit" : "Leave Meeting"}</span>
       </button>
     </footer>
   );
@@ -3239,9 +3376,11 @@ function V2BottomControlDock({
 // ─────────────────────────────────────────────────────────────────────────────
 function ChatContentPanel({
   messages,
+  currentUserName = "",
   onSendMessage,
 }: {
   messages: ChatMessage[];
+  currentUserName?: string;
   onSendMessage: (text: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -3259,48 +3398,71 @@ function ChatContentPanel({
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#10121a]">
+      <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center text-white/30 p-4">
-            <MessageSquare size={28} />
-            <p className="text-xs">No questions yet. Start the conversation!</p>
+          <div className="flex flex-col items-center justify-center h-full gap-2.5 text-center text-white/30 p-6">
+            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40">
+              <MessageSquare size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-white/70">No messages yet</p>
+              <p className="text-[11px] text-white/40 mt-0.5">Send a question or note to the live class</p>
+            </div>
           </div>
         ) : (
-          messages.map((m) => (
-            <div
-              key={m.id}
-              className={`p-2.5 rounded-2xl border text-xs ${m.role === "Teacher"
-                  ? "bg-blue-600/15 border-blue-500/30 text-white"
-                  : "bg-white/5 border-white/10 text-white/90"
-                }`}
-            >
-              <div className="flex items-center justify-between text-[10px] mb-1 opacity-70">
-                <span className="font-bold">{m.sender}</span>
-                <span>{m.timestamp}</span>
+          messages.map((m) => {
+            const isMe = Boolean(currentUserName && m.sender.toLowerCase() === currentUserName.toLowerCase());
+            return (
+              <div
+                key={m.id}
+                className={`flex flex-col ${isMe ? "items-end ml-auto max-w-[85%]" : "items-start mr-auto max-w-[85%]"}`}
+              >
+                {!isMe && (
+                  <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px]">
+                    <span className="font-semibold text-white/90">{m.sender}</span>
+                    {m.role === "Teacher" && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-blue-500/25 border border-blue-500/40 text-blue-300">
+                        Teacher
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div
+                  className={`px-3.5 py-2 text-xs leading-relaxed shadow-md ${
+                    isMe
+                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl rounded-tr-xs"
+                      : "bg-white/5 border border-white/10 text-white/95 rounded-2xl rounded-tl-xs"
+                  }`}
+                >
+                  <p className="break-words">{m.text}</p>
+                </div>
+                <span className="text-[10px] text-white/40 mt-1 px-1">{m.timestamp}</span>
               </div>
-              <p className="break-words leading-relaxed">{m.text}</p>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="p-3 border-t border-white/10 flex gap-2 bg-[#0e1015]">
-        <input
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Ask a question..."
-          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500"
-        />
-        <button
-          type="submit"
-          disabled={!text.trim()}
-          className="p-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-30 transition-colors"
-        >
-          <Send size={15} />
-        </button>
+      <form onSubmit={handleSubmit} className="p-3 border-t border-white/10 bg-[#0c0d14]">
+        <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-1.5 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/20 transition-all">
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-1 bg-transparent text-xs text-white placeholder-white/30 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!text.trim()}
+            className="h-8 w-8 rounded-xl bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-30 disabled:hover:bg-blue-600 flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-md shadow-blue-600/30"
+            title="Send Message"
+          >
+            <Send size={14} />
+          </button>
+        </div>
       </form>
     </div>
   );

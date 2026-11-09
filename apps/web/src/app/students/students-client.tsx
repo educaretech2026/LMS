@@ -477,7 +477,30 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                   method: 'PUT',
                   body: JSON.stringify(savedStudent)
                 });
-                setStudents(students.map(s => s.id === savedStudent.id ? savedStudent : s));
+                const updatedProfile = updated?.id ? updated : null;
+                const updatedUser = updatedProfile?.user;
+                const updatedBatch = updatedProfile?.enrollments?.[0]?.batch;
+                const updatedTrack = updatedProfile?.enrollments?.[0]?.track;
+                const merged: Student = {
+                  ...savedStudent,
+                  id: updatedProfile?.id || savedStudent.id,
+                  admissionNo: updatedProfile?.admissionNo || savedStudent.admissionNo,
+                  name: updatedUser ? `${updatedUser.firstName} ${updatedUser.lastName || ''}`.trim() : savedStudent.name,
+                  email: updatedUser?.email || savedStudent.email,
+                  phone: updatedProfile?.parentPhone || savedStudent.phone,
+                  academicYear: updatedBatch?.academicYear?.name || savedStudent.academicYear,
+                  board: updatedBatch?.board?.name || savedStudent.board,
+                  classLevel: updatedBatch?.standard?.name || savedStudent.classLevel,
+                  centre: updatedBatch?.centre?.name || savedStudent.centre,
+                  division: updatedBatch?.name || savedStudent.division,
+                  trackId: updatedProfile?.enrollments?.[0]?.trackId || savedStudent.trackId,
+                  trackName: updatedTrack?.name || savedStudent.trackName,
+                  dateOfBirth: updatedProfile?.dateOfBirth || savedStudent.dateOfBirth,
+                  bloodGroup: updatedProfile?.bloodGroup || savedStudent.bloodGroup,
+                  address: updatedProfile?.address || savedStudent.address,
+                  parentOccupation: updatedProfile?.parentOccupation || savedStudent.parentOccupation,
+                };
+                setStudents(students.map(s => s.id === savedStudent.id ? merged : s));
               } else {
                 const created = await fetchApi<any>('/students', {
                   method: 'POST',
@@ -538,6 +561,14 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   const [address, setAddress] = useState(student?.address || "");
   const [parentOccupation, setParentOccupation] = useState(student?.parentOccupation || "");
   const [password, setPassword] = useState("");
+  const [gender, setGender] = useState((student as any)?.gender || "Male");
+  const [studentMode, setStudentMode] = useState((student as any)?.studentMode || "Offline");
+  const [motherName, setMotherName] = useState((student as any)?.motherName || "");
+  const [emergencyPhone, setEmergencyPhone] = useState((student as any)?.emergencyPhone || "");
+  const [feePlan, setFeePlan] = useState((student as any)?.feePlan || "Monthly Installments");
+  const [admissionFeeStatus, setAdmissionFeeStatus] = useState((student as any)?.admissionFeeStatus || "Pending");
+  const [scholarshipPercent, setScholarshipPercent] = useState<number>((student as any)?.scholarshipPercent || 0);
+  const [discountRemarks, setDiscountRemarks] = useState((student as any)?.discountRemarks || "");
 
   // Interactive state for hierarchy
   const [year, setYear] = useState(student?.academicYear || "");
@@ -673,7 +704,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
 
         {/* Modal Content */}
         <div className="flex-1 overflow-y-auto p-6 bg-surface">
-          {activeTab === "Admission" && (
+          <div className={activeTab === "Admission" ? "block" : "hidden"}>
             <div className="bg-white rounded-xl border border-border-soft p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
@@ -903,9 +934,13 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                   Student Mode <span className="text-brand-red">*</span>
                 </label>
                 <div className="relative">
-                  <select className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
-                    <option>Offline</option>
-                    <option>Online</option>
+                  <select 
+                    value={studentMode}
+                    onChange={(e) => setStudentMode(e.target.value)}
+                    className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 pl-3 pr-8 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                  >
+                    <option value="Offline">Offline</option>
+                    <option value="Online">Online</option>
                   </select>
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none">
                     <ChevronDown className="h-3 w-3 text-text-muted rotate-180 -mb-1" />
@@ -937,13 +972,11 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
               </div>
 
-
-
             </div>
           </div>
-          )}
+        </div>
 
-          {activeTab === "Basic Information" && (
+          <div className={activeTab === "Basic Information" ? "block" : "hidden"}>
             <div className="bg-white rounded-xl border border-border-soft p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -967,10 +1000,14 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Gender</label>
                   <div className="relative">
-                    <select className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
-                      <option>Male</option>
-                      <option>Female</option>
-                      <option>Other</option>
+                    <select 
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <ChevronDown className="h-4 w-4 text-text-muted" />
@@ -1029,9 +1066,9 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {activeTab === "Parents Login Details" && (
+          <div className={activeTab === "Parents Login Details" ? "block" : "hidden"}>
             <div className="bg-white rounded-xl border border-border-soft p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -1040,7 +1077,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Mother's Name</label>
-                  <input type="text" placeholder="Name" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input type="text" placeholder="Name" value={motherName} onChange={(e) => setMotherName(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Parent's Primary Phone (Login ID) <span className="text-brand-red">*</span></label>
@@ -1056,23 +1093,27 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Emergency Contact Number</label>
-                  <input type="tel" placeholder="+91 XXXXX XXXXX" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input type="tel" placeholder="+91 XXXXX XXXXX" value={emergencyPhone} onChange={(e) => setEmergencyPhone(e.target.value)} className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {activeTab === "Payments" && (
+          <div className={activeTab === "Payments" ? "block" : "hidden"}>
             <div className="bg-white rounded-xl border border-border-soft p-6">
               <h3 className="text-sm font-bold text-text-primary mb-6">Fee Structure & Discounts</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Fee Plan</label>
                   <div className="relative">
-                    <select className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
-                      <option>Monthly Installments</option>
-                      <option>Annual Plan</option>
-                      <option>Quarterly</option>
+                    <select 
+                      value={feePlan}
+                      onChange={(e) => setFeePlan(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="Monthly Installments">Monthly Installments</option>
+                      <option value="Annual Plan">Annual Plan</option>
+                      <option value="Quarterly">Quarterly</option>
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <ChevronDown className="h-4 w-4 text-text-muted" />
@@ -1082,10 +1123,14 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Admission Fee Status</label>
                   <div className="relative">
-                    <select className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20">
-                      <option>Pending</option>
-                      <option>Paid In Full</option>
-                      <option>Partially Paid</option>
+                    <select 
+                      value={admissionFeeStatus}
+                      onChange={(e) => setAdmissionFeeStatus(e.target.value)}
+                      className="w-full h-10 appearance-none rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20"
+                    >
+                      <option value="Pending">Pending</option>
+                      <option value="Paid In Full">Paid In Full</option>
+                      <option value="Partially Paid">Partially Paid</option>
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <ChevronDown className="h-4 w-4 text-text-muted" />
@@ -1094,15 +1139,28 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Scholarship / Discount (%)</label>
-                  <input type="number" defaultValue="0" min="0" max="100" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input 
+                    type="number" 
+                    value={scholarshipPercent} 
+                    onChange={(e) => setScholarshipPercent(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                    min="0" 
+                    max="100" 
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-text-secondary mb-1.5">Discount Remarks</label>
-                  <input type="text" placeholder="e.g. Merit Scholarship" className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" />
+                  <input 
+                    type="text" 
+                    placeholder="e.g. Merit Scholarship" 
+                    value={discountRemarks}
+                    onChange={(e) => setDiscountRemarks(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-border-soft bg-surface-2 px-3 text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-blue/20" 
+                  />
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
         </div>
 
@@ -1158,7 +1216,15 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
                     dateOfBirth: dateOfBirth || undefined,
                     address: address || undefined,
                     parentOccupation: parentOccupation || undefined,
-                  };
+                    gender,
+                    studentMode,
+                    motherName,
+                    emergencyPhone,
+                    feePlan,
+                    admissionFeeStatus,
+                    scholarshipPercent,
+                    discountRemarks,
+                  } as any;
                   onSave(newStudentData);
                 } else {
                   // Go to next tab
