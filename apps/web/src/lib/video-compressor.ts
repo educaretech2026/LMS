@@ -19,6 +19,7 @@ export interface CompressionOptions {
   videoBitrate?: number;
   audioBitrate?: number;
   playbackRate?: number;
+  knownDurationSeconds?: number;
   onProgress?: (progress: { percent: number; stage: string; currentBytes?: number }) => void;
 }
 
@@ -29,6 +30,32 @@ export interface CompressionResult {
   compressionRatio: number;
   duration: number;
   mimeType: string;
+}
+
+/**
+ * Fast preparation of recorded blob for direct upload.
+ * Injects EBML duration header in < 200ms if WebM, or preserves MP4 container.
+ * Accurately detects MIME type and file extension so presigned URLs match uploaded bytes.
+ */
+export async function prepareRecordingBlobForUpload(
+  blob: Blob,
+  durationSeconds?: number
+): Promise<{ uploadBlob: Blob; mimeType: string; extension: string }> {
+  const rawType = (blob.type || '').toLowerCase();
+  const isMp4 = rawType.includes('mp4') || (!rawType.includes('webm') && !rawType.includes('matroska'));
+  const mimeType = isMp4 ? 'video/mp4' : 'video/webm';
+  const extension = isMp4 ? '.mp4' : '.webm';
+
+  if (!isMp4 && durationSeconds && durationSeconds > 0) {
+    try {
+      const fixed = await fixWebmDuration(blob, Math.round(durationSeconds * 1000));
+      return { uploadBlob: fixed, mimeType, extension };
+    } catch {
+      return { uploadBlob: blob, mimeType, extension };
+    }
+  }
+
+  return { uploadBlob: blob, mimeType, extension };
 }
 
 /**
@@ -229,7 +256,12 @@ export async function compressVideo(
     setTimeout(() => reject(new Error('Timeout loading video metadata.')), 15000);
   });
 
-  const duration = video.duration || 1;
+  const rawDuration = video.duration;
+  const effectiveDuration = (options.knownDurationSeconds && options.knownDurationSeconds > 0)
+    ? options.knownDurationSeconds
+    : (Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 0);
+  const duration = effectiveDuration > 0 ? effectiveDuration : 1;
+
   const { width: targetWidth, height: targetHeight } = getScaledDimensions(
     video.videoWidth || 1280,
     video.videoHeight || 720,
@@ -307,12 +339,16 @@ export async function compressVideo(
   return new Promise<CompressionResult>((resolve, reject) => {
     let animFrameId: number | null = null;
     let renderTimer: any = null;
+    let stallWatchdogTimer: any = null;
     let isFinished = false;
+    let lastTime = -1;
+    let stallCounter = 0;
 
     const cleanup = () => {
       isFinished = true;
       if (animFrameId) cancelAnimationFrame(animFrameId);
       if (renderTimer) clearInterval(renderTimer);
+      if (stallWatchdogTimer) clearInterval(stallWatchdogTimer);
       combinedStream.getTracks().forEach((t) => t.stop());
       canvasStream.getTracks().forEach((t) => t.stop());
       if (audioContext && audioContext.state !== 'closed') {
@@ -321,12 +357,23 @@ export async function compressVideo(
       URL.revokeObjectURL(sourceUrl);
     };
 
+    const finishCompression = () => {
+      if (isFinished) return;
+      isFinished = true;
+      onProgress?.({ percent: 98, stage: 'Finalizing compressed stream package...' });
+      setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      }, 200);
+    };
+
     recorder.onstop = async () => {
       cleanup();
       const rawBlob = new Blob(chunks, { type: mimeType });
       // Inject WebM Duration metadata to fix video player seeking and runtime status bar
       let compressedBlob = rawBlob;
-      if (mimeType.includes('webm')) {
+      if (mimeType.includes('webm') && duration > 0) {
         try {
           compressedBlob = await fixWebmDuration(rawBlob, Math.round(duration * 1000));
         } catch {
@@ -334,7 +381,7 @@ export async function compressVideo(
         }
       }
       const compressedSize = compressedBlob.size;
-      const compressionRatio = compressedSize / originalSize;
+      const compressionRatio = originalSize > 0 ? compressedSize / originalSize : 1;
 
       resolve({
         compressedBlob,
@@ -356,11 +403,18 @@ export async function compressVideo(
       if (isFinished) return;
       if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-        const percent = Math.min(95, Math.round(15 + (video.currentTime / duration) * 80));
+        const progressRatio = duration > 0 ? Math.min(1, Math.max(0, video.currentTime / duration)) : 0;
+        const percent = Math.min(95, Math.round(15 + progressRatio * 80));
         onProgress?.({
           percent,
-          stage: `Compressing frames (${Math.round((video.currentTime / duration) * 100)}%)...`,
+          stage: `Compressing frames (${Math.round(progressRatio * 100)}%)...`,
         });
+
+        // If video reached target duration, complete
+        if (effectiveDuration > 0 && video.currentTime >= effectiveDuration - 0.2) {
+          finishCompression();
+          return;
+        }
       }
 
       if (!video.ended && !video.paused && !isFinished) {
@@ -373,14 +427,23 @@ export async function compressVideo(
     };
 
     video.onended = () => {
-      if (isFinished) return;
-      onProgress?.({ percent: 98, stage: 'Finalizing compressed stream package...' });
-      setTimeout(() => {
-        if (recorder.state !== 'inactive') {
-          recorder.stop();
-        }
-      }, 300);
+      finishCompression();
     };
+
+    // Stall detector to ensure background tab throttling or Infinity duration doesn't hang forever
+    stallWatchdogTimer = setInterval(() => {
+      if (isFinished) return;
+      if (Math.abs(video.currentTime - lastTime) < 0.05 && !video.paused) {
+        stallCounter++;
+        if (stallCounter >= 8) {
+          console.warn('Video playback stall detected during compression, wrapping up stream...');
+          finishCompression();
+        }
+      } else {
+        stallCounter = 0;
+        lastTime = video.currentTime;
+      }
+    }, 1000);
 
     // Start recorder and playback
     try {

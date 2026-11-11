@@ -2403,7 +2403,7 @@ export class LiveClassService implements OnModuleInit {
     if (!cls) throw new NotFoundException('Live class not found');
 
     return this.prisma.liveClass.update({
-      where: { id: classId },
+      where: { id: cls.id },
       data: {
         recordingStatus: recordingUrl ? 'COMPLETED' : 'PROCESSING',
         recordingUrl: recordingUrl || undefined,
@@ -2437,7 +2437,7 @@ export class LiveClassService implements OnModuleInit {
 
     // 1. Update LiveClass table with canonical recording URL, status, and release flag
     const updated = await this.prisma.liveClass.update({
-      where: { id: classId },
+      where: { id: cls.id },
       data: {
         recordingStatus: 'COMPLETED',
         recordingUrl: trimmedUrl,
@@ -2450,7 +2450,7 @@ export class LiveClassService implements OnModuleInit {
     try {
       await this.prisma.liveClassRecording.create({
         data: {
-          liveClassId: classId,
+          liveClassId: cls.id,
           status: 'COMPLETED',
           fileUrl: trimmedUrl,
           fileSize: data.fileSize ? BigInt(data.fileSize) : null,
@@ -2465,7 +2465,7 @@ export class LiveClassService implements OnModuleInit {
 
     // 3. Record audit log
     const auditAction = isReleased ? 'SAVE_AND_RELEASE_RECORDING' : 'SAVE_RECORDING_DRAFT';
-    this.recordAudit(user, auditAction, `Saved compressed recording to cloud (${isReleased ? 'RELEASED' : 'PRIVATE DRAFT'}): ${trimmedUrl}`, classId).catch(() => {});
+    this.recordAudit(user, auditAction, `Saved compressed recording to cloud (${isReleased ? 'RELEASED' : 'PRIVATE DRAFT'}): ${trimmedUrl}`, cls.id).catch(() => {});
 
     return {
       success: true,
@@ -2500,7 +2500,7 @@ export class LiveClassService implements OnModuleInit {
     }
 
     const updated = await this.prisma.liveClass.update({
-      where: { id: classId },
+      where: { id: cls.id },
       data: {
         isRecordingReleased: Boolean(isReleased),
       },
@@ -2509,7 +2509,7 @@ export class LiveClassService implements OnModuleInit {
 
     try {
       await this.prisma.liveClassRecording.updateMany({
-        where: { liveClassId: classId },
+        where: { liveClassId: cls.id },
         data: { isReleased: Boolean(isReleased) },
       });
     } catch (e: any) {

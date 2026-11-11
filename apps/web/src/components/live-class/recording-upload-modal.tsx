@@ -18,7 +18,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
-import { compressVideo } from "@/lib/video-compressor";
+import { compressVideo, prepareRecordingBlobForUpload } from "@/lib/video-compressor";
 import { VideoPlayerModal } from "@/components/media/video-player-modal";
 
 export { VideoPlayerModal };
@@ -91,12 +91,13 @@ export function RecordingUploadModal({
   const handleDownloadLocal = () => {
     try {
       const blobToDownload = compressedBlob || videoBlob;
+      const isMp4 = (blobToDownload.type || "").toLowerCase().includes("mp4");
       const url = URL.createObjectURL(blobToDownload);
       const a = document.createElement("a");
       a.href = url;
       const safeTitle = (classTitle || "live-class-recording").replace(/[^a-zA-Z0-9_-]/g, "_");
       const dateStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      a.download = `${safeTitle}_${dateStr}.webm`;
+      a.download = `${safeTitle}_${dateStr}${isMp4 ? ".mp4" : ".webm"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -106,66 +107,41 @@ export function RecordingUploadModal({
     }
   };
 
-  // Compress & Upload upon request
-  const handleCompressAndUpload = async () => {
+  // Direct fast upload to cloud storage
+  const uploadBlobToCloud = async (blobToUpload: Blob, isCompressed: boolean = false) => {
     try {
       setErrorMessage("");
-      setPhase("compressing");
-      setProgressPercent(5);
-      setStatusMessage("Starting video compression engine...");
-
-      // Step 1: Compress video in-browser
-      let finalBlobToUpload = videoBlob;
-      let finalSizeBytes = videoBlob.size;
-
-      try {
-        const result = await compressVideo(videoBlob, {
-          maxWidth: 1280,
-          maxHeight: 720,
-          targetFps: 24,
-          videoBitrate: 1_200_000, // 1.2 Mbps
-          playbackRate: 1.0, // Strict 1:1 normal playback speed (no fast-forward distortion)
-          onProgress: ({ percent, stage }) => {
-            setProgressPercent(percent);
-            setStatusMessage(stage);
-          },
-        });
-
-        if (result?.compressedBlob && result.compressedBlob.size > 0) {
-          finalBlobToUpload = result.compressedBlob;
-          finalSizeBytes = result.compressedSize;
-          setCompressedBlob(result.compressedBlob);
-          setCompressedSize(result.compressedSize);
-        }
-      } catch (compressionErr: any) {
-        console.warn("Video compression encountered issue, falling back to original blob:", compressionErr);
-        setStatusMessage("Compression fallback active, preparing upload...");
-      }
-
-      // Step 2: Request presigned upload URL from cloud storage with 'recordings' prefix
       setPhase("uploading");
       setProgressPercent(10);
-      setStatusMessage("Requesting cloud storage upload credentials...");
+      setStatusMessage("Preparing video format and duration metadata...");
 
-      const safeFilename = `${(classTitle || "recording").replace(/[^a-zA-Z0-9_-]/g, "_")}_${Date.now()}.webm`;
+      // Patch WebM EBML duration header in <200ms or preserve MP4 container
+      const prep = await prepareRecordingBlobForUpload(blobToUpload, durationSeconds);
+      const uploadBlob = prep.uploadBlob;
+      const mimeType = prep.mimeType;
+      const extension = prep.extension;
+
+      setStatusMessage("Acquiring cloud storage upload credentials...");
+      const safeTitle = (classTitle || "recording").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const safeFilename = `${safeTitle}_${Date.now()}${extension}`;
+
       const presignedRes = await fetchApi<any>(
-        `/storage/presigned-url?filename=${encodeURIComponent(safeFilename)}&contentType=video/webm&prefix=recordings`
+        `/storage/presigned-url?filename=${encodeURIComponent(safeFilename)}&contentType=${encodeURIComponent(mimeType)}&prefix=recordings`
       );
 
       if (!presignedRes?.uploadUrl || !presignedRes?.finalUrl) {
         throw new Error("Could not acquire cloud storage presigned URL. Please verify R2/S3 storage configuration.");
       }
 
-      // Step 3: Direct PUT upload to S3 / Cloudflare R2 with XMLHttpRequest progress tracking
-      setStatusMessage("Uploading compressed video to cloud storage...");
+      setStatusMessage("Uploading recording to cloud storage...");
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", presignedRes.uploadUrl, true);
-        xhr.setRequestHeader("Content-Type", "video/webm");
+        xhr.setRequestHeader("Content-Type", mimeType);
 
         xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const uploadPercent = Math.round((evt.loaded / evt.total) * 100);
+          if (evt.lengthComputable && evt.total > 0) {
+            const uploadPercent = Math.min(99, Math.round((evt.loaded / evt.total) * 100));
             setProgressPercent(uploadPercent);
             setStatusMessage(`Uploading to cloud... ${uploadPercent}% (${formatBytes(evt.loaded)} / ${formatBytes(evt.total)})`);
           }
@@ -179,13 +155,13 @@ export function RecordingUploadModal({
           }
         };
 
-        xhr.onerror = () => reject(new Error("Network error during cloud storage upload."));
-        xhr.onabort = () => reject(new Error("Upload was aborted."));
+        xhr.onerror = () => reject(new Error("Network error during cloud storage upload. Check internet connection."));
+        xhr.onabort = () => reject(new Error("Upload was cancelled."));
 
-        xhr.send(finalBlobToUpload);
+        xhr.send(uploadBlob);
       });
 
-      // Step 4: Associate with Class Record on backend
+      // Step 3: Associate with Class Record on backend
       setPhase("saving");
       setProgressPercent(100);
       setStatusMessage("Registering recording in class database...");
@@ -195,7 +171,7 @@ export function RecordingUploadModal({
           method: "POST",
           body: JSON.stringify({
             recordingUrl: presignedRes.finalUrl,
-            fileSize: finalSizeBytes,
+            fileSize: uploadBlob.size,
             duration: durationSeconds,
             isReleased: releaseImmediately,
           }),
@@ -203,8 +179,61 @@ export function RecordingUploadModal({
       }
 
       setUploadedUrl(presignedRes.finalUrl);
+      if (isCompressed) {
+        setCompressedBlob(uploadBlob);
+        setCompressedSize(uploadBlob.size);
+      }
       setPhase("done");
       onUploaded?.(presignedRes.finalUrl, releaseImmediately);
+    } catch (err: any) {
+      console.error("Recording upload failed:", err);
+      setPhase("error");
+      setErrorMessage(err?.message || "Something went wrong during video upload.");
+    }
+  };
+
+  // Direct fast cloud upload handler
+  const handleDirectUpload = () => {
+    uploadBlobToCloud(videoBlob, false);
+  };
+
+  // Compress & Upload upon request
+  const handleCompressAndUpload = async () => {
+    try {
+      setErrorMessage("");
+      setPhase("compressing");
+      setProgressPercent(5);
+      setStatusMessage("Starting video compression engine...");
+
+      let finalBlobToUpload = videoBlob;
+      let isCompressed = false;
+
+      try {
+        const result = await compressVideo(videoBlob, {
+          maxWidth: 1280,
+          maxHeight: 720,
+          targetFps: 24,
+          videoBitrate: 1_200_000,
+          knownDurationSeconds: durationSeconds,
+          playbackRate: 1.0,
+          onProgress: ({ percent, stage }) => {
+            setProgressPercent(percent);
+            setStatusMessage(stage);
+          },
+        });
+
+        if (result?.compressedBlob && result.compressedBlob.size > 0) {
+          finalBlobToUpload = result.compressedBlob;
+          isCompressed = true;
+          setCompressedBlob(result.compressedBlob);
+          setCompressedSize(result.compressedSize);
+        }
+      } catch (compressionErr: any) {
+        console.warn("Video compression encountered issue, falling back to direct upload:", compressionErr);
+        setStatusMessage("Compression skipped, continuing with direct upload...");
+      }
+
+      await uploadBlobToCloud(finalBlobToUpload, isCompressed);
     } catch (err: any) {
       console.error("Recording compression and upload failed:", err);
       setPhase("error");
@@ -326,24 +355,35 @@ export function RecordingUploadModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+              <div className="flex flex-col gap-2.5 pt-1">
                 <button
-                  onClick={handleDownloadLocal}
-                  className="w-full sm:flex-1 py-3 px-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
-                  title="Download a local backup to your device"
-                >
-                  <Download size={15} />
-                  <span>Download Local Backup</span>
-                </button>
-
-                <button
-                  onClick={handleCompressAndUpload}
-                  className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-900/30 transition-all active:scale-95 cursor-pointer"
-                  title="Compress video and upload to Cloudflare R2 / S3"
+                  onClick={handleDirectUpload}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-900/30 transition-all active:scale-95 cursor-pointer"
+                  title="Direct high-speed upload with instant duration patching"
                 >
                   <UploadCloud size={16} />
-                  <span>Compress & Upload to Cloud</span>
+                  <span>Upload to Cloud (Fast & Recommended)</span>
                 </button>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                  <button
+                    onClick={handleDownloadLocal}
+                    className="w-full sm:flex-1 py-2.5 px-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                    title="Download a local backup to your device"
+                  >
+                    <Download size={14} />
+                    <span>Download Local Backup</span>
+                  </button>
+
+                  <button
+                    onClick={handleCompressAndUpload}
+                    className="w-full sm:flex-1 py-2.5 px-3 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-200 text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                    title="Re-encode and compress video before uploading"
+                  >
+                    <Sparkles size={14} className="text-purple-400" />
+                    <span>Re-encode & Compress</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -378,6 +418,16 @@ export function RecordingUploadModal({
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
+
+              {phase === "compressing" && (
+                <button
+                  type="button"
+                  onClick={() => uploadBlobToCloud(videoBlob, false)}
+                  className="text-xs text-purple-300 hover:text-white underline underline-offset-4 cursor-pointer transition-colors"
+                >
+                  Takes too long? Skip compression and upload directly
+                </button>
+              )}
             </div>
           )}
 

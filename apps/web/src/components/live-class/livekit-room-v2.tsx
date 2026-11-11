@@ -553,45 +553,133 @@ export function LiveKitClassRoomV2({
   }, []);
 
   const startRecording = useCallback(async () => {
-    // If browser does not support getDisplayMedia (mobile/tablets/iPads), use server-side cloud egress
-    if (typeof window === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
-      if (classId) {
-        try {
-          setRecordingStatus("saving");
-          const serverRes = await fetchApi<any>(`/live-class/${classId}/recording/server/start`, {
-            method: "POST",
-            body: JSON.stringify({}),
+    // If on a mobile device without getDisplayMedia, first try server-side cloud egress
+    const isMobileDevice = typeof navigator !== "undefined" && (
+      /Android|iPhone|iPod/i.test(navigator.userAgent || "") ||
+      !navigator.mediaDevices?.getDisplayMedia
+    );
+
+    if (isMobileDevice && classId) {
+      try {
+        setRecordingStatus("saving");
+        const serverRes = await fetchApi<any>(`/live-class/${classId}/recording/server/start`, {
+          method: "POST",
+          body: JSON.stringify({}),
+          silent: true,
+        });
+        if (serverRes?.success || serverRes?.egressId) {
+          setRemoteRecordingActive(true);
+          setRecordingStatus("recording");
+          setRecordingDuration(0);
+          const room = (window as any).__lk_room;
+          safePublishData(room, {
+            type: "RECORDING_STATE",
+            isRecording: true,
+            isPaused: false,
           });
-          if (serverRes?.success || serverRes?.egressId) {
-            setRemoteRecordingActive(true);
-            setRecordingStatus("recording");
-            setRecordingDuration(0);
-            const room = (window as any).__lk_room;
-            safePublishData(room, {
-              type: "RECORDING_STATE",
-              isRecording: true,
-              isPaused: false,
-            });
-            return;
+          return;
+        }
+      } catch (serverErr: any) {
+        console.warn("Server egress recording fallback failed, falling back to local capture:", serverErr?.message);
+      }
+    }
+
+    // Adaptive stream acquisition across Desktop, iPadOS, iOS, Android, and all browsers
+    const acquireStream = async (): Promise<{ stream: MediaStream; micStream: MediaStream | null }> => {
+      let captureStream: MediaStream | null = null;
+      let micStream: MediaStream | null = null;
+
+      // 1. Try Desktop getDisplayMedia (with current tab audio & surface constraints)
+      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getDisplayMedia) {
+        try {
+          captureStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { displaySurface: "browser" },
+            audio: true,
+            preferCurrentTab: true,
+          } as any);
+        } catch (tier1Err: any) {
+          console.warn("getDisplayMedia tier 1 failed, trying tier 2:", tier1Err?.message);
+        }
+
+        // 2. Try generic getDisplayMedia with audio
+        if (!captureStream) {
+          try {
+            captureStream = await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: true,
+            } as any);
+          } catch (tier2Err: any) {
+            console.warn("getDisplayMedia tier 2 failed, trying tier 3:", tier2Err?.message);
           }
-        } catch (serverErr: any) {
-          console.warn("Server egress recording fallback failed:", serverErr?.message);
+        }
+
+        // 3. Try Safari / iPadOS 13+ compliant getDisplayMedia (Safari strictly throws on audio: true)
+        if (!captureStream) {
+          try {
+            captureStream = await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+            } as any);
+          } catch (tier3Err: any) {
+            console.warn("getDisplayMedia tier 3 (Safari/iPadOS video-only) failed:", tier3Err?.message);
+          }
         }
       }
-      alert("Screen recording is not supported on mobile browser tabs. Please use a desktop browser or enable cloud recording.");
-      setRecordingStatus("idle");
-      return;
-    }
+
+      // 4. In-App Stage / Whiteboard Canvas Fallback (Mobile phones, tablets without screen capture)
+      if (!captureStream) {
+        const stageCanvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+        if (stageCanvas && typeof (stageCanvas as any).captureStream === "function") {
+          try {
+            const cStream = (stageCanvas as any).captureStream(20) as MediaStream;
+            if (cStream && cStream.getVideoTracks().length > 0) {
+              captureStream = cStream;
+            }
+          } catch (cErr) {
+            console.warn("Canvas stream capture fallback failed:", cErr);
+          }
+        }
+      }
+
+      // 5. Presenter Camera fallback (e.g. mobile phone instructor session)
+      if (!captureStream && typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+        try {
+          captureStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: true,
+          });
+        } catch (camErr) {
+          console.warn("Camera capture fallback failed:", camErr);
+        }
+      }
+
+      if (!captureStream) {
+        throw new Error("Unable to capture video stream on this device. Please grant screen/camera permissions.");
+      }
+
+      // Capture presenter microphone for crystal clear audio commentary (always works across all platforms)
+      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } catch (mErr) {
+          console.warn("Microphone capture failed:", mErr);
+        }
+      }
+
+      return { stream: captureStream, micStream };
+    };
 
     try {
       setRecordingStatus("saving");
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "browser" },
-        audio: true,
-        preferCurrentTab: true,
-      } as any);
+      const { stream, micStream } = await acquireStream();
 
       recordingStreamRef.current = stream;
+      recordingMicStreamRef.current = micStream;
 
       let finalAudioTrack: MediaStreamTrack | null = null;
       try {
@@ -602,7 +690,7 @@ export function LiveKitClassRoomV2({
           const dest = audioCtx.createMediaStreamDestination();
           let hasAudioSource = false;
 
-          // Capture system/tab audio
+          // Capture system/display audio if present
           if (stream.getAudioTracks().length > 0) {
             const displaySrc = audioCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
             displaySrc.connect(dest);
@@ -610,22 +698,10 @@ export function LiveKitClassRoomV2({
           }
 
           // Capture instructor/presenter microphone audio
-          try {
-            const micStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              },
-            });
-            recordingMicStreamRef.current = micStream;
-            if (micStream.getAudioTracks().length > 0) {
-              const micSrc = audioCtx.createMediaStreamSource(micStream);
-              micSrc.connect(dest);
-              hasAudioSource = true;
-            }
-          } catch (micErr) {
-            console.warn("Could not attach presenter mic to recording:", micErr);
+          if (micStream && micStream.getAudioTracks().length > 0) {
+            const micSrc = audioCtx.createMediaStreamSource(micStream);
+            micSrc.connect(dest);
+            hasAudioSource = true;
           }
 
           if (hasAudioSource && dest.stream.getAudioTracks().length > 0) {
@@ -638,7 +714,7 @@ export function LiveKitClassRoomV2({
 
       const tracksToRecord = [
         ...stream.getVideoTracks(),
-        ...(finalAudioTrack ? [finalAudioTrack] : stream.getAudioTracks()),
+        ...(finalAudioTrack ? [finalAudioTrack] : (micStream ? micStream.getAudioTracks() : stream.getAudioTracks())),
       ];
       const combinedStream = new MediaStream(tracksToRecord);
 
@@ -650,6 +726,8 @@ export function LiveKitClassRoomV2({
           mimeType = "video/webm;codecs=vp8,opus";
         } else if (MediaRecorder.isTypeSupported("video/webm")) {
           mimeType = "video/webm";
+        } else if (MediaRecorder.isTypeSupported("video/mp4;codecs=avc1,mp4a.40.2")) {
+          mimeType = "video/mp4;codecs=avc1,mp4a.40.2";
         } else if (MediaRecorder.isTypeSupported("video/mp4")) {
           mimeType = "video/mp4";
         }
@@ -681,7 +759,8 @@ export function LiveKitClassRoomV2({
         // The recording is assembled upon session end and presented in the upload/download dialog
         try {
           if (recordedChunksRef.current.length > 0) {
-            const blob = new Blob(recordedChunksRef.current, { type: mimeType || "video/webm" });
+            const finalMime = mimeType || (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("video/mp4") ? "video/mp4" : "video/webm");
+            const blob = new Blob(recordedChunksRef.current, { type: finalMime });
             setFinishedRecordingBlob(blob);
             setFinishedRecordingDuration(recordingDurationRef.current || recordingDuration);
             setIsUploadModalOpen(true);
