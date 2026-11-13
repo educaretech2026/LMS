@@ -432,6 +432,302 @@ export class SetupService {
     return this.prisma.subtopic.create({ data });
   }
 
+  // ── CURRICULUM DUPLICATION ENGINE (BOARD-TO-BOARD & CLASS-TO-CLASS) ──
+
+  async duplicateBoardCurriculum(data: {
+    sourceBoardId: string;
+    targetBoardId: string;
+    standardIds?: string[];
+  }) {
+    const { sourceBoardId, targetBoardId, standardIds } = data;
+    if (!sourceBoardId || !targetBoardId) {
+      throw new BadRequestException('sourceBoardId and targetBoardId are required.');
+    }
+    if (sourceBoardId === targetBoardId) {
+      throw new BadRequestException('Source and Target boards must be different.');
+    }
+
+    const [sourceBoard, targetBoard] = await Promise.all([
+      this.prisma.board.findUnique({ where: { id: sourceBoardId } }),
+      this.prisma.board.findUnique({ where: { id: targetBoardId } }),
+    ]);
+    if (!sourceBoard) throw new NotFoundException('Source Board not found');
+    if (!targetBoard) throw new NotFoundException('Target Board not found');
+
+    const sourceSyllabi = await this.prisma.syllabus.findMany({
+      where: {
+        boardId: sourceBoardId,
+        ...(standardIds && standardIds.length > 0 ? { standardId: { in: standardIds } } : {}),
+      },
+      include: {
+        chapters: {
+          include: {
+            topics: {
+              include: {
+                subtopics: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (sourceSyllabi.length === 0) {
+      throw new BadRequestException('No curriculum or syllabi found in the selected source board.');
+    }
+
+    let clonedSyllabi = 0;
+    let clonedChapters = 0;
+    let clonedTopics = 0;
+    let clonedSubtopics = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const sSyl of sourceSyllabi) {
+        // Upsert target syllabus
+        let tSyl = await tx.syllabus.findUnique({
+          where: {
+            boardId_standardId_subjectId: {
+              boardId: targetBoardId,
+              standardId: sSyl.standardId,
+              subjectId: sSyl.subjectId,
+            },
+          },
+        });
+
+        if (!tSyl) {
+          tSyl = await tx.syllabus.create({
+            data: {
+              boardId: targetBoardId,
+              standardId: sSyl.standardId,
+              subjectId: sSyl.subjectId,
+            },
+          });
+          clonedSyllabi++;
+        }
+
+        // Clone chapters
+        for (const sChap of sSyl.chapters) {
+          let tChap = await tx.chapter.findFirst({
+            where: {
+              syllabusId: tSyl.id,
+              name: sChap.name,
+            },
+          });
+
+          if (!tChap) {
+            tChap = await tx.chapter.create({
+              data: {
+                name: sChap.name,
+                syllabusId: tSyl.id,
+              },
+            });
+            clonedChapters++;
+          }
+
+          // Clone topics
+          for (const sTop of sChap.topics) {
+            let tTop = await tx.topic.findFirst({
+              where: {
+                chapterId: tChap.id,
+                name: sTop.name,
+              },
+            });
+
+            if (!tTop) {
+              tTop = await tx.topic.create({
+                data: {
+                  name: sTop.name,
+                  chapterId: tChap.id,
+                  examImportance: sTop.examImportance,
+                  difficulty: sTop.difficulty,
+                  prevQnFrequency: sTop.prevQnFrequency,
+                },
+              });
+              clonedTopics++;
+            }
+
+            // Clone subtopics
+            for (const sSub of sTop.subtopics) {
+              const existingSub = await tx.subtopic.findFirst({
+                where: {
+                  topicId: tTop.id,
+                  name: sSub.name,
+                },
+              });
+
+              if (!existingSub) {
+                await tx.subtopic.create({
+                  data: {
+                    name: sSub.name,
+                    topicId: tTop.id,
+                  },
+                });
+                clonedSubtopics++;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      success: true,
+      message: `Successfully duplicated curriculum from "${sourceBoard.name}" to "${targetBoard.name}".`,
+      clonedSyllabi,
+      clonedChapters,
+      clonedTopics,
+      clonedSubtopics,
+    };
+  }
+
+  async duplicateClassCurriculum(data: {
+    sourceBoardId: string;
+    sourceStandardId: string;
+    targetBoardId: string;
+    targetStandardId: string;
+    subjectIds?: string[];
+  }) {
+    const { sourceBoardId, sourceStandardId, targetBoardId, targetStandardId, subjectIds } = data;
+    if (!sourceBoardId || !sourceStandardId || !targetBoardId || !targetStandardId) {
+      throw new BadRequestException('sourceBoardId, sourceStandardId, targetBoardId, and targetStandardId are required.');
+    }
+    if (sourceBoardId === targetBoardId && sourceStandardId === targetStandardId) {
+      throw new BadRequestException('Source and Target Class must be different.');
+    }
+
+    const [srcBoard, srcStd, tgtBoard, tgtStd] = await Promise.all([
+      this.prisma.board.findUnique({ where: { id: sourceBoardId } }),
+      this.prisma.standard.findUnique({ where: { id: sourceStandardId } }),
+      this.prisma.board.findUnique({ where: { id: targetBoardId } }),
+      this.prisma.standard.findUnique({ where: { id: targetStandardId } }),
+    ]);
+
+    if (!srcBoard || !srcStd) throw new NotFoundException('Source Board or Class not found');
+    if (!tgtBoard || !tgtStd) throw new NotFoundException('Target Board or Class not found');
+
+    const sourceSyllabi = await this.prisma.syllabus.findMany({
+      where: {
+        boardId: sourceBoardId,
+        standardId: sourceStandardId,
+        ...(subjectIds && subjectIds.length > 0 ? { subjectId: { in: subjectIds } } : {}),
+      },
+      include: {
+        chapters: {
+          include: {
+            topics: {
+              include: {
+                subtopics: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (sourceSyllabi.length === 0) {
+      throw new BadRequestException('No curriculum or syllabi found for the selected Source Class.');
+    }
+
+    let clonedSyllabi = 0;
+    let clonedChapters = 0;
+    let clonedTopics = 0;
+    let clonedSubtopics = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const sSyl of sourceSyllabi) {
+        let tSyl = await tx.syllabus.findUnique({
+          where: {
+            boardId_standardId_subjectId: {
+              boardId: targetBoardId,
+              standardId: targetStandardId,
+              subjectId: sSyl.subjectId,
+            },
+          },
+        });
+
+        if (!tSyl) {
+          tSyl = await tx.syllabus.create({
+            data: {
+              boardId: targetBoardId,
+              standardId: targetStandardId,
+              subjectId: sSyl.subjectId,
+            },
+          });
+          clonedSyllabi++;
+        }
+
+        for (const sChap of sSyl.chapters) {
+          let tChap = await tx.chapter.findFirst({
+            where: {
+              syllabusId: tSyl.id,
+              name: sChap.name,
+            },
+          });
+
+          if (!tChap) {
+            tChap = await tx.chapter.create({
+              data: {
+                name: sChap.name,
+                syllabusId: tSyl.id,
+              },
+            });
+            clonedChapters++;
+          }
+
+          for (const sTop of sChap.topics) {
+            let tTop = await tx.topic.findFirst({
+              where: {
+                chapterId: tChap.id,
+                name: sTop.name,
+              },
+            });
+
+            if (!tTop) {
+              tTop = await tx.topic.create({
+                data: {
+                  name: sTop.name,
+                  chapterId: tChap.id,
+                  examImportance: sTop.examImportance,
+                  difficulty: sTop.difficulty,
+                  prevQnFrequency: sTop.prevQnFrequency,
+                },
+              });
+              clonedTopics++;
+            }
+
+            for (const sSub of sTop.subtopics) {
+              const existingSub = await tx.subtopic.findFirst({
+                where: {
+                  topicId: tTop.id,
+                  name: sSub.name,
+                },
+              });
+
+              if (!existingSub) {
+                await tx.subtopic.create({
+                  data: {
+                    name: sSub.name,
+                    topicId: tTop.id,
+                  },
+                });
+                clonedSubtopics++;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      success: true,
+      message: `Successfully duplicated curriculum from "${srcBoard.name} - ${srcStd.name}" to "${tgtBoard.name} - ${tgtStd.name}".`,
+      clonedSyllabi,
+      clonedChapters,
+      clonedTopics,
+      clonedSubtopics,
+    };
+  }
+
   // Deletions
   async deleteBoard(id: string) {
     const board = await this.prisma.board.findUnique({

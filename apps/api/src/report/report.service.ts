@@ -413,22 +413,51 @@ export class ReportService {
     }
     const todayAbsent = await this.prisma.attendanceRecord.count({ where: attWhere });
 
-    const incomeTx = await this.prisma.transaction.findMany({
-      where: { ...txWhere, type: TransactionType.INCOME }
-    });
-    const transactionIncome = incomeTx.reduce((sum, tx) => sum + tx.amount, 0);
+    // High-performance database aggregation in parallel (avoids streaming entire tables into memory)
+    const [incomeTxAgg, expenseTxAgg, paidFeesAgg, pendingFeesAgg, overdueFeesAgg] = await Promise.all([
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: { ...txWhere, type: TransactionType.INCOME },
+      }).catch(async () => {
+        const tx = await this.prisma.transaction.findMany({ where: { ...txWhere, type: TransactionType.INCOME }, select: { amount: true } });
+        return { _sum: { amount: tx.reduce((s, t) => s + t.amount, 0) } };
+      }),
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: { ...txWhere, type: TransactionType.EXPENSE },
+      }).catch(async () => {
+        const tx = await this.prisma.transaction.findMany({ where: { ...txWhere, type: TransactionType.EXPENSE }, select: { amount: true } });
+        return { _sum: { amount: tx.reduce((s, t) => s + t.amount, 0) } };
+      }),
+      this.prisma.feeRecord.aggregate({
+        _sum: { amount: true },
+        where: { ...feeWhere, status: 'PAID' },
+      }).catch(async () => {
+        const f = await this.prisma.feeRecord.findMany({ where: { ...feeWhere, status: 'PAID' }, select: { amount: true } });
+        return { _sum: { amount: f.reduce((s, r) => s + r.amount, 0) } };
+      }),
+      this.prisma.feeRecord.aggregate({
+        _sum: { amount: true },
+        where: { ...feeWhere, status: 'PENDING' },
+      }).catch(async () => {
+        const f = await this.prisma.feeRecord.findMany({ where: { ...feeWhere, status: 'PENDING' }, select: { amount: true } });
+        return { _sum: { amount: f.reduce((s, r) => s + r.amount, 0) } };
+      }),
+      this.prisma.feeRecord.aggregate({
+        _sum: { amount: true },
+        where: { ...feeWhere, status: 'OVERDUE' },
+      }).catch(async () => {
+        const f = await this.prisma.feeRecord.findMany({ where: { ...feeWhere, status: 'OVERDUE' }, select: { amount: true } });
+        return { _sum: { amount: f.reduce((s, r) => s + r.amount, 0) } };
+      }),
+    ]);
 
-    const expenseTx = await this.prisma.transaction.findMany({
-      where: { ...txWhere, type: TransactionType.EXPENSE }
-    });
-    const totalExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
+    const transactionIncome = incomeTxAgg._sum?.amount || 0;
+    const totalExpense = expenseTxAgg._sum?.amount || 0;
+    const paidFees = paidFeesAgg._sum?.amount || 0;
+    const totalFeeDue = pendingFeesAgg._sum?.amount || 0;
+    const feeOverdue = overdueFeesAgg._sum?.amount || 0;
 
-    // Calculate Fees
-    const feeRecords = await this.prisma.feeRecord.findMany({ where: feeWhere });
-    const paidFees = feeRecords.filter(f => f.status === 'PAID').reduce((sum, f) => sum + f.amount, 0);
-    const totalFeeDue = feeRecords.filter(f => f.status === 'PENDING').reduce((sum, f) => sum + f.amount, 0);
-    const feeOverdue = feeRecords.filter(f => f.status === 'OVERDUE').reduce((sum, f) => sum + f.amount, 0);
-    
     const totalIncome = transactionIncome + paidFees;
 
     const totalRefund = 0;

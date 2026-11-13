@@ -211,7 +211,7 @@ export function Sidebar({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 md:py-6 px-2 md:px-3 space-y-3 md:space-y-6 scrollbar-thin">
+        <nav className="flex-1 overflow-y-auto py-2.5 md:py-4 px-2 md:px-3 space-y-2.5 md:space-y-4 scrollbar-thin">
           {visibleMainNav.length > 0 && (
             <NavSection
               label="Main"

@@ -293,6 +293,18 @@ export class SetupController {
     return this.setupService.createSyllabus(data);
   }
 
+  @Post('curriculum/duplicate-board')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  duplicateBoardCurriculum(@Body() data: any) {
+    return this.setupService.duplicateBoardCurriculum(data);
+  }
+
+  @Post('curriculum/duplicate-class')
+  @Roles('SUPER_ADMIN', 'CENTRE_ADMIN')
+  duplicateClassCurriculum(@Body() data: any) {
+    return this.setupService.duplicateClassCurriculum(data);
+  }
+
   @Get('chapters')
   @Roles('SUPER_ADMIN', 'CENTRE_ADMIN', 'TEACHER', 'STUDENT', 'PUBLIC_LEARNER')
   getChapters(

@@ -14,43 +14,13 @@ export class UsersService {
   ) {}
 
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
+    const baseUser = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
         role: {
           include: {
             permissions: {
               include: { permission: true }
-            }
-          }
-        },
-        studentProfile: {
-          include: {
-            enrollments: {
-              include: {
-                batch: {
-                  include: {
-                    standard: true,
-                    board: true,
-                    centre: true,
-                    academicYear: true,
-                  }
-                },
-                subjects: true,
-                track: true,
-              }
-            }
-          }
-        },
-        teacherProfile: {
-          include: {
-            assignments: {
-              include: {
-                board: true,
-                standard: true,
-                subject: true,
-                academicYear: true,
-              }
             }
           }
         },
@@ -62,7 +32,54 @@ export class UsersService {
       }
     });
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!baseUser) throw new NotFoundException('User not found');
+
+    const roleName = baseUser.role?.name;
+    let studentProfile: any = null;
+    let teacherProfile: any = null;
+
+    // Only query role-specific profiles rather than joining all 12 tables indiscriminately
+    if (roleName === 'STUDENT') {
+      studentProfile = await this.prisma.studentProfile.findUnique({
+        where: { userId },
+        include: {
+          enrollments: {
+            include: {
+              batch: {
+                include: {
+                  standard: true,
+                  board: true,
+                  centre: true,
+                  academicYear: true,
+                }
+              },
+              subjects: true,
+              track: true,
+            }
+          }
+        }
+      });
+    } else if (roleName === 'TEACHER') {
+      teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { userId },
+        include: {
+          assignments: {
+            include: {
+              board: true,
+              standard: true,
+              subject: true,
+              academicYear: true,
+            }
+          }
+        }
+      });
+    }
+
+    const user = {
+      ...baseUser,
+      studentProfile,
+      teacherProfile,
+    };
     
     // Omit password and extract permissions
     const { password, ...userWithoutPassword } = user;

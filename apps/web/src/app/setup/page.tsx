@@ -37,6 +37,7 @@ import {
   ScrollText,
   ExternalLink,
   CheckCircle2,
+  Copy,
 } from "lucide-react";
 import { MODULE_PERMISSIONS, checkModulePermission } from "@/lib/permissions";
 
@@ -1584,6 +1585,276 @@ function ExamConfigTab() {
   );
 }
 
+function DuplicateCurriculumModal({
+  isOpen,
+  onClose,
+  boards,
+  standards,
+  onSuccess,
+  onError,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  boards: any[];
+  standards: any[];
+  onSuccess: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [mode, setMode] = useState<"board" | "class">("board");
+  const [sourceBoardId, setSourceBoardId] = useState("");
+  const [targetBoardId, setTargetBoardId] = useState("");
+  const [sourceStandardId, setSourceStandardId] = useState("");
+  const [targetStandardId, setTargetStandardId] = useState("");
+  const [overwrite, setOverwrite] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (boards.length > 0 && !sourceBoardId) setSourceBoardId(boards[0].id);
+      if (boards.length > 1 && !targetBoardId) setTargetBoardId(boards[1].id);
+    }
+  }, [isOpen, boards]);
+
+  if (!isOpen) return null;
+
+  const handleDuplicate = async () => {
+    try {
+      setIsSubmitting(true);
+      if (mode === "board") {
+        if (!sourceBoardId || !targetBoardId) {
+          onError("Please select both source and target boards.");
+          setIsSubmitting(false);
+          return;
+        }
+        if (sourceBoardId === targetBoardId) {
+          onError("Source and target boards must be different.");
+          setIsSubmitting(false);
+          return;
+        }
+        const res = await fetchApi<any>("/setup/curriculum/duplicate-board", {
+          method: "POST",
+          body: JSON.stringify({ sourceBoardId, targetBoardId, overwrite }),
+        });
+        onSuccess(res.message || "Board curriculum duplicated successfully.");
+        onClose();
+      } else {
+        if (!sourceBoardId || !sourceStandardId || !targetBoardId || !targetStandardId) {
+          onError("Please select source and target boards and classes.");
+          setIsSubmitting(false);
+          return;
+        }
+        if (sourceBoardId === targetBoardId && sourceStandardId === targetStandardId) {
+          onError("Source and target class cannot be identical.");
+          setIsSubmitting(false);
+          return;
+        }
+        const res = await fetchApi<any>("/setup/curriculum/duplicate-class", {
+          method: "POST",
+          body: JSON.stringify({
+            sourceBoardId,
+            sourceStandardId,
+            targetBoardId,
+            targetStandardId,
+            overwrite,
+          }),
+        });
+        onSuccess(res.message || "Class curriculum duplicated successfully.");
+        onClose();
+      }
+    } catch (err: any) {
+      onError(err.message || "Failed to duplicate curriculum.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const srcStandards = standards.filter((s) => isStandardInBoard(s, sourceBoardId));
+  const tgtStandards = standards.filter((s) => isStandardInBoard(s, targetBoardId));
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-100 overflow-hidden">
+        <div className="flex items-center justify-between pb-4 border-b border-border-soft">
+          <div>
+            <h3 className="text-base font-bold text-text-primary">Duplicate Curriculum</h3>
+            <p className="text-xs text-text-muted mt-0.5">Clone subjects, chapters, topics, and subtopics.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex gap-2 my-4 p-1 bg-surface-2 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setMode("board")}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+              mode === "board"
+                ? "bg-white text-text-primary shadow-sm"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            Board to Board
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("class")}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+              mode === "class"
+                ? "bg-white text-text-primary shadow-sm"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            Class to Class
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {mode === "board" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">Source Board</label>
+                <select
+                  value={sourceBoardId}
+                  onChange={(e) => setSourceBoardId(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-xs"
+                >
+                  <option value="" disabled>Select Source Board</option>
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">Target Board</label>
+                <select
+                  value={targetBoardId}
+                  onChange={(e) => setTargetBoardId(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-border-soft bg-surface-2 px-3 text-xs"
+                >
+                  <option value="" disabled>Select Target Board</option>
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id} disabled={b.id === sourceBoardId}>
+                      {b.name} {b.id === sourceBoardId ? "(Source)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-surface rounded-xl border border-border-soft">
+                <span className="text-[11px] font-bold text-text-secondary uppercase col-span-full">Source</span>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Board</label>
+                  <select
+                    value={sourceBoardId}
+                    onChange={(e) => {
+                      setSourceBoardId(e.target.value);
+                      setSourceStandardId("");
+                    }}
+                    className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs"
+                  >
+                    <option value="" disabled>Select Board</option>
+                    {boards.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Class</label>
+                  <select
+                    value={sourceStandardId}
+                    onChange={(e) => setSourceStandardId(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs"
+                    disabled={!sourceBoardId}
+                  >
+                    <option value="" disabled>Select Class</option>
+                    {srcStandards.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-surface rounded-xl border border-border-soft">
+                <span className="text-[11px] font-bold text-text-secondary uppercase col-span-full">Target</span>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Board</label>
+                  <select
+                    value={targetBoardId}
+                    onChange={(e) => {
+                      setTargetBoardId(e.target.value);
+                      setTargetStandardId("");
+                    }}
+                    className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs"
+                  >
+                    <option value="" disabled>Select Board</option>
+                    {boards.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Class</label>
+                  <select
+                    value={targetStandardId}
+                    onChange={(e) => setTargetStandardId(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-border-soft bg-white px-3 text-xs"
+                    disabled={!targetBoardId}
+                  >
+                    <option value="" disabled>Select Class</option>
+                    {tgtStandards.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="overwrite-check"
+              checked={overwrite}
+              onChange={(e) => setOverwrite(e.target.checked)}
+              className="h-4 w-4 rounded border-border-soft text-brand-blue focus:ring-brand-blue"
+            />
+            <label htmlFor="overwrite-check" className="text-xs text-text-secondary cursor-pointer">
+              Overwrite existing subjects if already present in target
+            </label>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-6 mt-4 border-t border-border-soft">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="px-4 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-2 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDuplicate}
+            disabled={isSubmitting}
+            className="px-4 py-2 text-xs font-semibold text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg transition-colors disabled:opacity-50"
+          >
+            {isSubmitting ? "Duplicating..." : "Start Duplication"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CurriculumBuilderTab({ onError }: { onError: (msg: string) => void }) {
   const [boards, setBoards] = useState<any[]>([]);
   const [standards, setStandards] = useState<any[]>([]);
@@ -1607,10 +1878,17 @@ function CurriculumBuilderTab({ onError }: { onError: (msg: string) => void }) {
   const [addingSubtopicTo, setAddingSubtopicTo] = useState<string | null>(null);
   const [newSubtopicName, setNewSubtopicName] = useState("");
 
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  const loadSyllabi = () => {
+    fetchApi<any[]>('/setup/syllabi').then(setSyllabi).catch(console.error);
+  };
+
   useEffect(() => {
     fetchApi<any[]>('/setup/boards').then(setBoards);
     fetchApi<any[]>('/setup/standards').then(setStandards);
-    fetchApi<any[]>('/setup/syllabi').then(setSyllabi);
+    loadSyllabi();
   }, []);
 
   const availableSubjects = syllabi
@@ -1690,7 +1968,27 @@ function CurriculumBuilderTab({ onError }: { onError: (msg: string) => void }) {
           <h3 className="text-sm font-bold text-text-primary">Curriculum Builder</h3>
           <p className="text-xs text-text-muted mt-1">Build and manage the syllabus hierarchy: Chapters, Topics, and Subtopics.</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsDuplicateModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-border-soft text-text-primary hover:bg-surface hover:border-brand-blue/30 transition-all shadow-sm"
+        >
+          <Copy className="h-3.5 w-3.5 text-brand-blue" />
+          Duplicate Curriculum
+        </button>
       </div>
+
+      {successToast && (
+        <div className="mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+            <span>{successToast}</span>
+          </div>
+          <button type="button" onClick={() => setSuccessToast(null)} className="text-emerald-600 hover:text-emerald-800">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       
       <div className="p-6 border-b border-border-soft bg-white">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1869,6 +2167,19 @@ function CurriculumBuilderTab({ onError }: { onError: (msg: string) => void }) {
           </div>
         )}
       </div>
+
+      <DuplicateCurriculumModal
+        isOpen={isDuplicateModalOpen}
+        onClose={() => setIsDuplicateModalOpen(false)}
+        boards={boards}
+        standards={standards}
+        onSuccess={(msg) => {
+          setSuccessToast(msg);
+          loadSyllabi();
+          setTimeout(() => setSuccessToast(null), 5000);
+        }}
+        onError={onError}
+      />
     </div>
   );
 }

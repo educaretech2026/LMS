@@ -172,13 +172,22 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Retrieves a list of all currently online user IDs.
+   * Retrieves a list of all currently online user IDs using non-blocking SCAN.
    */
   async getOnlineUsers(): Promise<string[]> {
     if (!this.client || !this.isAvailable) return [];
     try {
-      const keys = await this.client.keys('online:*');
-      return keys.map(k => k.replace('online:', ''));
+      const foundKeys: string[] = [];
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await this.client.scan(cursor, 'MATCH', 'online:*', 'COUNT', 100);
+        cursor = nextCursor;
+        if (keys && keys.length > 0) {
+          foundKeys.push(...keys);
+        }
+      } while (cursor !== '0' && foundKeys.length < 500);
+
+      return foundKeys.map(k => k.replace('online:', ''));
     } catch {
       return [];
     }

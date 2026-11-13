@@ -8,6 +8,10 @@ import { getJwtSecret } from '../common/config/jwt.config';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  // Short-lived in-memory cache to prevent redundant 5-table DB queries on concurrent page requests
+  private userCache = new Map<string, { user: any; cachedAt: number }>();
+  private static readonly CACHE_TTL_MS = 30_000; // 30s TTL
+
   constructor(private prisma: PrismaService, private redisService: RedisService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -35,16 +39,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Session has been revoked or expired');
     }
     
-    // Track user as online
-    await this.redisService.trackOnlineUser(payload.sub);
+    // Track user as online non-blockingly
+    this.redisService.trackOnlineUser(payload.sub).catch(() => {});
+
+    // Check fast cache
+    const cacheKey = `${payload.sub}:${payload.jti}`;
+    const cached = this.userCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.cachedAt < JwtStrategy.CACHE_TTL_MS) {
+      return cached.user;
+    }
 
     if (payload.role === 'PUBLIC_LEARNER') {
       const publicUser = await this.prisma.publicUser.findUnique({
         where: { id: payload.sub }
       });
       if (!publicUser) throw new UnauthorizedException('User not found');
-      // Mock the role so RolesGuard works properly and attach jti for session revocation
-      return { ...publicUser, role: { name: 'PUBLIC_LEARNER' }, status: 'ACTIVE', jti: payload.jti };
+      const resolved = { ...publicUser, role: { name: 'PUBLIC_LEARNER' }, status: 'ACTIVE', jti: payload.jti };
+      this.userCache.set(cacheKey, { user: resolved, cachedAt: now });
+      return resolved;
     }
 
     const user = await this.prisma.user.findUnique({
@@ -62,6 +75,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user || user.status !== 'ACTIVE') {
+      this.userCache.delete(cacheKey);
       throw new UnauthorizedException('User is inactive or not found');
     }
 
@@ -75,6 +89,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     const { password: _pwd, ...safeUser } = user;
-    return { ...safeUser, permissions, customModules, jti: payload.jti };
+    const resolvedUser = { ...safeUser, permissions, customModules, jti: payload.jti };
+
+    // Prune stale cache entries if map grows
+    if (this.userCache.size > 1000) {
+      for (const [k, v] of this.userCache.entries()) {
+        if (now - v.cachedAt > JwtStrategy.CACHE_TTL_MS) this.userCache.delete(k);
+      }
+    }
+
+    this.userCache.set(cacheKey, { user: resolvedUser, cachedAt: now });
+    return resolvedUser;
   }
 }

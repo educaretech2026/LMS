@@ -95,38 +95,24 @@ export class LiveClassService implements OnModuleInit {
 
   public async safeFindMany(params: { where?: any; orderBy?: any }): Promise<any[]> {
     try {
+      // Primary high-performance query: Explicitly excludes heavy whiteboardData JSON vectors
       return await this.prisma.liveClass.findMany({
         where: params.where,
-        include: {
-          board: { select: { id: true, name: true } },
-          standard: { select: { id: true, name: true } },
-          centre: { select: { id: true, name: true } },
-        },
+        select: SAFE_LIVE_CLASS_SELECT,
         orderBy: params.orderBy,
       });
     } catch (err: any) {
       this.logger.warn(
-        `findMany with full relations failed (${err?.message}), falling back to SAFE_LIVE_CLASS_SELECT`,
+        `safeFindMany with SAFE_LIVE_CLASS_SELECT failed (${err?.message}), falling back to bare query`,
       );
       try {
         return await this.prisma.liveClass.findMany({
           where: params.where,
-          select: SAFE_LIVE_CLASS_SELECT,
           orderBy: params.orderBy,
         });
-      } catch (fallbackErr: any) {
-        this.logger.warn(
-          `safeFindMany fallback failed (${fallbackErr?.message}), falling back to bare findMany`,
-        );
-        try {
-          return await this.prisma.liveClass.findMany({
-            where: params.where,
-            orderBy: params.orderBy,
-          });
-        } catch (bareErr: any) {
-          this.logger.error(`safeFindMany bare query failed: ${bareErr?.message}`);
-          return [];
-        }
+      } catch (bareErr: any) {
+        this.logger.error(`safeFindMany bare query failed: ${bareErr?.message}`);
+        return [];
       }
     }
   }

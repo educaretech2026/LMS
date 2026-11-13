@@ -23,9 +23,9 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      // Session cookie is securely set via HttpOnly cookie by BFF
-      // Force a cache-busting hard reload to the dashboard
-      window.location.href = "/?t=" + Date.now();
+      // Smooth client-side navigation to dashboard without tearing down DOM or re-downloading bundles
+      router.push("/");
+      router.refresh();
     } catch (err: any) {
       setError(err.message || "Invalid credentials");
     } finally {
