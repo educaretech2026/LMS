@@ -68,9 +68,10 @@ export class StudentsService implements OnModuleInit {
       standardName?: string;
       batchId?: string;
       batchName?: string;
+      studentProfileId?: string;
     },
     txPrisma?: any,
-  ): Promise<{ admissionNo: string; prefix: string; sequence: number; rollNo: number }> {
+  ): Promise<{ admissionNo: string; prefix: string; sequence: number }> {
     const prisma = txPrisma || this.prisma;
 
     // 1. Resolve Batch if batchId or batchName provided
@@ -168,11 +169,26 @@ export class StudentsService implements OnModuleInit {
     // 6. Resolve Batch / Division Name
     let resolvedBatchName = resolvedBatch?.name || params.batchName || '';
 
-    // 7. Calculate number of active enrollments in this batch
-    let batchEnrollmentCount = 0;
+    // 7. Calculate number of students enrolled in this specific batch or class
+    let studentCount = 0;
     if (resolvedBatch?.id) {
-      batchEnrollmentCount = await prisma.enrollment.count({
-        where: { batchId: resolvedBatch.id },
+      studentCount = await prisma.enrollment.count({
+        where: {
+          batchId: resolvedBatch.id,
+          ...(params.studentProfileId ? { studentProfileId: { not: params.studentProfileId } } : {}),
+        },
+      });
+    } else if (resolvedBatch?.standardId || params.standardId) {
+      const stdId = resolvedBatch?.standardId || params.standardId;
+      studentCount = await prisma.enrollment.count({
+        where: {
+          batch: {
+            standardId: stdId,
+            ...(params.academicYearId ? { academicYearId: params.academicYearId } : {}),
+            ...(params.centreId ? { centreId: params.centreId } : {}),
+          },
+          ...(params.studentProfileId ? { studentProfileId: { not: params.studentProfileId } } : {}),
+        },
       });
     }
 
@@ -187,28 +203,32 @@ export class StudentsService implements OnModuleInit {
       batchName: resolvedBatchName,
     });
 
-    // 9. Query existing profiles matching prefix to avoid duplicate keys
-    const existingProfiles = await prisma.studentProfile.findMany({
+    // 9. Sequence starts based on number of students in the specific batch or class
+    let targetSeq = Math.max(1, studentCount + 1);
+    let admissionNo = formatAdmissionNumber(prefix, targetSeq);
+
+    // Collision check: Ensure unique constraint in database is not violated
+    let collision = await prisma.studentProfile.findFirst({
       where: {
-        admissionNo: {
-          startsWith: `${prefix}-`,
-        },
+        admissionNo,
+        ...(params.studentProfileId ? { id: { not: params.studentProfileId } } : {}),
       },
-      select: { admissionNo: true },
+      select: { id: true },
     });
 
-    let maxSeq = batchEnrollmentCount;
-    for (const p of existingProfiles) {
-      const seq = extractSequenceFromAdmissionNumber(p.admissionNo, prefix);
-      if (seq !== null && seq > maxSeq) {
-        maxSeq = seq;
-      }
+    while (collision) {
+      targetSeq++;
+      admissionNo = formatAdmissionNumber(prefix, targetSeq);
+      collision = await prisma.studentProfile.findFirst({
+        where: {
+          admissionNo,
+          ...(params.studentProfileId ? { id: { not: params.studentProfileId } } : {}),
+        },
+        select: { id: true },
+      });
     }
 
-    const nextSeq = maxSeq + 1;
-    const admissionNo = formatAdmissionNumber(prefix, nextSeq);
-
-    return { admissionNo, prefix, sequence: nextSeq, rollNo: nextSeq };
+    return { admissionNo, prefix, sequence: targetSeq };
   }
 
   /**
@@ -230,6 +250,7 @@ export class StudentsService implements OnModuleInit {
       standardName: query.classLevel || query.standardName,
       batchId: query.batchId,
       batchName: query.division || query.batchName,
+      studentProfileId: query.studentProfileId || query.id,
     });
   }
 
@@ -536,32 +557,7 @@ export class StudentsService implements OnModuleInit {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Compute batch-scoped roll number for each student
-    const batchMap = new Map<string, any[]>();
-    for (const s of students) {
-      const batchId = s.enrollments?.[0]?.batchId || 'unassigned';
-      if (!batchMap.has(batchId)) batchMap.set(batchId, []);
-      batchMap.get(batchId)!.push(s);
-    }
-
-    const rollNoMap = new Map<string, number>();
-    for (const [, bStudents] of batchMap.entries()) {
-      const sorted = [...bStudents].sort((a, b) => {
-        const timeA = new Date(a.createdAt).getTime();
-        const timeB = new Date(b.createdAt).getTime();
-        if (timeA !== timeB) return timeA - timeB;
-        return (a.id || '').localeCompare(b.id || '');
-      });
-
-      sorted.forEach((student, index) => {
-        rollNoMap.set(student.id, index + 1);
-      });
-    }
-
-    return students.map((s) => ({
-      ...s,
-      rollNo: rollNoMap.get(s.id) || 1,
-    }));
+    return students;
   }
 
   async updateStudent(id: string, data: any, user?: any) {
@@ -700,12 +696,28 @@ export class StudentsService implements OnModuleInit {
       const isUpdateEmailOrAutofill = rawUpdateAdmNo.includes('@') || /admin/i.test(rawUpdateAdmNo) || /educare/i.test(rawUpdateAdmNo);
       const isValidUpdateAdmNo = rawUpdateAdmNo !== '' && !isUpdateEmailOrAutofill;
 
+      let finalAdmissionNo: string | undefined = isValidUpdateAdmNo ? rawUpdateAdmNo : undefined;
+
+      if (!finalAdmissionNo && (data.regenerateAdmissionNo || data.admissionNo === '')) {
+        const generated = await this.generateNextAdmissionNo(
+          {
+            centreId: effectiveCentreId,
+            academicYearId: effectiveYearId,
+            standardId: effectiveStandardId,
+            batchId: batch?.id,
+            studentProfileId: id,
+          },
+          prisma,
+        );
+        finalAdmissionNo = generated.admissionNo;
+      }
+
       const effectiveParentPhone = data.parentPhone || data.phone || undefined;
 
       const updatedProfile = await prisma.studentProfile.update({
         where: { id },
         data: {
-          admissionNo: isValidUpdateAdmNo ? rawUpdateAdmNo : undefined,
+          admissionNo: finalAdmissionNo,
           parentName: data.parentName || undefined,
           parentEmail: data.parentEmail || undefined,
           parentPhone: effectiveParentPhone,

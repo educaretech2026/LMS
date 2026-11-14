@@ -90,6 +90,7 @@ describe('StudentsService - Structured Admission Number Generation', () => {
       },
       studentProfile: {
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'sp-1', ...data })),
       },
       user: {
@@ -142,11 +143,12 @@ describe('StudentsService - Structured Admission Number Generation', () => {
     });
 
     it('advances sequential counter to 004 when 001, 002, 003 already exist', async () => {
-      prisma.studentProfile.findMany.mockResolvedValue([
-        { admissionNo: 'KL-26-NEET-11A-001' },
-        { admissionNo: 'KL-26-NEET-11A-002' },
-        { admissionNo: 'KL-26-NEET-11A-003' },
-      ]);
+      prisma.studentProfile.findFirst.mockImplementation(({ where }: any) => {
+        if (['KL-26-NEET-11A-001', 'KL-26-NEET-11A-002', 'KL-26-NEET-11A-003'].includes(where.admissionNo)) {
+          return Promise.resolve({ id: 'existing' });
+        }
+        return Promise.resolve(null);
+      });
 
       const result = await service.generateNextAdmissionNo({
         centreId: mockCentre.id,
@@ -162,7 +164,7 @@ describe('StudentsService - Structured Admission Number Generation', () => {
 
     it('scopes sequence to batch enrollment count when batch has 5 enrolled students', async () => {
       prisma.enrollment.count.mockResolvedValue(5);
-      prisma.studentProfile.findMany.mockResolvedValue([]);
+      prisma.studentProfile.findFirst.mockResolvedValue(null);
 
       const result = await service.generateNextAdmissionNo({
         centreId: mockCentre.id,
@@ -173,7 +175,6 @@ describe('StudentsService - Structured Admission Number Generation', () => {
       });
 
       expect(result.sequence).toBe(6);
-      expect(result.rollNo).toBe(6);
       expect(result.admissionNo).toBe('KL-26-NEET-11A-006');
     });
   });

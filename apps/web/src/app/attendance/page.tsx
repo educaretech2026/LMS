@@ -315,14 +315,7 @@ export default function AttendancePage() {
                     return (
                       <tr key={student.studentId} className={`hover:bg-surface-2/30 transition-colors ${record.status === 'ABSENT' ? 'bg-red-50/50' : ''}`}>
                         <td className="px-5 py-4">
-                          <div className="flex items-center gap-2">
-                            {(student as any).rollNo !== undefined && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-surface-2 text-text-secondary border border-border-soft">
-                                #{String((student as any).rollNo).padStart(2, '0')}
-                              </span>
-                            )}
-                            <p className="font-bold text-text-primary">{student.name}</p>
-                          </div>
+                          <p className="font-bold text-text-primary">{student.name}</p>
                           <p className="text-[10px] text-text-muted mt-0.5">ID: {student.admissionNo}</p>
                         </td>
                         <td className="px-5 py-4">
