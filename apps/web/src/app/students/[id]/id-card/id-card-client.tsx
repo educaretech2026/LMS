@@ -7,6 +7,7 @@ import logoImage from "@/logos/logo1.png";
 interface IdCardProps {
   student: {
     admissionNo: string;
+    rollNo?: number | string;
     name: string;
     board: string;
     classLevel: string;
@@ -139,7 +140,7 @@ export function IdCardClient({ student }: IdCardProps) {
               <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-brand-blue/40 rounded-br"></div>
               <div className="grid grid-cols-[1fr_2fr] gap-x-2 gap-y-1.5 text-[10px]">
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Adm No</div>
-                <div className="font-bold text-slate-900 pl-1">{student.admissionNo || "-"}</div>
+                <div className="font-bold text-slate-900 pl-1">{student.admissionNo || "-"} {student.rollNo ? `(Roll #${student.rollNo})` : ""}</div>
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Class</div>
                 <div className="font-bold text-slate-900 pl-1">{student.classLevel || "-"} {student.division ? `(${student.division})` : ""}</div>
                 <div className="text-slate-500 font-medium uppercase text-right border-r border-slate-200 pr-2">Board</div>

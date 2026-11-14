@@ -70,13 +70,42 @@ export class StudentsService implements OnModuleInit {
       batchName?: string;
     },
     txPrisma?: any,
-  ): Promise<{ admissionNo: string; prefix: string; sequence: number }> {
+  ): Promise<{ admissionNo: string; prefix: string; sequence: number; rollNo: number }> {
     const prisma = txPrisma || this.prisma;
 
-    // 1. Resolve Centre
-    let centreCode = '';
-    let resolvedCentreName = params.centreName || '';
-    if (params.centreId) {
+    // 1. Resolve Batch if batchId or batchName provided
+    let resolvedBatch: any = null;
+    if (params.batchId) {
+      resolvedBatch = await prisma.batch.findUnique({
+        where: { id: params.batchId },
+        include: {
+          centre: { select: { code: true, name: true } },
+          academicYear: { select: { id: true, name: true } },
+          standard: { select: { id: true, name: true, level: true } },
+          track: { select: { id: true, name: true } },
+        },
+      });
+    } else if (params.batchName && (params.academicYearId || params.centreId || params.standardId)) {
+      resolvedBatch = await prisma.batch.findFirst({
+        where: {
+          name: params.batchName,
+          ...(params.academicYearId ? { academicYearId: params.academicYearId } : {}),
+          ...(params.standardId ? { standardId: params.standardId } : {}),
+          ...(params.centreId ? { centreId: params.centreId } : {}),
+        },
+        include: {
+          centre: { select: { code: true, name: true } },
+          academicYear: { select: { id: true, name: true } },
+          standard: { select: { id: true, name: true, level: true } },
+          track: { select: { id: true, name: true } },
+        },
+      });
+    }
+
+    // 2. Resolve Centre
+    let centreCode = resolvedBatch?.centre?.code || '';
+    let resolvedCentreName = resolvedBatch?.centre?.name || params.centreName || '';
+    if (!centreCode && params.centreId) {
       const c = await prisma.centre.findUnique({
         where: { id: params.centreId },
         select: { code: true, name: true },
@@ -85,7 +114,7 @@ export class StudentsService implements OnModuleInit {
         centreCode = c.code;
         resolvedCentreName = c.name;
       }
-    } else if (params.centreName) {
+    } else if (!centreCode && params.centreName) {
       const c = await prisma.centre.findFirst({
         where: { OR: [{ name: params.centreName }, { code: params.centreName }] },
         select: { code: true, name: true },
@@ -96,9 +125,9 @@ export class StudentsService implements OnModuleInit {
       }
     }
 
-    // 2. Resolve Academic Year
-    let resolvedYearName = params.academicYearName || '';
-    if (params.academicYearId) {
+    // 3. Resolve Academic Year
+    let resolvedYearName = resolvedBatch?.academicYear?.name || params.academicYearName || '';
+    if (!resolvedYearName && params.academicYearId) {
       const y = await prisma.academicYear.findUnique({
         where: { id: params.academicYearId },
         select: { name: true },
@@ -112,9 +141,9 @@ export class StudentsService implements OnModuleInit {
       if (activeYear) resolvedYearName = activeYear.name;
     }
 
-    // 3. Resolve Track / Course
-    let resolvedTrackName = params.trackName || '';
-    if (params.trackId) {
+    // 4. Resolve Track / Course
+    let resolvedTrackName = resolvedBatch?.track?.name || params.trackName || '';
+    if (!resolvedTrackName && params.trackId) {
       const t = await prisma.targetTrack.findUnique({
         where: { id: params.trackId },
         select: { name: true },
@@ -122,10 +151,10 @@ export class StudentsService implements OnModuleInit {
       if (t) resolvedTrackName = t.name;
     }
 
-    // 4. Resolve Standard / Class
-    let resolvedStandardName = params.standardName || '';
-    let standardLevel: number | undefined;
-    if (params.standardId) {
+    // 5. Resolve Standard / Class
+    let resolvedStandardName = resolvedBatch?.standard?.name || params.standardName || '';
+    let standardLevel: number | undefined = resolvedBatch?.standard?.level;
+    if (!resolvedStandardName && params.standardId) {
       const s = await prisma.standard.findUnique({
         where: { id: params.standardId },
         select: { name: true, level: true },
@@ -136,17 +165,18 @@ export class StudentsService implements OnModuleInit {
       }
     }
 
-    // 5. Resolve Batch / Division
-    let resolvedBatchName = params.batchName || '';
-    if (params.batchId) {
-      const b = await prisma.batch.findUnique({
-        where: { id: params.batchId },
-        select: { name: true },
+    // 6. Resolve Batch / Division Name
+    let resolvedBatchName = resolvedBatch?.name || params.batchName || '';
+
+    // 7. Calculate number of active enrollments in this batch
+    let batchEnrollmentCount = 0;
+    if (resolvedBatch?.id) {
+      batchEnrollmentCount = await prisma.enrollment.count({
+        where: { batchId: resolvedBatch.id },
       });
-      if (b) resolvedBatchName = b.name;
     }
 
-    // 6. Build standardized prefix [CENTRE]-[YEAR]-[COURSE]-[CLASS][BATCH]
+    // 8. Build standardized prefix [CENTRE]-[YEAR]-[COURSE]-[CLASS][BATCH]
     const prefix = buildAdmissionPrefix({
       centreCode,
       centreName: resolvedCentreName,
@@ -157,7 +187,7 @@ export class StudentsService implements OnModuleInit {
       batchName: resolvedBatchName,
     });
 
-    // 7. Query existing profiles matching prefix to calculate highest counter
+    // 9. Query existing profiles matching prefix to avoid duplicate keys
     const existingProfiles = await prisma.studentProfile.findMany({
       where: {
         admissionNo: {
@@ -167,7 +197,7 @@ export class StudentsService implements OnModuleInit {
       select: { admissionNo: true },
     });
 
-    let maxSeq = 0;
+    let maxSeq = batchEnrollmentCount;
     for (const p of existingProfiles) {
       const seq = extractSequenceFromAdmissionNumber(p.admissionNo, prefix);
       if (seq !== null && seq > maxSeq) {
@@ -178,7 +208,7 @@ export class StudentsService implements OnModuleInit {
     const nextSeq = maxSeq + 1;
     const admissionNo = formatAdmissionNumber(prefix, nextSeq);
 
-    return { admissionNo, prefix, sequence: nextSeq };
+    return { admissionNo, prefix, sequence: nextSeq, rollNo: nextSeq };
   }
 
   /**
@@ -484,7 +514,7 @@ export class StudentsService implements OnModuleInit {
       };
     }
 
-    return this.prisma.studentProfile.findMany({
+    const students = await this.prisma.studentProfile.findMany({
       where,
       include: {
         user: { select: SAFE_USER_SELECT },
@@ -505,6 +535,33 @@ export class StudentsService implements OnModuleInit {
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    // Compute batch-scoped roll number for each student
+    const batchMap = new Map<string, any[]>();
+    for (const s of students) {
+      const batchId = s.enrollments?.[0]?.batchId || 'unassigned';
+      if (!batchMap.has(batchId)) batchMap.set(batchId, []);
+      batchMap.get(batchId)!.push(s);
+    }
+
+    const rollNoMap = new Map<string, number>();
+    for (const [, bStudents] of batchMap.entries()) {
+      const sorted = [...bStudents].sort((a, b) => {
+        const timeA = new Date(a.createdAt).getTime();
+        const timeB = new Date(b.createdAt).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return (a.id || '').localeCompare(b.id || '');
+      });
+
+      sorted.forEach((student, index) => {
+        rollNoMap.set(student.id, index + 1);
+      });
+    }
+
+    return students.map((s) => ({
+      ...s,
+      rollNo: rollNoMap.get(s.id) || 1,
+    }));
   }
 
   async updateStudent(id: string, data: any, user?: any) {

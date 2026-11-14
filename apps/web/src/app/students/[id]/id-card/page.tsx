@@ -17,6 +17,7 @@ export default async function IdCardPage({ params }: { params: Promise<{ id: str
 
     const mappedStudent = {
       admissionNo: student.admissionNo || '',
+      rollNo: student.rollNo || undefined,
       name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown',
       board: batch?.board?.name || '',
       classLevel: batch?.standard?.name || '',

@@ -113,10 +113,11 @@ export class AttendanceService {
       }
     }
 
-    return students.map(s => ({
+    return students.map((s, idx) => ({
       studentId: s.id,
       name: `${s.user.firstName} ${s.user.lastName}`,
-      admissionNo: s.admissionNo
+      admissionNo: s.admissionNo,
+      rollNo: idx + 1,
     }));
   }
 
@@ -351,10 +352,11 @@ export class AttendanceService {
       }
     });
 
-    return enrollments.map(e => ({
+    return enrollments.map((e, idx) => ({
       studentId: e.studentProfileId,
       name: `${e.studentProfile.user.firstName} ${e.studentProfile.user.lastName}`,
-      admissionNo: e.studentProfile.admissionNo
+      admissionNo: e.studentProfile.admissionNo,
+      rollNo: idx + 1,
     }));
   }
 

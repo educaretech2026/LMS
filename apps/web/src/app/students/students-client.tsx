@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 interface Student {
   id: string;
   admissionNo: string;
+  rollNo?: number | string;
   name: string;
   email: string;
   phone: string;
@@ -312,7 +313,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                     <th className="px-6 py-4 text-left">
                       <input type="checkbox" className="rounded border-border-soft text-brand-blue focus:ring-brand-blue/20" />
                     </th>
-                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">#</th>
+                    <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider" title="Batch Roll Number">Roll No</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Admission No</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Name</th>
                     <th className="px-4 py-4 text-left text-[11px] font-bold text-text-muted uppercase tracking-wider">Email</th>
@@ -338,7 +339,9 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                         <td className="px-6 py-4">
                           <input type="checkbox" className="rounded border-border-soft text-brand-blue focus:ring-brand-blue/20" />
                         </td>
-                        <td className="px-4 py-4 font-semibold text-text-primary">{idx + 1}</td>
+                        <td className="px-4 py-4 font-mono font-bold text-text-primary">
+                          {s.rollNo !== undefined ? `#${String(s.rollNo).padStart(2, '0')}` : `#${String(idx + 1).padStart(2, '0')}`}
+                        </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="inline-flex items-center justify-center px-2 py-1 rounded bg-brand-blue/10 text-brand-blue font-bold text-xs min-w-[28px]">
@@ -514,6 +517,7 @@ export function StudentsClient({ initialStudents }: { initialStudents: Student[]
                   ...savedStudent,
                   id: newProfile.id,
                   admissionNo: newProfile.admissionNo,
+                  rollNo: created.rollNo || newProfile.rollNo || undefined,
                   name: newUser.firstName + " " + (newUser.lastName || ""),
                   email: newUser.email,
                 };
@@ -635,12 +639,29 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
   // Auto-generate structured admission number based on centre, year, course, class, batch
   useEffect(() => {
     if (!isEditing && !isCustomAdmissionNo) {
+      if (!year && !classLevel && !division && !centre) {
+        return;
+      }
+
       const selectedTrack = apiTracks.find(t => t.id === targetTrack);
+      const selectedBatch = apiBatches.find(b => 
+        (!division || b.name?.toLowerCase() === division.toLowerCase()) &&
+        (!centre || b.centre?.name?.toLowerCase() === centre.toLowerCase()) &&
+        (!classLevel || b.standard?.name?.toLowerCase() === classLevel.toLowerCase())
+      );
+      const selectedYear = apiYears.find(y => y.name === year);
+      const selectedCentre = apiCentres.find(c => c.name === centre);
+      const selectedStandard = apiStandards.find(s => s.name === classLevel);
+
       const params = new URLSearchParams({
         centre: centre || '',
+        centreId: selectedCentre?.id || '',
         academicYear: year || '',
+        academicYearId: selectedYear?.id || '',
         classLevel: classLevel || '',
+        standardId: selectedStandard?.id || '',
         division: division || '',
+        batchId: selectedBatch?.id || '',
         trackId: targetTrack || '',
         trackName: selectedTrack?.name || '',
       });
@@ -655,7 +676,7 @@ function AddStudentModal({ student, onClose, onSave }: { student: Student | null
         .catch(() => {})
         .finally(() => setIsGeneratingAdmNo(false));
     }
-  }, [centre, year, classLevel, division, targetTrack, apiTracks, isEditing, isCustomAdmissionNo]);
+  }, [centre, year, classLevel, division, targetTrack, apiTracks, apiBatches, apiYears, apiCentres, apiStandards, isEditing, isCustomAdmissionNo]);
 
   const TABS = [
     { id: "Admission", icon: User },

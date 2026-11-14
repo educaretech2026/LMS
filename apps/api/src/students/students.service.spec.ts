@@ -97,6 +97,7 @@ describe('StudentsService - Structured Admission Number Generation', () => {
       },
       enrollment: {
         create: jest.fn().mockResolvedValue({ id: 'enr-1' }),
+        count: jest.fn().mockResolvedValue(0),
       },
       userCentre: {
         create: jest.fn().mockResolvedValue({ id: 'uc-1' }),
@@ -157,6 +158,23 @@ describe('StudentsService - Structured Admission Number Generation', () => {
 
       expect(result.sequence).toBe(4);
       expect(result.admissionNo).toBe('KL-26-NEET-11A-004');
+    });
+
+    it('scopes sequence to batch enrollment count when batch has 5 enrolled students', async () => {
+      prisma.enrollment.count.mockResolvedValue(5);
+      prisma.studentProfile.findMany.mockResolvedValue([]);
+
+      const result = await service.generateNextAdmissionNo({
+        centreId: mockCentre.id,
+        academicYearId: mockAcademicYear.id,
+        trackId: mockTrack.id,
+        standardId: mockStandard.id,
+        batchId: mockBatch.id,
+      });
+
+      expect(result.sequence).toBe(6);
+      expect(result.rollNo).toBe(6);
+      expect(result.admissionNo).toBe('KL-26-NEET-11A-006');
     });
   });
 
